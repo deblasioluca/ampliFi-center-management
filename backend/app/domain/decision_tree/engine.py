@@ -102,9 +102,7 @@ def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> 
         )
     ):
         months = features.months_since_last_posting
-        path.append(
-            f"months_since_last_posting={months} >= {inactivity_months} → RETIRE"
-        )
+        path.append(f"months_since_last_posting={months} >= {inactivity_months} → RETIRE")
         return TreeResult(cleansing=CleansingOutcome.RETIRE, rule_path=path)
     path.append("posting_activity=sufficient")
 
