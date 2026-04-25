@@ -29,20 +29,37 @@ from app.models.core import (
 log = logging.getLogger(__name__)
 
 
-def _build_features(cc: LegacyCostCenter, db: Session) -> CenterFeatures:
+def _build_features(
+    cc: LegacyCostCenter, db: Session, inactivity_months: int = 24
+) -> CenterFeatures:
     """Build feature vector for a single cost center from DB data."""
     now = datetime.now(UTC)
 
-    # Balance aggregates
+    # Balance aggregates (all-time for totals)
     bal_q = select(
         func.sum(Balance.tc_amt).label("total"),
         func.max(Balance.fiscal_year * 100 + Balance.period).label("last_period"),
-        func.sum(Balance.posting_count).label("total_postings"),
     ).where(Balance.coarea == cc.coarea, Balance.cctr == cc.cctr)
     bal_row = db.execute(bal_q).one_or_none()
 
     total_balance = float(bal_row.total or 0) if bal_row else 0.0
-    total_postings = int(bal_row.total_postings or 0) if bal_row else 0
+
+    # Windowed posting count (only within inactivity window)
+    cutoff_year = now.year - (inactivity_months // 12)
+    cutoff_month = now.month - (inactivity_months % 12)
+    if cutoff_month <= 0:
+        cutoff_year -= 1
+        cutoff_month += 12
+    cutoff_period = cutoff_year * 100 + cutoff_month
+
+    window_q = select(
+        func.coalesce(func.sum(Balance.posting_count), 0).label("windowed_postings"),
+    ).where(
+        Balance.coarea == cc.coarea,
+        Balance.cctr == cc.cctr,
+        (Balance.fiscal_year * 100 + Balance.period) >= cutoff_period,
+    )
+    windowed_postings = int(db.execute(window_q).scalar() or 0)
 
     # Calculate months since last posting
     months_since = None
@@ -97,7 +114,7 @@ def _build_features(cc: LegacyCostCenter, db: Session) -> CenterFeatures:
         pctr=cc.pctr or "",
         is_active=cc.is_active,
         months_since_last_posting=months_since,
-        posting_count_window=total_postings,
+        posting_count_window=windowed_postings,
         bs_amt=bs_amt,
         rev_amt=rev_amt,
         opex_amt=opex_amt,
@@ -167,7 +184,8 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     }
 
     for cc in cost_centers:
-        features = _build_features(cc, db)
+        inactivity_months = params.get("inactivity_threshold_months", 24)
+        features = _build_features(cc, db, inactivity_months=inactivity_months)
         result = evaluate_center(features, params)
 
         # Store routine output
