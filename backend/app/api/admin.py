@@ -22,6 +22,7 @@ from app.models.core import (
     SAPConnectionProbe,
     TaskRun,
     UploadBatch,
+    UploadError,
 )
 
 router = APIRouter()
@@ -273,6 +274,81 @@ def get_sap_connection(
     return SAPConnectionOut.model_validate(conn)
 
 
+@router.put("/sap/{conn_id}")
+def update_sap_connection(
+    conn_id: int,
+    body: SAPConnectionCreate,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> SAPConnectionOut:
+    from app.infra.sap.encryption import encrypt_password
+
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+    conn.name = body.name
+    conn.description = body.description
+    conn.system_type = body.system_type
+    conn.landscape_type = body.landscape_type
+    conn.base_url = body.base_url
+    conn.client = body.client
+    conn.language = body.language
+    conn.username = body.username
+    if body.password:
+        conn.password_encrypted = encrypt_password(body.password)
+    conn.protocol = body.protocol
+    conn.verify_ssl = body.verify_ssl
+    conn.use_proxy = body.use_proxy
+    conn.saml2_disabled = body.saml2_disabled
+    conn.allowed_tables = body.allowed_tables
+    db.commit()
+    db.refresh(conn)
+    return SAPConnectionOut.model_validate(conn)
+
+
+@router.delete("/sap/{conn_id}")
+def delete_sap_connection(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+    db.delete(conn)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/sap/{conn_id}/probes")
+def list_sap_probes(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> list[dict]:
+    probes = (
+        db.execute(
+            select(SAPConnectionProbe)
+            .where(SAPConnectionProbe.connection_id == conn_id)
+            .order_by(SAPConnectionProbe.probed_at.desc())
+            .limit(20)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": p.id,
+            "status": p.status,
+            "protocol": p.protocol,
+            "latency_ms": p.latency_ms,
+            "details": p.details,
+            "probed_at": str(p.probed_at),
+        }
+        for p in probes
+    ]
+
+
 @router.post("/sap/{conn_id}/test")
 def test_sap_connection(
     conn_id: int,
@@ -360,9 +436,110 @@ def list_uploads(
                 "filename": b.filename,
                 "status": b.status,
                 "rows_total": b.rows_total,
+                "rows_valid": b.rows_valid,
                 "rows_error": b.rows_error,
+                "rows_loaded": b.rows_loaded,
+                "created_at": str(b.created_at) if b.created_at else None,
             }
             for b in batches
+        ],
+    }
+
+
+@router.get("/uploads/{batch_id}")
+def get_upload(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    batch = db.get(UploadBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Upload batch not found")
+    return {
+        "id": batch.id,
+        "kind": batch.kind,
+        "filename": batch.filename,
+        "status": batch.status,
+        "rows_total": batch.rows_total,
+        "rows_valid": batch.rows_valid,
+        "rows_error": batch.rows_error,
+        "rows_loaded": batch.rows_loaded,
+        "storage_uri": batch.storage_uri,
+        "created_at": str(batch.created_at) if batch.created_at else None,
+        "validated_at": str(batch.validated_at) if batch.validated_at else None,
+        "loaded_at": str(batch.loaded_at) if batch.loaded_at else None,
+    }
+
+
+@router.post("/uploads/{batch_id}/validate")
+def validate_upload_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.upload_processor import validate_upload
+
+    return validate_upload(batch_id, db)
+
+
+@router.post("/uploads/{batch_id}/load")
+def load_upload_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.upload_processor import load_upload
+
+    return load_upload(batch_id, db)
+
+
+@router.post("/uploads/{batch_id}/rollback")
+def rollback_upload_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.upload_processor import rollback_upload
+
+    return rollback_upload(batch_id, db)
+
+
+@router.get("/uploads/{batch_id}/errors")
+def list_upload_errors(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+    pag: PaginationParams = Depends(pagination),
+) -> dict:
+    total = (
+        db.execute(
+            select(func.count(UploadError.id)).where(UploadError.batch_id == batch_id)
+        ).scalar()
+        or 0
+    )
+    errors = (
+        db.execute(
+            select(UploadError)
+            .where(UploadError.batch_id == batch_id)
+            .order_by(UploadError.row_number)
+            .offset((pag.page - 1) * pag.size)
+            .limit(pag.size)
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "row_number": e.row_number,
+                "column_name": e.column_name,
+                "error_code": e.error_code,
+                "message": e.message,
+            }
+            for e in errors
         ],
     }
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
-from app.models.core import ReviewItem, ReviewScope
+from app.models.core import CenterProposal, LegacyCostCenter, ReviewItem, ReviewScope
 
 router = APIRouter()
 
@@ -73,14 +73,32 @@ def scope_items(
         total_q = total_q.where(ReviewItem.decision == decision)
     total = db.execute(total_q).scalar() or 0
     items = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    enriched = []
+    for i in items:
+        row: dict = {
+            "id": i.id,
+            "proposal_id": i.proposal_id,
+            "decision": i.decision,
+            "comment": i.comment,
+        }
+        proposal = db.get(CenterProposal, i.proposal_id)
+        if proposal:
+            row["cleansing_outcome"] = proposal.cleansing_outcome
+            row["target_object"] = proposal.target_object
+            row["confidence"] = str(proposal.confidence) if proposal.confidence else None
+            row["rule_path"] = proposal.rule_path
+            cc = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+            if cc:
+                row["cctr"] = cc.cctr
+                row["txtsh"] = cc.txtsh
+                row["ccode"] = cc.ccode
+                row["coarea"] = cc.coarea
+        enriched.append(row)
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
-        "items": [
-            {"id": i.id, "proposal_id": i.proposal_id, "decision": i.decision, "comment": i.comment}
-            for i in items
-        ],
+        "items": enriched,
     }
 
 

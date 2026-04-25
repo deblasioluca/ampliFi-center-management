@@ -137,9 +137,9 @@ import Layout from '../../components/layout/Layout.astro';
             link.setAttribute('data-id', w.id);
             link.innerHTML = '<span class="font-medium">' + escapeHtml(w.code) + '</span>' +
               '<span class="text-xs text-gray-400 ml-2">' + escapeHtml(w.status) + '</span>';
+            link.href = '/cockpit/wave?id=' + w.id;
             link.addEventListener('click', function(e) {
-              e.preventDefault();
-              loadWaveDetail(w.id, w);
+              // Navigate to wave detail page
             });
             el.appendChild(link);
           });

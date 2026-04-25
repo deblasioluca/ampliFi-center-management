@@ -1,0 +1,248 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="SAP Connections" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">SAP Connections</h1>
+        <p class="text-sm text-gray-500 mt-1">Manage SAP system connections with ADT, OData, and SOAP/RFC protocols</p>
+      </div>
+      <button id="btn-new" class="btn-amplifi">+ New Connection</button>
+    </div>
+  </div>
+
+  <!-- Connections List -->
+  <div id="connections-list" class="space-y-4">Loading...</div>
+
+  <!-- Connection Form Modal -->
+  <div id="modal-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6">
+      <h2 id="modal-title" class="text-lg font-semibold mb-4">New SAP Connection</h2>
+      <form id="sap-form" class="space-y-4">
+        <input type="hidden" id="f-id" value="" />
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input id="f-name" type="text" class="input" required />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">System Type</label>
+            <select id="f-system-type" class="input">
+              <option value="S/4HANA">S/4HANA</option>
+              <option value="ECC">ECC</option>
+              <option value="BW">BW/4HANA</option>
+              <option value="MDG">MDG Hub</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <input id="f-desc" type="text" class="input" />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+            <input id="f-url" type="text" class="input" placeholder="https://host:port" required />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Landscape</label>
+            <select id="f-landscape" class="input">
+              <option value="DEV">Development</option>
+              <option value="QAS">Quality</option>
+              <option value="PRD">Production</option>
+              <option value="SBX">Sandbox</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
+            <input id="f-client" type="text" class="input" value="100" maxlength="3" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Language</label>
+            <input id="f-lang" type="text" class="input" value="EN" maxlength="2" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
+            <select id="f-protocol" class="input">
+              <option value="odata">OData</option>
+              <option value="adt">ADT</option>
+              <option value="soap_rfc">SOAP/RFC</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input id="f-user" type="text" class="input" required />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input id="f-pwd" type="password" class="input" required />
+          </div>
+        </div>
+        <div class="flex items-center gap-6 text-sm">
+          <label class="flex items-center gap-2">
+            <input id="f-verify-ssl" type="checkbox" /> Verify SSL
+          </label>
+          <label class="flex items-center gap-2">
+            <input id="f-use-proxy" type="checkbox" /> Use Proxy
+          </label>
+          <label class="flex items-center gap-2">
+            <input id="f-saml2" type="checkbox" /> SAML2 Disabled
+          </label>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Allowed Tables (comma-separated)</label>
+          <input id="f-tables" type="text" class="input" placeholder="T001,CSKS,..." />
+        </div>
+        <div class="flex justify-end gap-3 pt-4 border-t">
+          <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
+          <button type="submit" id="btn-save" class="btn-amplifi">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Test Results Modal -->
+  <div id="test-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Connection Test Results</h2>
+      <div id="test-results" class="text-sm">Testing...</div>
+      <div class="flex justify-end mt-4">
+        <button onclick="document.getElementById('test-overlay').classList.add('hidden')" class="btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var authHdr = token ? { 'Authorization': 'Bearer ' + token } : {};
+  var jsonHdr = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
+  function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+
+  function loadConnections() {
+    fetch('/api/admin/sap', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(conns) {
+      var el = document.getElementById('connections-list');
+      if (!conns.length) { el.innerHTML = '<div class="card text-center text-gray-500 py-8">No SAP connections configured. Click "New Connection" to add one.</div>'; return; }
+      var html = '';
+      conns.forEach(function(c) {
+        var proto = { odata: 'OData', adt: 'ADT', soap_rfc: 'SOAP/RFC' }[c.protocol] || c.protocol;
+        html += '<div class="card"><div class="flex items-start justify-between">' +
+          '<div><h3 class="font-semibold text-gray-900">' + esc(c.name) + '</h3>' +
+          '<p class="text-sm text-gray-500 mt-0.5">' + esc(c.description || '') + '</p>' +
+          '<div class="flex items-center gap-4 mt-2 text-xs text-gray-500">' +
+          '<span class="font-mono">' + esc(c.base_url) + '</span>' +
+          '<span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">' + esc(c.system_type) + '</span>' +
+          '<span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">' + proto + '</span>' +
+          '<span>Client: ' + esc(c.client) + '</span>' +
+          '<span>User: ' + esc(c.username) + '</span>' +
+          (c.landscape_type ? '<span class="bg-gray-100 px-2 py-0.5 rounded">' + esc(c.landscape_type) + '</span>' : '') +
+          (c.is_active ? '<span class="text-green-600">Active</span>' : '<span class="text-red-500">Inactive</span>') +
+          '</div></div>' +
+          '<div class="flex gap-2">' +
+          '<button onclick="testConn(' + c.id + ')" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100">Test</button>' +
+          '<button onclick="editConn(' + c.id + ')" class="btn-sm">Edit</button>' +
+          '<button onclick="deleteConn(' + c.id + ',\'' + esc(c.name) + '\')" class="btn-sm text-red-600 hover:bg-red-50">Delete</button>' +
+          '</div></div></div>';
+      });
+      el.innerHTML = html;
+    }).catch(function(e) { document.getElementById('connections-list').textContent = 'Error: ' + e.message; });
+  }
+  loadConnections();
+
+  var modal = document.getElementById('modal-overlay');
+  document.getElementById('btn-new').addEventListener('click', function() {
+    document.getElementById('modal-title').textContent = 'New SAP Connection';
+    document.getElementById('sap-form').reset();
+    document.getElementById('f-id').value = '';
+    modal.classList.remove('hidden');
+  });
+  document.getElementById('btn-cancel').addEventListener('click', function() { modal.classList.add('hidden'); });
+
+  document.getElementById('sap-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var id = document.getElementById('f-id').value;
+    var body = {
+      name: document.getElementById('f-name').value,
+      description: document.getElementById('f-desc').value,
+      system_type: document.getElementById('f-system-type').value,
+      landscape_type: document.getElementById('f-landscape').value,
+      base_url: document.getElementById('f-url').value,
+      client: document.getElementById('f-client').value,
+      language: document.getElementById('f-lang').value,
+      protocol: document.getElementById('f-protocol').value,
+      username: document.getElementById('f-user').value,
+      password: document.getElementById('f-pwd').value,
+      verify_ssl: document.getElementById('f-verify-ssl').checked,
+      use_proxy: document.getElementById('f-use-proxy').checked,
+      saml2_disabled: document.getElementById('f-saml2').checked,
+      allowed_tables: document.getElementById('f-tables').value || null,
+    };
+    var url = id ? '/api/admin/sap/' + id : '/api/admin/sap';
+    var method = id ? 'PUT' : 'POST';
+    try {
+      var res = await fetch(url, { method: method, headers: jsonHdr, body: JSON.stringify(body) });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.detail || 'Failed'); }
+      modal.classList.add('hidden');
+      loadConnections();
+    } catch(err) { alert('Error: ' + err.message); }
+  });
+
+  window.editConn = async function(id) {
+    var res = await fetch('/api/admin/sap/' + id, { headers: authHdr });
+    var c = await res.json();
+    document.getElementById('modal-title').textContent = 'Edit: ' + c.name;
+    document.getElementById('f-id').value = c.id;
+    document.getElementById('f-name').value = c.name;
+    document.getElementById('f-desc').value = c.description || '';
+    document.getElementById('f-system-type').value = c.system_type;
+    document.getElementById('f-landscape').value = c.landscape_type || 'DEV';
+    document.getElementById('f-url').value = c.base_url;
+    document.getElementById('f-client').value = c.client;
+    document.getElementById('f-lang').value = c.language;
+    document.getElementById('f-protocol').value = c.protocol;
+    document.getElementById('f-user').value = c.username;
+    document.getElementById('f-pwd').value = '';
+    document.getElementById('f-verify-ssl').checked = c.verify_ssl;
+    document.getElementById('f-use-proxy').checked = c.use_proxy;
+    document.getElementById('f-saml2').checked = c.saml2_disabled;
+    document.getElementById('f-tables').value = c.allowed_tables || '';
+    modal.classList.remove('hidden');
+  };
+
+  window.deleteConn = async function(id, name) {
+    if (!confirm('Delete connection "' + name + '"?')) return;
+    await fetch('/api/admin/sap/' + id, { method: 'DELETE', headers: authHdr });
+    loadConnections();
+  };
+
+  window.testConn = async function(id) {
+    document.getElementById('test-overlay').classList.remove('hidden');
+    document.getElementById('test-results').innerHTML = '<div class="text-center py-4"><div class="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div><p class="mt-2">Testing connection...</p></div>';
+    try {
+      var res = await fetch('/api/admin/sap/' + id + '/test', { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      var html = '';
+      if (d.success) {
+        html = '<div class="bg-green-50 text-green-800 p-4 rounded mb-3"><strong>Connection successful!</strong></div>';
+      } else {
+        html = '<div class="bg-red-50 text-red-800 p-4 rounded mb-3"><strong>Connection failed</strong></div>';
+      }
+      if (d.latency_ms) html += '<p class="text-sm">Latency: <strong>' + d.latency_ms + ' ms</strong></p>';
+      if (d.error) html += '<p class="text-sm text-red-600 mt-2">Error: ' + esc(d.error) + '</p>';
+      if (d.details) {
+        html += '<details class="mt-3"><summary class="text-sm cursor-pointer text-gray-500">Details</summary><pre class="text-xs mt-2 bg-gray-50 p-3 rounded overflow-x-auto">' + esc(JSON.stringify(d.details, null, 2)) + '</pre></details>';
+      }
+      document.getElementById('test-results').innerHTML = html;
+    } catch(err) {
+      document.getElementById('test-results').innerHTML = '<div class="bg-red-50 text-red-800 p-4 rounded">Error: ' + esc(err.message) + '</div>';
+    }
+  };
+})();
+</script>
