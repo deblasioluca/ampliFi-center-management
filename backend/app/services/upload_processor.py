@@ -409,6 +409,8 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
         raise ValueError(f"Batch {batch_id} not found")
+    if batch.status != "loaded":
+        raise ValueError(f"Only loaded batches can be rolled back (status: {batch.status})")
 
     deleted = 0
     if batch.kind in ("cost_center", "cost_centers"):

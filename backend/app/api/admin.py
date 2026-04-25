@@ -479,7 +479,10 @@ def validate_upload_batch(
 ) -> dict:
     from app.services.upload_processor import validate_upload
 
-    return validate_upload(batch_id, db)
+    try:
+        return validate_upload(batch_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @router.post("/uploads/{batch_id}/load")
@@ -490,7 +493,10 @@ def load_upload_batch(
 ) -> dict:
     from app.services.upload_processor import load_upload
 
-    return load_upload(batch_id, db)
+    try:
+        return load_upload(batch_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @router.post("/uploads/{batch_id}/rollback")
