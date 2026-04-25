@@ -85,11 +85,8 @@ def authenticate_user(db: Session, email: str, password: str) -> AppUser:
 def get_user_from_request(request: Request, db: Session) -> AppUser | None:
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        token = request.cookies.get("access_token")
-        if not token:
-            return None
-    else:
-        token = auth_header[7:]
+        return None
+    token = auth_header[7:]
     payload = decode_token(token)
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
