@@ -47,6 +47,7 @@ PC_COLUMNS = {
     "PCTRCCALL": "ccode",
 }
 BALANCE_COLUMNS = {
+    "COAREA": "coarea",
     "COMPANY_CODE": "ccode",
     "SAP_MANAGEMENT_CENTER": "cctr",
     "PERIOD_YYYYMM": "period_raw",
@@ -92,6 +93,8 @@ def _read_file(path: str) -> list[dict[str, str]]:
         # Skip MDG header lines starting with *
         lines = content.split("\n")
         clean_lines = [ln for ln in lines if not ln.startswith("*")]
+        if not clean_lines or not clean_lines[0].strip():
+            return []
         reader = csv.DictReader(
             io.StringIO("\n".join(clean_lines)), delimiter="," if "," in clean_lines[0] else "\t"
         )
@@ -155,6 +158,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
     errors: list[dict] = []
+    error_rows: set[int] = set()
 
     for i, row in enumerate(normalized, start=1):
         if batch.kind in ("cost_center", "cost_centers"):
@@ -162,15 +166,18 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                 errors.append(
                     {"row": i, "col": "CCTR", "code": "REQUIRED", "msg": "CCTR is required"},
                 )
+                error_rows.add(i)
             if not row.get("coarea"):
                 errors.append(
                     {"row": i, "col": "COAREA", "code": "REQUIRED", "msg": "COAREA is required"},
                 )
+                error_rows.add(i)
         elif batch.kind in ("profit_center", "profit_centers"):
             if not row.get("pctr"):
                 errors.append(
                     {"row": i, "col": "PCTR", "code": "REQUIRED", "msg": "PCTR is required"},
                 )
+                error_rows.add(i)
         elif batch.kind in ("balance", "balances"):
             if not row.get("cctr"):
                 errors.append(
@@ -181,6 +188,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                         "msg": "SAP_MANAGEMENT_CENTER is required",
                     }
                 )
+                error_rows.add(i)
             pr = row.get("period_raw", "")
             if pr and (len(pr) != 6 or not pr.isdigit()):
                 errors.append(
@@ -191,6 +199,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                         "msg": f"Period must be YYYYMM, got: {pr}",
                     }
                 )
+                error_rows.add(i)
         elif batch.kind in ("entity", "entities"):
             if not row.get("ccode"):
                 errors.append(
@@ -201,6 +210,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                         "msg": "COMPANY_CODE is required",
                     }
                 )
+                error_rows.add(i)
 
     # Store errors
     for err in errors[:5000]:
@@ -215,8 +225,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         )
 
     batch.rows_total = len(normalized)
-    batch.rows_valid = len(normalized) - len(errors)
-    batch.rows_error = len(errors)
+    batch.rows_valid = len(normalized) - len(error_rows)
+    batch.rows_error = len(error_rows)
     batch.status = "validated"
     batch.validated_at = datetime.now(UTC)
     db.commit()
