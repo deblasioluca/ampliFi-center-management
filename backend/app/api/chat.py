@@ -96,7 +96,11 @@ def send_message(
 
 
 @router.post("/threads/{thread_id}/pin")
-def pin_thread(thread_id: int, db: Session = Depends(get_db)) -> dict:
+def pin_thread(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(get_current_user),
+) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -106,7 +110,11 @@ def pin_thread(thread_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.delete("/threads/{thread_id}")
-def delete_thread(thread_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_thread(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(get_current_user),
+) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")

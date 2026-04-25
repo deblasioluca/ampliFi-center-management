@@ -79,6 +79,7 @@ async def readyz() -> Response:
 
         r = redis_lib.from_url(settings.redis_url)
         r.ping()
+        r.close()
         checks["redis"] = "ok"
     except Exception as exc:
         checks["redis"] = f"error: {exc}"

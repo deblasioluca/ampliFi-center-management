@@ -315,6 +315,8 @@ class RoutineOutput(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    run: Mapped[AnalysisRun] = relationship(back_populates="outputs")
+
 
 class LLMReviewPass(TimestampMixin, Base):
     __tablename__ = "llm_review_pass"

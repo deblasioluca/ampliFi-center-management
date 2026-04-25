@@ -67,6 +67,9 @@ def authenticate_user(db: Session, email: str, password: str) -> AppUser:
         raise HTTPException(status_code=401, detail="Account disabled")
     if user.locked_until and user.locked_until > datetime.now(UTC):
         raise HTTPException(status_code=423, detail="Account locked")
+    if user.locked_until and user.locked_until <= datetime.now(UTC):
+        user.failed_logins = 0
+        user.locked_until = None
     if user.password_hash is None or not verify_password(password, user.password_hash):
         user.failed_logins += 1
         if user.failed_logins >= 5:
