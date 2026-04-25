@@ -245,7 +245,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
         raise ValueError(f"Batch {batch_id} not found")
-    if batch.status not in ("validated", "uploaded"):
+    if batch.status != "validated":
         raise ValueError(f"Batch must be validated first (status: {batch.status})")
 
     batch.status = "loading"
@@ -308,19 +308,31 @@ def load_upload(batch_id: int, db: Session) -> dict:
         for row in normalized:
             if not row.get("pctr"):
                 continue
-            db.add(
-                LegacyProfitCenter(
-                    coarea=row.get("coarea", ""),
-                    pctr=row["pctr"],
-                    txtsh=row.get("txtsh", ""),
-                    txtmi=row.get("txtmi", ""),
-                    responsible=row.get("responsible", ""),
-                    ccode=row.get("ccode", ""),
-                    department=row.get("department", ""),
-                    currency=row.get("currency", ""),
-                    refresh_batch=batch.id,
+            existing = db.execute(
+                select(LegacyProfitCenter).where(
+                    LegacyProfitCenter.coarea == row.get("coarea", ""),
+                    LegacyProfitCenter.pctr == row["pctr"],
+                    LegacyProfitCenter.refresh_batch == batch.id,
                 )
-            )
+            ).scalar_one_or_none()
+            if existing:
+                existing.txtsh = row.get("txtsh", existing.txtsh)
+                existing.txtmi = row.get("txtmi", existing.txtmi)
+                existing.responsible = row.get("responsible", existing.responsible)
+            else:
+                db.add(
+                    LegacyProfitCenter(
+                        coarea=row.get("coarea", ""),
+                        pctr=row["pctr"],
+                        txtsh=row.get("txtsh", ""),
+                        txtmi=row.get("txtmi", ""),
+                        responsible=row.get("responsible", ""),
+                        ccode=row.get("ccode", ""),
+                        department=row.get("department", ""),
+                        currency=row.get("currency", ""),
+                        refresh_batch=batch.id,
+                    )
+                )
             loaded += 1
 
     elif batch.kind in ("balance", "balances"):
