@@ -538,6 +538,7 @@ def create_review_scope(
 def list_review_scopes(
     wave_id: int,
     db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:

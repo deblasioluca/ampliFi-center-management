@@ -45,6 +45,7 @@ PC_COLUMNS = {
     "PCTRRESPP": "responsible",
     "PC_SPRAS": "language",
     "PCTRCCALL": "ccode",
+    "CURRPCTR": "currency",
 }
 BALANCE_COLUMNS = {
     "COAREA": "coarea",
