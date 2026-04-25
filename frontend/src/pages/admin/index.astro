@@ -1,0 +1,59 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Admin — ampliFi">
+  <div class="min-h-screen bg-gray-50">
+    <header class="bg-amplifi-700 text-white shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <a href="/" class="text-2xl font-bold tracking-tight hover:text-amplifi-200">ampliFi</a>
+          <span class="text-amplifi-200 text-sm">Admin</span>
+        </div>
+        <nav class="flex gap-4 text-sm">
+          <a href="/" class="hover:text-amplifi-200">Home</a>
+          <a href="/cockpit" class="hover:text-amplifi-200">Cockpit</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Administration</h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <a href="/admin/users" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Users</h3>
+          <p class="text-sm text-gray-500 mt-2">Manage user accounts, roles, and permissions</p>
+        </a>
+        <a href="/admin/sap" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">SAP Connections</h3>
+          <p class="text-sm text-gray-500 mt-2">Configure and test SAP system connections</p>
+        </a>
+        <a href="/admin/uploads" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Data Uploads</h3>
+          <p class="text-sm text-gray-500 mt-2">Upload cost centers, profit centers, balances</p>
+        </a>
+        <a href="/admin/config" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Configuration</h3>
+          <p class="text-sm text-gray-500 mt-2">Database, LLM, email settings</p>
+        </a>
+        <a href="/admin/routines" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Routines</h3>
+          <p class="text-sm text-gray-500 mt-2">Manage analysis routines and plugins</p>
+        </a>
+        <a href="/admin/audit" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Audit Log</h3>
+          <p class="text-sm text-gray-500 mt-2">View system activity and change history</p>
+        </a>
+        <a href="/admin/housekeeping" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Housekeeping</h3>
+          <p class="text-sm text-gray-500 mt-2">Monthly cleanup cycles for unused centers</p>
+        </a>
+        <a href="/admin/jobs" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <h3 class="text-lg font-semibold text-amplifi-700">Jobs</h3>
+          <p class="text-sm text-gray-500 mt-2">Background task monitoring</p>
+        </a>
+      </div>
+    </main>
+  </div>
+</Layout>

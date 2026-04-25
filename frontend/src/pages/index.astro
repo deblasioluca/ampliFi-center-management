@@ -1,0 +1,102 @@
+---
+import Layout from '../components/layout/Layout.astro';
+---
+
+<Layout title="ampliFi Center Management">
+  <div class="min-h-screen bg-gray-50">
+    <header class="bg-amplifi-700 text-white shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-bold tracking-tight">ampliFi</h1>
+          <span class="text-amplifi-200 text-sm">Center Management</span>
+        </div>
+        <nav class="flex gap-4 text-sm">
+          <a href="/cockpit" class="hover:text-amplifi-200 transition-colors">Cockpit</a>
+          <a href="/admin" class="hover:text-amplifi-200 transition-colors">Admin</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-sm font-medium text-gray-500">System Status</h3>
+          <div id="health-status" class="mt-2 text-2xl font-bold text-gray-900">Checking...</div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-sm font-medium text-gray-500">Legacy Cost Centers</h3>
+          <div id="cc-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-sm font-medium text-gray-500">Entities</h3>
+          <div id="entity-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-sm font-medium text-gray-500">Active Waves</h3>
+          <div id="wave-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+          <div class="space-y-3">
+            <a href="/wave/new" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
+              <span class="font-medium text-amplifi-700">Create New Wave</span>
+              <p class="text-sm text-gray-500 mt-1">Start a new analysis wave with selected entities</p>
+            </a>
+            <a href="/admin/uploads" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
+              <span class="font-medium text-amplifi-700">Upload Data</span>
+              <p class="text-sm text-gray-500 mt-1">Upload cost centers, profit centers, balances, hierarchies</p>
+            </a>
+            <a href="/admin/sap" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
+              <span class="font-medium text-amplifi-700">SAP Connections</span>
+              <p class="text-sm text-gray-500 mt-1">Configure and test SAP system connections</p>
+            </a>
+          </div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">System Info</h2>
+          <div id="system-info" class="space-y-2 text-sm text-gray-600">
+            Loading...
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  async function loadDashboard() {
+    const apiBase = '/api';
+    try {
+      const health = await fetch(`${apiBase}/healthz`).then(r => r.json());
+      const el = document.getElementById('health-status');
+      if (el) el.textContent = health.status === 'ok' ? 'Online' : 'Degraded';
+      if (el) el.classList.add(health.status === 'ok' ? 'text-green-600' : 'text-red-600');
+    } catch {
+      const el = document.getElementById('health-status');
+      if (el) { el.textContent = 'Offline'; el.classList.add('text-red-600'); }
+    }
+
+    try {
+      const ready = await fetch(`${apiBase}/readyz`).then(r => r.json());
+      const info = document.getElementById('system-info');
+      if (info) {
+        info.innerHTML = Object.entries(ready.checks || {})
+          .map(([k, v]) => `<div class="flex justify-between"><span>${k}</span><span class="${v === 'ok' ? 'text-green-600' : 'text-red-600'} font-medium">${v}</span></div>`)
+          .join('');
+      }
+    } catch { /* ignore */ }
+
+    try {
+      const stats = await fetch(`${apiBase}/stats/global`).then(r => r.json());
+      const ccEl = document.getElementById('cc-count');
+      const entEl = document.getElementById('entity-count');
+      if (ccEl) ccEl.textContent = (stats.universe?.legacy_cc_total ?? 0).toLocaleString();
+      if (entEl) entEl.textContent = (stats.universe?.entities_total ?? 0).toLocaleString();
+    } catch { /* ignore */ }
+  }
+
+  loadDashboard();
+</script>

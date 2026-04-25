@@ -1,0 +1,20 @@
+[Unit]
+Description=ampliFi Cleanup Frontend (Astro SSR)
+After=network.target amplifi-backend.service
+
+[Service]
+Type=simple
+User=macan
+Group=macan
+WorkingDirectory=/home/macan/Development/ampliFi-center-management/frontend
+EnvironmentFile=/home/macan/Development/ampliFi-center-management/.env
+ExecStart=/usr/bin/node dist/server/entry.mjs
+Environment=HOST=0.0.0.0
+Environment=PORT=${FRONTEND_PORT}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
