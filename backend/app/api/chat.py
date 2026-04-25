@@ -94,7 +94,7 @@ def send_message(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    thread = _get_user_thread(thread_id, user, db)
+    _get_user_thread(thread_id, user, db)  # ownership check
     msg = ChatMessage(thread_id=thread_id, role="user", content=body.content)
     db.add(msg)
     db.commit()
