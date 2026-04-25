@@ -114,9 +114,10 @@ export const adminSAP = {
 
 // Admin - Uploads
 export const adminUploads = {
-  list: () => request<unknown[]>('/admin/uploads'),
-  upload: (formData: FormData) =>
-    request('/admin/uploads', { method: 'POST', body: formData }),
+  list: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/admin/uploads?page=${page}&size=${size}`),
+  upload: (kind: string, formData: FormData) =>
+    request('/admin/uploads?kind=' + encodeURIComponent(kind), { method: 'POST', body: formData }),
 };
 
 // Admin - Config
@@ -128,7 +129,7 @@ export const adminConfig = {
 
 // Admin - Routines
 export const adminRoutines = {
-  list: () => request<{ total: number; items: unknown[] }>('/admin/routines'),
+  list: () => request<unknown[]>('/admin/routines'),
   update: (code: string, data: { enabled: boolean }) =>
     request(`/admin/routines/${code}?enabled=${data.enabled}`, { method: 'PATCH' }),
 };
@@ -174,9 +175,9 @@ export const dataManagement = {
 export const reference = {
   entities: (page = 1, size = 100) =>
     request<{ total: number; page: number; size: number; items: unknown[] }>(`/entities?page=${page}&size=${size}`),
-  costCenters: (page = 1, size = 100, entity_id?: number) => {
+  costCenters: (page = 1, size = 100, ccode?: string) => {
     let url = `/legacy/cost-centers?page=${page}&size=${size}`;
-    if (entity_id) url += `&entity_id=${entity_id}`;
+    if (ccode) url += `&ccode=${encodeURIComponent(ccode)}`;
     return request<{ total: number; page: number; size: number; items: unknown[] }>(url);
   },
   profitCenters: (page = 1, size = 100) =>
