@@ -209,6 +209,7 @@ def list_balances(
                 "account_class": b.account_class,
                 "tc_amt": str(b.tc_amt) if b.tc_amt is not None else "0",
                 "gc_amt": str(b.gc_amt) if b.gc_amt is not None else "0",
+                "gc2_amt": str(b.gc2_amt) if b.gc2_amt is not None else "0",
                 "currency_tc": b.currency_tc,
                 "posting_count": b.posting_count,
             }

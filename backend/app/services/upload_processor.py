@@ -129,6 +129,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         raise ValueError("No file associated with this batch")
 
     batch.status = "validating"
+    db.execute(sa_delete(UploadError).where(UploadError.batch_id == batch.id))
     db.commit()
 
     try:
