@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'astro';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8180';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8180';
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const url = new URL(context.request.url);

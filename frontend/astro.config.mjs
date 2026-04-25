@@ -17,7 +17,7 @@ export default defineConfig({
     server: {
       proxy: {
         '/api': {
-          target: process.env.BACKEND_URL || 'http://localhost:8180',
+          target: process.env.BACKEND_URL || 'http://127.0.0.1:8180',
           changeOrigin: true,
         },
       },
