@@ -56,5 +56,6 @@ mlruns/
 mlartifacts/
 
 # Runtime
-.amplifi.pid
+.amplifi*.pid
 amplifi-backend.log
+amplifi-frontend.log

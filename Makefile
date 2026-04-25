@@ -9,7 +9,8 @@ ROOT_DIR := $(shell pwd)
 BACKEND_DIR := $(ROOT_DIR)/backend
 FRONTEND_DIR := $(ROOT_DIR)/frontend
 VENV := $(BACKEND_DIR)/.venv
-PID_FILE := $(ROOT_DIR)/.amplifi.pid
+BACKEND_PID := $(ROOT_DIR)/.amplifi-backend.pid
+FRONTEND_PID := $(ROOT_DIR)/.amplifi-frontend.pid
 
 # Load .env if present
 ifneq (,$(wildcard $(ROOT_DIR)/.env))
@@ -18,6 +19,7 @@ ifneq (,$(wildcard $(ROOT_DIR)/.env))
 endif
 
 BACKEND_PORT ?= 8180
+FRONTEND_PORT ?= 4321
 
 .DEFAULT_GOAL := help
 .PHONY: help start stop restart status setup update load-sample delete-sample seed logs git-setup
@@ -26,40 +28,73 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-start: ## Start the backend server
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "ampliFi is already running (PID $$(cat $(PID_FILE)))"; \
+start: ## Start backend + frontend
+	@echo "=== Starting ampliFi ==="
+	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
+		echo "Backend already running (PID $$(cat $(BACKEND_PID)))"; \
 	else \
 		cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
 		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) \
 			> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
-		echo $$! > $(PID_FILE) && \
-		echo "ampliFi started on port $(BACKEND_PORT) (PID $$!)"; \
+		echo $$! > $(BACKEND_PID) && \
+		echo "[ok] Backend started on port $(BACKEND_PORT) (PID $$!)"; \
 	fi
-
-stop: ## Stop the backend server
-	@if [ -f $(PID_FILE) ]; then \
-		PID=$$(cat $(PID_FILE)); \
-		if kill -0 $$PID 2>/dev/null; then \
-			kill $$PID && echo "ampliFi stopped (PID $$PID)"; \
+	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
+		if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then \
+			echo "Frontend already running (PID $$(cat $(FRONTEND_PID)))"; \
 		else \
-			echo "ampliFi was not running (stale PID file)"; \
+			cd $(FRONTEND_DIR) && \
+			nohup npm run dev > $(ROOT_DIR)/amplifi-frontend.log 2>&1 & \
+			echo $$! > $(FRONTEND_PID) && \
+			echo "[ok] Frontend started on port $(FRONTEND_PORT) (PID $$!)"; \
 		fi; \
-		rm -f $(PID_FILE); \
 	else \
-		echo "ampliFi is not running (no PID file)"; \
+		echo "[skip] Frontend not found (no frontend/package.json)"; \
 	fi
 
-restart: stop start ## Restart the backend server
+stop: ## Stop backend + frontend
+	@echo "=== Stopping ampliFi ==="
+	@if [ -f $(BACKEND_PID) ]; then \
+		PID=$$(cat $(BACKEND_PID)); \
+		if kill -0 $$PID 2>/dev/null; then \
+			kill $$PID && echo "[ok] Backend stopped (PID $$PID)"; \
+		else \
+			echo "[ok] Backend was not running (stale PID)"; \
+		fi; \
+		rm -f $(BACKEND_PID); \
+	else \
+		echo "[ok] Backend not running"; \
+	fi
+	@if [ -f $(FRONTEND_PID) ]; then \
+		PID=$$(cat $(FRONTEND_PID)); \
+		if kill -0 $$PID 2>/dev/null; then \
+			kill $$PID && echo "[ok] Frontend stopped (PID $$PID)"; \
+		else \
+			echo "[ok] Frontend was not running (stale PID)"; \
+		fi; \
+		rm -f $(FRONTEND_PID); \
+	else \
+		echo "[ok] Frontend not running"; \
+	fi
 
-status: ## Show whether the backend is running
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "ampliFi is running (PID $$(cat $(PID_FILE)), port $(BACKEND_PORT))"; \
+restart: stop ## Restart backend + frontend
+	@sleep 1
+	@$(MAKE) start
+
+status: ## Show whether backend + frontend are running
+	@echo "=== ampliFi Status ==="
+	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
+		echo "Backend:  running (PID $$(cat $(BACKEND_PID)), port $(BACKEND_PORT))"; \
 		curl -s http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || true; \
 		echo ""; \
 	else \
-		echo "ampliFi is not running"; \
+		echo "Backend:  not running"; \
+	fi
+	@if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then \
+		echo "Frontend: running (PID $$(cat $(FRONTEND_PID)), port $(FRONTEND_PORT))"; \
+	else \
+		echo "Frontend: not running"; \
 	fi
 
 setup: ## Initial setup: create venv, install deps, create DB tables, seed data
