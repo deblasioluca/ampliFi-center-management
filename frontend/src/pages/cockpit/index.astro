@@ -57,6 +57,12 @@ import Layout from '../../components/layout/Layout.astro';
 </Layout>
 
 <script>
+  function escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   async function loadWaves() {
     try {
       const resp = await fetch('/api/waves');
@@ -71,12 +77,21 @@ import Layout from '../../components/layout/Layout.astro';
         el.textContent = 'No waves yet. Create one from Admin.';
         return;
       }
-      el.innerHTML = data.items
-        .map((w: any) => `<a href="/cockpit/${w.id}" class="block p-2 rounded hover:bg-amplifi-50">
-          <span class="font-medium">${w.code}</span>
-          <span class="text-xs text-gray-400 ml-1">${w.status}</span>
-        </a>`)
-        .join('');
+      el.innerHTML = '';
+      for (const w of data.items) {
+        const link = document.createElement('a');
+        link.href = `/cockpit/${w.id}`;
+        link.className = 'block p-2 rounded hover:bg-amplifi-50';
+        const code = document.createElement('span');
+        code.className = 'font-medium';
+        code.textContent = w.code;
+        const status = document.createElement('span');
+        status.className = 'text-xs text-gray-400 ml-1';
+        status.textContent = w.status;
+        link.appendChild(code);
+        link.appendChild(status);
+        el.appendChild(link);
+      }
     } catch {
       document.getElementById('wave-list')!.textContent = 'Unable to load';
     }

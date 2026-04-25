@@ -22,7 +22,10 @@ def list_entities(
     query = select(Entity).order_by(Entity.ccode)
     if country:
         query = query.where(Entity.country == country)
-    total = db.execute(select(func.count(Entity.id))).scalar() or 0
+    total_q = select(func.count(Entity.id))
+    if country:
+        total_q = total_q.where(Entity.country == country)
+    total = db.execute(total_q).scalar() or 0
     entities = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
         "total": total,
@@ -58,6 +61,12 @@ def list_legacy_ccs(
     if cctr:
         query = query.where(LegacyCostCenter.cctr.ilike(f"{cctr}%"))
     total_q = select(func.count(LegacyCostCenter.id))
+    if ccode:
+        total_q = total_q.where(LegacyCostCenter.ccode == ccode)
+    if coarea:
+        total_q = total_q.where(LegacyCostCenter.coarea == coarea)
+    if cctr:
+        total_q = total_q.where(LegacyCostCenter.cctr.ilike(f"{cctr}%"))
     total = db.execute(total_q).scalar() or 0
     ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
@@ -87,7 +96,10 @@ def list_legacy_pcs(
     query = select(LegacyProfitCenter)
     if ccode:
         query = query.where(LegacyProfitCenter.ccode == ccode)
-    total = db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0
+    total_q = select(func.count(LegacyProfitCenter.id))
+    if ccode:
+        total_q = total_q.where(LegacyProfitCenter.ccode == ccode)
+    total = db.execute(total_q).scalar() or 0
     pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
         "total": total,

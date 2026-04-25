@@ -64,7 +64,10 @@ def list_waves(
     query = select(Wave).order_by(Wave.created_at.desc())
     if status:
         query = query.where(Wave.status == status)
-    total = db.execute(select(func.count(Wave.id))).scalar() or 0
+    total_q = select(func.count(Wave.id))
+    if status:
+        total_q = total_q.where(Wave.status == status)
+    total = db.execute(total_q).scalar() or 0
     waves = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     items = []
     for w in waves:
@@ -111,7 +114,10 @@ def create_wave(
             db.add(WaveEntity(wave_id=wave.id, entity_id=entity.id))
     db.commit()
     db.refresh(wave)
-    ec = len(body.entity_ccodes)
+    ec = (
+        db.execute(select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == wave.id)).scalar()
+        or 0
+    )
     return WaveOut(
         id=wave.id,
         code=wave.code,
