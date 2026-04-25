@@ -19,7 +19,7 @@ endif
 
 BACKEND_PORT ?= 8180
 
-.PHONY: help start stop restart status setup update load-sample delete-sample seed logs
+.PHONY: help start stop restart status setup update load-sample delete-sample seed logs git-setup
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -126,3 +126,15 @@ seed: ## Run full seed (admin user + sample data + routines)
 
 logs: ## Tail the backend log
 	@tail -f $(ROOT_DIR)/amplifi-backend.log
+
+git-setup: ## Configure Git credentials (run once — prompts for GitHub username + PAT)
+	@echo "=== Git Credential Setup ==="
+	@echo "This stores your GitHub credentials so git pull works without prompting."
+	@echo "Create a PAT at: https://github.com/settings/tokens/new (select 'repo' scope)"
+	@echo ""
+	@read -p "GitHub username: " GH_USER && \
+		read -sp "GitHub PAT: " GH_PAT && echo "" && \
+		git config --global credential.helper store && \
+		echo "https://$$GH_USER:$$GH_PAT@github.com" > ~/.git-credentials && \
+		chmod 600 ~/.git-credentials && \
+		echo "[ok] Git credentials stored. git pull will now work without prompting."
