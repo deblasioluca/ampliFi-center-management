@@ -97,6 +97,7 @@ from app.api import admin as admin_router  # noqa: E402
 from app.api import auth as auth_router  # noqa: E402
 from app.api import chat as chat_router  # noqa: E402
 from app.api import configs as configs_router  # noqa: E402
+from app.api import data_management as data_mgmt_router  # noqa: E402
 from app.api import housekeeping as housekeeping_router  # noqa: E402
 from app.api import reference as reference_router  # noqa: E402
 from app.api import review as review_router  # noqa: E402
@@ -114,3 +115,4 @@ app.include_router(reference_router.router, prefix="/api", tags=["reference"])
 app.include_router(stats_router.router, prefix="/api/stats", tags=["stats"])
 app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 app.include_router(housekeeping_router.router, prefix="/api", tags=["housekeeping"])
+app.include_router(data_mgmt_router.router, prefix="/api/data", tags=["data-management"])
