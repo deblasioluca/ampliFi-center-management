@@ -501,7 +501,10 @@ def rollback_upload_batch(
 ) -> dict:
     from app.services.upload_processor import rollback_upload
 
-    return rollback_upload(batch_id, db)
+    try:
+        return rollback_upload(batch_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @router.get("/uploads/{batch_id}/errors")

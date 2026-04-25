@@ -328,8 +328,12 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not row.get("cctr"):
                 continue
             pr = row.get("period_raw", "")
-            fy = int(pr[:4]) if pr and len(pr) == 6 else 0
-            per = int(pr[4:]) if pr and len(pr) == 6 else 0
+            try:
+                fy = int(pr[:4]) if pr and len(pr) == 6 else 0
+                per = int(pr[4:]) if pr and len(pr) == 6 else 0
+            except (ValueError, TypeError):
+                fy = 0
+                per = 0
             try:
                 tc = Decimal(row.get("tc_amt", "0") or "0")
             except InvalidOperation:
