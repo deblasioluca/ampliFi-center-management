@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.infra.db.session import get_db
 from app.models.core import (
+    Balance,
     Entity,
     LegacyCostCenter,
     LegacyProfitCenter,
@@ -36,6 +37,8 @@ def global_stats(db: Session = Depends(get_db)) -> dict:
     )
     target_cc = db.execute(select(func.count(TargetCostCenter.id))).scalar() or 0
     target_pc = db.execute(select(func.count(TargetProfitCenter.id))).scalar() or 0
+    waves_total = db.execute(select(func.count(Wave.id))).scalar() or 0
+    balances_total = db.execute(select(func.count(Balance.id))).scalar() or 0
     return {
         "universe": {
             "entities_total": entities_total,
@@ -43,6 +46,8 @@ def global_stats(db: Session = Depends(get_db)) -> dict:
             "legacy_pc_total": legacy_pc_total,
             "target_cc_total": target_cc,
             "target_pc_total": target_pc,
+            "waves_total": waves_total,
+            "balances_total": balances_total,
         },
     }
 

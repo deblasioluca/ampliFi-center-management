@@ -160,7 +160,7 @@ import Layout from '../../components/layout/Layout.astro';
           document.getElementById('cnt-pc').textContent = (data.profit_centers || 0).toLocaleString();
           document.getElementById('cnt-balances').textContent = (data.balances || 0).toLocaleString();
           document.getElementById('cnt-hierarchies').textContent = (data.hierarchies || 0).toLocaleString();
-          document.getElementById('cnt-uploads').textContent = (data.uploads || 0).toLocaleString();
+          document.getElementById('cnt-uploads').textContent = (data.upload_batches || 0).toLocaleString();
         })
         .catch(function() {});
     }
