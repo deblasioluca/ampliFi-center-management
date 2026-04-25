@@ -13,14 +13,4 @@ export default defineConfig({
     port: parseInt(process.env.FRONTEND_PORT || '4321'),
     host: '0.0.0.0',
   },
-  vite: {
-    server: {
-      proxy: {
-        '/api': {
-          target: process.env.BACKEND_URL || 'http://127.0.0.1:8180',
-          changeOrigin: true,
-        },
-      },
-    },
-  },
 });
