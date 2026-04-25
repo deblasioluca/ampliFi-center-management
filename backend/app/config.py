@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = 20
 
     # --- redis ---
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
 
     # --- auth ---
     app_secret_key: SecretStr = SecretStr("change-me-in-production-please")
@@ -78,8 +78,8 @@ class Settings(BaseSettings):
     s3_bucket: str = "amplifi-cleanup"
 
     # --- celery ---
-    celery_broker_url: str = "redis://localhost:6379/1"
-    celery_result_backend: str = "redis://localhost:6379/2"
+    celery_broker_url: str = "redis://localhost:6380/1"
+    celery_result_backend: str = "redis://localhost:6380/2"
 
     # --- CORS ---
     cors_allowed_origins: str = (

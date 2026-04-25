@@ -113,6 +113,11 @@ def update_user(
     user = db.get(AppUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.id == _user.id:
+        if body.is_active is not None and not body.is_active:
+            raise HTTPException(status_code=409, detail="Cannot deactivate your own account")
+        if body.role is not None and body.role != "admin":
+            raise HTTPException(status_code=409, detail="Cannot demote your own account")
     if body.display_name is not None:
         user.display_name = body.display_name
     if body.role is not None:
@@ -133,6 +138,8 @@ def delete_user(
     user = db.get(AppUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.id == _user.id:
+        raise HTTPException(status_code=409, detail="Cannot deactivate your own account")
     user.is_active = False
     db.commit()
     return {"status": "deactivated"}
