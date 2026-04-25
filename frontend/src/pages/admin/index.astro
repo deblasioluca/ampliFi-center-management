@@ -310,8 +310,8 @@ import Layout from '../../components/layout/Layout.astro';
               try {
                 var res = await fetch('/api/admin/sap/' + id + '/test', { method: 'POST', headers: authHdr });
                 var data = await res.json();
-                resultEl.textContent = data.status === 'ok' ? 'Connection successful' : 'Failed: ' + (data.detail || data.error || JSON.stringify(data));
-                resultEl.className = 'text-xs mt-2 ' + (data.status === 'ok' ? 'text-green-600' : 'text-red-600');
+                resultEl.textContent = data.success ? 'Connection successful (' + (data.latency_ms || '?') + 'ms)' : 'Failed: ' + (data.detail || data.error || JSON.stringify(data));
+                resultEl.className = 'text-xs mt-2 ' + (data.success ? 'text-green-600' : 'text-red-600');
               } catch(e) {
                 resultEl.textContent = 'Error: ' + e.message;
                 resultEl.className = 'text-xs mt-2 text-red-600';

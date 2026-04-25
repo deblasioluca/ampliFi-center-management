@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+import uuid
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
@@ -306,7 +309,8 @@ def create_upload(
     storage_dir = pathlib.Path(settings.storage_local_path) / "uploads"
     storage_dir.mkdir(parents=True, exist_ok=True)
     fname = pathlib.Path(file.filename or "unknown").name  # strip directory components
-    dest = storage_dir / fname
+    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_"
+    dest = storage_dir / (unique_prefix + fname)
     if not dest.resolve().is_relative_to(storage_dir.resolve()):
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)

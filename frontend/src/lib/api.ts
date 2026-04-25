@@ -129,8 +129,8 @@ export const adminConfig = {
 // Admin - Routines
 export const adminRoutines = {
   list: () => request<{ total: number; items: unknown[] }>('/admin/routines'),
-  update: (code: string, data: unknown) =>
-    request(`/admin/routines/${code}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  update: (code: string, data: { enabled: boolean }) =>
+    request(`/admin/routines/${code}?enabled=${data.enabled}`, { method: 'PATCH' }),
 };
 
 // Admin - Audit
