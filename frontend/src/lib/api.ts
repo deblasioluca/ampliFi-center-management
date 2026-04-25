@@ -1,96 +1,205 @@
 /**
  * Centralised API client for the ampliFi cleanup backend.
- * All JSON keys use camelCase per spec convention.
  */
 
 const API_BASE = import.meta.env.PUBLIC_API_URL || '/api';
 
-interface RequestOptions {
-  method?: string;
-  body?: unknown;
-  headers?: Record<string, string>;
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('amplifi_token');
 }
 
-interface PaginatedResponse<T> {
-  total: number;
-  page: number;
-  size: number;
-  items: T[];
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {} } = opts;
-  const url = `${API_BASE}${path}`;
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (typeof window === 'undefined') return {} as T;
 
-  const token = typeof localStorage !== 'undefined'
-    ? localStorage.getItem('access_token')
-    : null;
-
-  const finalHeaders: Record<string, string> = {
-    ...headers,
-    'X-Requested-With': 'XMLHttpRequest',
+  const headers: Record<string, string> = {
+    ...authHeaders(),
+    ...(options.headers as Record<string, string> || {}),
   };
-  if (token) {
-    finalHeaders['Authorization'] = `Bearer ${token}`;
-  }
-  if (body && !finalHeaders['Content-Type']) {
-    finalHeaders['Content-Type'] = 'application/json';
+
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
   }
 
-  const resp = await fetch(url, {
-    method,
-    headers: finalHeaders,
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: 'include',
-  });
+  const url = `${API_BASE}${path}`;
+  let res: Response;
 
-  if (!resp.ok) {
-    const detail = await resp.text();
-    throw new Error(`API ${method} ${path} failed (${resp.status}): ${detail}`);
+  try {
+    res = await fetch(url, { ...options, headers, credentials: 'include' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Network error: ${url} — ${msg}`);
   }
 
-  return resp.json() as Promise<T>;
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('amplifi_token');
+      localStorage.removeItem('amplifi_user');
+      window.location.href = '/login';
+    }
+    throw new Error('Unauthorized');
+  }
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body.detail || '';
+    } catch { /* ignore */ }
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+
+  return res.json();
 }
 
-export const api = {
-  // Auth
+// Auth
+export const auth = {
   login: (email: string, password: string) =>
     request<{ access_token: string }>('/auth/login', {
-      method: 'POST', body: { email, password },
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
     }),
-  me: () => request<{ id?: number; email?: string; role?: string; authenticated?: boolean }>('/auth/me'),
+  me: () => request<{ id: number; email: string; display_name: string; role: string }>('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
+};
 
-  // Health
+// Health
+export const health = {
   healthz: () => request<{ status: string }>('/healthz'),
   readyz: () => request<{ status: string; checks: Record<string, string> }>('/readyz'),
+};
 
-  // Stats
-  globalStats: () => request('/stats/global'),
+// Stats
+export const stats = {
+  global: () => request<Record<string, unknown>>('/stats/global'),
+  wave: (waveId: number) => request<Record<string, unknown>>(`/stats/wave/${waveId}`),
+};
 
-  // Waves
-  listWaves: (page = 1, size = 100) =>
-    request<PaginatedResponse<unknown>>(`/waves?page=${page}&size=${size}`),
-  createWave: (data: unknown) =>
-    request('/waves', { method: 'POST', body: data }),
-  getWave: (id: number) => request(`/waves/${id}`),
+// Waves
+export const waves = {
+  list: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/waves?page=${page}&size=${size}`),
+  create: (data: unknown) =>
+    request('/waves', { method: 'POST', body: JSON.stringify(data) }),
+  get: (id: number) => request(`/waves/${id}`),
+  cancel: (id: number) => request(`/waves/${id}/cancel`, { method: 'POST' }),
+  progress: (id: number) => request(`/waves/${id}/progress`),
+};
 
-  // SAP
-  listSAPConnections: () => request<unknown[]>('/admin/sap'),
-  createSAPConnection: (data: unknown) =>
-    request('/admin/sap', { method: 'POST', body: data }),
-  testSAPConnection: (id: number) =>
-    request(`/admin/sap/${id}/test`, { method: 'POST' }),
+// Admin - Users
+export const adminUsers = {
+  list: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/admin/users?page=${page}&size=${size}`),
+  create: (data: { email: string; display_name: string; password: string; role?: string }) =>
+    request('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+  get: (id: number) => request(`/admin/users/${id}`),
+  update: (id: number, data: { display_name?: string; role?: string; is_active?: boolean }) =>
+    request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: number) => request(`/admin/users/${id}`, { method: 'DELETE' }),
+};
 
-  // Users
-  listUsers: (page = 1) => request(`/admin/users?page=${page}`),
+// Admin - SAP Connections
+export const adminSAP = {
+  list: () => request<unknown[]>('/admin/sap'),
+  create: (data: unknown) => request('/admin/sap', { method: 'POST', body: JSON.stringify(data) }),
+  get: (id: number) => request(`/admin/sap/${id}`),
+  test: (id: number) => request(`/admin/sap/${id}/test`, { method: 'POST' }),
+};
 
-  // Uploads
-  listUploads: () => request('/admin/uploads'),
+// Admin - Uploads
+export const adminUploads = {
+  list: () => request<unknown[]>('/admin/uploads'),
+  upload: (formData: FormData) =>
+    request('/admin/uploads', { method: 'POST', body: formData }),
+};
 
-  // Configs
-  listConfigs: () => request('/configs'),
+// Admin - Config
+export const adminConfig = {
+  get: (key: string) => request<{ key: string; value: Record<string, unknown> }>(`/admin/config/${key}`),
+  set: (key: string, value: Record<string, unknown>) =>
+    request(`/admin/config/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+};
 
-  // Entities
-  listEntities: (page = 1) => request(`/entities?page=${page}`),
+// Admin - Routines
+export const adminRoutines = {
+  list: () => request<{ total: number; items: unknown[] }>('/admin/routines'),
+  update: (code: string, data: unknown) =>
+    request(`/admin/routines/${code}`, { method: 'PATCH', body: JSON.stringify(data) }),
+};
+
+// Admin - Audit
+export const adminAudit = {
+  list: (page = 1, size = 50) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/admin/audit?page=${page}&size=${size}`),
+};
+
+// Admin - Jobs
+export const adminJobs = {
+  list: (page = 1) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/admin/jobs?page=${page}`),
+};
+
+// Admin - Sample Data
+export const adminSampleData = {
+  generate: () => request('/admin/sample-data', { method: 'POST' }),
+  delete: () => request('/admin/sample-data', { method: 'DELETE' }),
+  status: () => request<Record<string, unknown>>('/admin/sample-data'),
+};
+
+// Data Management
+export const dataManagement = {
+  counts: () => request<Record<string, number>>('/data/counts'),
+  purgeAll: () => request('/data/purge-all', { method: 'DELETE' }),
+  deleteEntities: (ids: number[]) =>
+    request('/data/entities', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  deleteAllEntities: () => request('/data/entities/all', { method: 'DELETE' }),
+  deleteCostCenters: (ids: number[]) =>
+    request('/data/legacy/cost-centers', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  deleteAllCostCenters: () => request('/data/legacy/cost-centers/all', { method: 'DELETE' }),
+  deleteProfitCenters: (ids: number[]) =>
+    request('/data/legacy/profit-centers', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  deleteAllProfitCenters: () => request('/data/legacy/profit-centers/all', { method: 'DELETE' }),
+  deleteBalances: (filters: Record<string, unknown>) =>
+    request('/data/balances', { method: 'DELETE', body: JSON.stringify(filters) }),
+  deleteAllBalances: () => request('/data/balances/all', { method: 'DELETE' }),
+};
+
+// Reference Data
+export const reference = {
+  entities: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/entities?page=${page}&size=${size}`),
+  costCenters: (page = 1, size = 100, entity_id?: number) => {
+    let url = `/legacy/cost-centers?page=${page}&size=${size}`;
+    if (entity_id) url += `&entity_id=${entity_id}`;
+    return request<{ total: number; page: number; size: number; items: unknown[] }>(url);
+  },
+  profitCenters: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/legacy/profit-centers?page=${page}&size=${size}`),
+  hierarchies: (page = 1, size = 100) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/legacy/hierarchies?page=${page}&size=${size}`),
+};
+
+// Configs (analysis routines)
+export const configs = {
+  list: () => request<unknown[]>('/configs'),
+  get: (code: string) => request(`/configs/${code}`),
+};
+
+// Review (end-user)
+export const review = {
+  getScope: (token: string) => request(`/review/${token}`),
+  getItems: (token: string, page = 1, size = 50) =>
+    request<{ total: number; page: number; size: number; items: unknown[] }>(`/review/${token}/items?page=${page}&size=${size}`),
+  decide: (token: string, itemId: number, data: { decision: string; comment?: string }) =>
+    request(`/review/${token}/items/${itemId}/decide`, { method: 'POST', body: JSON.stringify(data) }),
+  bulkDecide: (token: string, data: { item_ids: number[]; decision: string; comment?: string }) =>
+    request(`/review/${token}/items/bulk-decide`, { method: 'POST', body: JSON.stringify(data) }),
+  complete: (token: string) =>
+    request(`/review/${token}/complete`, { method: 'POST' }),
 };

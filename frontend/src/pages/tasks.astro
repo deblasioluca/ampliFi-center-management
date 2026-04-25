@@ -1,0 +1,231 @@
+---
+import Layout from '../components/layout/Layout.astro';
+---
+
+<Layout title="My Tasks" requireAuth={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">My Tasks</h1>
+    <p class="text-sm text-gray-500 mt-1">Review your assigned cost centers, request changes, and approve proposals</p>
+  </div>
+
+  <!-- Info banner when no review token -->
+  <div id="no-review" class="card mb-6">
+    <div class="flex items-start gap-4">
+      <svg class="w-8 h-8 text-amplifi-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">No Active Review Scope</h3>
+        <p class="text-sm text-gray-500 mt-1">
+          You don't have an active review assignment right now. When a wave is in the review phase,
+          you'll receive a review link with a personal token. Enter it below to access your scope.
+        </p>
+        <div class="mt-4 flex gap-3 items-end">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Review Token</label>
+            <input type="text" id="review-token" class="input" placeholder="Paste your review token here..." />
+          </div>
+          <button id="load-review-btn" class="btn-amplifi whitespace-nowrap">Load Review</button>
+        </div>
+        <div id="token-error" class="text-sm text-red-600 mt-2 hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review scope (shown when token loaded) -->
+  <div id="review-scope" class="hidden">
+    <!-- Scope summary -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="card">
+        <h4 class="text-sm font-medium text-gray-500">Wave</h4>
+        <p id="scope-wave" class="text-lg font-bold text-gray-900 mt-1">--</p>
+      </div>
+      <div class="card">
+        <h4 class="text-sm font-medium text-gray-500">Total Items</h4>
+        <p id="scope-total" class="text-lg font-bold text-gray-900 mt-1">--</p>
+      </div>
+      <div class="card">
+        <h4 class="text-sm font-medium text-gray-500">Decided</h4>
+        <p id="scope-decided" class="text-lg font-bold text-green-600 mt-1">--</p>
+      </div>
+      <div class="card">
+        <h4 class="text-sm font-medium text-gray-500">Pending</h4>
+        <p id="scope-pending" class="text-lg font-bold text-amber-600 mt-1">--</p>
+      </div>
+    </div>
+
+    <!-- Review items table -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">Review Items</h2>
+        <div class="flex gap-2">
+          <button id="approve-all-btn" class="btn-success text-xs">Approve All Pending</button>
+          <button id="complete-review-btn" class="btn-primary text-xs">Complete Review</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200">
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Cost Center</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Entity</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Proposal</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Target</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Status</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="review-items">
+            <tr><td colspan="6" class="py-8 text-center text-gray-400">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="review-pagination" class="mt-4 flex justify-center gap-2"></div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+  (function() {
+    var currentToken = localStorage.getItem('amplifi_review_token') || '';
+    var currentPage = 1;
+
+    function authHeaders() {
+      var t = localStorage.getItem('amplifi_token');
+      return t ? { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    async function loadScope(token) {
+      try {
+        var res = await fetch('/api/review/' + token, { headers: authHeaders() });
+        if (!res.ok) throw new Error((await res.json().catch(function(){return {};})).detail || 'Invalid token');
+        var data = await res.json();
+        document.getElementById('no-review').classList.add('hidden');
+        document.getElementById('review-scope').classList.remove('hidden');
+        document.getElementById('scope-wave').textContent = data.wave_code || data.wave_id || '--';
+        document.getElementById('scope-total').textContent = (data.total_items || 0).toLocaleString();
+        document.getElementById('scope-decided').textContent = (data.decided_count || 0).toLocaleString();
+        document.getElementById('scope-pending').textContent = ((data.total_items || 0) - (data.decided_count || 0)).toLocaleString();
+        localStorage.setItem('amplifi_review_token', token);
+        currentToken = token;
+        loadItems(token, 1);
+      } catch(err) {
+        document.getElementById('token-error').textContent = err.message;
+        document.getElementById('token-error').classList.remove('hidden');
+      }
+    }
+
+    async function loadItems(token, page) {
+      currentPage = page;
+      var tbody = document.getElementById('review-items');
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">Loading...</td></tr>';
+      try {
+        var res = await fetch('/api/review/' + token + '/items?page=' + page + '&size=20', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Failed to load items');
+        var data = await res.json();
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">No items found</td></tr>';
+          return;
+        }
+        data.items.forEach(function(item) {
+          var tr = document.createElement('tr');
+          tr.className = 'border-b border-gray-100 hover:bg-gray-50';
+          var decided = item.stakeholder_decision && item.stakeholder_decision !== 'pending';
+          tr.innerHTML =
+            '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(item.legacy_cc_code || item.cc_code || '--') + '</td>' +
+            '<td class="py-2 px-3">' + escapeHtml(item.entity_name || '--') + '</td>' +
+            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded bg-amplifi-50 text-amplifi-700">' + escapeHtml(item.cleansing_action || '--') + '</span></td>' +
+            '<td class="py-2 px-3">' + escapeHtml(item.target_cc_code || item.mapping_target || '--') + '</td>' +
+            '<td class="py-2 px-3">' + (decided
+              ? '<span class="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">' + escapeHtml(item.stakeholder_decision) + '</span>'
+              : '<span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700">pending</span>') + '</td>' +
+            '<td class="py-2 px-3">' + (decided ? '<span class="text-xs text-gray-400">Done</span>' :
+              '<button data-id="' + item.id + '" data-action="APPROVE" class="decide-btn text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 mr-1">Approve</button>' +
+              '<button data-id="' + item.id + '" data-action="REJECT" class="decide-btn text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">Reject</button>') + '</td>';
+          tbody.appendChild(tr);
+        });
+
+        // Click handlers
+        tbody.querySelectorAll('.decide-btn').forEach(function(btn) {
+          btn.addEventListener('click', async function() {
+            var itemId = this.getAttribute('data-id');
+            var decision = this.getAttribute('data-action');
+            try {
+              await fetch('/api/review/' + currentToken + '/items/' + itemId + '/decide', {
+                method: 'POST', headers: authHeaders(),
+                body: JSON.stringify({ decision: decision })
+              });
+              loadItems(currentToken, currentPage);
+              loadScope(currentToken);
+            } catch(e) { alert('Failed: ' + e.message); }
+          });
+        });
+
+        // Pagination
+        var pag = document.getElementById('review-pagination');
+        pag.innerHTML = '';
+        var totalPages = Math.ceil((data.total || 0) / 20);
+        for (var p = 1; p <= totalPages; p++) {
+          var btn = document.createElement('button');
+          btn.textContent = p;
+          btn.className = p === page ? 'btn-amplifi text-xs px-3 py-1' : 'btn-secondary text-xs px-3 py-1';
+          btn.setAttribute('data-page', p);
+          btn.addEventListener('click', function() { loadItems(currentToken, parseInt(this.getAttribute('data-page'))); });
+          pag.appendChild(btn);
+        }
+      } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-red-500">' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    // Load review button
+    document.getElementById('load-review-btn').addEventListener('click', function() {
+      var token = document.getElementById('review-token').value.trim();
+      if (!token) return;
+      document.getElementById('token-error').classList.add('hidden');
+      loadScope(token);
+    });
+
+    // Approve all pending
+    document.getElementById('approve-all-btn').addEventListener('click', async function() {
+      if (!confirm('Approve all pending items?')) return;
+      try {
+        var res = await fetch('/api/review/' + currentToken + '/items?page=1&size=9999', { headers: authHeaders() });
+        var data = await res.json();
+        var pendingIds = (data.items || []).filter(function(i) { return !i.stakeholder_decision || i.stakeholder_decision === 'pending'; }).map(function(i) { return i.id; });
+        if (pendingIds.length === 0) { alert('No pending items'); return; }
+        await fetch('/api/review/' + currentToken + '/items/bulk-decide', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ item_ids: pendingIds, decision: 'APPROVE' })
+        });
+        loadScope(currentToken);
+      } catch(e) { alert('Failed: ' + e.message); }
+    });
+
+    // Complete review
+    document.getElementById('complete-review-btn').addEventListener('click', async function() {
+      if (!confirm('Complete this review? This cannot be undone.')) return;
+      try {
+        await fetch('/api/review/' + currentToken + '/complete', { method: 'POST', headers: authHeaders() });
+        alert('Review completed successfully!');
+        localStorage.removeItem('amplifi_review_token');
+        window.location.reload();
+      } catch(e) { alert('Failed: ' + e.message); }
+    });
+
+    // Auto-load if token saved
+    if (currentToken) {
+      document.getElementById('review-token').value = currentToken;
+      loadScope(currentToken);
+    }
+  })();
+</script>

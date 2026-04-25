@@ -17,6 +17,20 @@ export default {
           900: '#0a3f6f',
           950: '#06284a',
         },
+        navy: {
+          900: '#1a1a2e',
+          800: '#16213e',
+          700: '#0f3460',
+        },
+        status: {
+          success: '#22c55e',
+          warning: '#eab308',
+          error: '#ef4444',
+          info: '#3b82f6',
+        },
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },

@@ -10,10 +10,11 @@
     "typecheck": "astro check && tsc --noEmit"
   },
   "dependencies": {
-    "astro": "^4.5.0",
+    "@astrojs/check": "^0.9.8",
     "@astrojs/node": "^8.2.0",
     "@astrojs/react": "^3.1.0",
     "@astrojs/tailwind": "^5.1.0",
+    "astro": "^4.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.12.0",
@@ -22,10 +23,10 @@
   "devDependencies": {
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "typescript": "^5.4.0",
-    "eslint": "^8.57.0",
-    "@typescript-eslint/parser": "^7.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "prettier": "^3.2.0"
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.9.3"
   }
 }

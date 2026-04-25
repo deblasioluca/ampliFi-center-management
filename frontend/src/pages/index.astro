@@ -2,111 +2,136 @@
 import Layout from '../components/layout/Layout.astro';
 ---
 
-<Layout title="ampliFi Center Management">
-  <div class="min-h-screen bg-gray-50">
-    <header class="bg-amplifi-700 text-white shadow-lg">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <h1 class="text-2xl font-bold tracking-tight">ampliFi</h1>
-          <span class="text-amplifi-200 text-sm">Center Management</span>
-        </div>
-        <nav class="flex gap-4 text-sm">
-          <a href="/cockpit" class="hover:text-amplifi-200 transition-colors">Cockpit</a>
-          <a href="/admin" class="hover:text-amplifi-200 transition-colors">Admin</a>
-        </nav>
-      </div>
-    </header>
+<Layout title="Dashboard" requireAuth={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+    <p class="text-sm text-gray-500 mt-1">ampliFi Center Management overview</p>
+  </div>
 
-    <main class="max-w-7xl mx-auto px-4 py-8">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-sm font-medium text-gray-500">System Status</h3>
-          <div id="health-status" class="mt-2 text-2xl font-bold text-gray-900">Checking...</div>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-sm font-medium text-gray-500">Legacy Cost Centers</h3>
-          <div id="cc-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-sm font-medium text-gray-500">Entities</h3>
-          <div id="entity-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-sm font-medium text-gray-500">Active Waves</h3>
-          <div id="wave-count" class="mt-2 text-2xl font-bold text-gray-900">—</div>
-        </div>
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="card">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-medium text-gray-500">System Status</h3>
+        <span id="health-dot" class="status-dot bg-gray-300"></span>
       </div>
+      <div id="health-status" class="mt-2 text-2xl font-bold text-gray-900">Checking...</div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-medium text-gray-500">Legacy Cost Centers</h3>
+      <div id="cc-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-medium text-gray-500">Entities</h3>
+      <div id="entity-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-medium text-gray-500">Active Waves</h3>
+      <div id="wave-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    </div>
+  </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white rounded-lg shadow p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div class="space-y-3">
-            <a href="/wave/new" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
-              <span class="font-medium text-amplifi-700">Create New Wave</span>
-              <p class="text-sm text-gray-500 mt-1">Start a new analysis wave with selected entities</p>
-            </a>
-            <a href="/admin/uploads" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
-              <span class="font-medium text-amplifi-700">Upload Data</span>
-              <p class="text-sm text-gray-500 mt-1">Upload cost centers, profit centers, balances, hierarchies</p>
-            </a>
-            <a href="/admin/sap" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
-              <span class="font-medium text-amplifi-700">SAP Connections</span>
-              <p class="text-sm text-gray-500 mt-1">Configure and test SAP system connections</p>
-            </a>
-          </div>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">System Info</h2>
-          <div id="system-info" class="space-y-2 text-sm text-gray-600">
-            Loading...
-          </div>
-        </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Quick Actions -->
+    <div class="card">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+      <div class="space-y-3">
+        <a href="/tasks" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
+          <span class="font-medium text-amplifi-700">My Tasks</span>
+          <p class="text-sm text-gray-500 mt-1">Review your assigned scope and approve proposals</p>
+        </a>
+        <a href="/cockpit" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-cockpit">
+          <span class="font-medium text-amplifi-700">Cockpit</span>
+          <p class="text-sm text-gray-500 mt-1">Analysis overview, wave progress, and status</p>
+        </a>
+        <a href="/data" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-data">
+          <span class="font-medium text-amplifi-700">Data Management</span>
+          <p class="text-sm text-gray-500 mt-1">Upload cost centers, profit centers, hierarchies</p>
+        </a>
+        <a href="/admin" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-admin">
+          <span class="font-medium text-amplifi-700">Administration</span>
+          <p class="text-sm text-gray-500 mt-1">Users, SAP connections, configuration</p>
+        </a>
       </div>
-    </main>
+    </div>
+
+    <!-- System Info -->
+    <div class="card">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">System Info</h2>
+      <div id="system-info" class="space-y-2 text-sm text-gray-600">
+        Loading...
+      </div>
+    </div>
   </div>
 </Layout>
 
-<script>
-  async function loadDashboard() {
-    const apiBase = '/api';
+<script is:inline>
+  (function() {
+    // Hide admin-only quick actions for non-admin users
     try {
-      const health = await fetch(`${apiBase}/healthz`).then(r => r.json());
-      const el = document.getElementById('health-status');
-      if (el) el.textContent = health.status === 'ok' ? 'Online' : 'Degraded';
-      if (el) el.classList.add(health.status === 'ok' ? 'text-green-600' : 'text-red-600');
-    } catch {
-      const el = document.getElementById('health-status');
-      if (el) { el.textContent = 'Offline'; el.classList.add('text-red-600'); }
-    }
+      var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+      if (ud.role !== 'admin') {
+        ['qa-cockpit', 'qa-data', 'qa-admin'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+      }
+    } catch(e) {}
 
-    try {
-      const ready = await fetch(`${apiBase}/readyz`).then(r => r.json());
-      const info = document.getElementById('system-info');
-      if (info) {
+    var token = localStorage.getItem('amplifi_token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+    // Health check
+    fetch('/api/healthz', { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var el = document.getElementById('health-status');
+        var dot = document.getElementById('health-dot');
+        if (el) {
+          el.textContent = data.status === 'ok' ? 'Online' : 'Degraded';
+          el.className = 'mt-2 text-2xl font-bold ' + (data.status === 'ok' ? 'text-green-600' : 'text-red-600');
+        }
+        if (dot) dot.className = 'status-dot ' + (data.status === 'ok' ? 'bg-green-500' : 'bg-red-500');
+      })
+      .catch(function() {
+        var el = document.getElementById('health-status');
+        if (el) { el.textContent = 'Offline'; el.className = 'mt-2 text-2xl font-bold text-red-600'; }
+      });
+
+    // Readiness
+    fetch('/api/readyz', { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var info = document.getElementById('system-info');
+        if (!info) return;
         info.innerHTML = '';
-        for (const [k, v] of Object.entries(ready.checks || {})) {
-          const row = document.createElement('div');
+        var checks = data.checks || {};
+        for (var k in checks) {
+          var row = document.createElement('div');
           row.className = 'flex justify-between';
-          const label = document.createElement('span');
-          label.textContent = k as string;
-          const value = document.createElement('span');
-          value.className = `${(v as string) === 'ok' ? 'text-green-600' : 'text-red-600'} font-medium`;
-          value.textContent = v as string;
+          var label = document.createElement('span');
+          label.textContent = k;
+          var value = document.createElement('span');
+          value.className = 'font-medium ' + (checks[k] === 'ok' ? 'text-green-600' : 'text-red-600');
+          value.textContent = checks[k];
           row.appendChild(label);
           row.appendChild(value);
           info.appendChild(row);
         }
-      }
-    } catch { /* ignore */ }
+      })
+      .catch(function() {});
 
-    try {
-      const stats = await fetch(`${apiBase}/stats/global`).then(r => r.json());
-      const ccEl = document.getElementById('cc-count');
-      const entEl = document.getElementById('entity-count');
-      if (ccEl) ccEl.textContent = (stats.universe?.legacy_cc_total ?? 0).toLocaleString();
-      if (entEl) entEl.textContent = (stats.universe?.entities_total ?? 0).toLocaleString();
-    } catch { /* ignore */ }
-  }
-
-  loadDashboard();
+    // Stats
+    fetch('/api/stats/global', { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var ccEl = document.getElementById('cc-count');
+        var entEl = document.getElementById('entity-count');
+        var waveEl = document.getElementById('wave-count');
+        if (ccEl) ccEl.textContent = ((data.universe && data.universe.legacy_cc_total) || 0).toLocaleString();
+        if (entEl) entEl.textContent = ((data.universe && data.universe.entities_total) || 0).toLocaleString();
+        if (waveEl) waveEl.textContent = ((data.universe && data.universe.waves_total) || 0).toLocaleString();
+      })
+      .catch(function() {});
+  })();
 </script>

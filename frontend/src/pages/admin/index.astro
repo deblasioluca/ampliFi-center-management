@@ -2,58 +2,513 @@
 import Layout from '../../components/layout/Layout.astro';
 ---
 
-<Layout title="Admin — ampliFi">
-  <div class="min-h-screen bg-gray-50">
-    <header class="bg-amplifi-700 text-white shadow-lg">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <a href="/" class="text-2xl font-bold tracking-tight hover:text-amplifi-200">ampliFi</a>
-          <span class="text-amplifi-200 text-sm">Admin</span>
+<Layout title="Administration" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Administration</h1>
+    <p class="text-sm text-gray-500 mt-1">User management, SAP connections, LLM configuration, and system settings</p>
+  </div>
+
+  <div class="flex gap-6">
+    <!-- Sidebar -->
+    <div class="w-56 flex-shrink-0">
+      <nav class="card p-3 space-y-1" id="admin-sidebar">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">Authorization</p>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm bg-amplifi-50 text-amplifi-700 font-medium" data-tab="users">Users</button>
+
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 px-2">Systems</p>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="sap">SAP Connections</button>
+
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 px-2">Configuration</p>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="llm">LLM Settings</button>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="config">App Config</button>
+
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 px-2">Operations</p>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="routines">Routines</button>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="jobs">Jobs</button>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="audit">Audit Log</button>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="health">System Health</button>
+      </nav>
+    </div>
+
+    <!-- Main content area -->
+    <div class="flex-1 min-w-0">
+      <!-- Users Tab -->
+      <div id="panel-users" class="card">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold">Users</h2>
+          <button id="new-user-btn" class="btn-amplifi text-xs">+ New User</button>
         </div>
-        <nav class="flex gap-4 text-sm">
-          <a href="/" class="hover:text-amplifi-200">Home</a>
-          <a href="/cockpit" class="hover:text-amplifi-200">Cockpit</a>
-        </nav>
-      </div>
-    </header>
 
-    <main class="max-w-7xl mx-auto px-4 py-8">
-      <h2 class="text-2xl font-bold text-gray-900 mb-6">Administration</h2>
+        <!-- New user form -->
+        <div id="new-user-form" class="hidden mb-4 p-4 bg-gray-50 rounded-lg">
+          <h3 class="text-sm font-semibold mb-3">Create User</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Email</label>
+              <input type="email" id="nu-email" class="input text-sm" placeholder="user@example.com" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Display Name</label>
+              <input type="text" id="nu-name" class="input text-sm" placeholder="Full name" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Password</label>
+              <input type="password" id="nu-pass" class="input text-sm" placeholder="Password" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Role</label>
+              <select id="nu-role" class="input text-sm">
+                <option value="analyst">Analyst</option>
+                <option value="admin">Admin</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button id="save-user-btn" class="btn-amplifi text-xs">Create</button>
+            <button id="cancel-user-btn" class="btn-secondary text-xs">Cancel</button>
+          </div>
+          <div id="user-form-error" class="text-xs text-red-600 mt-2 hidden"></div>
+        </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <a href="/admin/users" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Users</h3>
-          <p class="text-sm text-gray-500 mt-2">Manage user accounts, roles, and permissions</p>
-        </a>
-        <a href="/admin/sap" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">SAP Connections</h3>
-          <p class="text-sm text-gray-500 mt-2">Configure and test SAP system connections</p>
-        </a>
-        <a href="/admin/uploads" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Data Uploads</h3>
-          <p class="text-sm text-gray-500 mt-2">Upload cost centers, profit centers, balances</p>
-        </a>
-        <a href="/admin/config" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Configuration</h3>
-          <p class="text-sm text-gray-500 mt-2">Database, LLM, email settings</p>
-        </a>
-        <a href="/admin/routines" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Routines</h3>
-          <p class="text-sm text-gray-500 mt-2">Manage analysis routines and plugins</p>
-        </a>
-        <a href="/admin/audit" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Audit Log</h3>
-          <p class="text-sm text-gray-500 mt-2">View system activity and change history</p>
-        </a>
-        <a href="/admin/housekeeping" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Housekeeping</h3>
-          <p class="text-sm text-gray-500 mt-2">Monthly cleanup cycles for unused centers</p>
-        </a>
-        <a href="/admin/jobs" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
-          <h3 class="text-lg font-semibold text-amplifi-700">Jobs</h3>
-          <p class="text-sm text-gray-500 mt-2">Background task monitoring</p>
-        </a>
+        <div id="users-table" class="text-sm">Loading...</div>
       </div>
-    </main>
+
+      <!-- SAP Connections Tab -->
+      <div id="panel-sap" class="card hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold">SAP Connections</h2>
+          <button id="new-sap-btn" class="btn-amplifi text-xs">+ New Connection</button>
+        </div>
+
+        <div id="new-sap-form" class="hidden mb-4 p-4 bg-gray-50 rounded-lg">
+          <h3 class="text-sm font-semibold mb-3">Add SAP Connection</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="block text-xs text-gray-500 mb-1">Name</label><input type="text" id="sap-name" class="input text-sm" placeholder="S4H" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">System Type</label>
+              <select id="sap-type" class="input text-sm">
+                <option value="S/4HANA">S/4HANA</option>
+                <option value="ECC">ECC</option>
+                <option value="BW">BW</option>
+              </select>
+            </div>
+            <div><label class="block text-xs text-gray-500 mb-1">Base URL</label><input type="text" id="sap-url" class="input text-sm" placeholder="https://host:port" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Client</label><input type="text" id="sap-client" class="input text-sm" value="100" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Username</label><input type="text" id="sap-user" class="input text-sm" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Password</label><input type="password" id="sap-pass" class="input text-sm" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Description</label><input type="text" id="sap-desc" class="input text-sm" /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Landscape Type</label><input type="text" id="sap-landscape" class="input text-sm" placeholder="DEV/QAS/PRD" /></div>
+          </div>
+          <div class="flex items-center gap-4 mt-3">
+            <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="sap-verify-ssl" checked /> Verify SSL</label>
+            <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="sap-saml2" /> SAML2 Disabled</label>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button id="save-sap-btn" class="btn-amplifi text-xs">Save</button>
+            <button id="cancel-sap-btn" class="btn-secondary text-xs">Cancel</button>
+          </div>
+          <div id="sap-form-error" class="text-xs text-red-600 mt-2 hidden"></div>
+        </div>
+
+        <div id="sap-table" class="text-sm">Loading...</div>
+      </div>
+
+      <!-- LLM Settings Tab -->
+      <div id="panel-llm" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">LLM Settings</h2>
+        <p class="text-xs text-gray-500 mb-4">Configure the Language Model provider for AI-assisted analysis and classification.</p>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+            <select id="llm-provider" class="input">
+              <option value="openai">OpenAI</option>
+              <option value="azure_openai">Azure OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="none">None (disabled)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+            <input type="password" id="llm-api-key" class="input" placeholder="sk-..." />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+            <input type="text" id="llm-model" class="input" placeholder="gpt-4o" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Endpoint (Azure only)</label>
+            <input type="text" id="llm-endpoint" class="input" placeholder="https://your-resource.openai.azure.com/" />
+          </div>
+          <button id="save-llm-btn" class="btn-amplifi">Save LLM Config</button>
+          <div id="llm-result" class="text-sm hidden"></div>
+        </div>
+      </div>
+
+      <!-- App Config Tab -->
+      <div id="panel-config" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">Application Configuration</h2>
+        <p class="text-xs text-gray-500 mb-4">Key-value settings stored in the database. Use JSON values.</p>
+        <div class="space-y-3">
+          <div class="flex gap-3">
+            <input type="text" id="cfg-key" class="input flex-1" placeholder="Config key (e.g. email.smtp_host)" />
+            <button id="load-cfg-btn" class="btn-secondary text-xs">Load</button>
+          </div>
+          <textarea id="cfg-value" rows="6" class="input font-mono text-xs" placeholder='{"key": "value"}'></textarea>
+          <div class="flex gap-2">
+            <button id="save-cfg-btn" class="btn-amplifi text-xs">Save</button>
+          </div>
+          <div id="cfg-result" class="text-sm hidden"></div>
+        </div>
+      </div>
+
+      <!-- Routines Tab -->
+      <div id="panel-routines" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">Analysis Routines</h2>
+        <div id="routines-table" class="text-sm">Loading...</div>
+      </div>
+
+      <!-- Jobs Tab -->
+      <div id="panel-jobs" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">Background Jobs</h2>
+        <div id="jobs-table" class="text-sm">Loading...</div>
+      </div>
+
+      <!-- Audit Log Tab -->
+      <div id="panel-audit" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">Audit Log</h2>
+        <div id="audit-table" class="text-sm">Loading...</div>
+      </div>
+
+      <!-- System Health Tab -->
+      <div id="panel-health" class="card hidden">
+        <h2 class="text-lg font-semibold mb-4">System Health</h2>
+        <div id="health-info" class="text-sm">Loading...</div>
+      </div>
+    </div>
   </div>
 </Layout>
+
+<script is:inline>
+  (function() {
+    var token = localStorage.getItem('amplifi_token');
+    var authHdr = token ? { 'Authorization': 'Bearer ' + token } : {};
+    var jsonHdr = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // Sidebar tab switching
+    var allTabs = ['users', 'sap', 'llm', 'config', 'routines', 'jobs', 'audit', 'health'];
+    document.querySelectorAll('.admin-tab').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var tab = this.getAttribute('data-tab');
+        document.querySelectorAll('.admin-tab').forEach(function(b) {
+          b.className = 'admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50';
+        });
+        this.className = 'admin-tab w-full text-left px-3 py-2 rounded text-sm bg-amplifi-50 text-amplifi-700 font-medium';
+        allTabs.forEach(function(t) {
+          var panel = document.getElementById('panel-' + t);
+          if (panel) panel.classList.toggle('hidden', t !== tab);
+        });
+      });
+    });
+
+    // ---- Users ----
+    function loadUsers() {
+      fetch('/api/admin/users?page=1&size=100', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('users-table');
+          var items = data.items || [];
+          if (items.length === 0) { el.textContent = 'No users.'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Name</th>' +
+            '<th class="text-left py-2 px-2">Role</th><th class="text-left py-2 px-2">Active</th>' +
+            '<th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
+          items.forEach(function(u) {
+            html += '<tr class="border-b border-gray-100">' +
+              '<td class="py-2 px-2">' + escapeHtml(u.email) + '</td>' +
+              '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
+              '<td class="py-2 px-2"><span class="text-xs px-2 py-0.5 rounded ' +
+                (u.role === 'admin' ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-600') + '">' + escapeHtml(u.role) + '</span></td>' +
+              '<td class="py-2 px-2">' + (u.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td>' +
+              '<td class="py-2 px-2"><button class="deactivate-user text-xs text-red-600 hover:text-red-800" data-id="' + u.id + '">Deactivate</button></td></tr>';
+          });
+          html += '</tbody></table>';
+          el.innerHTML = html;
+          el.querySelectorAll('.deactivate-user').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+              if (!confirm('Deactivate this user?')) return;
+              await fetch('/api/admin/users/' + this.getAttribute('data-id'), { method: 'DELETE', headers: authHdr });
+              loadUsers();
+            });
+          });
+        })
+        .catch(function() { document.getElementById('users-table').textContent = 'Unable to load'; });
+    }
+    loadUsers();
+
+    document.getElementById('new-user-btn').addEventListener('click', function() {
+      document.getElementById('new-user-form').classList.toggle('hidden');
+    });
+    document.getElementById('cancel-user-btn').addEventListener('click', function() {
+      document.getElementById('new-user-form').classList.add('hidden');
+    });
+    document.getElementById('save-user-btn').addEventListener('click', async function() {
+      var errEl = document.getElementById('user-form-error');
+      errEl.classList.add('hidden');
+      try {
+        var res = await fetch('/api/admin/users', {
+          method: 'POST', headers: jsonHdr,
+          body: JSON.stringify({
+            email: document.getElementById('nu-email').value,
+            display_name: document.getElementById('nu-name').value,
+            password: document.getElementById('nu-pass').value,
+            role: document.getElementById('nu-role').value,
+          })
+        });
+        if (!res.ok) { var b = await res.json(); throw new Error(b.detail || 'Failed'); }
+        document.getElementById('new-user-form').classList.add('hidden');
+        loadUsers();
+      } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
+    });
+
+    // ---- SAP Connections ----
+    function loadSAP() {
+      fetch('/api/admin/sap', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('sap-table');
+          var items = Array.isArray(data) ? data : (data.items || []);
+          if (items.length === 0) { el.textContent = 'No SAP connections configured.'; return; }
+          var html = '<div class="space-y-3">';
+          items.forEach(function(s) {
+            html += '<div class="p-3 border rounded-lg">' +
+              '<div class="flex items-center justify-between">' +
+                '<div><span class="font-semibold">' + escapeHtml(s.name) + '</span>' +
+                ' <span class="text-xs bg-gray-100 px-2 py-0.5 rounded ml-1">' + escapeHtml(s.system_type) + '</span></div>' +
+                '<button class="test-sap text-xs px-3 py-1 bg-amplifi-50 text-amplifi-700 rounded hover:bg-amplifi-100" data-id="' + s.id + '">Test</button>' +
+              '</div>' +
+              '<p class="text-xs text-gray-500 mt-1">' + escapeHtml(s.base_url) + ' | Client ' + escapeHtml(s.client) + '</p>' +
+              (s.description ? '<p class="text-xs text-gray-400 mt-1">' + escapeHtml(s.description) + '</p>' : '') +
+              '<div id="sap-test-' + s.id + '" class="text-xs mt-2 hidden"></div>' +
+            '</div>';
+          });
+          html += '</div>';
+          el.innerHTML = html;
+          el.querySelectorAll('.test-sap').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+              var id = this.getAttribute('data-id');
+              var resultEl = document.getElementById('sap-test-' + id);
+              resultEl.textContent = 'Testing...';
+              resultEl.className = 'text-xs mt-2 text-gray-500';
+              resultEl.classList.remove('hidden');
+              try {
+                var res = await fetch('/api/admin/sap/' + id + '/test', { method: 'POST', headers: authHdr });
+                var data = await res.json();
+                resultEl.textContent = data.status === 'ok' ? 'Connection successful' : 'Failed: ' + (data.detail || data.error || JSON.stringify(data));
+                resultEl.className = 'text-xs mt-2 ' + (data.status === 'ok' ? 'text-green-600' : 'text-red-600');
+              } catch(e) {
+                resultEl.textContent = 'Error: ' + e.message;
+                resultEl.className = 'text-xs mt-2 text-red-600';
+              }
+            });
+          });
+        })
+        .catch(function() { document.getElementById('sap-table').textContent = 'Unable to load'; });
+    }
+    loadSAP();
+
+    document.getElementById('new-sap-btn').addEventListener('click', function() {
+      document.getElementById('new-sap-form').classList.toggle('hidden');
+    });
+    document.getElementById('cancel-sap-btn').addEventListener('click', function() {
+      document.getElementById('new-sap-form').classList.add('hidden');
+    });
+    document.getElementById('save-sap-btn').addEventListener('click', async function() {
+      var errEl = document.getElementById('sap-form-error');
+      errEl.classList.add('hidden');
+      try {
+        var res = await fetch('/api/admin/sap', {
+          method: 'POST', headers: jsonHdr,
+          body: JSON.stringify({
+            name: document.getElementById('sap-name').value,
+            system_type: document.getElementById('sap-type').value,
+            base_url: document.getElementById('sap-url').value,
+            client: document.getElementById('sap-client').value,
+            username: document.getElementById('sap-user').value,
+            password: document.getElementById('sap-pass').value,
+            description: document.getElementById('sap-desc').value,
+            landscape_type: document.getElementById('sap-landscape').value,
+            verify_ssl: document.getElementById('sap-verify-ssl').checked,
+            saml2_disabled: document.getElementById('sap-saml2').checked,
+          })
+        });
+        if (!res.ok) { var b = await res.json(); throw new Error(b.detail || 'Failed'); }
+        document.getElementById('new-sap-form').classList.add('hidden');
+        loadSAP();
+      } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
+    });
+
+    // ---- LLM Settings ----
+    (function loadLLM() {
+      fetch('/api/admin/config/llm', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var cfg = data.value || {};
+          if (cfg.provider) document.getElementById('llm-provider').value = cfg.provider;
+          if (cfg.api_key) document.getElementById('llm-api-key').value = cfg.api_key;
+          if (cfg.model) document.getElementById('llm-model').value = cfg.model;
+          if (cfg.endpoint) document.getElementById('llm-endpoint').value = cfg.endpoint;
+        })
+        .catch(function() {});
+    })();
+
+    document.getElementById('save-llm-btn').addEventListener('click', async function() {
+      var resultEl = document.getElementById('llm-result');
+      try {
+        await fetch('/api/admin/config/llm', {
+          method: 'PUT', headers: jsonHdr,
+          body: JSON.stringify({ value: {
+            provider: document.getElementById('llm-provider').value,
+            api_key: document.getElementById('llm-api-key').value,
+            model: document.getElementById('llm-model').value,
+            endpoint: document.getElementById('llm-endpoint').value,
+          }})
+        });
+        resultEl.textContent = 'LLM config saved.';
+        resultEl.className = 'text-sm text-green-600';
+        resultEl.classList.remove('hidden');
+      } catch(e) {
+        resultEl.textContent = 'Error: ' + e.message;
+        resultEl.className = 'text-sm text-red-600';
+        resultEl.classList.remove('hidden');
+      }
+    });
+
+    // ---- Config ----
+    document.getElementById('load-cfg-btn').addEventListener('click', async function() {
+      var key = document.getElementById('cfg-key').value.trim();
+      if (!key) return;
+      try {
+        var res = await fetch('/api/admin/config/' + encodeURIComponent(key), { headers: authHdr });
+        var data = await res.json();
+        document.getElementById('cfg-value').value = JSON.stringify(data.value || {}, null, 2);
+      } catch(e) {
+        document.getElementById('cfg-result').textContent = 'Error: ' + e.message;
+        document.getElementById('cfg-result').className = 'text-sm text-red-600';
+        document.getElementById('cfg-result').classList.remove('hidden');
+      }
+    });
+    document.getElementById('save-cfg-btn').addEventListener('click', async function() {
+      var key = document.getElementById('cfg-key').value.trim();
+      var resultEl = document.getElementById('cfg-result');
+      if (!key) return;
+      try {
+        var val = JSON.parse(document.getElementById('cfg-value').value);
+        await fetch('/api/admin/config/' + encodeURIComponent(key), {
+          method: 'PUT', headers: jsonHdr, body: JSON.stringify({ value: val })
+        });
+        resultEl.textContent = 'Saved.';
+        resultEl.className = 'text-sm text-green-600';
+        resultEl.classList.remove('hidden');
+      } catch(e) {
+        resultEl.textContent = 'Error: ' + e.message;
+        resultEl.className = 'text-sm text-red-600';
+        resultEl.classList.remove('hidden');
+      }
+    });
+
+    // ---- Routines ----
+    fetch('/api/admin/routines', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var el = document.getElementById('routines-table');
+        var items = data.items || (Array.isArray(data) ? data : []);
+        if (items.length === 0) { el.textContent = 'No routines configured.'; return; }
+        var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+          '<th class="text-left py-2 px-2">Code</th><th class="text-left py-2 px-2">Label</th>' +
+          '<th class="text-left py-2 px-2">Stage</th><th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
+        items.forEach(function(r) {
+          html += '<tr class="border-b border-gray-100">' +
+            '<td class="py-2 px-2 font-mono">' + escapeHtml(r.code) + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(r.label || r.name || '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(r.stage || '--') + '</td>' +
+            '<td class="py-2 px-2">' + (r.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      })
+      .catch(function() { document.getElementById('routines-table').textContent = 'Unable to load'; });
+
+    // ---- Jobs ----
+    fetch('/api/admin/jobs?page=1', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var el = document.getElementById('jobs-table');
+        var items = data.items || [];
+        if (items.length === 0) { el.textContent = 'No background jobs.'; return; }
+        var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+          '<th class="text-left py-2 px-2">ID</th><th class="text-left py-2 px-2">Type</th>' +
+          '<th class="text-left py-2 px-2">Status</th><th class="text-left py-2 px-2">Started</th></tr></thead><tbody>';
+        items.forEach(function(j) {
+          html += '<tr class="border-b border-gray-100">' +
+            '<td class="py-2 px-2">' + j.id + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(j.task_type || j.celery_task_id || '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(j.status || '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(j.started_at ? new Date(j.started_at).toLocaleString() : '--') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      })
+      .catch(function() { document.getElementById('jobs-table').textContent = 'Unable to load'; });
+
+    // ---- Audit Log ----
+    fetch('/api/admin/audit?page=1&size=50', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var el = document.getElementById('audit-table');
+        var items = data.items || [];
+        if (items.length === 0) { el.textContent = 'No audit entries.'; return; }
+        var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+          '<th class="text-left py-2 px-2">Time</th><th class="text-left py-2 px-2">User</th>' +
+          '<th class="text-left py-2 px-2">Action</th><th class="text-left py-2 px-2">Details</th></tr></thead><tbody>';
+        items.forEach(function(a) {
+          html += '<tr class="border-b border-gray-100">' +
+            '<td class="py-2 px-2">' + escapeHtml(a.created_at ? new Date(a.created_at).toLocaleString() : '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(a.user_email || a.actor || '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(a.action) + '</td>' +
+            '<td class="py-2 px-2 max-w-xs truncate">' + escapeHtml(typeof a.detail === 'string' ? a.detail : JSON.stringify(a.detail || '')) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      })
+      .catch(function() { document.getElementById('audit-table').textContent = 'Unable to load'; });
+
+    // ---- System Health ----
+    Promise.all([
+      fetch('/api/healthz', { headers: authHdr }).then(function(r) { return r.json(); }),
+      fetch('/api/readyz', { headers: authHdr }).then(function(r) { return r.json(); })
+    ]).then(function(results) {
+      var health = results[0];
+      var ready = results[1];
+      var el = document.getElementById('health-info');
+      var html = '<div class="space-y-4">';
+      html += '<div class="p-3 rounded-lg ' + (health.status === 'ok' ? 'bg-green-50' : 'bg-red-50') + '">';
+      html += '<span class="font-semibold ' + (health.status === 'ok' ? 'text-green-700' : 'text-red-700') + '">';
+      html += 'Health: ' + (health.status || 'unknown') + '</span></div>';
+      html += '<div class="space-y-2">';
+      var checks = ready.checks || {};
+      for (var k in checks) {
+        html += '<div class="flex justify-between py-1"><span>' + escapeHtml(k) + '</span>';
+        html += '<span class="font-medium ' + (checks[k] === 'ok' ? 'text-green-600' : 'text-red-600') + '">' + escapeHtml(checks[k]) + '</span></div>';
+      }
+      html += '</div></div>';
+      el.innerHTML = html;
+    }).catch(function() { document.getElementById('health-info').textContent = 'Unable to load'; });
+  })();
+</script>
