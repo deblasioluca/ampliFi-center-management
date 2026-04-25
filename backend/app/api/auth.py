@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -62,7 +62,7 @@ async def login(
 
 
 @router.post("/refresh")
-async def refresh(request_obj: Response, db: Session = Depends(get_db)) -> TokenResponse:
+async def refresh(request_obj: Request, db: Session = Depends(get_db)) -> TokenResponse:
     # This would normally read from the cookie
     return TokenResponse(access_token="")
 

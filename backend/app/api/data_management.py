@@ -265,8 +265,8 @@ def purge_all_data(
     user: AppUser = Depends(require_role("admin")),
 ) -> dict:
     counts: dict[str, int] = {}
-    db.execute(delete(UploadError))
-    counts["upload_errors"] = 0
+    r = db.execute(delete(UploadError))
+    counts["upload_errors"] = r.rowcount
     r = db.execute(delete(UploadBatch))
     counts["upload_batches"] = r.rowcount
     r = db.execute(delete(Balance))
