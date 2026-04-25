@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -51,7 +51,7 @@ def global_stats(db: Session = Depends(get_db)) -> dict:
 def wave_stats(wave_id: int, db: Session = Depends(get_db)) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
-        return {"error": "Wave not found"}
+        raise HTTPException(status_code=404, detail="Wave not found")
     return {
         "wave_id": wave.id,
         "code": wave.code,

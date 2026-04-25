@@ -21,6 +21,15 @@ def _require_user(user: AppUser | None = Depends(get_current_user)) -> AppUser:
     return user
 
 
+def _get_user_thread(thread_id: int, user: AppUser, db: Session) -> ChatThread:
+    thread = db.get(ChatThread, thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if thread.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your thread")
+    return thread
+
+
 class ThreadCreate(BaseModel):
     surface: str  # analyst|reviewer
     wave_id: int | None = None
@@ -57,9 +66,7 @@ def get_thread(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    thread = db.get(ChatThread, thread_id)
-    if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
+    thread = _get_user_thread(thread_id, user, db)
     messages = (
         db.execute(
             select(ChatMessage)
@@ -87,9 +94,7 @@ def send_message(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    thread = db.get(ChatThread, thread_id)
-    if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
+    thread = _get_user_thread(thread_id, user, db)
     msg = ChatMessage(thread_id=thread_id, role="user", content=body.content)
     db.add(msg)
     db.commit()
@@ -111,9 +116,7 @@ def pin_thread(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    thread = db.get(ChatThread, thread_id)
-    if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
+    thread = _get_user_thread(thread_id, user, db)
     thread.pinned = not thread.pinned
     db.commit()
     return {"pinned": thread.pinned}
@@ -125,9 +128,7 @@ def delete_thread(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    thread = db.get(ChatThread, thread_id)
-    if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found")
+    thread = _get_user_thread(thread_id, user, db)
     db.delete(thread)
     db.commit()
     return {"status": "deleted"}

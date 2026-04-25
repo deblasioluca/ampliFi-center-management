@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.auth.service import (
     authenticate_user,
     create_access_token,
     create_refresh_token,
+    decode_token,
 )
 from app.config import settings
 from app.infra.db.session import get_db
@@ -63,8 +64,18 @@ async def login(
 
 @router.post("/refresh")
 async def refresh(request_obj: Request, db: Session = Depends(get_db)) -> TokenResponse:
-    # This would normally read from the cookie
-    return TokenResponse(access_token="")
+    token = request_obj.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    payload = decode_token(token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    user_id = int(payload["sub"])
+    user = db.get(AppUser, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    access_token = create_access_token(user.id, user.role)
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/logout")
