@@ -1,0 +1,18 @@
+[Unit]
+Description=ampliFi Cleanup Celery Worker
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=macan
+Group=macan
+WorkingDirectory=/home/macan/Development/ampliFi-center-management/backend
+EnvironmentFile=/home/macan/Development/ampliFi-center-management/.env
+ExecStart=/home/macan/Development/ampliFi-center-management/backend/.venv/bin/celery -A app.workers.celery_app:celery worker -l info -Q default,ml,llm,email,odata
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

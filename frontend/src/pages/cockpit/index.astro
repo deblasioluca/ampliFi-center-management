@@ -1,0 +1,197 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Cockpit" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Cockpit</h1>
+    <p class="text-sm text-gray-500 mt-1">Wave analysis overview, progress tracking, and status monitoring</p>
+  </div>
+
+  <!-- Global Stats -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+    <div class="card">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Entities</h4>
+      <p id="stat-entities" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Centers</h4>
+      <p id="stat-cc" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Profit Centers</h4>
+      <p id="stat-pc" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Waves</h4>
+      <p id="stat-waves" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Balances</h4>
+      <p id="stat-balances" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- Sidebar: Wave selector -->
+    <div class="lg:col-span-1">
+      <div class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-gray-700">Waves</h3>
+          <button id="create-wave-btn" class="text-xs text-amplifi-600 hover:text-amplifi-800">+ New</button>
+        </div>
+        <div id="wave-list" class="space-y-2 text-sm">Loading waves...</div>
+      </div>
+
+      <!-- Create wave form (hidden by default) -->
+      <div id="new-wave-form" class="card mt-4 hidden">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">Create Wave</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Code</label>
+            <input type="text" id="wave-code" class="input text-sm" placeholder="e.g. WAVE-001" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Name</label>
+            <input type="text" id="wave-name" class="input text-sm" placeholder="Wave name" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Description</label>
+            <input type="text" id="wave-desc" class="input text-sm" placeholder="Description" />
+          </div>
+          <div class="flex gap-2">
+            <button id="save-wave-btn" class="btn-amplifi text-xs flex-1">Create</button>
+            <button id="cancel-wave-btn" class="btn-secondary text-xs">Cancel</button>
+          </div>
+          <div id="wave-error" class="text-xs text-red-600 hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content: wave details -->
+    <div class="lg:col-span-3 space-y-6">
+      <div id="wave-detail" class="card">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Wave Overview</h3>
+        <p class="text-gray-500">Select a wave to view its analysis results, proposals, and review status.</p>
+      </div>
+
+      <div id="wave-stats" class="hidden">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="card">
+            <h4 class="text-sm font-medium text-gray-500">Proposals</h4>
+            <p id="wd-proposals" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+          </div>
+          <div class="card">
+            <h4 class="text-sm font-medium text-gray-500">Reviews</h4>
+            <p id="wd-reviews" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+          </div>
+          <div class="card">
+            <h4 class="text-sm font-medium text-gray-500">Status</h4>
+            <p id="wd-status" class="text-2xl font-bold text-gray-900 mt-1">--</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+  (function() {
+    var token = localStorage.getItem('amplifi_token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // Global stats
+    fetch('/api/stats/global', { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var u = data.universe || {};
+        document.getElementById('stat-entities').textContent = (u.entities_total || 0).toLocaleString();
+        document.getElementById('stat-cc').textContent = (u.legacy_cc_total || 0).toLocaleString();
+        document.getElementById('stat-pc').textContent = (u.legacy_pc_total || 0).toLocaleString();
+        document.getElementById('stat-waves').textContent = (u.waves_total || 0).toLocaleString();
+        document.getElementById('stat-balances').textContent = (u.balances_total || 0).toLocaleString();
+      })
+      .catch(function() {});
+
+    // Waves list
+    function loadWaves() {
+      fetch('/api/waves?page=1&size=100', { headers: headers })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('wave-list');
+          if (!data.items || data.items.length === 0) {
+            el.textContent = 'No waves yet.';
+            return;
+          }
+          el.innerHTML = '';
+          data.items.forEach(function(w) {
+            var link = document.createElement('a');
+            link.href = '#';
+            link.className = 'block p-2 rounded hover:bg-amplifi-50 transition-colors';
+            link.setAttribute('data-id', w.id);
+            link.innerHTML = '<span class="font-medium">' + escapeHtml(w.code) + '</span>' +
+              '<span class="text-xs text-gray-400 ml-2">' + escapeHtml(w.status) + '</span>';
+            link.addEventListener('click', function(e) {
+              e.preventDefault();
+              loadWaveDetail(w.id, w);
+            });
+            el.appendChild(link);
+          });
+        })
+        .catch(function() {
+          document.getElementById('wave-list').textContent = 'Unable to load';
+        });
+    }
+    loadWaves();
+
+    function loadWaveDetail(waveId, waveData) {
+      var detail = document.getElementById('wave-detail');
+      detail.innerHTML =
+        '<h3 class="text-lg font-semibold text-gray-900 mb-2">' + escapeHtml(waveData.code) + '</h3>' +
+        '<p class="text-sm text-gray-500">' + escapeHtml(waveData.description || 'No description') + '</p>' +
+        '<div class="mt-3 flex gap-2">' +
+          '<span class="text-xs px-2 py-1 rounded bg-amplifi-50 text-amplifi-700">' + escapeHtml(waveData.status) + '</span>' +
+          '<span class="text-xs text-gray-400">Created: ' + escapeHtml(waveData.created_at ? new Date(waveData.created_at).toLocaleDateString() : '--') + '</span>' +
+        '</div>';
+      document.getElementById('wave-stats').classList.remove('hidden');
+
+      fetch('/api/stats/wave/' + waveId, { headers: headers })
+        .then(function(r) { return r.json(); })
+        .then(function(s) {
+          document.getElementById('wd-proposals').textContent = (s.proposals_total || s.total_proposals || 0).toLocaleString();
+          document.getElementById('wd-reviews').textContent = (s.reviews_total || s.total_reviews || 0).toLocaleString();
+          document.getElementById('wd-status').textContent = s.status || waveData.status || '--';
+        })
+        .catch(function() {});
+    }
+
+    // Create wave toggle
+    document.getElementById('create-wave-btn').addEventListener('click', function() {
+      document.getElementById('new-wave-form').classList.toggle('hidden');
+    });
+    document.getElementById('cancel-wave-btn').addEventListener('click', function() {
+      document.getElementById('new-wave-form').classList.add('hidden');
+    });
+    document.getElementById('save-wave-btn').addEventListener('click', async function() {
+      var code = document.getElementById('wave-code').value.trim();
+      var name = document.getElementById('wave-name').value.trim();
+      var desc = document.getElementById('wave-desc').value.trim();
+      var errEl = document.getElementById('wave-error');
+      errEl.classList.add('hidden');
+      if (!code) { errEl.textContent = 'Code required'; errEl.classList.remove('hidden'); return; }
+      if (!name) { errEl.textContent = 'Name required'; errEl.classList.remove('hidden'); return; }
+      try {
+        var res = await fetch('/api/waves', { method: 'POST', headers: headers, body: JSON.stringify({ code: code, name: name, description: desc }) });
+        if (!res.ok) { var b = await res.json().catch(function(){return {};}); throw new Error(b.detail || 'Failed'); }
+        document.getElementById('new-wave-form').classList.add('hidden');
+        loadWaves();
+      } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
+    });
+  })();
+</script>

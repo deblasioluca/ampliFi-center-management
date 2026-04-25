@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900 font-sans min-h-screen;
+}
+
+.card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-100 p-6;
+}
+
+.card-hover {
+  @apply bg-white rounded-lg shadow-sm border border-gray-100 p-6 transition-shadow hover:shadow-md;
+}
+
+.input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md text-sm
+    focus:outline-none focus:ring-2 focus:ring-amplifi-500 focus:border-amplifi-500
+    placeholder:text-gray-400;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-md text-sm font-medium transition-colors
+    focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply btn bg-navy-900 text-white hover:bg-navy-800 focus:ring-navy-700;
+}
+
+.btn-secondary {
+  @apply btn bg-white text-gray-700 border border-gray-300
+    hover:bg-gray-50 focus:ring-amplifi-500;
+}
+
+.btn-amplifi {
+  @apply btn bg-amplifi-600 text-white hover:bg-amplifi-700 focus:ring-amplifi-500;
+}
+
+.btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+}
+
+.btn-success {
+  @apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+}
+
+.tab {
+  @apply px-4 py-2 text-sm font-medium border-b-2 border-transparent
+    text-gray-500 hover:text-gray-700 hover:border-gray-300
+    transition-colors cursor-pointer;
+}
+
+.tab-active {
+  @apply px-4 py-2 text-sm font-medium border-b-2 border-amplifi-600 text-amplifi-700
+    cursor-pointer;
+}
+
+.status-dot {
+  @apply inline-block w-2 h-2 rounded-full;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}

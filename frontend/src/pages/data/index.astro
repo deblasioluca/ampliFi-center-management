@@ -1,0 +1,375 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Data Management" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Data Management</h1>
+    <p class="text-sm text-gray-500 mt-1">Upload, browse, and manage cost centers, profit centers, balances, and hierarchies</p>
+  </div>
+
+  <!-- Data Counts -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Entities</h4>
+      <p id="cnt-entities" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Cost Centers</h4>
+      <p id="cnt-cc" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Profit Centers</h4>
+      <p id="cnt-pc" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Balances</h4>
+      <p id="cnt-balances" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Hierarchies</h4>
+      <p id="cnt-hierarchies" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Uploads</h4>
+      <p id="cnt-uploads" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
+    <div class="flex space-x-0" id="data-tabs">
+      <button class="tab-active px-4 py-3" data-tab="upload">Upload</button>
+      <button class="tab px-4 py-3" data-tab="entities">Entities</button>
+      <button class="tab px-4 py-3" data-tab="cost-centers">Cost Centers</button>
+      <button class="tab px-4 py-3" data-tab="profit-centers">Profit Centers</button>
+      <button class="tab px-4 py-3" data-tab="sample-data">Sample Data</button>
+    </div>
+  </div>
+
+  <!-- Tab Content -->
+  <div class="card rounded-t-none border-t-0">
+    <!-- Upload Tab -->
+    <div id="tab-upload">
+      <h3 class="text-base font-semibold mb-3">Upload Data File</h3>
+      <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files for cost centers, profit centers, balances, or hierarchies.</p>
+      <form id="upload-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+          <select id="upload-type" class="input">
+            <option value="cost_centers">Cost Centers</option>
+            <option value="profit_centers">Profit Centers</option>
+            <option value="balances">Balances</option>
+            <option value="hierarchies">Hierarchies</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
+          <input type="file" id="upload-file" accept=".csv,.xlsx,.xls" class="input" required />
+        </div>
+        <div class="flex gap-3">
+          <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
+        </div>
+        <div id="upload-result" class="text-sm hidden"></div>
+      </form>
+
+      <!-- Upload History -->
+      <div class="mt-6 pt-6 border-t border-gray-200">
+        <h3 class="text-base font-semibold mb-3">Upload History</h3>
+        <div id="upload-history" class="text-sm text-gray-500">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Entities Tab -->
+    <div id="tab-entities" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Entities</h3>
+        <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
+      </div>
+      <div id="entities-table" class="text-sm text-gray-500">Loading...</div>
+    </div>
+
+    <!-- Cost Centers Tab -->
+    <div id="tab-cost-centers" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
+        <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
+      </div>
+      <div id="cc-table" class="text-sm text-gray-500">Loading...</div>
+    </div>
+
+    <!-- Profit Centers Tab -->
+    <div id="tab-profit-centers" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
+        <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
+      </div>
+      <div id="pc-table" class="text-sm text-gray-500">Loading...</div>
+    </div>
+
+    <!-- Sample Data Tab -->
+    <div id="tab-sample-data" class="hidden">
+      <h3 class="text-base font-semibold mb-3">Sample Data Management</h3>
+      <p class="text-xs text-gray-500 mb-4">Generate or delete sample data for testing. Sample data includes entities, cost centers, profit centers, balances, and hierarchy entries.</p>
+
+      <div id="sample-status" class="mb-4 p-3 bg-gray-50 rounded text-sm text-gray-600">Loading status...</div>
+
+      <div class="flex gap-3">
+        <button id="gen-sample-btn" class="btn-success">Generate Sample Data</button>
+        <button id="del-sample-btn" class="btn-danger">Delete Sample Data</button>
+      </div>
+      <div id="sample-result" class="text-sm mt-3 hidden"></div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+  (function() {
+    var token = localStorage.getItem('amplifi_token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
+    var authHdr = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // Tab switching
+    document.querySelectorAll('#data-tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var tab = this.getAttribute('data-tab');
+        document.querySelectorAll('#data-tabs button').forEach(function(b) {
+          b.className = 'tab px-4 py-3';
+        });
+        this.className = 'tab-active px-4 py-3';
+        ['upload', 'entities', 'cost-centers', 'profit-centers', 'sample-data'].forEach(function(t) {
+          var el = document.getElementById('tab-' + t);
+          if (el) el.classList.toggle('hidden', t !== tab);
+        });
+      });
+    });
+
+    // Load data counts
+    function loadCounts() {
+      fetch('/api/data/counts', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          document.getElementById('cnt-entities').textContent = (data.entities || 0).toLocaleString();
+          document.getElementById('cnt-cc').textContent = (data.cost_centers || 0).toLocaleString();
+          document.getElementById('cnt-pc').textContent = (data.profit_centers || 0).toLocaleString();
+          document.getElementById('cnt-balances').textContent = (data.balances || 0).toLocaleString();
+          document.getElementById('cnt-hierarchies').textContent = (data.hierarchies || 0).toLocaleString();
+          document.getElementById('cnt-uploads').textContent = (data.upload_batches || 0).toLocaleString();
+        })
+        .catch(function() {});
+    }
+    loadCounts();
+
+    // Upload form
+    document.getElementById('upload-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fileInput = document.getElementById('upload-file');
+      var type = document.getElementById('upload-type').value;
+      var resultEl = document.getElementById('upload-result');
+      resultEl.classList.add('hidden');
+
+      if (!fileInput.files[0]) return;
+      var formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      document.getElementById('upload-btn').disabled = true;
+      document.getElementById('upload-btn').textContent = 'Uploading...';
+
+      try {
+        var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
+          method: 'POST', headers: authHdr, body: formData
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+        resultEl.textContent = 'Upload successful: ' + (data.rows_imported || 'done');
+        resultEl.className = 'text-sm text-green-600';
+        resultEl.classList.remove('hidden');
+        loadCounts();
+        loadUploadHistory();
+      } catch(err) {
+        resultEl.textContent = 'Error: ' + err.message;
+        resultEl.className = 'text-sm text-red-600';
+        resultEl.classList.remove('hidden');
+      } finally {
+        document.getElementById('upload-btn').disabled = false;
+        document.getElementById('upload-btn').textContent = 'Upload';
+      }
+    });
+
+    // Upload history
+    function loadUploadHistory() {
+      fetch('/api/admin/uploads', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('upload-history');
+          var items = Array.isArray(data) ? data : (data.items || []);
+          if (items.length === 0) { el.textContent = 'No uploads yet.'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-1 px-2">Type</th><th class="text-left py-1 px-2">File</th>' +
+            '<th class="text-left py-1 px-2">Rows</th><th class="text-left py-1 px-2">Date</th></tr></thead><tbody>';
+          items.forEach(function(u) {
+            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2">' + escapeHtml(u.data_type || '--') +
+              '</td><td class="py-1 px-2">' + escapeHtml(u.file_name || '--') +
+              '</td><td class="py-1 px-2">' + (u.rows_imported || '--') +
+              '</td><td class="py-1 px-2">' + escapeHtml(u.created_at ? new Date(u.created_at).toLocaleDateString() : '--') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          el.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('upload-history').textContent = 'Unable to load'; });
+    }
+    loadUploadHistory();
+
+    // Entities table
+    function loadEntities() {
+      fetch('/api/entities?page=1&size=50', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('entities-table');
+          var items = data.items || [];
+          if (items.length === 0) { el.textContent = 'No entities.'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-1 px-2">ID</th><th class="text-left py-1 px-2">Code</th>' +
+            '<th class="text-left py-1 px-2">Name</th><th class="text-left py-1 px-2">Country</th></tr></thead><tbody>';
+          items.forEach(function(e) {
+            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2">' + e.id +
+              '</td><td class="py-1 px-2 font-mono">' + escapeHtml(e.code) +
+              '</td><td class="py-1 px-2">' + escapeHtml(e.name) +
+              '</td><td class="py-1 px-2">' + escapeHtml(e.country || '--') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
+          el.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('entities-table').textContent = 'Unable to load'; });
+    }
+    loadEntities();
+
+    // Cost centers table
+    function loadCC() {
+      fetch('/api/legacy/cost-centers?page=1&size=50', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('cc-table');
+          var items = data.items || [];
+          if (items.length === 0) { el.textContent = 'No cost centers.'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-1 px-2">Code</th><th class="text-left py-1 px-2">Name</th>' +
+            '<th class="text-left py-1 px-2">Entity</th><th class="text-left py-1 px-2">Category</th></tr></thead><tbody>';
+          items.forEach(function(c) {
+            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2 font-mono">' + escapeHtml(c.code) +
+              '</td><td class="py-1 px-2">' + escapeHtml(c.name || c.description || '--') +
+              '</td><td class="py-1 px-2">' + escapeHtml(c.entity_code || '--') +
+              '</td><td class="py-1 px-2">' + escapeHtml(c.category || '--') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
+          el.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('cc-table').textContent = 'Unable to load'; });
+    }
+    loadCC();
+
+    // Profit centers table
+    function loadPC() {
+      fetch('/api/legacy/profit-centers?page=1&size=50', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('pc-table');
+          var items = data.items || [];
+          if (items.length === 0) { el.textContent = 'No profit centers.'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-1 px-2">Code</th><th class="text-left py-1 px-2">Name</th>' +
+            '<th class="text-left py-1 px-2">Entity</th></tr></thead><tbody>';
+          items.forEach(function(p) {
+            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2 font-mono">' + escapeHtml(p.code) +
+              '</td><td class="py-1 px-2">' + escapeHtml(p.name || p.description || '--') +
+              '</td><td class="py-1 px-2">' + escapeHtml(p.entity_code || '--') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
+          el.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('pc-table').textContent = 'Unable to load'; });
+    }
+    loadPC();
+
+    // Delete all buttons
+    document.getElementById('delete-all-entities').addEventListener('click', async function() {
+      if (!confirm('Delete ALL entities? This cannot be undone.')) return;
+      await fetch('/api/data/entities/all', { method: 'DELETE', headers: authHdr });
+      loadCounts(); loadEntities();
+    });
+    document.getElementById('delete-all-cc').addEventListener('click', async function() {
+      if (!confirm('Delete ALL cost centers?')) return;
+      await fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr });
+      loadCounts(); loadCC();
+    });
+    document.getElementById('delete-all-pc').addEventListener('click', async function() {
+      if (!confirm('Delete ALL profit centers?')) return;
+      await fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr });
+      loadCounts(); loadPC();
+    });
+
+    // Sample data
+    function loadSampleStatus() {
+      fetch('/api/admin/sample-data', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('sample-status');
+          var parts = [];
+          for (var k in data) {
+            if (k !== 'status') parts.push(k + ': ' + data[k]);
+          }
+          el.textContent = parts.length > 0 ? parts.join(' | ') : 'No data counts available';
+        })
+        .catch(function() {});
+    }
+    loadSampleStatus();
+
+    document.getElementById('gen-sample-btn').addEventListener('click', async function() {
+      var resultEl = document.getElementById('sample-result');
+      this.disabled = true; this.textContent = 'Generating...';
+      try {
+        var res = await fetch('/api/admin/sample-data', { method: 'POST', headers: authHdr });
+        var data = await res.json();
+        resultEl.textContent = 'Generated: ' + JSON.stringify(data);
+        resultEl.className = 'text-sm text-green-600 mt-3';
+        resultEl.classList.remove('hidden');
+        loadCounts(); loadSampleStatus(); loadEntities(); loadCC(); loadPC();
+      } catch(e) {
+        resultEl.textContent = 'Error: ' + e.message;
+        resultEl.className = 'text-sm text-red-600 mt-3';
+        resultEl.classList.remove('hidden');
+      } finally {
+        this.disabled = false; this.textContent = 'Generate Sample Data';
+      }
+    });
+
+    document.getElementById('del-sample-btn').addEventListener('click', async function() {
+      if (!confirm('Delete all sample data?')) return;
+      var resultEl = document.getElementById('sample-result');
+      this.disabled = true; this.textContent = 'Deleting...';
+      try {
+        var res = await fetch('/api/admin/sample-data', { method: 'DELETE', headers: authHdr });
+        var data = await res.json();
+        resultEl.textContent = 'Deleted: ' + JSON.stringify(data);
+        resultEl.className = 'text-sm text-green-600 mt-3';
+        resultEl.classList.remove('hidden');
+        loadCounts(); loadSampleStatus(); loadEntities(); loadCC(); loadPC();
+      } catch(e) {
+        resultEl.textContent = 'Error: ' + e.message;
+        resultEl.className = 'text-sm text-red-600 mt-3';
+        resultEl.classList.remove('hidden');
+      } finally {
+        this.disabled = false; this.textContent = 'Delete Sample Data';
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,142 @@
+---
+import '../../styles/global.css';
+
+interface Props {
+  title: string;
+  requireAuth?: boolean;
+  adminOnly?: boolean;
+}
+
+const { title, requireAuth = false, adminOnly = false } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="ampliFi Cost & Profit Center Clean-Up" />
+    <title>{title} | ampliFi</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-navy-900 text-white shadow-lg sticky top-0 z-50">
+      <div class="max-w-screen-2xl mx-auto px-4">
+        <div class="flex items-center justify-between h-14">
+          <div class="flex items-center space-x-6">
+            <a href="/" class="flex items-center space-x-2 font-semibold text-lg">
+              <svg class="w-7 h-7 text-amplifi-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span>ampliFi</span>
+            </a>
+            <div class="w-px h-8 bg-white/20"></div>
+            <!-- Main Nav Links -->
+            <div class="hidden md:flex items-center space-x-1" id="main-nav">
+              <a href="/" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors">Dashboard</a>
+              <a href="/tasks" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors">My Tasks</a>
+              <a href="/cockpit" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-cockpit">Cockpit</a>
+              <a href="/data" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-data">Data</a>
+              <a href="/admin" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-admin">Admin</a>
+            </div>
+          </div>
+          <div class="flex items-center space-x-4">
+            <div id="user-menu" class="text-sm text-gray-300"></div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Sub-navigation (page-specific) -->
+    <slot name="subnav" />
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-screen-2xl mx-auto w-full px-4 py-6">
+      <slot />
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-auto">
+      <div class="max-w-screen-2xl mx-auto px-4 py-3">
+        <div class="flex items-center justify-between text-xs text-gray-400">
+          <span>ampliFi Center Management</span>
+          <span>&copy; {new Date().getFullYear()}</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Auth redirect script -->
+    {requireAuth && (
+      <script is:inline>
+        if (!localStorage.getItem('amplifi_token')) {
+          window.location.href = '/login';
+        }
+      </script>
+    )}
+
+    <!-- Admin-only redirect -->
+    {adminOnly && (
+      <script is:inline>
+        try {
+          var userData = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+          if (userData.role !== 'admin') {
+            window.location.href = '/';
+          }
+        } catch(e) { window.location.href = '/login'; }
+      </script>
+    )}
+
+    <!-- Role-based nav visibility + active link highlighting -->
+    <script is:inline>
+      (function() {
+        // User menu
+        var token = localStorage.getItem('amplifi_token');
+        var userMenu = document.getElementById('user-menu');
+        if (token && userMenu) {
+          try {
+            var userData = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+            var name = userData.display_name || userData.email || 'User';
+            var role = userData.role || 'user';
+            userMenu.innerHTML = '<span class="text-gray-400">' + name + '</span>' +
+              ' <span class="text-xs bg-white/10 px-2 py-0.5 rounded ml-1">' + role + '</span>' +
+              ' <button id="logout-btn" class="ml-3 text-gray-400 hover:text-white text-xs">Logout</button>';
+            document.getElementById('logout-btn').addEventListener('click', function() {
+              localStorage.removeItem('amplifi_token');
+              localStorage.removeItem('amplifi_user');
+              window.location.href = '/login';
+            });
+          } catch(e) {}
+        } else if (userMenu) {
+          userMenu.innerHTML = '<a href="/login" class="text-gray-300 hover:text-white text-sm">Login</a>';
+        }
+
+        // Hide admin-only nav items for non-admin users
+        try {
+          var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+          if (ud.role !== 'admin') {
+            var adminLinks = ['nav-cockpit', 'nav-data', 'nav-admin'];
+            adminLinks.forEach(function(id) {
+              var el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+          }
+        } catch(e) {}
+
+        // Active nav link highlighting
+        var path = window.location.pathname;
+        document.querySelectorAll('#main-nav .nav-link').forEach(function(link) {
+          var linkPath = new URL(link.href).pathname;
+          var isHome = linkPath === '/';
+          if (isHome && path === '/') {
+            link.classList.add('bg-white/10', 'text-white');
+            link.classList.remove('text-gray-300');
+          } else if (!isHome && path.startsWith(linkPath)) {
+            link.classList.add('bg-white/10', 'text-white');
+            link.classList.remove('text-gray-300');
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
