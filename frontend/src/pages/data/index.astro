@@ -177,13 +177,12 @@ import Layout from '../../components/layout/Layout.astro';
       if (!fileInput.files[0]) return;
       var formData = new FormData();
       formData.append('file', fileInput.files[0]);
-      formData.append('data_type', type);
 
       document.getElementById('upload-btn').disabled = true;
       document.getElementById('upload-btn').textContent = 'Uploading...';
 
       try {
-        var res = await fetch('/api/admin/uploads', {
+        var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
           method: 'POST', headers: authHdr, body: formData
         });
         var data = await res.json();

@@ -431,14 +431,14 @@ import Layout from '../../components/layout/Layout.astro';
         var items = data.items || (Array.isArray(data) ? data : []);
         if (items.length === 0) { el.textContent = 'No routines configured.'; return; }
         var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-          '<th class="text-left py-2 px-2">Code</th><th class="text-left py-2 px-2">Label</th>' +
-          '<th class="text-left py-2 px-2">Stage</th><th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
+          '<th class="text-left py-2 px-2">Code</th><th class="text-left py-2 px-2">Name</th>' +
+          '<th class="text-left py-2 px-2">Tree</th><th class="text-left py-2 px-2">Enabled</th></tr></thead><tbody>';
         items.forEach(function(r) {
           html += '<tr class="border-b border-gray-100">' +
             '<td class="py-2 px-2 font-mono">' + escapeHtml(r.code) + '</td>' +
-            '<td class="py-2 px-2">' + escapeHtml(r.label || r.name || '--') + '</td>' +
-            '<td class="py-2 px-2">' + escapeHtml(r.stage || '--') + '</td>' +
-            '<td class="py-2 px-2">' + (r.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td></tr>';
+            '<td class="py-2 px-2">' + escapeHtml(r.name || '--') + '</td>' +
+            '<td class="py-2 px-2">' + escapeHtml(r.tree || '--') + '</td>' +
+            '<td class="py-2 px-2">' + (r.enabled ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td></tr>';
         });
         html += '</tbody></table>';
         el.innerHTML = html;
