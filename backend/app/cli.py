@@ -36,19 +36,19 @@ def cmd_seed(args: argparse.Namespace) -> None:
 
     # ── Admin user ──────────────────────────────────────────────────────
     existing = db.execute(
-        select(AppUser).where(AppUser.email == "admin@amplifi.local")
+        select(AppUser).where(AppUser.email == "admin@amplifi.dev")
     ).scalar_one_or_none()
     if not existing:
         admin = AppUser(
-            email="admin@amplifi.local",
+            email="admin@amplifi.dev",
             display_name="Admin",
             password_hash=hash_password("admin"),
             role="admin",
         )
         db.add(admin)
-        logger.info("seed.user.created", email="admin@amplifi.local")
+        logger.info("seed.user.created", email="admin@amplifi.dev")
     else:
-        logger.info("seed.user.exists", email="admin@amplifi.local")
+        logger.info("seed.user.exists", email="admin@amplifi.dev")
 
     # ── Sample entities ─────────────────────────────────────────────────
     sample_entities = [
