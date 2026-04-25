@@ -406,6 +406,8 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind in ("balance", "balances"):
         r = db.execute(sa_delete(Balance).where(Balance.refresh_batch == batch.id))
         deleted = r.rowcount
+    elif batch.kind in ("entity", "entities"):
+        raise ValueError("Entity uploads cannot be rolled back (no batch tracking on entities)")
 
     batch.status = "rolled_back"
     db.commit()

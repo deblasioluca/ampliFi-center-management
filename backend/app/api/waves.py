@@ -61,6 +61,7 @@ class WaveOut(BaseModel):
     is_full_scope: bool
     exclude_prior: bool
     entity_count: int = 0
+    config: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -95,6 +96,7 @@ def list_waves(
             is_full_scope=w.is_full_scope,
             exclude_prior=w.exclude_prior,
             entity_count=ec,
+            config=w.config,
         )
         items.append(out.model_dump())
     return {"total": total, "page": pag.page, "size": pag.size, "items": items}
@@ -138,6 +140,7 @@ def create_wave(
         is_full_scope=wave.is_full_scope,
         exclude_prior=wave.exclude_prior,
         entity_count=ec,
+        config=wave.config,
     )
 
 
@@ -159,6 +162,7 @@ def get_wave(wave_id: int, db: Session = Depends(get_db)) -> WaveOut:
         is_full_scope=wave.is_full_scope,
         exclude_prior=wave.exclude_prior,
         entity_count=ec,
+        config=wave.config,
     )
 
 
@@ -191,6 +195,7 @@ def update_wave(
         is_full_scope=wave.is_full_scope,
         exclude_prior=wave.exclude_prior,
         entity_count=ec,
+        config=wave.config,
     )
 
 
@@ -438,6 +443,11 @@ def set_preferred_run(
         raise HTTPException(status_code=404, detail="Run not found in this wave")
     if run.status != "completed":
         raise HTTPException(status_code=409, detail="Run must be completed")
+    if wave.status not in ("analysing", "proposed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot propose from status {wave.status}",
+        )
     wave.status = "proposed"
     wave.config = {"preferred_run_id": run_id}
     db.commit()
