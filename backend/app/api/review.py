@@ -24,8 +24,8 @@ def _get_scope(token: str, db: Session) -> ReviewScope:
         raise HTTPException(status_code=404, detail="Invalid review token")
     if scope.token_expires_at < datetime.now(UTC):
         raise HTTPException(status_code=410, detail="Review token expired")
-    if scope.status == "revoked":
-        raise HTTPException(status_code=410, detail="Review token revoked")
+    if scope.status in ("revoked", "completed", "expired"):
+        raise HTTPException(status_code=410, detail=f"Review scope is {scope.status}")
     return scope
 
 

@@ -298,11 +298,23 @@ def create_upload(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin")),
 ) -> dict:
+    import pathlib
+
+    from app.config import settings
+
+    content = file.file.read()
+    storage_dir = pathlib.Path(settings.storage_local_path) / "uploads"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    fname = file.filename or "unknown"
+    dest = storage_dir / f"{fname}"
+    dest.write_bytes(content)
+
     batch = UploadBatch(
         kind=kind,
-        filename=file.filename or "unknown",
+        filename=fname,
         status="uploaded",
         uploaded_by=_user.id,
+        storage_uri=str(dest),
     )
     db.add(batch)
     db.commit()
@@ -451,3 +463,38 @@ def list_jobs(
             for t in tasks
         ],
     }
+
+
+# --- Sample data ---
+
+
+@router.post("/sample-data")
+def generate_sample(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.seed import generate_sample_data
+
+    counts = generate_sample_data(db)
+    return {"status": "created", "counts": counts}
+
+
+@router.delete("/sample-data")
+def remove_sample(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.seed import delete_sample_data
+
+    counts = delete_sample_data(db)
+    return {"status": "deleted", "counts": counts}
+
+
+@router.get("/sample-data")
+def sample_status(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.services.seed import sample_data_counts
+
+    return sample_data_counts(db)

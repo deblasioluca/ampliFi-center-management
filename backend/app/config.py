@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
 
+    # --- CORS ---
+    cors_allowed_origins: str = (
+        ""  # comma-separated, e.g. "http://localhost:4321,https://app.example.com"
+    )
+
     # --- feature flags ---
     feature_mdg_api: bool = False
     feature_datasphere: bool = False
