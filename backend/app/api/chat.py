@@ -15,6 +15,12 @@ from app.models.core import AppUser
 router = APIRouter()
 
 
+def _require_user(user: AppUser | None = Depends(get_current_user)) -> AppUser:
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
 class ThreadCreate(BaseModel):
     surface: str  # analyst|reviewer
     wave_id: int | None = None
@@ -30,11 +36,11 @@ class MessageCreate(BaseModel):
 def create_thread(
     body: ThreadCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(get_current_user),
+    user: AppUser = Depends(_require_user),
 ) -> dict:
     thread = ChatThread(
         surface=body.surface,
-        user_id=user.id if user else None,
+        user_id=user.id,
         wave_id=body.wave_id,
         run_id=body.run_id,
         scope_id=body.scope_id,
@@ -46,7 +52,11 @@ def create_thread(
 
 
 @router.get("/threads/{thread_id}")
-def get_thread(thread_id: int, db: Session = Depends(get_db)) -> dict:
+def get_thread(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(_require_user),
+) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -75,7 +85,7 @@ def send_message(
     thread_id: int,
     body: MessageCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(get_current_user),
+    user: AppUser = Depends(_require_user),
 ) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:
@@ -99,7 +109,7 @@ def send_message(
 def pin_thread(
     thread_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(get_current_user),
+    user: AppUser = Depends(_require_user),
 ) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:
@@ -113,7 +123,7 @@ def pin_thread(
 def delete_thread(
     thread_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(get_current_user),
+    user: AppUser = Depends(_require_user),
 ) -> dict:
     thread = db.get(ChatThread, thread_id)
     if not thread:

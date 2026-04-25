@@ -305,8 +305,10 @@ def create_upload(
     content = file.file.read()
     storage_dir = pathlib.Path(settings.storage_local_path) / "uploads"
     storage_dir.mkdir(parents=True, exist_ok=True)
-    fname = file.filename or "unknown"
-    dest = storage_dir / f"{fname}"
+    fname = pathlib.Path(file.filename or "unknown").name  # strip directory components
+    dest = storage_dir / fname
+    if not dest.resolve().is_relative_to(storage_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)
 
     batch = UploadBatch(
