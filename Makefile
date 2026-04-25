@@ -19,6 +19,7 @@ endif
 
 BACKEND_PORT ?= 8180
 
+.DEFAULT_GOAL := help
 .PHONY: help start stop restart status setup update load-sample delete-sample seed logs git-setup
 
 help: ## Show this help
