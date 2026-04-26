@@ -22,24 +22,29 @@ def upgrade() -> None:
         schema="cleanup",
     )
 
-    # Backfill existing users: derive username from email prefix, with
-    # numeric suffix to resolve collisions (e.g. john, john2, john3)
+    # Backfill existing users: use email prefix as username, append _<id>
+    # for any collision to guarantee global uniqueness.
     op.execute(
         """
-        WITH ranked AS (
-            SELECT id,
-                   split_part(email, '@', 1) AS base,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY split_part(email, '@', 1) ORDER BY id
-                   ) AS rn
-            FROM cleanup.app_user
-            WHERE username IS NULL
-        )
-        UPDATE cleanup.app_user u
-        SET username = CASE WHEN r.rn = 1 THEN r.base
-                            ELSE r.base || r.rn END
-        FROM ranked r
-        WHERE u.id = r.id AND u.username IS NULL
+        DO $$
+        DECLARE
+            r RECORD;
+            candidate TEXT;
+        BEGIN
+            FOR r IN SELECT id, split_part(email, '@', 1) AS base
+                     FROM cleanup.app_user
+                     WHERE username IS NULL
+                     ORDER BY id
+            LOOP
+                candidate := r.base;
+                IF EXISTS (SELECT 1 FROM cleanup.app_user
+                           WHERE username = candidate AND id != r.id) THEN
+                    candidate := r.base || '_' || r.id;
+                END IF;
+                UPDATE cleanup.app_user SET username = candidate
+                WHERE id = r.id;
+            END LOOP;
+        END $$;
         """
     )
 
