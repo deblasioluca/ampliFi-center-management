@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -28,14 +28,16 @@ def list_activity(
         (ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None))
     )
     rows = db.execute(query.limit(limit)).scalars().all()
-    unread = (
+    unread_count = (
         db.execute(
-            select(ActivityFeedEntry)
+            select(func.count(ActivityFeedEntry.id))
             .where(ActivityFeedEntry.is_read.is_(False))
-            .where((ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None)))
-        )
-        .scalars()
-        .all()
+            .where(
+                (ActivityFeedEntry.user_id == user.id)
+                | (ActivityFeedEntry.user_id.is_(None))
+            )
+        ).scalar()
+        or 0
     )
     return {
         "items": [
@@ -50,7 +52,7 @@ def list_activity(
             }
             for r in rows
         ],
-        "unread_count": len(unread),
+        "unread_count": unread_count,
     }
 
 
@@ -59,9 +61,11 @@ def mark_all_read(
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_current_user),
 ) -> dict:
+    # Only mark user-owned entries as read; system notifications (user_id=NULL)
+    # are shared rows and must not be mutated per-user.
     db.execute(
         update(ActivityFeedEntry)
-        .where((ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None)))
+        .where(ActivityFeedEntry.user_id == user.id)
         .where(ActivityFeedEntry.is_read.is_(False))
         .values(is_read=True)
     )
