@@ -124,3 +124,7 @@ def validate_rule(rule: dict) -> list[str]:
         errors.append(f"Unknown logic: {logic}")
 
     return errors
+
+
+# Alias for backward compatibility with tests
+evaluate_dsl_rule = evaluate_rule
