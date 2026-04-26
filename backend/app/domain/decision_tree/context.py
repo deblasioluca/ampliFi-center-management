@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
+@dataclass
 class CenterContext:
     """All data about a single cost center available to routines."""
 

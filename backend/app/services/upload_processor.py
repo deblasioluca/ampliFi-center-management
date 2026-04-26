@@ -154,6 +154,13 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     if not batch.storage_uri:
         raise ValueError("No file associated with this batch")
 
+    supported = (
+        "cost_center", "cost_centers", "profit_center", "profit_centers",
+        "balance", "balances", "entity", "entities",
+    )
+    if batch.kind not in supported:
+        raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
+
     batch.status = "validating"
     db.execute(sa_delete(UploadError).where(UploadError.batch_id == batch.id))
     db.commit()
@@ -493,6 +500,15 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind in ("entity", "entities"):
         raise ValueError("Entity uploads cannot be rolled back (no batch tracking on entities)")
 
+    rows_loaded = batch.rows_loaded or 0
+    rows_updated = max(0, rows_loaded - deleted)
     batch.status = "rolled_back"
     db.commit()
-    return {"status": "rolled_back", "rows_deleted": deleted}
+    result: dict = {"status": "rolled_back", "rows_deleted": deleted}
+    if rows_updated > 0:
+        result["rows_updated_not_reverted"] = rows_updated
+        result["warning"] = (
+            f"{rows_updated} existing records were updated during upload "
+            "and could not be reverted by rollback."
+        )
+    return result
