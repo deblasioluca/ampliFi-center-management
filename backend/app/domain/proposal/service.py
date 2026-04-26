@@ -205,9 +205,11 @@ def resolve_owner_display(responsible: str | None, db: Session) -> str:
         return ""
 
     gpn = responsible.strip()
-    emp = db.execute(
-        select(Employee).where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn))
-    ).scalar_one_or_none()
+    emp = (
+        db.execute(select(Employee).where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn)))
+        .scalars()
+        .first()
+    )
 
     if emp:
         return emp.display_name

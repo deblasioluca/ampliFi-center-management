@@ -353,7 +353,7 @@ export const prerender = false;
   window.completeReview = async function() {
     if (!confirm('Submit this review? This marks your review as complete.')) return;
     try {
-      var res = await fetch('/api/review/' + reviewToken + '/submit', { method: 'POST' });
+      var res = await fetch('/api/review/' + reviewToken + '/complete', { method: 'POST' });
       if (res.ok) {
         alert('Review submitted successfully. Thank you!');
         window.location.reload();

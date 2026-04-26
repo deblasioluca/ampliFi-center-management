@@ -456,7 +456,7 @@ def list_employees(
 @router.get("/employees/{gpn}")
 def get_employee(gpn: str, db: Session = Depends(get_db)) -> dict:
     """Lookup an employee by GPN — used for owner display (GPN + Name)."""
-    emp = db.execute(select(Employee).where(Employee.gpn == gpn)).scalar_one_or_none()
+    emp = db.execute(select(Employee).where(Employee.gpn == gpn)).scalars().first()
     if not emp:
         return {"found": False, "gpn": gpn}
     return {
