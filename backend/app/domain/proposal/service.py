@@ -82,7 +82,8 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     """Lock proposals and create target object drafts (§06.6).
 
     This is called when a wave transitions from 'proposed' to 'locked'.
-    For each KEEP/MERGE_MAP proposal, a target CC and/or PC is created.
+    For each KEEP proposal, a target CC and/or PC is created.
+    RETIRE, MERGE_MAP, and REDESIGN proposals are skipped (no target objects).
     """
     wave = db.get(Wave, wave_id)
     if not wave:

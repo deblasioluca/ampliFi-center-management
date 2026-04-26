@@ -288,6 +288,7 @@ def evaluate_center_with_pipeline(
                 merge_into = r.payload.get("cluster_id")
         elif r.short_circuit and r.verdict in (
             "CC",
+            "PC",
             "PC_ONLY",
             "CC_AND_PC",
             "WBS_REAL",

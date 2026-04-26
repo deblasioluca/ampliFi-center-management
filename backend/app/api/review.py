@@ -7,11 +7,11 @@ from datetime import UTC
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
-from app.models.core import CenterProposal, LegacyCostCenter, ReviewItem, ReviewScope
+from app.models.core import CenterProposal, ReviewItem, ReviewScope
 
 router = APIRouter()
 
@@ -65,14 +65,19 @@ def scope_items(
     decision: str | None = None,
 ) -> dict:
     scope = _get_scope(token, db)
-    query = select(ReviewItem).where(ReviewItem.scope_id == scope.id)
+    query = (
+        select(ReviewItem)
+        .where(ReviewItem.scope_id == scope.id)
+        .options(joinedload(ReviewItem.proposal).joinedload(CenterProposal.legacy_cc))
+    )
     if decision:
         query = query.where(ReviewItem.decision == decision)
     total_q = select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
     if decision:
         total_q = total_q.where(ReviewItem.decision == decision)
     total = db.execute(total_q).scalar() or 0
-    items = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    result = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size))
+    items = result.unique().scalars().all()
     enriched = []
     for i in items:
         row: dict = {
@@ -81,13 +86,13 @@ def scope_items(
             "decision": i.decision,
             "comment": i.comment,
         }
-        proposal = db.get(CenterProposal, i.proposal_id)
+        proposal = i.proposal
         if proposal:
             row["cleansing_outcome"] = proposal.cleansing_outcome
             row["target_object"] = proposal.target_object
             row["confidence"] = str(proposal.confidence) if proposal.confidence else None
             row["rule_path"] = proposal.rule_path
-            cc = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+            cc = proposal.legacy_cc
             if cc:
                 row["cctr"] = cc.cctr
                 row["txtsh"] = cc.txtsh

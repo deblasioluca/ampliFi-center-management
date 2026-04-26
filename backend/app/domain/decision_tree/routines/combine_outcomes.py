@@ -10,7 +10,15 @@ from app.domain.decision_tree.context import CenterContext, RoutineResult
 from app.domain.decision_tree.registry import register_routine
 
 _CLEANSING_PRIORITY = {"RETIRE": 0, "MERGE_MAP": 1, "REDESIGN": 2, "KEEP": 3}
-_TARGET_PRIORITY = {"PC_ONLY": 0, "CC_AND_PC": 1, "WBS_REAL": 2, "CC": 3, "WBS_STAT": 4, "NONE": 5}
+_TARGET_PRIORITY = {
+    "PC_ONLY": 0,
+    "PC": 0,
+    "CC_AND_PC": 1,
+    "WBS_REAL": 2,
+    "CC": 3,
+    "WBS_STAT": 4,
+    "NONE": 5,
+}
 
 
 @register_routine
