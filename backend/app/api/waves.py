@@ -693,11 +693,7 @@ def reset_proposals(
     from app.domain.proposal.service import release_proposal_ids
 
     proposals = (
-        db.execute(
-            select(CenterProposal)
-            .join(AnalysisRun)
-            .where(AnalysisRun.wave_id == wave_id)
-        )
+        db.execute(select(CenterProposal).join(AnalysisRun).where(AnalysisRun.wave_id == wave_id))
         .scalars()
         .all()
     )
@@ -750,11 +746,7 @@ def delete_wave(
     from app.domain.proposal.service import release_proposal_ids
 
     proposals = (
-        db.execute(
-            select(CenterProposal)
-            .join(AnalysisRun)
-            .where(AnalysisRun.wave_id == wave_id)
-        )
+        db.execute(select(CenterProposal).join(AnalysisRun).where(AnalysisRun.wave_id == wave_id))
         .scalars()
         .all()
     )

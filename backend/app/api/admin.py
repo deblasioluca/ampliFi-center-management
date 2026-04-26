@@ -515,9 +515,7 @@ def list_object_bindings(
     from app.models.core import SAPObjectBinding
 
     bindings = (
-        db.execute(
-            select(SAPObjectBinding).where(SAPObjectBinding.connection_id == conn_id)
-        )
+        db.execute(select(SAPObjectBinding).where(SAPObjectBinding.connection_id == conn_id))
         .scalars()
         .all()
     )

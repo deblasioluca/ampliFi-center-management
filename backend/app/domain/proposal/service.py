@@ -205,9 +205,7 @@ def resolve_owner_display(responsible: str | None, db: Session) -> str:
 
     gpn = responsible.strip()
     emp = db.execute(
-        select(Employee).where(
-            (Employee.gpn == gpn) | (Employee.user_id_pid == gpn)
-        )
+        select(Employee).where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn))
     ).scalar_one_or_none()
 
     if emp:
@@ -255,9 +253,7 @@ def release_proposal_ids(proposal_id: int, db: Session) -> int:
     return released
 
 
-def allocate_naming_id(
-    wave_id: int, pool_type: str, proposal_id: int, db: Session
-) -> str | None:
+def allocate_naming_id(wave_id: int, pool_type: str, proposal_id: int, db: Session) -> str | None:
     """Allocate the next available ID from the naming pool.
 
     Tries released IDs first (recycling), then increments next_value.
@@ -274,12 +270,16 @@ def allocate_naming_id(
         return None
 
     # Try recycled IDs first
-    recycled = db.execute(
-        select(NamingAllocation).where(
-            NamingAllocation.pool_id == pool.id,
-            NamingAllocation.is_released.is_(True),
+    recycled = (
+        db.execute(
+            select(NamingAllocation).where(
+                NamingAllocation.pool_id == pool.id,
+                NamingAllocation.is_released.is_(True),
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if recycled:
         recycled.is_released = False
@@ -314,9 +314,7 @@ def allocate_naming_id(
 # ---------------------------------------------------------------------------
 
 
-def inherit_attributes(
-    legacy: LegacyCostCenter, target_cc: TargetCostCenter, db: Session
-) -> None:
+def inherit_attributes(legacy: LegacyCostCenter, target_cc: TargetCostCenter, db: Session) -> None:
     """Copy inheritable attributes from legacy CC to target CC.
 
     Transfers owner, responsible person, and other attributes that
@@ -330,17 +328,18 @@ def inherit_attributes(
 
     # Resolve owner for display
     if legacy.responsible:
-        target_cc.responsible = resolve_owner_display(
-            legacy.responsible, db
-        )
+        target_cc.responsible = resolve_owner_display(legacy.responsible, db)
 
     # Copy JSONB attrs if both have them
     if hasattr(legacy, "attrs") and legacy.attrs:
         if not target_cc.attrs:
             target_cc.attrs = {}
         inherited_keys = [
-            "verak_user", "func_area", "bus_area",
-            "profit_ctr", "company_code",
+            "verak_user",
+            "func_area",
+            "bus_area",
+            "profit_ctr",
+            "company_code",
         ]
         for key in inherited_keys:
             if key in legacy.attrs:

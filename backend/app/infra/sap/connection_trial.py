@@ -333,10 +333,7 @@ def _probe_endpoint(
                     try:
                         data = resp.json()
                         results = data.get("d", {}).get("results", [])
-                        services = [
-                            svc.get("Title", svc.get("ID", ""))
-                            for svc in results[:20]
-                        ]
+                        services = [svc.get("Title", svc.get("ID", "")) for svc in results[:20]]
                         auth_ok = True
                         auth_detail = f"OData catalog OK — {len(results)} services found"
                     except Exception:
