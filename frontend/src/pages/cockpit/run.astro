@@ -1,0 +1,370 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Run Detail" requireAuth={true} adminOnly={true}>
+  <div id="run-header" class="mb-4">
+    <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Wave</a>
+    <h2 class="text-xl font-bold mt-2" id="run-title">Loading run...</h2>
+    <div class="flex gap-2 mt-2 text-sm text-gray-500" id="run-meta"></div>
+  </div>
+
+  <!-- KPI tiles -->
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6" id="kpi-tiles"></div>
+
+  <!-- Outcome distribution chart -->
+  <div class="card mb-6">
+    <h3 class="text-sm font-semibold mb-3">Outcome Distribution</h3>
+    <div class="flex gap-2 items-end h-32" id="outcome-chart"></div>
+  </div>
+
+  <!-- Universe table with filters -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold">Center Universe</h3>
+      <div class="flex gap-2">
+        <select id="filter-outcome" class="input text-sm w-32">
+          <option value="">All Outcomes</option>
+          <option value="KEEP">KEEP</option>
+          <option value="RETIRE">RETIRE</option>
+          <option value="MERGE_MAP">MERGE_MAP</option>
+          <option value="REDESIGN">REDESIGN</option>
+        </select>
+        <select id="filter-target" class="input text-sm w-32">
+          <option value="">All Targets</option>
+          <option value="CC">CC</option>
+          <option value="PC">PC</option>
+          <option value="CC_AND_PC">CC+PC</option>
+          <option value="PC_ONLY">PC Only</option>
+          <option value="WBS_REAL">WBS Real</option>
+          <option value="WBS_STAT">WBS Stat</option>
+        </select>
+        <input type="text" id="search-proposals" placeholder="Search CC / name..." class="input text-sm w-48" />
+        <button id="btn-export-csv" class="btn-secondary text-xs">Export CSV</button>
+      </div>
+    </div>
+    <div id="proposals-table" class="text-sm">Loading...</div>
+    <div id="proposals-pager" class="mt-2"></div>
+  </div>
+
+  <!-- Why Panel (slide-over) -->
+  <div id="why-overlay" class="fixed inset-0 bg-black bg-opacity-30 hidden z-50">
+    <div class="absolute right-0 top-0 h-full w-full max-w-lg bg-white shadow-xl overflow-y-auto">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold">Why Panel</h3>
+          <button id="close-why" class="text-gray-400 hover:text-gray-700 text-xl">&times;</button>
+        </div>
+        <div id="why-content">Loading...</div>
+
+        <!-- Override form -->
+        <div class="mt-6 border-t pt-4">
+          <h4 class="text-sm font-semibold mb-2">Override Decision</h4>
+          <div class="space-y-2">
+            <select id="override-outcome" class="input text-sm w-full">
+              <option value="">Select new outcome...</option>
+              <option value="KEEP">KEEP</option>
+              <option value="RETIRE">RETIRE</option>
+              <option value="MERGE_MAP">MERGE_MAP</option>
+              <option value="REDESIGN">REDESIGN</option>
+            </select>
+            <select id="override-target" class="input text-sm w-full">
+              <option value="">Target (optional)</option>
+              <option value="CC">CC</option>
+              <option value="PC">PC</option>
+              <option value="CC_AND_PC">CC+PC</option>
+            </select>
+            <textarea id="override-reason" class="input text-sm w-full h-20" placeholder="Reason for override..."></textarea>
+            <button id="btn-override" class="btn-amplifi text-sm w-full">Apply Override</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  var params = new URLSearchParams(window.location.search);
+  var runId = params.get('id');
+  var waveId = params.get('wave');
+  if (!runId) { document.getElementById('run-title').textContent = 'No run ID specified'; }
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
+  function fmt(n) { return n != null ? Number(n).toLocaleString() : '--'; }
+
+  function sparkline(values, w, h) {
+    if (!values || values.length < 2) return '';
+    var max = Math.max.apply(null, values);
+    var min = Math.min.apply(null, values);
+    var range = max - min || 1;
+    var step = w / (values.length - 1);
+    var points = values.map(function(v, i) {
+      return Math.round(i * step) + ',' + Math.round(h - ((v - min) / range) * (h - 2) - 1);
+    }).join(' ');
+    var color = values[values.length-1] >= values[0] ? '#22c55e' : '#ef4444';
+    return '<svg width="' + w + '" height="' + h + '" class="inline-block"><polyline fill="none" stroke="' + color + '" stroke-width="1.5" points="' + points + '"/></svg>';
+  }
+
+  var OUTCOME_COLORS = {
+    'KEEP': '#22c55e', 'RETIRE': '#ef4444', 'MERGE_MAP': '#f59e0b', 'REDESIGN': '#3b82f6'
+  };
+
+  function pagerHtml(total, page, size, fn) {
+    var pages = Math.ceil(total / size);
+    if (pages <= 1) return '';
+    var html = '<div class="flex items-center gap-2 text-xs text-gray-500 mt-2">';
+    html += '<span>Page ' + page + ' of ' + pages + ' (' + total + ' items)</span>';
+    if (page > 1) html += '<button onclick="' + fn + '(' + (page-1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">&laquo; Prev</button>';
+    if (page < pages) html += '<button onclick="' + fn + '(' + (page+1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">Next &raquo;</button>';
+    html += '</div>';
+    return html;
+  }
+
+  // Load run info
+  function loadRun() {
+    if (!runId) return;
+    fetch('/api/runs/' + runId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(run) {
+      document.getElementById('run-title').textContent = 'Run #' + run.id;
+      var meta = 'Status: <span class="font-medium">' + run.status + '</span>';
+      if (run.started_at) meta += ' | Started: ' + new Date(run.started_at).toLocaleString();
+      if (run.finished_at) meta += ' | Finished: ' + new Date(run.finished_at).toLocaleString();
+      document.getElementById('run-meta').innerHTML = meta;
+
+      // KPI tiles
+      var kpis = run.kpis || {};
+      var tilesHtml = '';
+      var kpiDefs = [
+        { key: 'total_centers', label: 'Total Centers', color: 'bg-gray-100 text-gray-800' },
+        { key: 'keep', label: 'KEEP', color: 'bg-green-100 text-green-800' },
+        { key: 'retire', label: 'RETIRE', color: 'bg-red-100 text-red-800' },
+        { key: 'merge_map', label: 'MERGE_MAP', color: 'bg-amber-100 text-amber-800' },
+        { key: 'redesign', label: 'REDESIGN', color: 'bg-blue-100 text-blue-800' },
+        { key: 'keep_pct', label: 'KEEP %', color: 'bg-emerald-100 text-emerald-800' }
+      ];
+      kpiDefs.forEach(function(d) {
+        var val = kpis[d.key] != null ? kpis[d.key] : '--';
+        if (d.key === 'keep_pct' && kpis.total_centers && kpis.keep) {
+          val = Math.round(kpis.keep / kpis.total_centers * 100) + '%';
+        }
+        tilesHtml += '<div class="rounded-lg p-3 ' + d.color + '">' +
+          '<div class="text-xs font-medium opacity-70">' + d.label + '</div>' +
+          '<div class="text-xl font-bold mt-1">' + fmt(val) + '</div></div>';
+      });
+      document.getElementById('kpi-tiles').innerHTML = tilesHtml;
+
+      // Outcome chart (horizontal bars)
+      var chartHtml = '';
+      var outcomes = ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN'];
+      var maxVal = 1;
+      outcomes.forEach(function(o) { if ((kpis[o.toLowerCase()] || 0) > maxVal) maxVal = kpis[o.toLowerCase()]; });
+      outcomes.forEach(function(o) {
+        var count = kpis[o.toLowerCase()] || 0;
+        var pct = Math.max(count / maxVal * 100, 2);
+        chartHtml += '<div class="flex-1 flex flex-col items-center">' +
+          '<div class="w-full rounded-t" style="height:' + pct + '%;background:' + OUTCOME_COLORS[o] + '"></div>' +
+          '<div class="text-xs font-medium mt-1">' + o + '</div>' +
+          '<div class="text-xs text-gray-500">' + count + '</div></div>';
+      });
+      document.getElementById('outcome-chart').innerHTML = chartHtml;
+    });
+  }
+  loadRun();
+
+  // Load proposals
+  var currentProposals = [];
+  window.loadProposals = function(page) {
+    page = page || 1;
+    var outcome = document.getElementById('filter-outcome').value;
+    var target = document.getElementById('filter-target').value;
+    var search = document.getElementById('search-proposals').value;
+    var url = '/api/runs/' + runId + '/proposals?page=' + page + '&size=50';
+    if (outcome) url += '&outcome=' + outcome;
+    if (target) url += '&target=' + target;
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('proposals-table');
+      currentProposals = d.items || [];
+      if (!d.items || !d.items.length) { el.textContent = 'No proposals found.'; return; }
+
+      // Client-side search filter
+      var items = d.items;
+      if (search) {
+        var s = search.toLowerCase();
+        items = items.filter(function(p) {
+          return (p.cctr && p.cctr.toLowerCase().indexOf(s) >= 0) ||
+                 (p.txtsh && p.txtsh.toLowerCase().indexOf(s) >= 0) ||
+                 (p.ccode && p.ccode.toLowerCase().indexOf(s) >= 0);
+        });
+      }
+
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">CC</th>' +
+        '<th class="py-2 px-2 text-left">Name</th>' +
+        '<th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th>' +
+        '<th class="py-2 px-2 text-left">Responsible</th>' +
+        '<th class="py-2 px-2 text-center">Outcome</th>' +
+        '<th class="py-2 px-2 text-center">Target</th>' +
+        '<th class="py-2 px-2 text-center">Confidence</th>' +
+        '<th class="py-2 px-2 text-center">Override</th>' +
+        '<th class="py-2 px-2 text-center">Trend</th>' +
+        '<th class="py-2 px-2 text-center">Actions</th></tr></thead><tbody>';
+
+      items.forEach(function(p) {
+        var outcomeClass = { 'KEEP': 'bg-green-100 text-green-800', 'RETIRE': 'bg-red-100 text-red-800', 'MERGE_MAP': 'bg-amber-100 text-amber-800', 'REDESIGN': 'bg-blue-100 text-blue-800' }[p.cleansing_outcome] || 'bg-gray-100';
+        var effectiveOutcome = p.override_outcome || p.cleansing_outcome;
+        var overrideHtml = p.override_outcome
+          ? '<span class="px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-800">' + esc(p.override_outcome) + '</span>'
+          : '<span class="text-gray-300">--</span>';
+
+        html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-proposal-id="' + p.id + '">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.cctr) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
+          '<td class="py-1.5 px-2 text-center"><span class="px-1.5 py-0.5 rounded text-xs ' + outcomeClass + '">' + esc(p.cleansing_outcome) + '</span></td>' +
+          '<td class="py-1.5 px-2 text-center">' + esc(p.target_object) + '</td>' +
+          '<td class="py-1.5 px-2 text-center font-mono">' + (p.confidence ? Number(p.confidence).toFixed(2) : '--') + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + overrideHtml + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + sparkline(p.posting_trend || [], 60, 20) + '</td>' +
+          '<td class="py-1.5 px-2 text-center"><button class="text-amplifi-600 hover:underline text-xs" onclick="openWhy(' + p.id + ')">Why?</button></td></tr>';
+      });
+
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('proposals-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadProposals');
+    }).catch(function(e) { document.getElementById('proposals-table').textContent = 'Error: ' + e.message; });
+  };
+  loadProposals(1);
+
+  document.getElementById('filter-outcome').addEventListener('change', function() { loadProposals(1); });
+  document.getElementById('filter-target').addEventListener('change', function() { loadProposals(1); });
+  document.getElementById('search-proposals').addEventListener('input', function() {
+    clearTimeout(this._t);
+    this._t = setTimeout(function() { loadProposals(1); }, 300);
+  });
+
+  // Export CSV
+  document.getElementById('btn-export-csv').addEventListener('click', function() {
+    if (!currentProposals.length) return;
+    var csv = 'CC,Name,Entity,CO Area,Responsible,Outcome,Target,Confidence,Override\n';
+    currentProposals.forEach(function(p) {
+      csv += [p.cctr, p.txtsh, p.ccode, p.coarea, p.responsible, p.cleansing_outcome, p.target_object, p.confidence || '', p.override_outcome || ''].map(function(v) {
+        return '"' + String(v || '').replace(/"/g, '""') + '"';
+      }).join(',') + '\n';
+    });
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'proposals_run_' + runId + '.csv';
+    a.click();
+  });
+
+  // Why panel
+  var currentProposalId = null;
+  window.openWhy = function(proposalId) {
+    currentProposalId = proposalId;
+    document.getElementById('why-overlay').classList.remove('hidden');
+    document.getElementById('why-content').innerHTML = 'Loading...';
+    fetch('/api/runs/' + runId + '/proposals/' + proposalId + '/why', { headers: authHdr })
+      .then(function(r) { return r.json(); }).then(function(d) {
+        var html = '<div class="space-y-4">';
+
+        // Outcome
+        html += '<div class="bg-gray-50 rounded p-3">' +
+          '<div class="text-xs text-gray-500 mb-1">Decision</div>' +
+          '<div class="text-lg font-bold">' + esc(d.cleansing_outcome) + '</div>' +
+          '<div class="text-sm text-gray-500">Target: ' + esc(d.target_object || 'None') + '</div></div>';
+
+        // Rule path
+        if (d.rule_path) {
+          html += '<div><div class="text-xs font-medium text-gray-700 mb-1">Rule Path (Decision Tree)</div>' +
+            '<div class="bg-gray-50 rounded p-3 text-xs font-mono space-y-1">';
+          if (Array.isArray(d.rule_path)) {
+            d.rule_path.forEach(function(step) {
+              html += '<div class="flex items-center gap-2">';
+              html += '<span class="w-2 h-2 rounded-full bg-amplifi-500 inline-block"></span>';
+              html += '<span>' + esc(typeof step === 'string' ? step : JSON.stringify(step)) + '</span></div>';
+            });
+          } else {
+            html += '<pre>' + esc(JSON.stringify(d.rule_path, null, 2)) + '</pre>';
+          }
+          html += '</div></div>';
+        }
+
+        // ML scores
+        if (d.ml_scores) {
+          html += '<div><div class="text-xs font-medium text-gray-700 mb-1">ML Scores</div>' +
+            '<div class="bg-blue-50 rounded p-3 text-xs space-y-1">';
+          for (var key in d.ml_scores) {
+            var score = d.ml_scores[key];
+            var barWidth = Math.round(Number(score) * 100);
+            html += '<div class="flex items-center gap-2">' +
+              '<span class="w-24 text-right">' + key + '</span>' +
+              '<div class="flex-1 bg-gray-200 rounded h-2"><div class="bg-blue-500 h-2 rounded" style="width:' + barWidth + '%"></div></div>' +
+              '<span class="font-mono">' + Number(score).toFixed(3) + '</span></div>';
+          }
+          html += '</div></div>';
+        }
+
+        // LLM commentary
+        if (d.llm_commentary) {
+          html += '<div><div class="text-xs font-medium text-gray-700 mb-1">LLM Commentary</div>' +
+            '<div class="bg-purple-50 rounded p-3 text-xs">';
+          if (typeof d.llm_commentary === 'string') {
+            html += '<p>' + esc(d.llm_commentary) + '</p>';
+          } else {
+            html += '<pre class="whitespace-pre-wrap">' + esc(JSON.stringify(d.llm_commentary, null, 2)) + '</pre>';
+          }
+          html += '</div></div>';
+        }
+
+        // Override
+        if (d.override) {
+          html += '<div class="bg-purple-50 border-l-4 border-purple-500 rounded p-3">' +
+            '<div class="text-xs font-medium text-purple-700 mb-1">Manual Override</div>' +
+            '<div class="text-sm"><strong>' + esc(d.override.outcome) + '</strong></div>' +
+            '<div class="text-xs text-gray-500 mt-1">' + esc(d.override.reason) + '</div></div>';
+        }
+
+        html += '</div>';
+        document.getElementById('why-content').innerHTML = html;
+
+        // Pre-fill override
+        if (d.override) {
+          document.getElementById('override-outcome').value = d.override.outcome;
+          document.getElementById('override-target').value = d.override.target || '';
+          document.getElementById('override-reason').value = d.override.reason || '';
+        }
+      }).catch(function(e) {
+        document.getElementById('why-content').textContent = 'Error: ' + e.message;
+      });
+  };
+
+  document.getElementById('close-why').addEventListener('click', function() {
+    document.getElementById('why-overlay').classList.add('hidden');
+  });
+
+  // Override
+  document.getElementById('btn-override').addEventListener('click', function() {
+    if (!currentProposalId) return;
+    var outcome = document.getElementById('override-outcome').value;
+    var reason = document.getElementById('override-reason').value;
+    var target = document.getElementById('override-target').value;
+    if (!outcome || !reason) { alert('Please select an outcome and provide a reason.'); return; }
+    var url = '/api/runs/' + runId + '/proposals/' + currentProposalId + '/override?outcome=' + encodeURIComponent(outcome) + '&reason=' + encodeURIComponent(reason);
+    if (target) url += '&target=' + encodeURIComponent(target);
+    fetch(url, { method: 'POST', headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.status === 'overridden') {
+        document.getElementById('why-overlay').classList.add('hidden');
+        loadProposals(1);
+      } else {
+        alert('Override failed: ' + JSON.stringify(d));
+      }
+    });
+  });
+</script>

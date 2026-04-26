@@ -45,20 +45,32 @@ def cmd_seed(args: argparse.Namespace) -> None:
 
     # ── Register built-in routines ──────────────────────────────────────
     builtin_routines = [
-        ("rule.inactive_check", "Inactive center check", "rule", "cleansing", 10),
-        ("rule.posting_activity", "Posting activity check", "rule", "cleansing", 20),
-        ("rule.duplicate_cluster", "Duplicate cluster detection", "rule", "cleansing", 30),
+        # Cleansing tree routines
+        ("rule.posting_activity", "Posting activity check", "rule", "cleansing", 10),
+        ("rule.ownership", "Ownership / responsible check", "rule", "cleansing", 20),
+        ("rule.redundancy", "Duplicate / redundancy detection", "rule", "cleansing", 30),
         ("rule.hierarchy_compliance", "Hierarchy compliance", "rule", "cleansing", 40),
-        ("rule.bs_relevance", "Balance sheet relevance", "rule", "mapping", 50),
-        ("rule.project_check", "Project-related check", "rule", "mapping", 60),
-        ("rule.feeder_allocation", "Feeder / allocation vehicle", "rule", "mapping", 70),
-        ("rule.revenue_check", "Revenue presence check", "rule", "mapping", 80),
-        ("ml.outcome_classifier", "Outcome classifier (LightGBM)", "ml", "cleansing", 100),
-        ("ml.target_object_classifier", "Target object classifier", "ml", "mapping", 110),
-        ("ml.duplicate_cluster", "Duplicate clustering", "ml", None, 120),
-        ("ml.naming_purpose", "Naming purpose head", "ml", None, 130),
-        ("ml.anomaly_detector", "Anomaly detector", "ml", None, 140),
-        ("llm.single_review", "LLM single review", "llm", None, 200),
+        ("rule.cross_system_dependency", "Cross-system dependency", "rule", "cleansing", 50),
+        # Mapping tree routines
+        ("rule.bs_relevance", "Balance sheet relevance", "rule", "mapping", 60),
+        ("rule.has_direct_revenue", "Has direct revenue", "rule", "mapping", 70),
+        ("rule.collects_project_costs", "Collects project costs", "rule", "mapping", 80),
+        ("rule.has_operational_costs", "Has operational costs", "rule", "mapping", 90),
+        ("rule.revenue_allocation_vehicle", "Revenue allocation vehicle", "rule", "mapping", 100),
+        ("rule.cost_allocation_vehicle", "Cost allocation vehicle", "rule", "mapping", 110),
+        ("rule.info_only", "Info-only / statistical", "rule", "mapping", 120),
+        # Aggregate
+        ("aggregate.combine_outcomes", "Combine outcomes", "aggregate", None, 200),
+        # ML routines (placeholders)
+        ("ml.outcome_classifier", "Outcome classifier (LightGBM)", "ml", "cleansing", 300),
+        ("ml.target_object_classifier", "Target object classifier", "ml", "mapping", 310),
+        ("ml.duplicate_cluster", "Duplicate clustering", "ml", None, 320),
+        ("ml.naming_purpose", "Naming purpose head", "ml", None, 330),
+        ("ml.anomaly_detector", "Anomaly detector", "ml", None, 340),
+        # LLM routines (placeholders)
+        ("llm.single_review", "LLM single review", "llm", None, 400),
+        ("llm.sequential_review", "LLM sequential review", "llm", None, 410),
+        ("llm.debate_review", "LLM debate review", "llm", None, 420),
     ]
     routine_count = 0
     for code, name, kind, tree, order in builtin_routines:

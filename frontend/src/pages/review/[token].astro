@@ -1,0 +1,219 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Review" requireAuth={false}>
+  <div id="review-app">
+    <div id="review-header" class="mb-6">Loading review scope...</div>
+    <div id="review-content"></div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var pathParts = window.location.pathname.split('/');
+  var reviewToken = pathParts[pathParts.length - 1];
+  if (!reviewToken) { document.getElementById('review-header').textContent = 'Invalid review URL.'; return; }
+
+  function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+
+  // Load scope summary
+  fetch('/api/review/' + reviewToken).then(function(r) {
+    if (!r.ok) throw new Error(r.status === 410 ? 'This review link has expired or been completed.' : 'Invalid review link.');
+    return r.json();
+  }).then(function(scope) {
+    var pct = scope.total_items ? Math.round(scope.decided_items / scope.total_items * 100) : 0;
+    document.getElementById('review-header').innerHTML =
+      '<h1 class="text-2xl font-bold text-gray-900">Review: ' + esc(scope.name) + '</h1>' +
+      '<p class="text-sm text-gray-500 mt-1">Scope type: ' + scope.scope_type + ' | ' + scope.decided_items + '/' + scope.total_items + ' decided (' + pct + '%)</p>' +
+      '<div class="mt-3 h-2 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full transition-all" style="width:' + pct + '%"></div></div>';
+
+    loadItems(1);
+  }).catch(function(e) {
+    document.getElementById('review-header').innerHTML = '<div class="text-red-600 text-lg">' + esc(e.message) + '</div>';
+  });
+
+  function loadItems(page) {
+    var decision = '';
+    var filterEl = document.getElementById('review-filter');
+    if (filterEl) decision = filterEl.value;
+    var url = '/api/review/' + reviewToken + '/items?page=' + page + '&size=20';
+    if (decision) url += '&decision=' + decision;
+
+    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('review-content');
+      if (!d.items || !d.items.length) { el.innerHTML = '<p class="text-gray-500">No items to review.</p>'; return; }
+
+      var html = '<div class="flex items-center justify-between mb-4">' +
+        '<div class="flex gap-2">' +
+        '<select id="review-filter" class="input text-sm w-40" onchange="window._loadItems(1)">' +
+        '<option value="">All Items</option><option value="PENDING">Pending</option>' +
+        '<option value="APPROVED">Approved</option><option value="NOT_REQUIRED">Not Required</option>' +
+        '<option value="COMMENTED">Commented</option></select>' +
+        '<select id="review-group" class="input text-sm w-40" onchange="window._toggleGroupView(this.value)">' +
+        '<option value="flat">Flat List</option><option value="entity">Group by Entity</option>' +
+        '<option value="outcome">Group by Outcome</option></select>' +
+        '<input type="text" id="review-search" class="input text-sm w-48" placeholder="Search CC / name..." oninput="clearTimeout(window._searchT); window._searchT=setTimeout(function(){window._loadItems(1)},300)" />' +
+        '</div>' +
+        '<div class="flex gap-2">' +
+        '<button onclick="bulkApprove()" class="btn-sm bg-green-600 text-white">Approve All Pending</button>' +
+        '<button onclick="requestChanges()" class="btn-sm bg-yellow-600 text-white">Request Changes</button>' +
+        '<button onclick="completeReview()" class="btn-sm bg-amplifi-600 text-white">Complete Review</button></div></div>';
+
+      html += '<div class="space-y-3">';
+      d.items.forEach(function(item) {
+        var bgColor = item.decision === 'APPROVED' ? 'bg-green-50 border-green-200' :
+                      item.decision === 'NOT_REQUIRED' ? 'bg-gray-50 border-gray-200' : 'bg-white';
+        var outColor = { KEEP: 'text-green-700 bg-green-100', RETIRE: 'text-red-700 bg-red-100',
+                        MERGE_MAP: 'text-orange-700 bg-orange-100', REDESIGN: 'text-blue-700 bg-blue-100' }[item.cleansing_outcome] || 'bg-gray-100';
+
+        html += '<div class="border rounded-lg p-4 ' + bgColor + '" id="item-' + item.id + '">' +
+          '<div class="flex items-start justify-between">' +
+          '<div class="flex-1">' +
+          '<div class="flex items-center gap-3">' +
+          '<span class="font-mono font-semibold text-sm">' + esc(item.cctr || 'CC #' + item.proposal_id) + '</span>' +
+          '<span class="px-2 py-0.5 rounded text-xs ' + outColor + '">' + esc(item.cleansing_outcome || '-') + '</span>' +
+          (item.target_object ? '<span class="text-xs text-gray-500">' + esc(item.target_object) + '</span>' : '') +
+          '</div>';
+        if (item.txtsh) html += '<p class="text-xs text-gray-600 mt-1">' + esc(item.txtsh) + '</p>';
+        if (item.ccode) html += '<p class="text-xs text-gray-400">Entity: ' + esc(item.ccode) + '</p>';
+        if (item.rule_path) {
+          var steps = (item.rule_path.steps || item.rule_path);
+          if (Array.isArray(steps) && steps.length) {
+            html += '<details class="mt-2"><summary class="text-xs cursor-pointer text-blue-600">Decision path</summary><ul class="ml-4 list-disc text-xs text-gray-500 mt-1">';
+            steps.forEach(function(s) { html += '<li>' + esc(s) + '</li>'; });
+            html += '</ul></details>';
+          }
+        }
+        html += '</div>';
+
+        // Decision buttons
+        html += '<div class="flex flex-col gap-1 ml-4">';
+        if (item.decision === 'PENDING') {
+          html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="btn-sm bg-green-100 text-green-700 hover:bg-green-200 text-xs">Approve</button>' +
+            '<button onclick="decide(' + item.id + ',\'NOT_REQUIRED\')" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs">Not Required</button>' +
+            '<button onclick="decide(' + item.id + ',\'COMMENTED\')" class="btn-sm bg-yellow-100 text-yellow-700 hover:bg-yellow-200 text-xs">Comment</button>';
+        } else {
+          html += '<span class="text-xs px-2 py-1 rounded ' +
+            (item.decision === 'APPROVED' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-700') + '">' + item.decision + '</span>';
+        }
+        html += '</div></div>';
+        if (item.comment) html += '<p class="text-xs text-gray-500 mt-2 italic">Comment: ' + esc(item.comment) + '</p>';
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // Pager
+      var pages = Math.ceil(d.total / d.size) || 1;
+      html += '<div class="flex items-center justify-between mt-4 text-sm">' +
+        '<span class="text-gray-500">' + d.total + ' items, page ' + d.page + '/' + pages + '</span>' +
+        '<div class="flex gap-1">' +
+        (page > 1 ? '<button onclick="window._loadItems(' + (page-1) + ')" class="btn-sm">Prev</button>' : '') +
+        (page < pages ? '<button onclick="window._loadItems(' + (page+1) + ')" class="btn-sm">Next</button>' : '') +
+        '</div></div>';
+
+      el.innerHTML = html;
+    });
+  }
+  window._loadItems = loadItems;
+
+  window.decide = async function(itemId, decision) {
+    var comment = null;
+    if (decision === 'COMMENTED') {
+      comment = prompt('Enter your comment:');
+      if (comment === null) return;
+    }
+    await fetch('/api/review/' + reviewToken + '/items/' + itemId + '/decide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: decision, comment: comment })
+    });
+    loadItems(1);
+    // Refresh header
+    fetch('/api/review/' + reviewToken).then(function(r) { return r.json(); }).then(function(scope) {
+      var pct = scope.total_items ? Math.round(scope.decided_items / scope.total_items * 100) : 0;
+      var bar = document.querySelector('#review-header .bg-amplifi-500');
+      if (bar) bar.style.width = pct + '%';
+    });
+  };
+
+  window.bulkApprove = async function() {
+    if (!confirm('Approve all visible pending items?')) return;
+    var res = await fetch('/api/review/' + reviewToken + '/items?size=1000&decision=PENDING');
+    var d = await res.json();
+    var ids = (d.items || []).map(function(i) { return i.id; });
+    if (!ids.length) { alert('No pending items.'); return; }
+    await fetch('/api/review/' + reviewToken + '/items/bulk-decide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_ids: ids, decision: 'APPROVED' })
+    });
+    loadItems(1);
+  };
+
+  window.requestChanges = async function() {
+    var comment = prompt('Describe the changes you are requesting:');
+    if (!comment) return;
+    await fetch('/api/review/' + reviewToken + '/request-changes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: comment })
+    });
+    alert('Change request submitted.');
+    loadItems(1);
+  };
+
+  window._toggleGroupView = function(mode) {
+    // Group view just reloads with size=500 and renders grouped
+    if (mode === 'flat') { loadItems(1); return; }
+    fetch('/api/review/' + reviewToken + '/items?size=500').then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.items) return;
+      var groups = {};
+      d.items.forEach(function(item) {
+        var key = mode === 'entity' ? (item.ccode || 'Unknown') : (item.cleansing_outcome || 'Unknown');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+      });
+      var el = document.getElementById('review-content');
+      var html = '<div class="space-y-4">';
+      Object.keys(groups).sort().forEach(function(key) {
+        var items = groups[key];
+        var pending = items.filter(function(i) { return i.decision === 'PENDING'; }).length;
+        html += '<details open class="border rounded-lg p-3"><summary class="cursor-pointer font-semibold text-sm">' +
+          esc(key) + ' <span class="text-xs text-gray-500">(' + items.length + ' items, ' + pending + ' pending)</span></summary>' +
+          '<div class="mt-2 space-y-2">';
+        items.forEach(function(item) {
+          var outcomeColor = { KEEP: 'bg-green-100 text-green-800', RETIRE: 'bg-red-100 text-red-800', MERGE_MAP: 'bg-amber-100 text-amber-800', REDESIGN: 'bg-blue-100 text-blue-800' }[item.cleansing_outcome] || 'bg-gray-100';
+          html += '<div class="flex items-center justify-between py-1 px-2 rounded hover:bg-gray-50">' +
+            '<div class="flex items-center gap-2">' +
+            '<span class="font-mono text-xs">' + esc(item.cctr || 'CC#' + item.proposal_id) + '</span>' +
+            '<span class="text-xs">' + esc(item.txtsh) + '</span>' +
+            '<span class="px-1.5 py-0.5 rounded text-xs ' + outcomeColor + '">' + esc(item.cleansing_outcome) + '</span></div>' +
+            '<div class="flex gap-1">';
+          if (item.decision === 'PENDING') {
+            html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded hover:bg-green-200">Approve</button>';
+          } else {
+            html += '<span class="text-xs px-2 py-0.5 rounded bg-gray-100">' + item.decision + '</span>';
+          }
+          html += '</div></div>';
+        });
+        html += '</div></details>';
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    });
+  };
+
+  window.completeReview = async function() {
+    var res = await fetch('/api/review/' + reviewToken + '/complete', { method: 'POST' });
+    var d = await res.json();
+    if (res.ok) {
+      alert('Review completed! Thank you.');
+      window.location.reload();
+    } else {
+      alert(d.detail || 'Cannot complete review.');
+    }
+  };
+})();
+</script>

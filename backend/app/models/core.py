@@ -197,11 +197,15 @@ class Wave(TimestampMixin, Base):
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     signed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    preferred_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.analysis_run.id", ondelete="SET NULL")
+    )
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
 
     entities: Mapped[list[WaveEntity]] = relationship(back_populates="wave")
+    hierarchy_scopes: Mapped[list[WaveHierarchyScope]] = relationship(back_populates="wave")
     runs: Mapped[list[AnalysisRun]] = relationship(back_populates="wave")
     scopes: Mapped[list[ReviewScope]] = relationship(back_populates="wave")
 
@@ -223,6 +227,28 @@ class WaveEntity(Base):
 
     wave: Mapped[Wave] = relationship(back_populates="entities")
     entity: Mapped[Entity] = relationship()
+
+
+class WaveHierarchyScope(Base):
+    """Links a wave to specific hierarchy nodes for scoping."""
+
+    __tablename__ = "wave_hierarchy_scope"
+    __table_args__ = (
+        UniqueConstraint("wave_id", "hierarchy_id", "node_setname"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wave_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=False
+    )
+    hierarchy_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.hierarchy.id", ondelete="CASCADE"), nullable=False
+    )
+    node_setname: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    wave: Mapped[Wave] = relationship(back_populates="hierarchy_scopes")
+    hierarchy: Mapped[Hierarchy] = relationship()
 
 
 class AnalysisConfig(TimestampMixin, Base):
@@ -362,6 +388,7 @@ class CenterProposal(TimestampMixin, Base):
     legacy_cc_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.legacy_cost_center.id", ondelete="CASCADE"), nullable=False
     )
+    entity_code: Mapped[str | None] = mapped_column(String(10))
     cleansing_outcome: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # KEEP|RETIRE|MERGE_MAP|REDESIGN
@@ -399,10 +426,15 @@ class ReviewScope(TimestampMixin, Base):
     )  # entity|hierarchy_node|list
     scope_filter: Mapped[dict] = mapped_column(JSONB, nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewer_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         String(20), default="pending"
     )  # pending|invited|in_progress|completed|expired|revoked
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    signed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewer_name: Mapped[str | None] = mapped_column(String(200))
@@ -423,13 +455,14 @@ class ReviewItem(TimestampMixin, Base):
     scope_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.review_scope.id", ondelete="CASCADE"), nullable=False
     )
-    proposal_id: Mapped[int] = mapped_column(
-        ForeignKey("cleanup.center_proposal.id", ondelete="CASCADE"), nullable=False
+    proposal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.center_proposal.id", ondelete="CASCADE"), nullable=True
     )
     decision: Mapped[str] = mapped_column(
         String(20), default="PENDING"
     )  # PENDING|APPROVED|NOT_REQUIRED|COMMENTED
     comment: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[str | None] = mapped_column(String(100))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     scope: Mapped[ReviewScope] = relationship(back_populates="items")
@@ -516,7 +549,7 @@ class HousekeepingCycle(TimestampMixin, Base):
 class HousekeepingItem(TimestampMixin, Base):
     __tablename__ = "housekeeping_item"
     __table_args__ = (
-        UniqueConstraint("cycle_id", "target_cc_id"),
+        UniqueConstraint("cycle_id", "target_cc_id", "flag"),
         {"schema": "cleanup"},
     )
 
@@ -764,3 +797,63 @@ class NamingSequence(Base):
     )
     reserved_range_start: Mapped[int | None] = mapped_column(Integer)
     reserved_range_end: Mapped[int | None] = mapped_column(Integer)
+
+
+class ActivityFeedEntry(Base):
+    """Activity feed for audit trail and notifications."""
+
+    __tablename__ = "activity_feed"
+    __table_args__ = (
+        Index("ix_activity_feed_user", "user_id"),
+        Index("ix_activity_feed_ts", "created_at"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(30))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class WaveTemplate(TimestampMixin, Base):
+    """Reusable wave configuration template (§07.2)."""
+
+    __tablename__ = "wave_template"
+    __table_args__ = {"schema": "cleanup"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    config: Mapped[dict | None] = mapped_column(JSONB)
+    is_full_scope: Mapped[bool] = mapped_column(Boolean, default=False)
+    exclude_prior: Mapped[bool] = mapped_column(Boolean, default=True)
+    entity_ccodes: Mapped[list | None] = mapped_column(JSONB)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+
+
+class GLAccountClassRange(TimestampMixin, Base):
+    """GL account class ranges for balance classification (§03.5)."""
+
+    __tablename__ = "gl_account_class_range"
+    __table_args__ = (
+        UniqueConstraint("class_code", "from_account"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    class_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    from_account: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_account: Mapped[str] = mapped_column(String(20), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(40))  # bs|rev|opex|other

@@ -8,130 +8,208 @@ import Layout from '../components/layout/Layout.astro';
     <p class="text-sm text-gray-500 mt-1">ampliFi Center Management overview</p>
   </div>
 
-  <!-- KPI Cards -->
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <div class="card">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-medium text-gray-500">System Status</h3>
-        <span id="health-dot" class="status-dot bg-gray-300"></span>
+  <!-- Row 1: Core KPI Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div class="card text-center">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-xs font-medium text-gray-500 uppercase">Status</h3>
+        <span id="health-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
       </div>
-      <div id="health-status" class="mt-2 text-2xl font-bold text-gray-900">Checking...</div>
+      <div id="health-status" class="text-xl font-bold text-gray-900">...</div>
     </div>
-    <div class="card">
-      <h3 class="text-sm font-medium text-gray-500">Legacy Cost Centers</h3>
-      <div id="cc-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    <div class="card text-center">
+      <h3 class="text-xs font-medium text-gray-500 uppercase">Entities</h3>
+      <div id="kpi-entities" class="text-xl font-bold text-gray-900 mt-1">--</div>
     </div>
-    <div class="card">
-      <h3 class="text-sm font-medium text-gray-500">Entities</h3>
-      <div id="entity-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    <div class="card text-center">
+      <h3 class="text-xs font-medium text-gray-500 uppercase">Cost Centers</h3>
+      <div id="kpi-cc" class="text-xl font-bold text-gray-900 mt-1">--</div>
     </div>
-    <div class="card">
-      <h3 class="text-sm font-medium text-gray-500">Active Waves</h3>
-      <div id="wave-count" class="mt-2 text-2xl font-bold text-gray-900">--</div>
+    <div class="card text-center">
+      <h3 class="text-xs font-medium text-gray-500 uppercase">Profit Centers</h3>
+      <div id="kpi-pc" class="text-xl font-bold text-gray-900 mt-1">--</div>
+    </div>
+    <div class="card text-center">
+      <h3 class="text-xs font-medium text-gray-500 uppercase">Balances</h3>
+      <div id="kpi-bal" class="text-xl font-bold text-gray-900 mt-1">--</div>
+    </div>
+    <div class="card text-center">
+      <h3 class="text-xs font-medium text-gray-500 uppercase">Active Waves</h3>
+      <div id="kpi-waves" class="text-xl font-bold text-gray-900 mt-1">--</div>
     </div>
   </div>
 
+  <!-- Row 2: Wave Progress + Analysis Summary (admin only) -->
+  <div id="admin-dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <!-- Wave Progress -->
+    <div class="card lg:col-span-2">
+      <h2 class="text-base font-semibold text-gray-900 mb-3">Wave Progress</h2>
+      <div id="wave-progress" class="space-y-3 text-sm">Loading...</div>
+    </div>
+
+    <!-- Data Quality Summary -->
+    <div class="card">
+      <h2 class="text-base font-semibold text-gray-900 mb-3">Data Quality</h2>
+      <div id="data-quality" class="space-y-2 text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Row 3: Quick Actions + Activity Feed -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Quick Actions -->
     <div class="card">
-      <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-      <div class="space-y-3">
+      <h2 class="text-base font-semibold text-gray-900 mb-4">Quick Actions</h2>
+      <div class="space-y-2">
         <a href="/tasks" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors">
-          <span class="font-medium text-amplifi-700">My Tasks</span>
-          <p class="text-sm text-gray-500 mt-1">Review your assigned scope and approve proposals</p>
+          <span class="font-medium text-amplifi-700 text-sm">My Tasks</span>
+          <p class="text-xs text-gray-500 mt-0.5">Review assigned scope, approve proposals</p>
         </a>
         <a href="/cockpit" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-cockpit">
-          <span class="font-medium text-amplifi-700">Cockpit</span>
-          <p class="text-sm text-gray-500 mt-1">Analysis overview, wave progress, and status</p>
+          <span class="font-medium text-amplifi-700 text-sm">Cockpit</span>
+          <p class="text-xs text-gray-500 mt-0.5">Wave analysis, progress tracking</p>
         </a>
         <a href="/data" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-data">
-          <span class="font-medium text-amplifi-700">Data Management</span>
-          <p class="text-sm text-gray-500 mt-1">Upload cost centers, profit centers, hierarchies</p>
+          <span class="font-medium text-amplifi-700 text-sm">Data Management</span>
+          <p class="text-xs text-gray-500 mt-0.5">Upload, browse, and manage master data</p>
         </a>
         <a href="/admin" class="block p-3 bg-amplifi-50 rounded-lg hover:bg-amplifi-100 transition-colors" id="qa-admin">
-          <span class="font-medium text-amplifi-700">Administration</span>
-          <p class="text-sm text-gray-500 mt-1">Users, SAP connections, configuration</p>
+          <span class="font-medium text-amplifi-700 text-sm">Administration</span>
+          <p class="text-xs text-gray-500 mt-0.5">Users, SAP, LLM, app configuration</p>
+        </a>
+        <a href="/cockpit/housekeeping" class="block p-3 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors" id="qa-hk">
+          <span class="font-medium text-orange-700 text-sm">Housekeeping</span>
+          <p class="text-xs text-gray-500 mt-0.5">Monthly cycle reviews and owner sign-off</p>
         </a>
       </div>
     </div>
 
-    <!-- System Info -->
+    <!-- System Info + Recent Activity -->
     <div class="card">
-      <h2 class="text-lg font-semibold text-gray-900 mb-4">System Info</h2>
-      <div id="system-info" class="space-y-2 text-sm text-gray-600">
-        Loading...
-      </div>
+      <h2 class="text-base font-semibold text-gray-900 mb-3">System &amp; Recent Activity</h2>
+      <div id="system-info" class="space-y-1.5 text-sm text-gray-600 mb-4">Loading...</div>
+      <h3 class="text-sm font-medium text-gray-700 mb-2 border-t pt-3">Recent Waves</h3>
+      <div id="recent-waves" class="space-y-2 text-sm">Loading...</div>
     </div>
   </div>
 </Layout>
 
 <script is:inline>
-  (function() {
-    // Hide admin-only quick actions for non-admin users
-    try {
-      var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
-      if (ud.role !== 'admin') {
-        ['qa-cockpit', 'qa-data', 'qa-admin'].forEach(function(id) {
-          var el = document.getElementById(id);
-          if (el) el.style.display = 'none';
-        });
-      }
-    } catch(e) {}
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  var isAdmin = false;
+  function fmt(n) { return (n || 0).toLocaleString(); }
 
-    var token = localStorage.getItem('amplifi_token');
-    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-
-    // Health check
-    fetch('/api/healthz', { headers: headers })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var el = document.getElementById('health-status');
-        var dot = document.getElementById('health-dot');
-        if (el) {
-          el.textContent = data.status === 'ok' ? 'Online' : 'Degraded';
-          el.className = 'mt-2 text-2xl font-bold ' + (data.status === 'ok' ? 'text-green-600' : 'text-red-600');
-        }
-        if (dot) dot.className = 'status-dot ' + (data.status === 'ok' ? 'bg-green-500' : 'bg-red-500');
-      })
-      .catch(function() {
-        var el = document.getElementById('health-status');
-        if (el) { el.textContent = 'Offline'; el.className = 'mt-2 text-2xl font-bold text-red-600'; }
+  try {
+    var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+    isAdmin = ud.role === 'admin';
+    if (!isAdmin) {
+      ['qa-cockpit', 'qa-data', 'qa-admin', 'qa-hk'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
       });
+      document.getElementById('admin-dashboard').style.display = 'none';
+    }
+  } catch(e) {}
 
-    // Readiness
-    fetch('/api/readyz', { headers: headers })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var info = document.getElementById('system-info');
-        if (!info) return;
-        info.innerHTML = '';
-        var checks = data.checks || {};
-        for (var k in checks) {
-          var row = document.createElement('div');
-          row.className = 'flex justify-between';
-          var label = document.createElement('span');
-          label.textContent = k;
-          var value = document.createElement('span');
-          value.className = 'font-medium ' + (checks[k] === 'ok' ? 'text-green-600' : 'text-red-600');
-          value.textContent = checks[k];
-          row.appendChild(label);
-          row.appendChild(value);
-          info.appendChild(row);
-        }
-      })
-      .catch(function() {});
+  // Health check
+  fetch('/api/healthz', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    var el = document.getElementById('health-status');
+    var dot = document.getElementById('health-dot');
+    el.textContent = d.status === 'ok' ? 'Online' : 'Degraded';
+    el.className = 'text-xl font-bold ' + (d.status === 'ok' ? 'text-green-600' : 'text-red-600');
+    dot.className = 'w-2.5 h-2.5 rounded-full ' + (d.status === 'ok' ? 'bg-green-500' : 'bg-red-500');
+  }).catch(function() {
+    document.getElementById('health-status').textContent = 'Offline';
+    document.getElementById('health-status').className = 'text-xl font-bold text-red-600';
+  });
 
-    // Stats
-    fetch('/api/stats/global', { headers: headers })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var ccEl = document.getElementById('cc-count');
-        var entEl = document.getElementById('entity-count');
-        var waveEl = document.getElementById('wave-count');
-        if (ccEl) ccEl.textContent = ((data.universe && data.universe.legacy_cc_total) || 0).toLocaleString();
-        if (entEl) entEl.textContent = ((data.universe && data.universe.entities_total) || 0).toLocaleString();
-        if (waveEl) waveEl.textContent = ((data.universe && data.universe.waves_total) || 0).toLocaleString();
-      })
-      .catch(function() {});
-  })();
+  // Global stats (KPIs)
+  fetch('/api/stats/global', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    var u = d.universe || {};
+    document.getElementById('kpi-entities').textContent = fmt(u.entities_total);
+    document.getElementById('kpi-cc').textContent = fmt(u.legacy_cc_total);
+    document.getElementById('kpi-pc').textContent = fmt(u.legacy_pc_total);
+    document.getElementById('kpi-bal').textContent = fmt(u.balances_total);
+    document.getElementById('kpi-waves').textContent = fmt(u.waves_total);
+  }).catch(function() {});
+
+  // Readiness / system info
+  fetch('/api/readyz', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    var info = document.getElementById('system-info');
+    var checks = d.checks || {};
+    var html = '';
+    for (var k in checks) {
+      var ok = checks[k] === 'ok';
+      html += '<div class="flex justify-between"><span>' + k + '</span>' +
+        '<span class="font-medium ' + (ok ? 'text-green-600' : 'text-red-600') + '">' + checks[k] + '</span></div>';
+    }
+    info.innerHTML = html || '<span class="text-gray-400">No checks available</span>';
+  }).catch(function() { document.getElementById('system-info').textContent = 'Unable to reach backend'; });
+
+  // Recent waves (activity feed)
+  if (isAdmin) {
+    fetch('/api/waves?size=5', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('recent-waves');
+      if (!d.items || !d.items.length) { el.textContent = 'No waves yet.'; return; }
+      var statusColors = {
+        draft: 'bg-gray-100 text-gray-600', analysing: 'bg-blue-100 text-blue-700',
+        proposed: 'bg-purple-100 text-purple-700', locked: 'bg-yellow-100 text-yellow-700',
+        in_review: 'bg-orange-100 text-orange-700', signed_off: 'bg-green-100 text-green-700',
+        closed: 'bg-gray-200 text-gray-600', cancelled: 'bg-red-100 text-red-700',
+      };
+      var html = '';
+      d.items.forEach(function(w) {
+        html += '<a href="/cockpit/wave?id=' + w.id + '" class="flex items-center justify-between p-2 rounded hover:bg-gray-50">' +
+          '<div><span class="font-medium text-xs">' + (w.name || w.code) + '</span>' +
+          '<span class="text-xs text-gray-400 ml-2">' + w.entity_count + ' entities</span></div>' +
+          '<span class="px-2 py-0.5 rounded text-xs ' + (statusColors[w.status] || 'bg-gray-100') + '">' + w.status.replace('_',' ') + '</span></a>';
+      });
+      el.innerHTML = html;
+    }).catch(function() { document.getElementById('recent-waves').textContent = 'Unable to load'; });
+
+    // Wave progress bars
+    fetch('/api/waves?size=10', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('wave-progress');
+      if (!d.items || !d.items.length) { el.textContent = 'No active waves. Create one from the Cockpit.'; return; }
+      var html = '';
+      d.items.forEach(function(w) {
+        if (w.status === 'closed' || w.status === 'cancelled') return;
+        // Fetch progress for each active wave
+        fetch('/api/waves/' + w.id + '/progress', { headers: headers }).then(function(r) { return r.json(); }).then(function(p) {
+          var pct = p.completion_pct || 0;
+          var bar = document.getElementById('wave-prog-' + w.id);
+          if (bar) {
+            bar.querySelector('.bar-fill').style.width = pct + '%';
+            bar.querySelector('.bar-text').textContent = p.decided_items + '/' + p.total_review_items + ' reviewed (' + pct + '%)';
+          }
+        }).catch(function() {});
+        html += '<div id="wave-prog-' + w.id + '" class="border rounded p-3">' +
+          '<div class="flex items-center justify-between mb-1">' +
+          '<a href="/cockpit/wave?id=' + w.id + '" class="font-medium text-sm text-amplifi-600 hover:underline">' + (w.name || w.code) + '</a>' +
+          '<span class="text-xs text-gray-500">' + w.status.replace('_',' ') + '</span></div>' +
+          '<div class="w-full bg-gray-200 rounded-full h-2"><div class="bar-fill bg-amplifi-500 h-2 rounded-full" style="width:0%"></div></div>' +
+          '<p class="bar-text text-xs text-gray-500 mt-1">Loading...</p></div>';
+      });
+      el.innerHTML = html || '<p class="text-gray-400">No active waves</p>';
+    }).catch(function() {});
+
+    // Data quality summary
+    fetch('/api/data/counts', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('data-quality');
+      var html = '<div class="space-y-2">';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Entities</span><span class="font-medium">' + fmt(d.entities) + '</span></div>';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Cost Centers</span><span class="font-medium">' + fmt(d.cost_centers) + '</span></div>';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Profit Centers</span><span class="font-medium">' + fmt(d.profit_centers) + '</span></div>';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Balances</span><span class="font-medium">' + fmt(d.balances) + '</span></div>';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Hierarchies</span><span class="font-medium">' + fmt(d.hierarchies) + '</span></div>';
+      html += '<div class="flex justify-between"><span class="text-gray-600">Uploads</span><span class="font-medium">' + fmt(d.upload_batches) + '</span></div>';
+      html += '</div>';
+      if (d.cost_centers === 0) {
+        html += '<div class="mt-3 p-2 bg-amber-50 rounded text-xs text-amber-700">No cost centers loaded yet. <a href="/data" class="underline">Upload data</a> to get started.</div>';
+      }
+      el.innerHTML = html;
+    }).catch(function() { document.getElementById('data-quality').textContent = 'Unable to load'; });
+  }
+})();
 </script>

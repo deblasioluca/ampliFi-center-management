@@ -1,0 +1,369 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Analytics Dashboard" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 class="text-xl font-bold">Analytics Dashboard</h2>
+      <p class="text-sm text-gray-500">Comprehensive visualizations of analysis results</p>
+    </div>
+    <div class="flex gap-2">
+      <select id="sel-wave" class="input text-sm w-48">
+        <option value="">Select Wave...</option>
+      </select>
+      <select id="sel-run" class="input text-sm w-48">
+        <option value="">Select Run...</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Persistent KPI Strip (§20.8) -->
+  <div id="kpi-strip" class="bg-white border rounded-lg p-3 mb-6 flex flex-wrap gap-3"></div>
+
+  <!-- Outcome Donut + Target Bar -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Outcome Distribution</h3>
+      <div class="flex items-center justify-center">
+        <canvas id="chart-outcome-donut" width="280" height="280"></canvas>
+      </div>
+      <div id="chart-outcome-legend" class="flex justify-center gap-4 mt-3 text-xs"></div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Target Object per Outcome</h3>
+      <canvas id="chart-target-bar" width="500" height="280"></canvas>
+    </div>
+  </div>
+
+  <!-- Entity × Outcome Heatmap -->
+  <div class="card mb-6">
+    <h3 class="text-sm font-semibold mb-3">Outcome by Entity (Heatmap)</h3>
+    <div id="chart-entity-heatmap" class="overflow-x-auto"></div>
+  </div>
+
+  <!-- Balance Bubble + Inactivity Heatmap -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Balance vs Activity (Bubble)</h3>
+      <canvas id="chart-balance-bubble" width="500" height="300"></canvas>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">ML Confidence Distribution</h3>
+      <canvas id="chart-ml-hist" width="500" height="300"></canvas>
+    </div>
+  </div>
+
+  <!-- Sankey / Flow -->
+  <div class="card mb-6">
+    <h3 class="text-sm font-semibold mb-3">Legacy → Target Flow (Sankey)</h3>
+    <div id="chart-sankey" class="h-64 flex items-center justify-center text-sm text-gray-400">
+      Select a completed run to see the flow diagram
+    </div>
+  </div>
+
+  <!-- Run Comparison (if two runs selected) -->
+  <div id="comparison-section" class="hidden mb-6">
+    <h3 class="text-lg font-semibold mb-3">Run Comparison</h3>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="card">
+        <h4 class="text-sm font-semibold mb-3">Outcome Transition Matrix</h4>
+        <div id="chart-outcome-diff"></div>
+      </div>
+      <div class="card">
+        <h4 class="text-sm font-semibold mb-3">Target Transition Matrix</h4>
+        <div id="chart-target-diff"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Housekeeping Charts -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Housekeeping Flag Distribution</h3>
+      <canvas id="chart-hk-flags" width="280" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Owner Response Funnel</h3>
+      <div id="chart-hk-funnel" class="space-y-2 text-sm"></div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Closure Trend</h3>
+      <canvas id="chart-hk-trend" width="300" height="200"></canvas>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+
+  var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6', OTHER: '#9ca3af' };
+  var TARGET_COLORS = { CC: '#6366f1', PC: '#8b5cf6', CC_AND_PC: '#a78bfa', PC_ONLY: '#c084fc', WBS_REAL: '#e879f9', WBS_STAT: '#f0abfc', NONE: '#d1d5db' };
+
+  function fmt(n) { return n != null ? Number(n).toLocaleString() : '--'; }
+
+  // Load waves
+  fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    var sel = document.getElementById('sel-wave');
+    (d.items || []).forEach(function(w) {
+      var opt = document.createElement('option');
+      opt.value = w.id;
+      opt.textContent = w.name + ' (' + w.status + ')';
+      sel.appendChild(opt);
+    });
+    // Auto-select first wave with completed analysis
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('wave')) sel.value = params.get('wave');
+    if (sel.value) loadWaveRuns(sel.value);
+  });
+
+  document.getElementById('sel-wave').addEventListener('change', function() {
+    if (this.value) loadWaveRuns(this.value);
+  });
+
+  function loadWaveRuns(waveId) {
+    fetch('/api/waves/' + waveId + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var sel = document.getElementById('sel-run');
+      sel.innerHTML = '<option value="">Select Run...</option>';
+      (d.items || []).filter(function(r) { return r.status === 'completed'; }).forEach(function(r) {
+        var opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = 'Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
+        sel.appendChild(opt);
+      });
+      if (sel.options.length > 1) { sel.selectedIndex = 1; loadRunVisuals(sel.value, waveId); }
+    });
+  }
+
+  document.getElementById('sel-run').addEventListener('change', function() {
+    var waveId = document.getElementById('sel-wave').value;
+    if (this.value) loadRunVisuals(this.value, waveId);
+  });
+
+  function loadRunVisuals(runId, waveId) {
+    // KPI Strip
+    fetch('/api/runs/' + runId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(run) {
+      var k = run.kpis || {};
+      var strip = document.getElementById('kpi-strip');
+      var total = k.total_centers || 0;
+      var kpis = [
+        { label: 'Total Centers', value: total, color: 'bg-gray-100' },
+        { label: 'KEEP', value: k.keep || 0, pct: total ? Math.round((k.keep || 0) / total * 100) : 0, color: 'bg-green-100 text-green-800' },
+        { label: 'RETIRE', value: k.retire || 0, pct: total ? Math.round((k.retire || 0) / total * 100) : 0, color: 'bg-red-100 text-red-800' },
+        { label: 'MERGE_MAP', value: k.merge_map || 0, pct: total ? Math.round((k.merge_map || 0) / total * 100) : 0, color: 'bg-amber-100 text-amber-800' },
+        { label: 'REDESIGN', value: k.redesign || 0, pct: total ? Math.round((k.redesign || 0) / total * 100) : 0, color: 'bg-blue-100 text-blue-800' },
+        { label: 'Reduction', value: total ? Math.round((1 - (k.keep || 0) / total) * 100) + '%' : '--', color: 'bg-purple-100 text-purple-800' }
+      ];
+      strip.innerHTML = kpis.map(function(kpi) {
+        return '<div class="rounded-lg px-4 py-2 ' + kpi.color + ' min-w-[120px]">' +
+          '<div class="text-xs font-medium opacity-70">' + kpi.label + '</div>' +
+          '<div class="text-lg font-bold">' + fmt(kpi.value) + '</div>' +
+          (kpi.pct != null ? '<div class="text-xs opacity-60">' + kpi.pct + '% of total</div>' : '') + '</div>';
+      }).join('');
+    });
+
+    // Proposals for charts
+    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var items = d.items || [];
+
+      // -- Outcome Donut --
+      var outcomeCounts = {};
+      items.forEach(function(p) {
+        var o = p.cleansing_outcome || 'OTHER';
+        outcomeCounts[o] = (outcomeCounts[o] || 0) + 1;
+      });
+      drawDonut('chart-outcome-donut', outcomeCounts, COLORS);
+      var legendEl = document.getElementById('chart-outcome-legend');
+      legendEl.innerHTML = Object.keys(outcomeCounts).map(function(k) {
+        return '<span class="flex items-center gap-1"><span class="w-3 h-3 rounded" style="background:' + (COLORS[k] || '#999') + '"></span>' + k + ': ' + outcomeCounts[k] + '</span>';
+      }).join('');
+
+      // -- Target Bar --
+      var targetByOutcome = {};
+      items.forEach(function(p) {
+        var o = p.cleansing_outcome || 'OTHER';
+        var t = p.target_object || 'NONE';
+        if (!targetByOutcome[o]) targetByOutcome[o] = {};
+        targetByOutcome[o][t] = (targetByOutcome[o][t] || 0) + 1;
+      });
+      drawStackedBar('chart-target-bar', targetByOutcome, TARGET_COLORS);
+
+      // -- Entity Heatmap --
+      var entityOutcome = {};
+      items.forEach(function(p) {
+        var e = p.ccode || 'Unknown';
+        var o = p.cleansing_outcome || 'OTHER';
+        if (!entityOutcome[e]) entityOutcome[e] = {};
+        entityOutcome[e][o] = (entityOutcome[e][o] || 0) + 1;
+      });
+      drawHeatmap('chart-entity-heatmap', entityOutcome, ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']);
+
+      // -- Sankey (simple flow) --
+      var flows = {};
+      items.forEach(function(p) {
+        var src = p.cleansing_outcome || 'OTHER';
+        var tgt = p.target_object || 'NONE';
+        var key = src + ' → ' + tgt;
+        flows[key] = (flows[key] || 0) + 1;
+      });
+      drawSankey('chart-sankey', flows);
+    });
+
+    // ML confidence histogram
+    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var confs = (d.items || []).filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
+      drawHistogram('chart-ml-hist', confs, 20, '#6366f1');
+    });
+  }
+
+  // --- CHART DRAWING FUNCTIONS ---
+
+  function drawDonut(canvasId, data, colors) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var total = Object.values(data).reduce(function(a, b) { return a + b; }, 0);
+    if (!total) return;
+    var cx = canvas.width / 2, cy = canvas.height / 2, r = Math.min(cx, cy) - 20, ri = r * 0.6;
+    var startAngle = -Math.PI / 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    Object.keys(data).forEach(function(key) {
+      var slice = data[key] / total * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, startAngle, startAngle + slice);
+      ctx.arc(cx, cy, ri, startAngle + slice, startAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = colors[key] || '#999';
+      ctx.fill();
+      startAngle += slice;
+    });
+    // Center text
+    ctx.fillStyle = '#374151';
+    ctx.font = 'bold 24px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(total.toLocaleString(), cx, cy - 8);
+    ctx.font = '12px system-ui';
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('Total Centers', cx, cy + 12);
+  }
+
+  function drawStackedBar(canvasId, data, colors) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var outcomes = Object.keys(data);
+    if (!outcomes.length) return;
+    var allTargets = {};
+    outcomes.forEach(function(o) { Object.keys(data[o]).forEach(function(t) { allTargets[t] = true; }); });
+    var targets = Object.keys(allTargets);
+    var barWidth = Math.min(60, (canvas.width - 60) / outcomes.length - 10);
+    var maxVal = 0;
+    outcomes.forEach(function(o) {
+      var sum = Object.values(data[o]).reduce(function(a, b) { return a + b; }, 0);
+      if (sum > maxVal) maxVal = sum;
+    });
+    var chartH = canvas.height - 40;
+    outcomes.forEach(function(o, i) {
+      var x = 50 + i * (barWidth + 10);
+      var y = chartH;
+      targets.forEach(function(t) {
+        var count = data[o][t] || 0;
+        var h = maxVal ? count / maxVal * (chartH - 20) : 0;
+        ctx.fillStyle = colors[t] || '#ddd';
+        ctx.fillRect(x, y - h, barWidth, h);
+        y -= h;
+      });
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(o, x + barWidth / 2, chartH + 15);
+    });
+  }
+
+  function drawHeatmap(divId, data, cols) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    var rows = Object.keys(data).sort();
+    if (!rows.length) { el.textContent = 'No data available'; return; }
+    var maxVal = 0;
+    rows.forEach(function(r) { cols.forEach(function(c) { var v = (data[r] && data[r][c]) || 0; if (v > maxVal) maxVal = v; }); });
+    var html = '<table class="w-full text-xs"><thead><tr><th class="py-1 px-2">Entity</th>';
+    cols.forEach(function(c) { html += '<th class="py-1 px-2 text-center">' + c + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function(r) {
+      html += '<tr><td class="py-1 px-2 font-mono font-medium border-r">' + r + '</td>';
+      cols.forEach(function(c) {
+        var v = (data[r] && data[r][c]) || 0;
+        var intensity = maxVal ? Math.round(v / maxVal * 255) : 0;
+        var bg = 'rgba(' + (COLORS[c] ? hexToRgb(COLORS[c]) : '100,100,100') + ',' + (intensity / 255 * 0.8 + 0.05).toFixed(2) + ')';
+        html += '<td class="py-1 px-2 text-center" style="background:' + bg + '">' + (v || '') + '</td>';
+      });
+      html += '</tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  }
+
+  function hexToRgb(hex) {
+    var r = parseInt(hex.slice(1, 3), 16);
+    var g = parseInt(hex.slice(3, 5), 16);
+    var b = parseInt(hex.slice(5, 7), 16);
+    return r + ',' + g + ',' + b;
+  }
+
+  function drawHistogram(canvasId, values, bins, color) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!values.length) { ctx.fillStyle = '#9ca3af'; ctx.fillText('No ML confidence data', 10, 30); return; }
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    var step = (max - min) / bins || 0.1;
+    var counts = new Array(bins).fill(0);
+    values.forEach(function(v) {
+      var idx = Math.min(Math.floor((v - min) / step), bins - 1);
+      counts[idx]++;
+    });
+    var maxCount = Math.max.apply(null, counts);
+    var barW = (canvas.width - 60) / bins;
+    var chartH = canvas.height - 40;
+    counts.forEach(function(c, i) {
+      var h = maxCount ? c / maxCount * (chartH - 10) : 0;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(50 + i * barW, chartH - h, barW - 1, h);
+    });
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '10px system-ui';
+    ctx.fillText(min.toFixed(2), 50, chartH + 15);
+    ctx.textAlign = 'right';
+    ctx.fillText(max.toFixed(2), canvas.width - 10, chartH + 15);
+    ctx.textAlign = 'center';
+    ctx.fillText('ML Confidence', canvas.width / 2, chartH + 30);
+  }
+
+  function drawSankey(divId, flows) {
+    var el = document.getElementById(divId);
+    if (!el || !Object.keys(flows).length) return;
+    var sorted = Object.entries(flows).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
+    var total = sorted.reduce(function(s, f) { return s + f[1]; }, 0);
+    var html = '<div class="space-y-1">';
+    sorted.forEach(function(f) {
+      var pct = Math.round(f[1] / total * 100);
+      var parts = f[0].split(' → ');
+      var color = COLORS[parts[0]] || '#999';
+      html += '<div class="flex items-center gap-2 text-xs">' +
+        '<span class="w-20 text-right font-medium" style="color:' + color + '">' + parts[0] + '</span>' +
+        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
+        '<div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.5"></div>' +
+        '<span class="absolute inset-0 flex items-center justify-center text-xs font-mono">' + f[1] + '</span></div>' +
+        '<span class="w-16 font-medium">' + parts[1] + '</span></div>';
+    });
+    el.innerHTML = html + '</div>';
+  }
+</script>

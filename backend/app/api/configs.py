@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_role
 from app.infra.db.session import get_db
-from app.models.core import AnalysisConfig, AppUser
+from app.models.core import AnalysisConfig, AppUser, GLAccountClassRange
 
 router = APIRouter()
 
@@ -152,3 +152,111 @@ def amend_config(
     db.commit()
     db.refresh(cfg)
     return ConfigOut.model_validate(cfg)
+
+
+# --- DSL Rule Engine (§04.5) ---
+
+
+class DSLRuleValidation(BaseModel):
+    rule: dict
+
+
+@router.post("/dsl/validate")
+def validate_dsl_rule(body: DSLRuleValidation) -> dict:
+    """Validate a DSL rule definition without executing it."""
+    from app.domain.decision_tree.dsl import validate_rule
+
+    errors = validate_rule(body.rule)
+    return {"valid": len(errors) == 0, "errors": errors}
+
+
+@router.get("/dsl/operators")
+def list_dsl_operators() -> dict:
+    """List available DSL operators for the rule builder UI."""
+    from app.domain.decision_tree.dsl import OPS
+
+    return {
+        "operators": list(OPS.keys()),
+        "fields": [
+            "cctr",
+            "ccode",
+            "coarea",
+            "txtsh",
+            "txtmi",
+            "responsible",
+            "category",
+            "is_active",
+            "months_since_last_posting",
+            "posting_count_window",
+            "bs_amt",
+            "opex_amt",
+            "rev_amt",
+            "hierarchy_depth",
+        ],
+        "verdicts": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
+    }
+
+
+# --- GL Account Class Ranges (§03.5) ---
+
+
+class GLRangeCreate(BaseModel):
+    class_code: str
+    class_label: str
+    from_account: str
+    to_account: str
+    category: str | None = None
+
+
+class GLRangeOut(BaseModel):
+    id: int
+    class_code: str
+    class_label: str
+    from_account: str
+    to_account: str
+    category: str | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/gl-ranges")
+def list_gl_ranges(db: Session = Depends(get_db)) -> list[GLRangeOut]:
+    rows = (
+        db.execute(select(GLAccountClassRange).order_by(GLAccountClassRange.from_account))
+        .scalars()
+        .all()
+    )
+    return [GLRangeOut.model_validate(r) for r in rows]
+
+
+@router.post("/gl-ranges")
+def create_gl_range(
+    body: GLRangeCreate,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> GLRangeOut:
+    r = GLAccountClassRange(
+        class_code=body.class_code,
+        class_label=body.class_label,
+        from_account=body.from_account,
+        to_account=body.to_account,
+        category=body.category,
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    return GLRangeOut.model_validate(r)
+
+
+@router.delete("/gl-ranges/{range_id}")
+def delete_gl_range(
+    range_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    r = db.get(GLAccountClassRange, range_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Range not found")
+    db.delete(r)
+    db.commit()
+    return {"deleted": True}

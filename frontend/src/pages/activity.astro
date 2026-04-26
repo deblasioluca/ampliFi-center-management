@@ -1,0 +1,84 @@
+---
+import Layout from '../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Activity Feed" requireAuth={true}>
+  <div class="mb-4 flex items-center justify-between">
+    <div>
+      <h2 class="text-xl font-bold">Activity Feed</h2>
+      <p class="text-sm text-gray-500 mt-1">Recent actions and notifications</p>
+    </div>
+    <div class="flex gap-2">
+      <label class="flex items-center gap-1 text-sm">
+        <input type="checkbox" id="unread-only" class="rounded" />
+        Unread only
+      </label>
+      <button id="mark-all-read" class="btn-secondary text-xs">Mark all read</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="feed-list" class="divide-y divide-gray-100">Loading...</div>
+    <div id="feed-empty" class="hidden text-center text-sm text-gray-400 py-8">No activity yet</div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) window.location.href = '/login';
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  var ACTION_ICONS = {
+    'wave.create': { icon: '+', color: 'bg-blue-100 text-blue-600' },
+    'wave.transition': { icon: '&#9654;', color: 'bg-indigo-100 text-indigo-600' },
+    'wave.signoff': { icon: '&#10003;', color: 'bg-green-100 text-green-600' },
+    'upload.complete': { icon: '&#8593;', color: 'bg-teal-100 text-teal-600' },
+    'review.decide': { icon: '&#9733;', color: 'bg-purple-100 text-purple-600' },
+    'scope.create': { icon: '&#9679;', color: 'bg-pink-100 text-pink-600' },
+    'user.create': { icon: '&#9734;', color: 'bg-amber-100 text-amber-600' },
+    'analysis.start': { icon: '&#9881;', color: 'bg-orange-100 text-orange-600' },
+  };
+
+  async function loadFeed() {
+    var unread = document.getElementById('unread-only').checked;
+    try {
+      var url = '/api/activity?limit=100' + (unread ? '&unread_only=true' : '');
+      var r = await fetch(url, { headers: headers });
+      var d = await r.json();
+      var items = d.items || [];
+      var el = document.getElementById('feed-list');
+      var emptyEl = document.getElementById('feed-empty');
+
+      if (!items.length) {
+        el.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+      emptyEl.classList.add('hidden');
+
+      el.innerHTML = items.map(function(item) {
+        var cfg = ACTION_ICONS[item.action] || { icon: '&#8226;', color: 'bg-gray-100 text-gray-600' };
+        var ts = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        var unreadDot = item.is_read ? '' : '<span class="w-2 h-2 rounded-full bg-amplifi-500 inline-block ml-2"></span>';
+        return '<div class="flex items-start gap-3 py-3 ' + (item.is_read ? 'opacity-60' : '') + '">' +
+          '<div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ' + cfg.color + '">' + cfg.icon + '</div>' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-sm">' + item.summary + unreadDot + '</p>' +
+            '<p class="text-xs text-gray-400 mt-0.5">' + ts + (item.entity_type ? ' &middot; ' + item.entity_type + ' #' + item.entity_id : '') + '</p>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } catch(e) {
+      document.getElementById('feed-list').textContent = 'Error: ' + e.message;
+    }
+  }
+
+  loadFeed();
+
+  document.getElementById('unread-only').addEventListener('change', loadFeed);
+  document.getElementById('mark-all-read').addEventListener('click', async function() {
+    await fetch('/api/activity/mark-read', { method: 'POST', headers: headers });
+    loadFeed();
+  });
+</script>

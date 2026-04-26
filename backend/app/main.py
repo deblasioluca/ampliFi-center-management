@@ -21,6 +21,12 @@ logger = structlog.get_logger()
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     logger.info("amplifi_cleanup.starting", env=settings.app_env)
+
+    # Boot routine registry
+    from app.domain.decision_tree.registry import boot_registry
+
+    boot_registry()
+
     yield
     logger.info("amplifi_cleanup.stopping")
 
@@ -121,3 +127,76 @@ app.include_router(stats_router.router, prefix="/api/stats", tags=["stats"])
 app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 app.include_router(housekeeping_router.router, prefix="/api", tags=["housekeeping"])
 app.include_router(data_mgmt_router.router, prefix="/api/data", tags=["data-management"])
+
+from app.api import activity as activity_router  # noqa: E402
+from app.api import docs_help as docs_help_router  # noqa: E402
+
+app.include_router(activity_router.router, prefix="/api/activity", tags=["activity"])
+app.include_router(docs_help_router.router, prefix="/api", tags=["help"])
+
+
+# --- Prometheus metrics ---
+
+
+@app.get("/api/metrics")
+async def prometheus_metrics() -> Response:
+    """Prometheus-compatible metrics endpoint (§18)."""
+
+    from sqlalchemy import text as sa_text
+
+    from app.infra.db.session import engine as db_engine
+
+    lines: list[str] = []
+    lines.append("# HELP amplifi_up Application is running")
+    lines.append("# TYPE amplifi_up gauge")
+    lines.append("amplifi_up 1")
+
+    try:
+        with db_engine.connect() as conn:
+            # Wave counts by status
+            rows = conn.execute(
+                sa_text("SELECT status, COUNT(*) FROM cleanup.wave GROUP BY status")
+            ).all()
+            lines.append("# HELP amplifi_waves_total Number of waves by status")
+            lines.append("# TYPE amplifi_waves_total gauge")
+            for status, count in rows:
+                lines.append(f'amplifi_waves_total{{status="{status}"}} {count}')
+
+            # Cost center count
+            cc_count = (
+                conn.execute(sa_text("SELECT COUNT(*) FROM cleanup.legacy_cost_center")).scalar()
+                or 0
+            )
+            lines.append("# HELP amplifi_cost_centers_total Total cost centers loaded")
+            lines.append("# TYPE amplifi_cost_centers_total gauge")
+            lines.append(f"amplifi_cost_centers_total {cc_count}")
+
+            # Balance count
+            bal_count = conn.execute(sa_text("SELECT COUNT(*) FROM cleanup.balance")).scalar() or 0
+            lines.append("# HELP amplifi_balances_total Total balance records")
+            lines.append("# TYPE amplifi_balances_total gauge")
+            lines.append(f"amplifi_balances_total {bal_count}")
+
+            # Analysis run counts
+            run_rows = conn.execute(
+                sa_text("SELECT status, COUNT(*) FROM cleanup.analysis_run GROUP BY status")
+            ).all()
+            lines.append("# HELP amplifi_analysis_runs_total Analysis runs by status")
+            lines.append("# TYPE amplifi_analysis_runs_total gauge")
+            for status, count in run_rows:
+                lines.append(f'amplifi_analysis_runs_total{{status="{status}"}} {count}')
+
+            # User count
+            user_count = (
+                conn.execute(
+                    sa_text("SELECT COUNT(*) FROM cleanup.app_user WHERE is_active = true")
+                ).scalar()
+                or 0
+            )
+            lines.append("# HELP amplifi_active_users Total active users")
+            lines.append("# TYPE amplifi_active_users gauge")
+            lines.append(f"amplifi_active_users {user_count}")
+    except Exception:
+        logger.debug("metrics.db_query_failed")
+
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain")

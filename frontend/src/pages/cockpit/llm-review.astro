@@ -1,0 +1,147 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+<Layout title="LLM Review Transcripts" requireAuth={true} adminOnly={true}>
+  <div class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">LLM Review Transcripts</h1>
+      <div class="flex gap-3 items-center">
+        <select id="sel-run" class="border rounded px-3 py-2">
+          <option value="">Select run...</option>
+        </select>
+        <select id="sel-mode" class="border rounded px-3 py-2">
+          <option value="">All modes</option>
+          <option value="SINGLE">SINGLE</option>
+          <option value="SEQUENTIAL">SEQUENTIAL</option>
+          <option value="DEBATE">DEBATE</option>
+        </select>
+        <button id="btn-load" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Load</button>
+      </div>
+    </div>
+
+    <!-- Usage Summary -->
+    <div id="usage-summary" class="grid grid-cols-4 gap-4 mb-6">
+      <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-2xl font-bold text-blue-600" id="stat-calls">--</div>
+        <div class="text-sm text-gray-500">Total Calls</div>
+      </div>
+      <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-2xl font-bold text-green-600" id="stat-cost">--</div>
+        <div class="text-sm text-gray-500">Total Cost (USD)</div>
+      </div>
+      <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-2xl font-bold text-purple-600" id="stat-tokens">--</div>
+        <div class="text-sm text-gray-500">Total Tokens</div>
+      </div>
+      <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-2xl font-bold text-orange-600" id="stat-reviewed">--</div>
+        <div class="text-sm text-gray-500">Centers Reviewed</div>
+      </div>
+    </div>
+
+    <!-- Transcripts List -->
+    <div id="transcripts" class="space-y-4">
+      <div class="bg-gray-50 rounded-lg p-8 text-center text-gray-400">
+        Select a run and click Load to view LLM review transcripts
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Load runs into selector
+    async function loadRuns() {
+      try {
+        const resp = await fetch('/api/waves', { headers });
+        const data = await resp.json();
+        const waves = data.items || data;
+        const sel = document.getElementById('sel-run');
+        for (const w of waves) {
+          const runsResp = await fetch(`/api/waves/${w.id}`, { headers });
+          const wave = await runsResp.json();
+          const runs = wave.runs || [];
+          for (const r of runs) {
+            const opt = document.createElement('option');
+            opt.value = r.id;
+            opt.textContent = `Wave "${w.name}" — Run #${r.id} (${r.status})`;
+            sel.appendChild(opt);
+          }
+        }
+      } catch (e) { console.error('Failed to load runs:', e); }
+    }
+
+    async function loadTranscripts() {
+      const runId = document.getElementById('sel-run').value;
+      if (!runId) return;
+
+      const container = document.getElementById('transcripts');
+      container.innerHTML = '<div class="text-center p-8 text-gray-400">Loading...</div>';
+
+      try {
+        const resp = await fetch(`/api/runs/${runId}/proposals?limit=500`, { headers });
+        const data = await resp.json();
+        const proposals = (data.items || data).filter(p => p.llm_commentary);
+
+        document.getElementById('stat-reviewed').textContent = proposals.length;
+
+        let totalCost = 0;
+        let totalTokens = 0;
+
+        if (proposals.length === 0) {
+          container.innerHTML = '<div class="bg-gray-50 rounded-lg p-8 text-center text-gray-400">No LLM transcripts found for this run. Run an LLM review pass first.</div>';
+          return;
+        }
+
+        container.innerHTML = '';
+        for (const p of proposals) {
+          const commentary = typeof p.llm_commentary === 'string'
+            ? JSON.parse(p.llm_commentary) : p.llm_commentary;
+
+          const card = document.createElement('div');
+          card.className = 'bg-white rounded-lg shadow p-4 border-l-4 border-purple-400';
+
+          const mode = commentary.mode || 'SINGLE';
+          const cost = commentary.cost_usd || 0;
+          const tokens = (commentary.tokens_in || 0) + (commentary.tokens_out || 0);
+          totalCost += cost;
+          totalTokens += tokens;
+
+          card.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <span class="font-mono text-sm bg-gray-100 px-2 py-1 rounded">${p.cctr || p.legacy_cc_id}</span>
+                <span class="text-sm font-semibold">${p.cc_name || ''}</span>
+                <span class="px-2 py-0.5 rounded text-xs font-medium ${
+                  p.cleansing_outcome === 'KEEP' ? 'bg-green-100 text-green-800' :
+                  p.cleansing_outcome === 'RETIRE' ? 'bg-red-100 text-red-800' :
+                  p.cleansing_outcome === 'MERGE_MAP' ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-blue-100 text-blue-800'
+                }">${p.cleansing_outcome || '--'}</span>
+              </div>
+              <div class="flex items-center gap-3 text-sm text-gray-500">
+                <span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">${mode}</span>
+                <span>$${cost.toFixed(4)}</span>
+                <span>${tokens} tok</span>
+              </div>
+            </div>
+            <div class="mt-2 text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-3 rounded max-h-48 overflow-y-auto">${
+              commentary.review || commentary.text || commentary.final || JSON.stringify(commentary, null, 2)
+            }</div>
+          `;
+          container.appendChild(card);
+        }
+
+        document.getElementById('stat-calls').textContent = proposals.length;
+        document.getElementById('stat-cost').textContent = '$' + totalCost.toFixed(2);
+        document.getElementById('stat-tokens').textContent = totalTokens.toLocaleString();
+      } catch (e) {
+        container.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded">${e.message}</div>`;
+      }
+    }
+
+    document.getElementById('btn-load')?.addEventListener('click', loadTranscripts);
+    loadRuns();
+  </script>
+</Layout>

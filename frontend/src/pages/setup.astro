@@ -1,0 +1,269 @@
+---
+import Layout from '../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Setup Wizard" requireAuth={true} adminOnly={true}>
+  <div class="max-w-2xl mx-auto">
+    <h2 class="text-xl font-bold mb-2">Setup Wizard</h2>
+    <p class="text-sm text-gray-500 mb-6">Complete the initial configuration to get started with ampliFi.</p>
+
+    <!-- Steps indicator -->
+    <div class="flex items-center mb-8">
+      <div class="flex-1 flex items-center" id="step-indicators">
+        <template id="step-tpl">
+          <div class="step-indicator flex items-center">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium border-2"></div>
+            <div class="h-0.5 w-8 bg-gray-200 mx-1 step-line"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Step 1: Database check -->
+    <div id="step-1" class="card step-content">
+      <h3 class="text-lg font-semibold mb-3">1. Database Connection</h3>
+      <p class="text-sm text-gray-500 mb-4">Verifying database connectivity and schema.</p>
+      <div id="db-status" class="text-sm">Checking...</div>
+      <div class="mt-4 flex gap-2">
+        <button id="btn-check-db" class="btn-secondary text-sm">Re-check</button>
+        <button id="btn-next-1" class="btn-amplifi text-sm" disabled>Next</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Admin user -->
+    <div id="step-2" class="card step-content hidden">
+      <h3 class="text-lg font-semibold mb-3">2. Admin Account</h3>
+      <p class="text-sm text-gray-500 mb-4">Verify admin account is properly configured.</p>
+      <div id="admin-status" class="text-sm">Checking...</div>
+      <div class="mt-4">
+        <button id="btn-next-2" class="btn-amplifi text-sm" disabled>Next</button>
+      </div>
+    </div>
+
+    <!-- Step 3: SAP Connection (optional) -->
+    <div id="step-3" class="card step-content hidden">
+      <h3 class="text-lg font-semibold mb-3">3. SAP Connection (Optional)</h3>
+      <p class="text-sm text-gray-500 mb-4">Configure SAP connectivity for live data extraction.</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Connection Name</label>
+          <input id="sap-name" type="text" class="input text-sm w-full" placeholder="Production S/4HANA" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Base URL</label>
+            <input id="sap-url" type="text" class="input text-sm w-full" placeholder="https://sap-host:443" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Client</label>
+            <input id="sap-client" type="text" class="input text-sm w-full" placeholder="100" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Username</label>
+            <input id="sap-user" type="text" class="input text-sm w-full" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Password</label>
+            <input id="sap-pass" type="password" class="input text-sm w-full" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Protocol</label>
+          <select id="sap-protocol" class="input text-sm w-full">
+            <option value="odata">OData</option>
+            <option value="adt">ADT</option>
+            <option value="soap">SOAP</option>
+          </select>
+        </div>
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button id="btn-skip-sap" class="btn-secondary text-sm">Skip (configure later)</button>
+        <button id="btn-save-sap" class="btn-amplifi text-sm">Save & Test</button>
+      </div>
+      <div id="sap-result" class="mt-2 text-sm hidden"></div>
+    </div>
+
+    <!-- Step 4: LLM Config (optional) -->
+    <div id="step-4" class="card step-content hidden">
+      <h3 class="text-lg font-semibold mb-3">4. LLM Configuration (Optional)</h3>
+      <p class="text-sm text-gray-500 mb-4">Set up AI-assisted analysis. You can configure this later.</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Provider</label>
+          <select id="llm-provider" class="input text-sm w-full">
+            <option value="azure">Azure OpenAI</option>
+            <option value="btp">SAP BTP GenAI Hub</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">API Endpoint</label>
+          <input id="llm-endpoint" type="text" class="input text-sm w-full" placeholder="https://your-resource.openai.azure.com/" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">API Key</label>
+          <input id="llm-key" type="password" class="input text-sm w-full" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Model / Deployment</label>
+          <input id="llm-model" type="text" class="input text-sm w-full" placeholder="gpt-4o" />
+        </div>
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button id="btn-skip-llm" class="btn-secondary text-sm">Skip (configure later)</button>
+        <button id="btn-save-llm" class="btn-amplifi text-sm">Save</button>
+      </div>
+    </div>
+
+    <!-- Step 5: Sample data -->
+    <div id="step-5" class="card step-content hidden">
+      <h3 class="text-lg font-semibold mb-3">5. Sample Data</h3>
+      <p class="text-sm text-gray-500 mb-4">Generate sample data to explore the application, or skip if you'll upload real data.</p>
+      <div id="sample-status" class="text-sm mb-3">No sample data loaded.</div>
+      <div class="flex gap-2">
+        <button id="btn-gen-sample" class="btn-amplifi text-sm">Generate Sample Data</button>
+        <button id="btn-skip-sample" class="btn-secondary text-sm">Skip — I'll upload real data</button>
+      </div>
+    </div>
+
+    <!-- Step 6: Done -->
+    <div id="step-6" class="card step-content hidden">
+      <h3 class="text-lg font-semibold mb-3 text-green-700">Setup Complete!</h3>
+      <p class="text-sm text-gray-500 mb-4">Your ampliFi instance is ready. Here's what to do next:</p>
+      <ul class="text-sm space-y-2 mb-4">
+        <li class="flex items-start gap-2">
+          <span class="text-amplifi-500 font-bold mt-0.5">1.</span>
+          <span><a href="/data" class="text-amplifi-600 hover:underline font-medium">Upload data</a> — Import cost centers, profit centers, entities, and balances via CSV</span>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="text-amplifi-500 font-bold mt-0.5">2.</span>
+          <span><a href="/cockpit" class="text-amplifi-600 hover:underline font-medium">Create a wave</a> — Define scope and run analysis</span>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="text-amplifi-500 font-bold mt-0.5">3.</span>
+          <span><a href="/admin/users" class="text-amplifi-600 hover:underline font-medium">Add reviewers</a> — Invite stakeholders to review proposals</span>
+        </li>
+      </ul>
+      <a href="/" class="btn-amplifi text-sm inline-block">Go to Dashboard</a>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) window.location.href = '/login';
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  var currentStep = 1;
+  var totalSteps = 6;
+
+  function showStep(n) {
+    currentStep = n;
+    for (var i = 1; i <= totalSteps; i++) {
+      var el = document.getElementById('step-' + i);
+      if (el) el.classList.toggle('hidden', i !== n);
+    }
+  }
+
+  // Step 1: DB check
+  function checkDb() {
+    var el = document.getElementById('db-status');
+    el.innerHTML = '<span class="text-gray-500">Checking database...</span>';
+    fetch('/api/healthz', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.status === 'ok' || d.database === 'ok') {
+        el.innerHTML = '<span class="text-green-600 font-medium">Database connected and schema ready.</span>';
+        document.getElementById('btn-next-1').disabled = false;
+      } else {
+        el.innerHTML = '<span class="text-red-600">Database check failed: ' + JSON.stringify(d) + '</span>';
+      }
+    }).catch(function(e) {
+      el.innerHTML = '<span class="text-red-600">Connection error: ' + e.message + '</span>';
+    });
+  }
+  checkDb();
+  document.getElementById('btn-check-db').addEventListener('click', checkDb);
+  document.getElementById('btn-next-1').addEventListener('click', function() {
+    showStep(2);
+    checkAdmin();
+  });
+
+  // Step 2: Admin check
+  function checkAdmin() {
+    var el = document.getElementById('admin-status');
+    fetch('/api/auth/me', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.role === 'admin') {
+        el.innerHTML = '<span class="text-green-600 font-medium">Admin account active: ' + (d.email || d.display_name) + '</span>';
+        document.getElementById('btn-next-2').disabled = false;
+      } else {
+        el.innerHTML = '<span class="text-amber-600">Logged in as ' + d.role + '. Admin role required for setup.</span>';
+      }
+    }).catch(function(e) {
+      el.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    });
+  }
+  document.getElementById('btn-next-2').addEventListener('click', function() { showStep(3); });
+
+  // Step 3: SAP
+  document.getElementById('btn-skip-sap').addEventListener('click', function() { showStep(4); });
+  document.getElementById('btn-save-sap').addEventListener('click', async function() {
+    var resultEl = document.getElementById('sap-result');
+    resultEl.classList.remove('hidden');
+    resultEl.innerHTML = '<span class="text-gray-500">Saving and testing...</span>';
+    try {
+      var body = {
+        name: document.getElementById('sap-name').value || 'Default',
+        base_url: document.getElementById('sap-url').value,
+        client: document.getElementById('sap-client').value || '100',
+        username: document.getElementById('sap-user').value,
+        password: document.getElementById('sap-pass').value,
+        protocol: document.getElementById('sap-protocol').value,
+      };
+      var resp = await fetch('/api/admin/sap-connections', { method: 'POST', headers: headers, body: JSON.stringify(body) });
+      if (!resp.ok) { var e = await resp.json(); throw new Error(e.detail || 'Failed'); }
+      var conn = await resp.json();
+      // Test
+      var testResp = await fetch('/api/admin/sap-connections/' + conn.id + '/test', { method: 'POST', headers: headers });
+      var testResult = await testResp.json();
+      if (testResult.success) {
+        resultEl.innerHTML = '<span class="text-green-600 font-medium">Connected! Latency: ' + testResult.latency_ms + 'ms</span>';
+        setTimeout(function() { showStep(4); }, 1500);
+      } else {
+        resultEl.innerHTML = '<span class="text-amber-600">Saved but test failed: ' + (testResult.error || 'unknown') + '</span>';
+      }
+    } catch(e) {
+      resultEl.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    }
+  });
+
+  // Step 4: LLM
+  document.getElementById('btn-skip-llm').addEventListener('click', function() { showStep(5); });
+  document.getElementById('btn-save-llm').addEventListener('click', async function() {
+    try {
+      var body = {
+        provider: document.getElementById('llm-provider').value,
+        endpoint: document.getElementById('llm-endpoint').value,
+        api_key: document.getElementById('llm-key').value,
+        model: document.getElementById('llm-model').value,
+      };
+      await fetch('/api/admin/llm', { method: 'POST', headers: headers, body: JSON.stringify(body) });
+      showStep(5);
+    } catch(e) { alert('Error: ' + e.message); }
+  });
+
+  // Step 5: Sample data
+  document.getElementById('btn-skip-sample').addEventListener('click', function() { showStep(6); });
+  document.getElementById('btn-gen-sample').addEventListener('click', async function() {
+    var el = document.getElementById('sample-status');
+    el.innerHTML = '<span class="text-gray-500">Generating sample data...</span>';
+    try {
+      var resp = await fetch('/api/admin/sample-data', { method: 'POST', headers: headers });
+      var d = await resp.json();
+      el.innerHTML = '<span class="text-green-600 font-medium">Generated ' + (d.entities || 0) + ' entities, ' + (d.cost_centers || 0) + ' CCs, ' + (d.balances || 0) + ' balances</span>';
+      setTimeout(function() { showStep(6); }, 1500);
+    } catch(e) {
+      el.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    }
+  });
+</script>

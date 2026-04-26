@@ -35,13 +35,85 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
     <!-- Sidebar: Wave selector -->
     <div class="lg:col-span-1">
-      <div class="card">
+      <div class="card mb-4">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-gray-700">Waves</h3>
           <button id="create-wave-btn" class="text-xs text-amplifi-600 hover:text-amplifi-800">+ New</button>
         </div>
         <div id="wave-list" class="space-y-2 text-sm">Loading waves...</div>
       </div>
+      <a href="/cockpit/analytics" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Analytics</p>
+            <p class="text-xs text-gray-500">Charts & visualizations</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/compare" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Compare Runs</p>
+            <p class="text-xs text-gray-500">Outcome diff matrices</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/pipeline" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Pipeline Editor</p>
+            <p class="text-xs text-gray-500">Configure analysis steps</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/llm-review" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">LLM Transcripts</p>
+            <p class="text-xs text-gray-500">Review AI commentary</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/mdg-export" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">MDG Export</p>
+            <p class="text-xs text-gray-500">Generate export files</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/housekeeping" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Housekeeping</p>
+            <p class="text-xs text-gray-500">Monthly cycle reviews</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/data-quality" class="card block hover:shadow-md transition-shadow mb-3">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Data Quality</p>
+            <p class="text-xs text-gray-500">Completeness & consistency</p>
+          </div>
+        </div>
+      </a>
+      <a href="/cockpit/cluster" class="card block hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Cluster Explorer</p>
+            <p class="text-xs text-gray-500">Find duplicates & similar centers</p>
+          </div>
+        </div>
+      </a>
 
       <!-- Create wave form (hidden by default) -->
       <div id="new-wave-form" class="card mt-4 hidden">
@@ -58,6 +130,23 @@ import Layout from '../../components/layout/Layout.astro';
           <div>
             <label class="block text-xs text-gray-500 mb-1">Description</label>
             <input type="text" id="wave-desc" class="input text-sm" placeholder="Description" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Scope: Entities (comma-separated company codes)</label>
+            <input type="text" id="wave-entities" class="input text-sm" placeholder="DE01, US01, JP01" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Scope: Hierarchy Node</label>
+            <div class="flex gap-2">
+              <select id="wave-hier-id" class="input text-sm flex-1">
+                <option value="">-- Select Hierarchy --</option>
+              </select>
+              <input type="text" id="wave-hier-node" class="input text-sm flex-1" placeholder="Node setname" />
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="wave-full-scope" />
+            <label for="wave-full-scope" class="text-xs text-gray-500">Full scope (all cost centers)</label>
           </div>
           <div class="flex gap-2">
             <button id="save-wave-btn" class="btn-amplifi text-xs flex-1">Create</button>
@@ -137,9 +226,9 @@ import Layout from '../../components/layout/Layout.astro';
             link.setAttribute('data-id', w.id);
             link.innerHTML = '<span class="font-medium">' + escapeHtml(w.code) + '</span>' +
               '<span class="text-xs text-gray-400 ml-2">' + escapeHtml(w.status) + '</span>';
+            link.href = '/cockpit/wave?id=' + w.id;
             link.addEventListener('click', function(e) {
-              e.preventDefault();
-              loadWaveDetail(w.id, w);
+              // Navigate to wave detail page
             });
             el.appendChild(link);
           });
@@ -178,16 +267,37 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('cancel-wave-btn').addEventListener('click', function() {
       document.getElementById('new-wave-form').classList.add('hidden');
     });
+    // Load hierarchies for wave scope selector
+    fetch('/api/legacy/hierarchies?size=200', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+      var sel = document.getElementById('wave-hier-id');
+      (d.items || []).forEach(function(h) {
+        var opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = h.setname + ' (' + (h.description || h.setclass) + ')';
+        sel.appendChild(opt);
+      });
+    }).catch(function(){});
+
     document.getElementById('save-wave-btn').addEventListener('click', async function() {
       var code = document.getElementById('wave-code').value.trim();
       var name = document.getElementById('wave-name').value.trim();
       var desc = document.getElementById('wave-desc').value.trim();
+      var entitiesRaw = document.getElementById('wave-entities').value.trim();
+      var hierId = document.getElementById('wave-hier-id').value;
+      var hierNode = document.getElementById('wave-hier-node').value.trim();
+      var fullScope = document.getElementById('wave-full-scope').checked;
       var errEl = document.getElementById('wave-error');
       errEl.classList.add('hidden');
       if (!code) { errEl.textContent = 'Code required'; errEl.classList.remove('hidden'); return; }
       if (!name) { errEl.textContent = 'Name required'; errEl.classList.remove('hidden'); return; }
+      var entity_ccodes = entitiesRaw ? entitiesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+      var hierarchy_scopes = [];
+      if (hierId && hierNode) {
+        hierarchy_scopes.push({ hierarchy_id: parseInt(hierId), node_setname: hierNode });
+      }
       try {
-        var res = await fetch('/api/waves', { method: 'POST', headers: headers, body: JSON.stringify({ code: code, name: name, description: desc }) });
+        var body = { code: code, name: name, description: desc, entity_ccodes: entity_ccodes, hierarchy_scopes: hierarchy_scopes, is_full_scope: fullScope };
+        var res = await fetch('/api/waves', { method: 'POST', headers: headers, body: JSON.stringify(body) });
         if (!res.ok) { var b = await res.json().catch(function(){return {};}); throw new Error(b.detail || 'Failed'); }
         document.getElementById('new-wave-form').classList.add('hidden');
         loadWaves();

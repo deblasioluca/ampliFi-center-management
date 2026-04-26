@@ -1,0 +1,71 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Background Jobs" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-bold">Background Jobs</h2>
+    <button id="btn-refresh" class="btn-secondary text-sm">Refresh</button>
+  </div>
+
+  <div class="card">
+    <div id="jobs-table" class="text-sm">Loading...</div>
+    <div id="jobs-pager" class="mt-2"></div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
+
+  function pagerHtml(total, page, size, fn) {
+    var pages = Math.ceil(total / size);
+    if (pages <= 1) return '';
+    var html = '<div class="flex items-center gap-2 text-xs text-gray-500">';
+    html += '<span>Page ' + page + ' of ' + pages + '</span>';
+    if (page > 1) html += '<button onclick="' + fn + '(' + (page-1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">&laquo;</button>';
+    if (page < pages) html += '<button onclick="' + fn + '(' + (page+1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">&raquo;</button>';
+    html += '</div>';
+    return html;
+  }
+
+  var STATUS_COLORS = {
+    'pending': 'bg-gray-100 text-gray-700',
+    'running': 'bg-blue-100 text-blue-700',
+    'completed': 'bg-green-100 text-green-700',
+    'failed': 'bg-red-100 text-red-700',
+    'cancelled': 'bg-orange-100 text-orange-700'
+  };
+
+  window.loadJobs = function(page) {
+    page = page || 1;
+    fetch('/api/admin/jobs?page=' + page + '&size=50', { headers: authHdr })
+      .then(function(r) { return r.json(); }).then(function(d) {
+        var el = document.getElementById('jobs-table');
+        if (!d.items || !d.items.length) { el.textContent = 'No background jobs found.'; return; }
+        var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+          '<th class="py-2 px-2 text-left">ID</th>' +
+          '<th class="py-2 px-2 text-left">Task</th>' +
+          '<th class="py-2 px-2 text-left">Task ID</th>' +
+          '<th class="py-2 px-2 text-center">Status</th>' +
+          '<th class="py-2 px-2 text-left">Started</th></tr></thead><tbody>';
+        d.items.forEach(function(j) {
+          var statusClass = STATUS_COLORS[j.status] || 'bg-gray-100';
+          html += '<tr class="border-b hover:bg-gray-50">' +
+            '<td class="py-1.5 px-2 font-mono">' + j.id + '</td>' +
+            '<td class="py-1.5 px-2 font-medium">' + esc(j.task_name) + '</td>' +
+            '<td class="py-1.5 px-2 font-mono text-xs max-w-xs truncate">' + esc(j.task_id) + '</td>' +
+            '<td class="py-1.5 px-2 text-center"><span class="px-1.5 py-0.5 rounded text-xs ' + statusClass + '">' + esc(j.status) + '</span></td>' +
+            '<td class="py-1.5 px-2">' + (j.started_at ? new Date(j.started_at).toLocaleString() : '--') + '</td></tr>';
+        });
+        el.innerHTML = html + '</tbody></table>';
+        document.getElementById('jobs-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadJobs');
+      }).catch(function(e) { document.getElementById('jobs-table').textContent = 'Error: ' + e.message; });
+  };
+  loadJobs(1);
+  document.getElementById('btn-refresh').addEventListener('click', function() { loadJobs(1); });
+</script>

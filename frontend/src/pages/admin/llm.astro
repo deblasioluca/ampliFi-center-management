@@ -1,0 +1,227 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="LLM Settings" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">LLM Configuration</h1>
+    <p class="text-sm text-gray-500 mt-1">Configure Azure OpenAI or BTP GenAI Hub for analysis review</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Azure OpenAI -->
+    <div class="card">
+      <h3 class="text-base font-semibold mb-4">Azure OpenAI</h3>
+      <form id="azure-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Endpoint</label>
+          <input id="az-endpoint" type="text" class="input text-sm" placeholder="https://your-resource.openai.azure.com" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">API Key</label>
+          <input id="az-key" type="password" class="input text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Deployment Name</label>
+          <input id="az-deployment" type="text" class="input text-sm" placeholder="gpt-4o" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">API Version</label>
+          <input id="az-version" type="text" class="input text-sm" value="2024-02-01" />
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Max Tokens</label>
+            <input id="az-max-tokens" type="number" class="input text-sm" value="4096" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Temperature</label>
+            <input id="az-temp" type="number" step="0.1" class="input text-sm" value="0.1" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Daily Budget ($)</label>
+            <input id="az-budget" type="number" step="0.01" class="input text-sm" value="50.00" />
+          </div>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="submit" class="btn-amplifi text-sm">Save</button>
+          <button type="button" id="az-test" class="btn-secondary text-sm">Test Connection</button>
+          <button type="button" id="az-clear" class="btn-danger text-sm">Clear</button>
+        </div>
+        <div id="az-result" class="text-sm hidden"></div>
+      </form>
+    </div>
+
+    <!-- BTP GenAI Hub -->
+    <div class="card">
+      <h3 class="text-base font-semibold mb-4">SAP BTP GenAI Hub</h3>
+      <form id="btp-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Service URL</label>
+          <input id="btp-url" type="text" class="input text-sm" placeholder="https://..." />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Client ID</label>
+          <input id="btp-client-id" type="text" class="input text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Client Secret</label>
+          <input id="btp-client-secret" type="password" class="input text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Token URL</label>
+          <input id="btp-token-url" type="text" class="input text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Model Name</label>
+          <input id="btp-model" type="text" class="input text-sm" placeholder="gpt-4o" />
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="submit" class="btn-amplifi text-sm">Save</button>
+          <button type="button" id="btp-test" class="btn-secondary text-sm">Test Connection</button>
+          <button type="button" id="btp-clear" class="btn-danger text-sm">Clear</button>
+        </div>
+        <div id="btp-result" class="text-sm hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Cost Guardrails -->
+  <div class="card mt-6">
+    <h3 class="text-base font-semibold mb-4">Cost Guardrails</h3>
+    <form id="guardrails-form" class="grid grid-cols-3 gap-4 max-w-lg">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Max $ per Call</label>
+        <input id="g-per-call" type="number" step="0.01" class="input text-sm" value="1.00" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Max $ per Pass</label>
+        <input id="g-per-pass" type="number" step="0.01" class="input text-sm" value="10.00" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Daily Cap ($)</label>
+        <input id="g-daily" type="number" step="0.01" class="input text-sm" value="50.00" />
+      </div>
+      <div class="col-span-3">
+        <button type="submit" class="btn-amplifi text-sm">Save Guardrails</button>
+      </div>
+    </form>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var jsonHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  function loadConfig(key) {
+    return fetch('/api/admin/config/' + key, { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { return d.value || {}; });
+  }
+  function saveConfig(key, value) {
+    return fetch('/api/admin/config/' + key, {
+      method: 'PUT', headers: jsonHdr, body: JSON.stringify({ value: value })
+    });
+  }
+
+  // Load Azure config
+  loadConfig('llm.azure').then(function(v) {
+    if (v.endpoint) document.getElementById('az-endpoint').value = v.endpoint;
+    if (v.deployment) document.getElementById('az-deployment').value = v.deployment;
+    if (v.api_version) document.getElementById('az-version').value = v.api_version;
+    if (v.max_tokens) document.getElementById('az-max-tokens').value = v.max_tokens;
+    if (v.temperature !== undefined) document.getElementById('az-temp').value = v.temperature;
+    if (v.daily_budget) document.getElementById('az-budget').value = v.daily_budget;
+  });
+
+  // Load BTP config
+  loadConfig('llm.btp').then(function(v) {
+    if (v.service_url) document.getElementById('btp-url').value = v.service_url;
+    if (v.client_id) document.getElementById('btp-client-id').value = v.client_id;
+    if (v.token_url) document.getElementById('btp-token-url').value = v.token_url;
+    if (v.model) document.getElementById('btp-model').value = v.model;
+  });
+
+  // Load guardrails
+  loadConfig('llm.guardrails').then(function(v) {
+    if (v.per_call) document.getElementById('g-per-call').value = v.per_call;
+    if (v.per_pass) document.getElementById('g-per-pass').value = v.per_pass;
+    if (v.daily) document.getElementById('g-daily').value = v.daily;
+  });
+
+  document.getElementById('azure-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveConfig('llm.azure', {
+      endpoint: document.getElementById('az-endpoint').value,
+      api_key: document.getElementById('az-key').value || undefined,
+      deployment: document.getElementById('az-deployment').value,
+      api_version: document.getElementById('az-version').value,
+      max_tokens: parseInt(document.getElementById('az-max-tokens').value),
+      temperature: parseFloat(document.getElementById('az-temp').value),
+      daily_budget: parseFloat(document.getElementById('az-budget').value),
+    });
+    var el = document.getElementById('az-result');
+    el.textContent = 'Saved!'; el.className = 'text-sm text-green-600'; el.classList.remove('hidden');
+    setTimeout(function() { el.classList.add('hidden'); }, 2000);
+  });
+
+  document.getElementById('btp-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveConfig('llm.btp', {
+      service_url: document.getElementById('btp-url').value,
+      client_id: document.getElementById('btp-client-id').value,
+      client_secret: document.getElementById('btp-client-secret').value || undefined,
+      token_url: document.getElementById('btp-token-url').value,
+      model: document.getElementById('btp-model').value,
+    });
+    var el = document.getElementById('btp-result');
+    el.textContent = 'Saved!'; el.className = 'text-sm text-green-600'; el.classList.remove('hidden');
+    setTimeout(function() { el.classList.add('hidden'); }, 2000);
+  });
+
+  document.getElementById('guardrails-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveConfig('llm.guardrails', {
+      per_call: parseFloat(document.getElementById('g-per-call').value),
+      per_pass: parseFloat(document.getElementById('g-per-pass').value),
+      daily: parseFloat(document.getElementById('g-daily').value),
+    });
+    alert('Guardrails saved!');
+  });
+
+  document.getElementById('az-test').addEventListener('click', async function() {
+    var el = document.getElementById('az-result');
+    el.textContent = 'Testing...'; el.className = 'text-sm text-gray-500'; el.classList.remove('hidden');
+    try {
+      var cfg = await loadConfig('llm.azure');
+      if (!cfg.endpoint) throw new Error('No Azure endpoint configured');
+      el.textContent = 'Azure endpoint configured: ' + cfg.endpoint + '. Integration test pending.';
+      el.className = 'text-sm text-blue-600';
+    } catch(e) { el.textContent = 'Error: ' + e.message; el.className = 'text-sm text-red-600'; }
+  });
+
+  document.getElementById('btp-test').addEventListener('click', async function() {
+    var el = document.getElementById('btp-result');
+    el.textContent = 'Testing...'; el.className = 'text-sm text-gray-500'; el.classList.remove('hidden');
+    try {
+      var cfg = await loadConfig('llm.btp');
+      if (!cfg.service_url) throw new Error('No BTP service URL configured');
+      el.textContent = 'BTP endpoint configured: ' + cfg.service_url + '. Integration test pending.';
+      el.className = 'text-sm text-blue-600';
+    } catch(e) { el.textContent = 'Error: ' + e.message; el.className = 'text-sm text-red-600'; }
+  });
+
+  document.getElementById('az-clear').addEventListener('click', async function() {
+    if (!confirm('Clear Azure OpenAI configuration?')) return;
+    await saveConfig('llm.azure', {});
+    document.getElementById('azure-form').reset();
+  });
+
+  document.getElementById('btp-clear').addEventListener('click', async function() {
+    if (!confirm('Clear BTP GenAI configuration?')) return;
+    await saveConfig('llm.btp', {});
+    document.getElementById('btp-form').reset();
+  });
+})();
+</script>

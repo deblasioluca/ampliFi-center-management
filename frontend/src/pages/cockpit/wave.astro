@@ -1,0 +1,574 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Wave Detail" requireAuth={true} adminOnly={true}>
+  <div id="wave-header" class="mb-6">Loading wave...</div>
+
+  <!-- Status bar -->
+  <div id="status-bar" class="mb-6 hidden">
+    <div class="flex items-center gap-2 text-sm">
+      <span class="font-medium text-gray-500">Status:</span>
+      <span id="wave-status-badge" class="px-3 py-1 rounded-full text-xs font-medium"></span>
+      <div class="flex-1"></div>
+      <div id="wave-actions" class="flex gap-2"></div>
+    </div>
+    <div class="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div id="progress-bar" class="h-full bg-amplifi-500 transition-all" style="width:0%"></div>
+    </div>
+    <p id="progress-text" class="text-xs text-gray-500 mt-1"></p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
+    <div class="flex space-x-0" id="wave-tabs">
+      <button class="tab-active px-4 py-3" data-tab="scope">Scope</button>
+      <button class="tab px-4 py-3" data-tab="analysis">Analysis</button>
+      <button class="tab px-4 py-3" data-tab="proposals">Proposals</button>
+      <button class="tab px-4 py-3" data-tab="review">Review Scopes</button>
+    </div>
+  </div>
+
+  <div class="card rounded-t-none border-t-0">
+    <!-- Scope Tab -->
+    <div id="tab-scope">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold">Wave Scope</h3>
+        <div class="flex gap-2">
+          <button id="btn-add-entities" class="btn-amplifi text-sm">+ Add Entities</button>
+          <button id="btn-add-hier" class="btn-secondary text-sm">+ Add Hierarchy Nodes</button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mb-3">Define scope by selecting entities (company codes) and/or hierarchy nodes. Only cost centers matching the selected scope will be included in the analysis.</p>
+      <h4 class="text-sm font-medium text-gray-700 mb-2">Entities in Scope</h4>
+      <div id="scope-entities" class="text-sm mb-4">Loading...</div>
+      <h4 class="text-sm font-medium text-gray-700 mb-2">Hierarchy Nodes in Scope</h4>
+      <div id="scope-hier-nodes" class="text-sm">
+        <p class="text-xs text-gray-400">No hierarchy nodes selected. Click "+ Add Hierarchy Nodes" to narrow scope by hierarchy.</p>
+      </div>
+    </div>
+
+    <!-- Analysis Tab -->
+    <div id="tab-analysis" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold">Analysis Runs</h3>
+        <button id="btn-run-analysis" class="btn-amplifi text-sm">Run Analysis</button>
+      </div>
+      <div id="analysis-runs" class="text-sm">Loading...</div>
+    </div>
+
+    <!-- Proposals Tab -->
+    <div id="tab-proposals" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold">Center Proposals</h3>
+        <div class="flex gap-2">
+          <select id="filter-outcome" class="input text-sm w-36">
+            <option value="">All Outcomes</option>
+            <option value="KEEP">KEEP</option>
+            <option value="RETIRE">RETIRE</option>
+            <option value="MERGE_MAP">MERGE_MAP</option>
+            <option value="REDESIGN">REDESIGN</option>
+          </select>
+          <select id="filter-target" class="input text-sm w-36">
+            <option value="">All Targets</option>
+            <option value="CC">CC</option>
+            <option value="PC">PC</option>
+            <option value="CC_AND_PC">CC+PC</option>
+            <option value="PC_ONLY">PC Only</option>
+            <option value="WBS_REAL">WBS Real</option>
+            <option value="WBS_STAT">WBS Stat</option>
+            <option value="NONE">None</option>
+          </select>
+        </div>
+      </div>
+      <div id="proposals-kpis" class="grid grid-cols-4 gap-4 mb-4"></div>
+      <div id="proposals-table" class="text-sm">Loading...</div>
+      <div id="proposals-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+    </div>
+
+    <!-- Review Tab -->
+    <div id="tab-review" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold">Review Scopes</h3>
+        <button id="btn-create-scope" class="btn-amplifi text-sm">+ Create Scope</button>
+      </div>
+      <div id="review-scopes" class="text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Why Panel Overlay -->
+  <div id="why-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Why Panel</h2>
+      <div id="why-content" class="text-sm"></div>
+      <div class="flex justify-end mt-4">
+        <button onclick="document.getElementById('why-overlay').classList.add('hidden')" class="btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Entities Modal -->
+  <div id="entities-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <h2 class="text-lg font-semibold mb-4">Add Entities to Wave</h2>
+      <div id="available-entities" class="max-h-60 overflow-y-auto text-sm mb-4">Loading...</div>
+      <div class="flex justify-end gap-2">
+        <button onclick="document.getElementById('entities-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+        <button id="btn-confirm-add" class="btn-amplifi">Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Hierarchy Nodes Modal -->
+  <div id="hier-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Add Hierarchy Nodes to Scope</h2>
+      <div class="mb-3">
+        <label class="block text-xs font-medium mb-1">Select Hierarchy</label>
+        <select id="hier-select" class="input text-sm">
+          <option value="">Loading hierarchies...</option>
+        </select>
+      </div>
+      <div id="hier-nodes-list" class="max-h-64 overflow-y-auto border rounded p-2 text-xs space-y-1">
+        <p class="text-gray-400">Select a hierarchy to see its nodes</p>
+      </div>
+      <div class="flex justify-end gap-2 pt-3">
+        <button type="button" onclick="document.getElementById('hier-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+        <button type="button" id="btn-save-hier-scope" class="btn-amplifi">Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Scope Modal -->
+  <div id="scope-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <h2 class="text-lg font-semibold mb-4">Create Review Scope</h2>
+      <form id="scope-form" class="space-y-3">
+        <div><label class="block text-xs font-medium mb-1">Scope Name</label><input id="sf-name" class="input text-sm" required /></div>
+        <div><label class="block text-xs font-medium mb-1">Scope Type</label>
+          <select id="sf-type" class="input text-sm">
+            <option value="entity">By Entity</option>
+            <option value="hierarchy_node">By Hierarchy Node</option>
+            <option value="list">By CC List</option>
+          </select></div>
+        <div><label class="block text-xs font-medium mb-1">Reviewer Name</label><input id="sf-reviewer" class="input text-sm" /></div>
+        <div><label class="block text-xs font-medium mb-1">Reviewer Email</label><input id="sf-email" type="email" class="input text-sm" /></div>
+        <div><label class="block text-xs font-medium mb-1">Entity Filter (comma-separated ccodes)</label><input id="sf-ccodes" class="input text-sm" placeholder="1000,2000" /></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('scope-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+          <button type="submit" class="btn-amplifi">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+  var jsonHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+  function fmt(n) { return (n || 0).toLocaleString(); }
+
+  var params = new URLSearchParams(window.location.search);
+  var waveId = params.get('id');
+  if (!waveId) { document.getElementById('wave-header').textContent = 'No wave ID provided. Go to Cockpit.'; return; }
+
+  var allTabs = ['scope','analysis','proposals','review'];
+  document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = this.getAttribute('data-tab');
+      document.querySelectorAll('#wave-tabs button').forEach(function(b) { b.className = 'tab px-4 py-3'; });
+      this.className = 'tab-active px-4 py-3';
+      allTabs.forEach(function(t) {
+        var el = document.getElementById('tab-' + t);
+        if (el) el.classList.toggle('hidden', t !== tab);
+      });
+    });
+  });
+
+  var wave = null;
+  var preferredRunId = null;
+  var statusColors = {
+    draft: 'bg-gray-100 text-gray-700', analysing: 'bg-blue-100 text-blue-700',
+    proposed: 'bg-purple-100 text-purple-700', locked: 'bg-yellow-100 text-yellow-700',
+    in_review: 'bg-orange-100 text-orange-700', signed_off: 'bg-green-100 text-green-700',
+    closed: 'bg-gray-200 text-gray-600', cancelled: 'bg-red-100 text-red-700',
+  };
+
+  function loadWave() {
+    fetch('/api/waves/' + waveId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(w) {
+      wave = w;
+      document.getElementById('wave-header').innerHTML =
+        '<div class="flex items-center justify-between">' +
+        '<div><h1 class="text-2xl font-bold text-gray-900">' + esc(w.name) + '</h1>' +
+        '<p class="text-sm text-gray-500 mt-1">Code: ' + esc(w.code) + (w.is_full_scope ? ' (Full Scope)' : '') + ' | ' + w.entity_count + ' entities</p></div>' +
+        '<a href="/cockpit" class="btn-secondary text-sm">Back to Cockpit</a></div>';
+
+      var badge = document.getElementById('wave-status-badge');
+      badge.textContent = w.status.toUpperCase().replace('_', ' ');
+      badge.className = 'px-3 py-1 rounded-full text-xs font-medium ' + (statusColors[w.status] || 'bg-gray-100');
+      document.getElementById('status-bar').classList.remove('hidden');
+
+      // Actions based on state
+      var actions = '';
+      if (w.status === 'draft' || w.status === 'analysing') actions += '<button onclick="runAnalysis()" class="btn-sm bg-blue-600 text-white">Run Analysis</button>';
+      if (w.status === 'proposed') actions += '<button onclick="lockWave()" class="btn-sm bg-yellow-600 text-white">Lock Proposal</button>';
+      if (w.status === 'locked') actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Invite Reviewers</button>';
+      if (w.status === 'in_review') actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
+      if (w.status === 'signed_off') {
+        actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
+        actions += '<button onclick="exportMDG(\'profit_center\')" class="btn-sm bg-teal-600 text-white">Export PC (MDG)</button>';
+        actions += '<button onclick="exportMDG(\'retire\')" class="btn-sm bg-red-600 text-white">Export Retire List</button>';
+        actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
+      }
+      if (w.status === 'locked') actions += '<button onclick="unlockWave()" class="btn-sm text-yellow-700 border border-yellow-300">Unlock</button>';
+      if (['draft','analysing','proposed'].includes(w.status)) actions += '<button onclick="cancelWave()" class="btn-sm text-red-600">Cancel</button>';
+      document.getElementById('wave-actions').innerHTML = actions;
+
+      preferredRunId = (w.config || {}).preferred_run_id;
+      if (typeof loadHierScope === 'function') loadHierScope();
+    });
+
+    // Load progress
+    fetch('/api/waves/' + waveId + '/progress', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(p) {
+      var pct = p.completion_pct || 0;
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('progress-text').textContent = p.decided_items + '/' + p.total_review_items + ' items reviewed (' + pct + '%)';
+    }).catch(function() {});
+  }
+  loadWave();
+
+  // --- Scope ---
+  function loadScope() {
+    fetch('/api/waves/' + waveId + '/entities', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('scope-entities');
+      if (!d.items || !d.items.length) { el.textContent = 'No entities in scope. Click + Add Entities.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">Code</th><th class="py-2 px-2 text-left">Name</th>' +
+        '<th class="py-2 px-2 text-left">Region</th><th class="py-2 px-2 text-right">Cost Centers</th></tr></thead><tbody>';
+      d.items.forEach(function(e) {
+        html += '<tr class="border-b hover:bg-gray-50"><td class="py-1.5 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.name) + '</td><td class="py-1.5 px-2">' + esc(e.region) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(e.cost_centers) + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+    });
+  }
+  loadScope();
+
+  document.getElementById('btn-add-entities').addEventListener('click', function() {
+    document.getElementById('entities-overlay').classList.remove('hidden');
+    fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var html = '';
+      (d.items || []).forEach(function(e) {
+        html += '<label class="flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded"><input type="checkbox" value="' + esc(e.ccode) + '" class="entity-cb" /><span class="font-mono text-xs">' + esc(e.ccode) + '</span> <span>' + esc(e.name) + '</span></label>';
+      });
+      document.getElementById('available-entities').innerHTML = html || 'No entities available.';
+    });
+  });
+
+  document.getElementById('btn-confirm-add').addEventListener('click', async function() {
+    var cbs = document.querySelectorAll('.entity-cb:checked');
+    var ccodes = []; cbs.forEach(function(cb) { ccodes.push(cb.value); });
+    if (!ccodes.length) return;
+    await fetch('/api/waves/' + waveId + '/entities', {
+      method: 'POST', headers: jsonHdr, body: JSON.stringify({ ccodes: ccodes })
+    });
+    document.getElementById('entities-overlay').classList.add('hidden');
+    loadScope(); loadWave();
+  });
+
+  // --- Hierarchy Scope Picker ---
+  var selectedHierNodes = [];
+  document.getElementById('btn-add-hier').addEventListener('click', function() {
+    document.getElementById('hier-overlay').classList.remove('hidden');
+    var hierSel = document.getElementById('hier-select');
+    hierSel.innerHTML = '<option value="">Loading...</option>';
+    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var opts = '<option value="">-- Select hierarchy --</option>';
+      (d.items || []).forEach(function(h) {
+        opts += '<option value="' + h.id + '">' + esc(h.setname) + ' (' + esc(h.description || '') + ')</option>';
+      });
+      hierSel.innerHTML = opts;
+    });
+  });
+
+  document.getElementById('hier-select').addEventListener('change', function() {
+    var hierId = this.value;
+    var el = document.getElementById('hier-nodes-list');
+    if (!hierId) { el.innerHTML = '<p class="text-gray-400">Select a hierarchy</p>'; return; }
+    el.innerHTML = 'Loading nodes...';
+    fetch('/api/legacy/hierarchies/' + hierId + '/nodes?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.items || !d.items.length) { el.innerHTML = '<p class="text-gray-400">No nodes in this hierarchy.</p>'; return; }
+      var html = '';
+      (d.items || []).forEach(function(n) {
+        var indent = (n.level || 0) * 16;
+        html += '<label class="flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded" style="padding-left:' + (8 + indent) + 'px">' +
+          '<input type="checkbox" class="hier-node-cb" value="' + esc(n.setname) + '" data-hier="' + esc(d.hierarchy_id || '') + '" />' +
+          '<span class="font-mono text-xs">' + esc(n.setname) + '</span>' +
+          (n.description ? ' <span class="text-gray-500">' + esc(n.description) + '</span>' : '') +
+          '</label>';
+      });
+      el.innerHTML = html;
+    });
+  });
+
+  document.getElementById('btn-save-hier-scope').addEventListener('click', async function() {
+    var cbs = document.querySelectorAll('.hier-node-cb:checked');
+    var nodes = []; cbs.forEach(function(cb) { nodes.push(cb.value); });
+    if (!nodes.length) return;
+    selectedHierNodes = selectedHierNodes.concat(nodes);
+    // Update wave config with hierarchy scope
+    await fetch('/api/waves/' + waveId, {
+      method: 'PATCH', headers: jsonHdr,
+      body: JSON.stringify({ config: { hierarchy_scope: selectedHierNodes } })
+    });
+    document.getElementById('hier-overlay').classList.add('hidden');
+    // Display selected nodes
+    var el = document.getElementById('scope-hier-nodes');
+    el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
+      return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
+    }).join('') + '</div>';
+  });
+
+  // Load hierarchy scope from wave config
+  function loadHierScope() {
+    if (wave && wave.config && wave.config.hierarchy_scope) {
+      selectedHierNodes = wave.config.hierarchy_scope;
+      var el = document.getElementById('scope-hier-nodes');
+      el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
+        return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
+      }).join('') + '</div>';
+    }
+  }
+
+  // --- Analysis ---
+  function loadRuns() {
+    fetch('/api/waves/' + waveId + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('analysis-runs');
+      if (!d.items || !d.items.length) { el.textContent = 'No analysis runs yet. Click "Run Analysis" to start.'; return; }
+      var html = '<div class="space-y-3">';
+      d.items.forEach(function(r) {
+        var isPreferred = r.id === preferredRunId;
+        var statusColor = r.status === 'completed' ? 'text-green-600' : r.status === 'running' ? 'text-blue-600' : 'text-gray-500';
+        html += '<div class="border rounded-lg p-4 ' + (isPreferred ? 'border-purple-300 bg-purple-50' : '') + '">' +
+          '<div class="flex items-center justify-between"><div>' +
+          '<span class="font-semibold">Run #' + r.id + '</span>' +
+          (isPreferred ? ' <span class="bg-purple-200 text-purple-800 px-2 py-0.5 rounded text-xs ml-2">Preferred</span>' : '') +
+          ' <span class="' + statusColor + ' text-xs ml-2">' + r.status + '</span>' +
+          '</div><div class="flex gap-2">';
+        if (r.status === 'completed') {
+          html += '<a href="/cockpit/run?id=' + r.id + '&wave=' + waveId + '" class="btn-sm bg-gray-600 text-white text-xs">View Details</a>';
+          if (!isPreferred) {
+            html += '<button onclick="proposeRun(' + r.id + ')" class="btn-sm bg-purple-600 text-white text-xs">Set as Preferred</button>';
+          }
+        }
+        html += '</div></div>';
+        if (r.kpis) {
+          html += '<div class="grid grid-cols-4 gap-2 mt-2 text-xs">' +
+            '<div><span class="text-gray-500">Total:</span> <strong>' + fmt(r.kpis.total_centers) + '</strong></div>' +
+            '<div><span class="text-green-600">KEEP:</span> <strong>' + fmt(r.kpis.keep) + '</strong></div>' +
+            '<div><span class="text-red-600">RETIRE:</span> <strong>' + fmt(r.kpis.retire) + '</strong></div>' +
+            '<div><span class="text-orange-600">MERGE:</span> <strong>' + fmt(r.kpis.merge_map) + '</strong></div>' +
+            '</div>';
+        }
+        if (r.started_at) html += '<p class="text-xs text-gray-400 mt-1">Started: ' + r.started_at + '</p>';
+        html += '</div>';
+      });
+      el.innerHTML = html + '</div>';
+    });
+  }
+  loadRuns();
+
+  window.runAnalysis = async function() {
+    document.getElementById('btn-run-analysis').disabled = true;
+    document.getElementById('btn-run-analysis').textContent = 'Running...';
+    try {
+      var res = await fetch('/api/waves/' + waveId + '/analyse', { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Analysis failed');
+      loadRuns(); loadWave();
+    } catch(e) { alert('Error: ' + e.message); }
+    document.getElementById('btn-run-analysis').disabled = false;
+    document.getElementById('btn-run-analysis').textContent = 'Run Analysis';
+  };
+  document.getElementById('btn-run-analysis').addEventListener('click', runAnalysis);
+
+  window.proposeRun = async function(runId) {
+    var res = await fetch('/api/waves/' + waveId + '/propose/' + runId, { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadRuns(); loadWave();
+  };
+
+  // --- Proposals ---
+  window.loadProposals = function(page) {
+    page = page || 1;
+    if (!preferredRunId) {
+      // Find latest completed run
+      fetch('/api/waves/' + waveId + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+        var completed = (d.items || []).filter(function(r) { return r.status === 'completed'; });
+        if (completed.length) { preferredRunId = completed[0].id; loadProposals(page); }
+        else { document.getElementById('proposals-table').textContent = 'No completed analysis runs.'; }
+      });
+      return;
+    }
+    var outcome = document.getElementById('filter-outcome').value;
+    var target = document.getElementById('filter-target').value;
+    var url = '/api/runs/' + preferredRunId + '/proposals?page=' + page + '&size=50';
+    if (outcome) url += '&outcome=' + outcome;
+    if (target) url += '&target=' + target;
+
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      // KPIs
+      fetch('/api/runs/' + preferredRunId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(run) {
+        if (run.kpis) {
+          document.getElementById('proposals-kpis').innerHTML =
+            '<div class="bg-green-50 p-3 rounded text-center"><div class="text-lg font-bold text-green-700">' + fmt(run.kpis.keep) + '</div><div class="text-xs text-green-600">KEEP</div></div>' +
+            '<div class="bg-red-50 p-3 rounded text-center"><div class="text-lg font-bold text-red-700">' + fmt(run.kpis.retire) + '</div><div class="text-xs text-red-600">RETIRE</div></div>' +
+            '<div class="bg-orange-50 p-3 rounded text-center"><div class="text-lg font-bold text-orange-700">' + fmt(run.kpis.merge_map) + '</div><div class="text-xs text-orange-600">MERGE/MAP</div></div>' +
+            '<div class="bg-blue-50 p-3 rounded text-center"><div class="text-lg font-bold text-blue-700">' + fmt(run.kpis.redesign) + '</div><div class="text-xs text-blue-600">REDESIGN</div></div>';
+        }
+      });
+
+      var el = document.getElementById('proposals-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No proposals found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">CC ID</th>' +
+        '<th class="py-2 px-2 text-left">Outcome</th><th class="py-2 px-2 text-left">Target</th>' +
+        '<th class="py-2 px-2 text-left">Confidence</th><th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
+      d.items.forEach(function(p) {
+        var outcomeColor = { KEEP: 'text-green-700 bg-green-50', RETIRE: 'text-red-700 bg-red-50', MERGE_MAP: 'text-orange-700 bg-orange-50', REDESIGN: 'text-blue-700 bg-blue-50' }[p.cleansing_outcome] || '';
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2">' + p.id + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + p.legacy_cc_id + '</td>' +
+          '<td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded text-xs ' + outcomeColor + '">' + esc(p.cleansing_outcome) + '</span></td>' +
+          '<td class="py-1.5 px-2">' + esc(p.target_object || '-') + '</td>' +
+          '<td class="py-1.5 px-2">' + (p.confidence ? parseFloat(p.confidence).toFixed(2) : '-') + '</td>' +
+          '<td class="py-1.5 px-2"><button onclick="showWhy(' + preferredRunId + ',' + p.id + ')" class="text-blue-600 hover:underline text-xs">Why?</button></td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      var pages = Math.ceil(d.total / d.size) || 1;
+      document.getElementById('proposals-pager').innerHTML = '<span class="text-gray-500">' + fmt(d.total) + ' proposals, page ' + d.page + '/' + pages + '</span><div class="flex gap-1">' +
+        (page > 1 ? '<button onclick="loadProposals(' + (page-1) + ')" class="btn-sm">Prev</button>' : '') +
+        (page < pages ? '<button onclick="loadProposals(' + (page+1) + ')" class="btn-sm">Next</button>' : '') + '</div>';
+    });
+  };
+
+  document.getElementById('filter-outcome').addEventListener('change', function() { loadProposals(1); });
+  document.getElementById('filter-target').addEventListener('change', function() { loadProposals(1); });
+
+  // Load proposals after a short delay to allow preferredRunId to be set
+  setTimeout(function() { loadProposals(1); }, 500);
+
+  window.showWhy = async function(runId, proposalId) {
+    document.getElementById('why-overlay').classList.remove('hidden');
+    document.getElementById('why-content').innerHTML = 'Loading...';
+    var res = await fetch('/api/runs/' + runId + '/proposals/' + proposalId + '/why', { headers: authHdr });
+    var d = await res.json();
+    var html = '<div class="space-y-3">';
+    html += '<div><span class="font-medium">Outcome:</span> <span class="font-mono">' + esc(d.cleansing_outcome) + '</span></div>';
+    html += '<div><span class="font-medium">Target:</span> <span class="font-mono">' + esc(d.target_object || 'N/A') + '</span></div>';
+    if (d.rule_path) {
+      html += '<div><span class="font-medium">Decision Path:</span><ul class="mt-1 ml-4 list-disc text-xs">';
+      var steps = d.rule_path.steps || d.rule_path;
+      (Array.isArray(steps) ? steps : []).forEach(function(s) { html += '<li>' + esc(s) + '</li>'; });
+      html += '</ul></div>';
+    }
+    if (d.ml_scores) {
+      html += '<div><span class="font-medium">ML Scores:</span><pre class="text-xs bg-gray-50 p-2 rounded mt-1">' + esc(JSON.stringify(d.ml_scores, null, 2)) + '</pre></div>';
+    }
+    if (d.llm_commentary) {
+      html += '<div><span class="font-medium">LLM Commentary:</span><p class="text-xs mt-1 bg-blue-50 p-3 rounded">' + esc(d.llm_commentary) + '</p></div>';
+    }
+    if (d.override) {
+      html += '<div class="border-t pt-2 mt-2"><span class="font-medium text-orange-600">Override:</span> ' + esc(d.override.outcome) + ' — ' + esc(d.override.reason) + '</div>';
+    }
+    html += '</div>';
+    document.getElementById('why-content').innerHTML = html;
+  };
+
+  // --- Review Scopes ---
+  function loadScopes() {
+    fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('review-scopes');
+      if (!d.items || !d.items.length) { el.textContent = 'No review scopes yet. Lock the proposal first.'; return; }
+      var html = '<div class="space-y-3">';
+      d.items.forEach(function(s) {
+        var pct = s.total_items ? Math.round(s.decided_items / s.total_items * 100) : 0;
+        html += '<div class="border rounded-lg p-4"><div class="flex items-center justify-between">' +
+          '<div><span class="font-semibold">' + esc(s.name) + '</span>' +
+          ' <span class="text-xs text-gray-500 ml-2">' + esc(s.scope_type) + '</span></div>' +
+          '<span class="text-xs ' + (s.status === 'completed' ? 'text-green-600' : 'text-gray-500') + '">' + s.status + '</span></div>';
+        if (s.reviewer_name) html += '<p class="text-xs text-gray-500 mt-1">Reviewer: ' + esc(s.reviewer_name) + (s.reviewer_email ? ' (' + esc(s.reviewer_email) + ')' : '') + '</p>';
+        html += '<div class="mt-2"><div class="h-2 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full" style="width:' + pct + '%"></div></div>' +
+          '<p class="text-xs text-gray-400 mt-1">' + s.decided_items + '/' + s.total_items + ' decided (' + pct + '%)</p></div>';
+        if (s.token) html += '<p class="text-xs mt-2"><span class="text-gray-500">Review link:</span> <a href="/review/' + s.token + '" class="text-blue-600 hover:underline">/review/' + s.token.substring(0,16) + '...</a></p>';
+        html += '</div>';
+      });
+      el.innerHTML = html + '</div>';
+    });
+  }
+  loadScopes();
+
+  document.getElementById('scope-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var body = {
+      name: document.getElementById('sf-name').value,
+      scope_type: document.getElementById('sf-type').value,
+      reviewer_name: document.getElementById('sf-reviewer').value || null,
+      reviewer_email: document.getElementById('sf-email').value || null,
+      scope_filter: {},
+    };
+    var ccodes = document.getElementById('sf-ccodes').value;
+    if (ccodes) body.scope_filter.entity_ccodes = ccodes.split(',').map(function(s) { return s.trim(); });
+    var res = await fetch('/api/waves/' + waveId + '/scopes', {
+      method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
+    });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    document.getElementById('scope-overlay').classList.add('hidden');
+    loadScopes(); loadWave();
+  });
+
+  // Wave lifecycle actions
+  window.lockWave = async function() {
+    var res = await fetch('/api/waves/' + waveId + '/proposal/lock', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.signoffWave = async function() {
+    var res = await fetch('/api/waves/' + waveId + '/signoff', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.closeWave = async function() {
+    var res = await fetch('/api/waves/' + waveId + '/close', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.cancelWave = async function() {
+    if (!confirm('Cancel this wave?')) return;
+    var res = await fetch('/api/waves/' + waveId + '/cancel', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.unlockWave = async function() {
+    var res = await fetch('/api/waves/' + waveId + '/proposal/unlock', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.exportMDG = async function(exportType) {
+    var res = await fetch('/api/waves/' + waveId + '/mdg-export?export_type=' + exportType, { headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail || 'Export failed'); return; }
+    var d = await res.json();
+    var blob = new Blob([d.content], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = d.filename;
+    a.click();
+    alert('Exported ' + d.record_count + ' records to ' + d.filename);
+  };
+})();
+</script>

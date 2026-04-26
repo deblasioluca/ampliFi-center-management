@@ -1,0 +1,177 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Naming Conventions" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 class="text-xl font-bold">Naming Conventions</h2>
+      <p class="text-sm text-gray-500">Configure how target cost center and profit center IDs are generated</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Templates -->
+    <div class="card">
+      <h3 class="text-base font-semibold mb-4">Naming Templates</h3>
+      <p class="text-xs text-gray-500 mb-4">
+        Use placeholders: <code class="bg-gray-100 px-1 rounded">{`{coarea}`}</code>,
+        <code class="bg-gray-100 px-1 rounded">{`{ccode}`}</code>,
+        <code class="bg-gray-100 px-1 rounded">{`{prefix}`}</code>,
+        <code class="bg-gray-100 px-1 rounded">{`{seq:N}`}</code> (zero-padded sequence)
+      </p>
+
+      <div class="space-y-4">
+        <div class="p-3 bg-gray-50 rounded">
+          <label class="block text-xs font-medium text-gray-600 mb-1">Cost Center Template</label>
+          <input type="text" id="cc-template" class="input w-full text-sm font-mono" value="{coarea}{seq:6}" />
+          <div class="text-xs text-gray-400 mt-1">Example output: <span id="cc-preview" class="font-mono">1000000001</span></div>
+        </div>
+
+        <div class="p-3 bg-gray-50 rounded">
+          <label class="block text-xs font-medium text-gray-600 mb-1">Profit Center Template</label>
+          <input type="text" id="pc-template" class="input w-full text-sm font-mono" value="{coarea}{seq:6}" />
+          <div class="text-xs text-gray-400 mt-1">Example output: <span id="pc-preview" class="font-mono">1000000001</span></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Sequence Start</label>
+            <input type="number" id="seq-start" class="input w-full text-sm" value="1" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Sequence End</label>
+            <input type="number" id="seq-end" class="input w-full text-sm" value="999999" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Collision Policy</label>
+          <select id="collision-policy" class="input w-full text-sm">
+            <option value="skip">Skip (try next number)</option>
+            <option value="error">Error (stop and report)</option>
+            <option value="append_suffix">Append suffix (_1, _2, etc.)</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="legacy-survival" checked class="rounded" />
+          <label for="legacy-survival" class="text-sm text-gray-700">Legacy Survival: KEEP centers retain their original ID</label>
+        </div>
+
+        <button id="btn-save-naming" class="btn-amplifi text-sm w-full">Save Naming Configuration</button>
+        <div id="save-status" class="text-sm hidden"></div>
+      </div>
+    </div>
+
+    <!-- Sequences -->
+    <div class="space-y-6">
+      <div class="card">
+        <h3 class="text-base font-semibold mb-4">Active Sequences</h3>
+        <p class="text-xs text-gray-500 mb-3">Sequences are created per CO area when proposals are locked. They track the next available number for generated IDs.</p>
+        <div id="sequences-table" class="text-sm">Loading...</div>
+      </div>
+
+      <div class="card">
+        <h3 class="text-base font-semibold mb-4">Naming Rules</h3>
+        <div class="space-y-2 text-xs">
+          <div class="p-2 bg-green-50 rounded flex items-start gap-2">
+            <span class="text-green-600 font-bold">KEEP</span>
+            <span>If "Legacy Survival" is enabled, the original CC/PC ID is preserved. No new number is generated.</span>
+          </div>
+          <div class="p-2 bg-red-50 rounded flex items-start gap-2">
+            <span class="text-red-600 font-bold">RETIRE</span>
+            <span>No target object created. The legacy center is marked for deactivation in MDG export.</span>
+          </div>
+          <div class="p-2 bg-amber-50 rounded flex items-start gap-2">
+            <span class="text-amber-600 font-bold">MERGE</span>
+            <span>The merge target center ID is used. If no target exists, a new ID is generated using the template.</span>
+          </div>
+          <div class="p-2 bg-blue-50 rounded flex items-start gap-2">
+            <span class="text-blue-600 font-bold">REDESIGN</span>
+            <span>A new ID is always generated using the naming template and the next available sequence number.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  // Preview
+  function updatePreviews() {
+    var ccTpl = document.getElementById('cc-template').value || '{coarea}{seq:6}';
+    var pcTpl = document.getElementById('pc-template').value || '{coarea}{seq:6}';
+    document.getElementById('cc-preview').textContent = ccTpl.replace('{coarea}', '1000').replace('{ccode}', 'DE').replace('{prefix}', 'CC').replace(/\{seq:(\d+)\}/, function(_, w) { return '1'.padStart(parseInt(w), '0'); });
+    document.getElementById('pc-preview').textContent = pcTpl.replace('{coarea}', '1000').replace('{ccode}', 'DE').replace('{prefix}', 'PC').replace(/\{seq:(\d+)\}/, function(_, w) { return '1'.padStart(parseInt(w), '0'); });
+  }
+  document.getElementById('cc-template').addEventListener('input', updatePreviews);
+  document.getElementById('pc-template').addEventListener('input', updatePreviews);
+  updatePreviews();
+
+  // Load existing config
+  fetch('/api/admin/config/naming', { headers: authHdr }).then(function(r) {
+    if (r.ok) return r.json();
+    return null;
+  }).then(function(d) {
+    if (!d || !d.value) return;
+    var v = d.value;
+    if (v.cc_template) document.getElementById('cc-template').value = v.cc_template;
+    if (v.pc_template) document.getElementById('pc-template').value = v.pc_template;
+    if (v.seq_start != null) document.getElementById('seq-start').value = v.seq_start;
+    if (v.seq_end != null) document.getElementById('seq-end').value = v.seq_end;
+    if (v.collision_policy) document.getElementById('collision-policy').value = v.collision_policy;
+    if (v.legacy_survival != null) document.getElementById('legacy-survival').checked = v.legacy_survival;
+    updatePreviews();
+  });
+
+  // Save
+  document.getElementById('btn-save-naming').addEventListener('click', function() {
+    var data = {
+      value: {
+        cc_template: document.getElementById('cc-template').value,
+        pc_template: document.getElementById('pc-template').value,
+        seq_start: parseInt(document.getElementById('seq-start').value) || 1,
+        seq_end: parseInt(document.getElementById('seq-end').value) || 999999,
+        collision_policy: document.getElementById('collision-policy').value,
+        legacy_survival: document.getElementById('legacy-survival').checked
+      }
+    };
+    fetch('/api/admin/config/naming', { method: 'PUT', headers: authHdr, body: JSON.stringify(data) })
+      .then(function(r) { return r.json(); }).then(function() {
+        var el = document.getElementById('save-status');
+        el.classList.remove('hidden');
+        el.className = 'text-sm p-2 rounded bg-green-100 text-green-700';
+        el.textContent = 'Naming configuration saved.';
+        setTimeout(function() { el.classList.add('hidden'); }, 3000);
+      });
+  });
+
+  // Load sequences
+  fetch('/api/admin/config/naming_sequences', { headers: authHdr }).then(function(r) {
+    if (r.ok) return r.json();
+    return { value: { sequences: [] } };
+  }).then(function(d) {
+    var el = document.getElementById('sequences-table');
+    var seqs = (d.value && d.value.sequences) || [];
+    if (!seqs.length) {
+      el.textContent = 'No sequences created yet. Sequences are generated when proposals are locked.';
+      return;
+    }
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      '<th class="py-2 px-2 text-left">Type</th><th class="py-2 px-2 text-left">CO Area</th>' +
+      '<th class="py-2 px-2 text-left">Prefix</th><th class="py-2 px-2 text-right">Next Value</th></tr></thead><tbody>';
+    seqs.forEach(function(s) {
+      html += '<tr class="border-b"><td class="py-1.5 px-2">' + s.object_type + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + s.coarea + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + (s.prefix || '--') + '</td>' +
+        '<td class="py-1.5 px-2 text-right font-mono">' + s.next_value + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  });
+</script>

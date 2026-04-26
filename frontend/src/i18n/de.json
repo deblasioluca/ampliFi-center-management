@@ -1,0 +1,107 @@
+{
+  "app": {
+    "title": "ampliFi Centerverwaltung",
+    "subtitle": "Kosten- & Profit-Center-Bereinigung"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "my_tasks": "Meine Aufgaben",
+    "cockpit": "Cockpit",
+    "data": "Daten",
+    "admin": "Verwaltung",
+    "logout": "Abmelden",
+    "login": "Anmelden"
+  },
+  "auth": {
+    "sign_in": "Anmelden",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "login_failed": "Anmeldung fehlgeschlagen",
+    "session_expired": "Sitzung abgelaufen, bitte erneut anmelden"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "entities": "Entitäten",
+    "cost_centers": "Kostenstellen",
+    "profit_centers": "Profit Center",
+    "balances": "Salden",
+    "waves": "Wellen",
+    "quick_actions": "Schnellaktionen"
+  },
+  "cockpit": {
+    "title": "Wellen-Cockpit",
+    "create_wave": "Welle erstellen",
+    "wave_code": "Wellencode",
+    "wave_name": "Wellenname",
+    "description": "Beschreibung",
+    "scope_entities": "Scope: Entitäten",
+    "scope_hierarchy": "Scope: Hierarchieknoten",
+    "full_scope": "Vollständiger Scope (alle Kostenstellen)",
+    "status": "Status",
+    "no_waves": "Keine Wellen gefunden"
+  },
+  "analysis": {
+    "run_analysis": "Analyse starten",
+    "outcome": "Ergebnis",
+    "target_object": "Zielobjekt",
+    "confidence": "Konfidenz",
+    "override": "Überschreibung",
+    "trend": "Trend",
+    "why_panel": "Begründung",
+    "keep": "BEIBEHALTEN",
+    "retire": "STILLLEGEN",
+    "merge_map": "ZUSAMMENFÜHREN",
+    "redesign": "NEUGESTALTEN"
+  },
+  "data": {
+    "title": "Datenverwaltung",
+    "upload": "Hochladen",
+    "entities": "Entitäten",
+    "cost_centers": "Kostenstellen",
+    "profit_centers": "Profit Center",
+    "balances": "Salden",
+    "hierarchies": "Hierarchien",
+    "sample_data": "Beispieldaten",
+    "generate": "Generieren",
+    "delete_all": "Alle löschen",
+    "download_template": "Vorlage herunterladen"
+  },
+  "review": {
+    "title": "Prüfungsbereich",
+    "approve": "Genehmigen",
+    "reject": "Ablehnen",
+    "request_change": "Änderung anfordern",
+    "comment": "Kommentar",
+    "submit": "Entscheidung einreichen"
+  },
+  "admin": {
+    "title": "Verwaltung",
+    "users": "Benutzer",
+    "sap_connections": "SAP-Verbindungen",
+    "llm_settings": "LLM-Einstellungen",
+    "app_config": "App-Konfiguration",
+    "gl_ranges": "Sachkontoklassen",
+    "routines": "Routinen",
+    "jobs": "Jobs",
+    "audit_log": "Audit-Protokoll"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "create": "Erstellen",
+    "loading": "Laden...",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "confirm": "Sind Sie sicher?",
+    "no_data": "Keine Daten gefunden",
+    "search": "Suchen...",
+    "filter": "Filtern",
+    "export_csv": "CSV exportieren",
+    "page": "Seite",
+    "of": "von",
+    "items": "Einträge",
+    "back": "Zurück"
+  }
+}

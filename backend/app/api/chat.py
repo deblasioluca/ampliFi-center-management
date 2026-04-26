@@ -94,16 +94,27 @@ def send_message(
     db: Session = Depends(get_db),
     user: AppUser = Depends(_require_user),
 ) -> dict:
-    _get_user_thread(thread_id, user, db)  # ownership check
+    thread = _get_user_thread(thread_id, user, db)
     msg = ChatMessage(thread_id=thread_id, role="user", content=body.content)
     db.add(msg)
     db.commit()
     db.refresh(msg)
-    # In production, this would trigger async LLM call and stream response
+
+    # Generate response using chat agent
+    from app.services.chat_agent import generate_response
+
+    context = {
+        "surface": thread.surface,
+        "wave_id": thread.wave_id,
+        "run_id": thread.run_id,
+        "scope_id": thread.scope_id,
+    }
+    response_text = generate_response(body.content, context, db)
+
     assistant_msg = ChatMessage(
         thread_id=thread_id,
         role="assistant",
-        content="I'm the ampliFi chat assistant. LLM integration is pending configuration.",
+        content=response_text,
     )
     db.add(assistant_msg)
     db.commit()

@@ -54,6 +54,25 @@ import Layout from '../components/layout/Layout.astro';
       </div>
     </div>
 
+    <!-- Filter bar -->
+    <div class="card mb-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <input type="text" id="review-search" class="input text-sm flex-1 min-w-[200px]" placeholder="Search by cost center, entity, or proposal..." />
+        <select id="review-filter-status" class="input text-sm w-40">
+          <option value="">All statuses</option>
+          <option value="pending">Pending only</option>
+          <option value="decided">Decided only</option>
+        </select>
+        <select id="review-filter-action" class="input text-sm w-40">
+          <option value="">All proposals</option>
+          <option value="KEEP">KEEP</option>
+          <option value="RETIRE">RETIRE</option>
+          <option value="MERGE_MAP">MERGE/MAP</option>
+          <option value="REDESIGN">REDESIGN</option>
+        </select>
+      </div>
+    </div>
+
     <!-- Review items table -->
     <div class="card">
       <div class="flex items-center justify-between mb-4">
@@ -64,11 +83,14 @@ import Layout from '../components/layout/Layout.astro';
         </div>
       </div>
 
+      <p class="text-xs text-gray-500 mb-3">Click a row to see the analysis reasoning (why this proposal was made).</p>
+
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-gray-200">
               <th class="text-left py-2 px-3 font-medium text-gray-500">Cost Center</th>
+              <th class="text-left py-2 px-3 font-medium text-gray-500">Description</th>
               <th class="text-left py-2 px-3 font-medium text-gray-500">Entity</th>
               <th class="text-left py-2 px-3 font-medium text-gray-500">Proposal</th>
               <th class="text-left py-2 px-3 font-medium text-gray-500">Target</th>
@@ -77,12 +99,21 @@ import Layout from '../components/layout/Layout.astro';
             </tr>
           </thead>
           <tbody id="review-items">
-            <tr><td colspan="6" class="py-8 text-center text-gray-400">Loading...</td></tr>
+            <tr><td colspan="7" class="py-8 text-center text-gray-400">Loading...</td></tr>
           </tbody>
         </table>
       </div>
 
       <div id="review-pagination" class="mt-4 flex justify-center gap-2"></div>
+    </div>
+
+    <!-- Why Panel (hidden, shown on row click) -->
+    <div id="why-panel" class="card mt-4 hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold text-gray-900">Analysis Reasoning</h3>
+        <button onclick="document.getElementById('why-panel').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-sm">Close</button>
+      </div>
+      <div id="why-content" class="text-sm space-y-2">Loading...</div>
     </div>
   </div>
 </Layout>
@@ -126,31 +157,58 @@ import Layout from '../components/layout/Layout.astro';
     async function loadItems(token, page) {
       currentPage = page;
       var tbody = document.getElementById('review-items');
-      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">Loading...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">Loading...</td></tr>';
       try {
         var res = await fetch('/api/review/' + token + '/items?page=' + page + '&size=20', { headers: authHeaders() });
         if (!res.ok) throw new Error('Failed to load items');
         var data = await res.json();
         tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">No items found</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">No items found</td></tr>';
           return;
         }
-        data.items.forEach(function(item) {
+        // Apply client-side search/filter
+        var searchVal = (document.getElementById('review-search').value || '').toLowerCase();
+        var statusFilter = document.getElementById('review-filter-status').value;
+        var actionFilter = document.getElementById('review-filter-action').value;
+        var filtered = data.items.filter(function(item) {
+          if (searchVal) {
+            var text = ((item.legacy_cc_code || '') + ' ' + (item.cc_code || '') + ' ' + (item.entity_name || '') + ' ' + (item.cleansing_action || '') + ' ' + (item.cc_description || '')).toLowerCase();
+            if (text.indexOf(searchVal) === -1) return false;
+          }
+          if (statusFilter === 'pending' && item.stakeholder_decision && item.stakeholder_decision !== 'pending') return false;
+          if (statusFilter === 'decided' && (!item.stakeholder_decision || item.stakeholder_decision === 'pending')) return false;
+          if (actionFilter && (item.cleansing_action || '').toUpperCase() !== actionFilter) return false;
+          return true;
+        });
+        if (filtered.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">No items match your filters</td></tr>';
+          return;
+        }
+        var actionColors = { KEEP: 'bg-green-50 text-green-700', RETIRE: 'bg-red-50 text-red-700', MERGE_MAP: 'bg-purple-50 text-purple-700', REDESIGN: 'bg-blue-50 text-blue-700' };
+        filtered.forEach(function(item) {
           var tr = document.createElement('tr');
-          tr.className = 'border-b border-gray-100 hover:bg-gray-50';
+          tr.className = 'border-b border-gray-100 hover:bg-blue-50 cursor-pointer';
+          tr.setAttribute('data-item-id', item.id);
           var decided = item.stakeholder_decision && item.stakeholder_decision !== 'pending';
+          var actionCls = actionColors[(item.cleansing_action || '').toUpperCase()] || 'bg-amplifi-50 text-amplifi-700';
           tr.innerHTML =
             '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(item.legacy_cc_code || item.cc_code || '--') + '</td>' +
-            '<td class="py-2 px-3">' + escapeHtml(item.entity_name || '--') + '</td>' +
-            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded bg-amplifi-50 text-amplifi-700">' + escapeHtml(item.cleansing_action || '--') + '</span></td>' +
-            '<td class="py-2 px-3">' + escapeHtml(item.target_cc_code || item.mapping_target || '--') + '</td>' +
+            '<td class="py-2 px-3 text-xs max-w-[200px] truncate">' + escapeHtml(item.cc_description || item.cc_name || '--') + '</td>' +
+            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.entity_name || '--') + '</td>' +
+            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ' + actionCls + '">' + escapeHtml(item.cleansing_action || '--') + '</span></td>' +
+            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.target_cc_code || item.mapping_target || '--') + '</td>' +
             '<td class="py-2 px-3">' + (decided
               ? '<span class="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">' + escapeHtml(item.stakeholder_decision) + '</span>'
               : '<span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700">pending</span>') + '</td>' +
             '<td class="py-2 px-3">' + (decided ? '<span class="text-xs text-gray-400">Done</span>' :
               '<button data-id="' + item.id + '" data-action="APPROVE" class="decide-btn text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 mr-1">Approve</button>' +
               '<button data-id="' + item.id + '" data-action="REJECT" class="decide-btn text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">Reject</button>') + '</td>';
+          // Row click to show why panel
+          tr.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON') return;
+            showWhyPanel(item);
+          });
           tbody.appendChild(tr);
         });
 
@@ -183,7 +241,7 @@ import Layout from '../components/layout/Layout.astro';
           pag.appendChild(btn);
         }
       } catch(e) {
-        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-red-500">' + escapeHtml(e.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-red-500">' + escapeHtml(e.message) + '</td></tr>';
       }
     }
 
@@ -222,10 +280,88 @@ import Layout from '../components/layout/Layout.astro';
       } catch(e) { alert('Failed: ' + e.message); }
     });
 
+    // Why panel
+    function showWhyPanel(item) {
+      var panel = document.getElementById('why-panel');
+      var content = document.getElementById('why-content');
+      panel.classList.remove('hidden');
+      var html = '<div class="grid grid-cols-2 gap-3">';
+      html += '<div><span class="text-gray-500">Cost Center:</span> <span class="font-mono font-medium">' + escapeHtml(item.legacy_cc_code || item.cc_code || '--') + '</span></div>';
+      html += '<div><span class="text-gray-500">Description:</span> ' + escapeHtml(item.cc_description || item.cc_name || '--') + '</div>';
+      html += '<div><span class="text-gray-500">Entity:</span> ' + escapeHtml(item.entity_name || '--') + '</div>';
+      html += '<div><span class="text-gray-500">Proposal:</span> <span class="font-medium">' + escapeHtml(item.cleansing_action || '--') + '</span></div>';
+      html += '<div><span class="text-gray-500">Target:</span> ' + escapeHtml(item.target_cc_code || item.mapping_target || 'N/A') + '</div>';
+      html += '<div><span class="text-gray-500">Confidence:</span> ' + ((item.confidence || 0) * 100).toFixed(0) + '%</div>';
+      html += '</div>';
+      if (item.reasoning || item.why) {
+        html += '<div class="mt-3 p-3 bg-gray-50 rounded"><h4 class="text-xs font-medium text-gray-600 mb-1">Reasoning</h4><p class="text-xs text-gray-700">' + escapeHtml(item.reasoning || item.why) + '</p></div>';
+      }
+      if (item.routine_outputs && item.routine_outputs.length) {
+        html += '<div class="mt-3"><h4 class="text-xs font-medium text-gray-600 mb-1">Routine Outputs</h4><div class="space-y-1">';
+        item.routine_outputs.forEach(function(r) {
+          html += '<div class="text-xs p-2 bg-gray-50 rounded"><span class="font-medium">' + escapeHtml(r.routine_code || r.code) + ':</span> ' + escapeHtml(r.verdict || r.outcome) + ' — ' + escapeHtml(r.reason || '') + '</div>';
+        });
+        html += '</div></div>';
+      }
+      content.innerHTML = html;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Search/filter handlers
+    document.getElementById('review-search').addEventListener('input', function() {
+      clearTimeout(this._t);
+      var self = this;
+      this._t = setTimeout(function() { if (currentToken) loadItems(currentToken, currentPage); }, 300);
+    });
+    document.getElementById('review-filter-status').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
+    document.getElementById('review-filter-action').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
+
     // Auto-load if token saved
     if (currentToken) {
       document.getElementById('review-token').value = currentToken;
       loadScope(currentToken);
+    }
+
+    // Keyboard navigation for review items table
+    var selectedRow = -1;
+    document.addEventListener('keydown', function(e) {
+      var table = document.querySelector('#review-items-table tbody');
+      if (!table) return;
+      var rows = table.querySelectorAll('tr');
+      if (!rows.length) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.preventDefault();
+        selectedRow = Math.min(selectedRow + 1, rows.length - 1);
+        highlightRow(rows);
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        e.preventDefault();
+        selectedRow = Math.max(selectedRow - 1, 0);
+        highlightRow(rows);
+      } else if (e.key === 'Enter' && selectedRow >= 0) {
+        e.preventDefault();
+        var btn = rows[selectedRow].querySelector('button');
+        if (btn) btn.click();
+      } else if (e.key === 'a' && selectedRow >= 0) {
+        // Quick approve
+        var approveBtn = rows[selectedRow].querySelector('.btn-approve');
+        if (approveBtn) approveBtn.click();
+      } else if (e.key === 'r' && selectedRow >= 0) {
+        // Quick reject
+        var rejectBtn = rows[selectedRow].querySelector('.btn-reject');
+        if (rejectBtn) rejectBtn.click();
+      }
+    });
+
+    function highlightRow(rows) {
+      rows.forEach(function(r, i) {
+        r.classList.toggle('bg-amplifi-50', i === selectedRow);
+        r.classList.toggle('ring-2', i === selectedRow);
+        r.classList.toggle('ring-amplifi-300', i === selectedRow);
+      });
+      if (selectedRow >= 0 && rows[selectedRow]) {
+        rows[selectedRow].scrollIntoView({ block: 'nearest' });
+      }
     }
   })();
 </script>

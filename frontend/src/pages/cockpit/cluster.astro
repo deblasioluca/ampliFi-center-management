@@ -1,0 +1,98 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Cluster Explorer" requireAuth={true} adminOnly={true}>
+  <div class="mb-4">
+    <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
+    <h2 class="text-xl font-bold mt-2">Cluster Explorer</h2>
+    <p class="text-sm text-gray-500 mt-1">Find groups of similar cost centers using semantic similarity</p>
+  </div>
+
+  <!-- Controls -->
+  <div class="card mb-6">
+    <div class="flex flex-wrap gap-4 items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">CO Area</label>
+        <input id="clu-coarea" type="text" class="input text-sm w-28" placeholder="e.g. 1000" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Similarity Threshold</label>
+        <input id="clu-threshold" type="number" step="0.05" min="0.5" max="0.99" value="0.85" class="input text-sm w-24" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Max Results</label>
+        <input id="clu-limit" type="number" min="10" max="500" value="100" class="input text-sm w-20" />
+      </div>
+      <button id="btn-run-cluster" class="btn-amplifi text-sm">Find Duplicates</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold">Duplicate Pairs</h3>
+      <span id="clu-count" class="text-xs text-gray-500"></span>
+    </div>
+    <div id="clu-results" class="text-sm text-gray-500">Configure parameters above and click "Find Duplicates"</div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
+
+  document.getElementById('btn-run-cluster').addEventListener('click', async function() {
+    var coarea = document.getElementById('clu-coarea').value.trim();
+    var threshold = parseFloat(document.getElementById('clu-threshold').value) || 0.85;
+    var limit = parseInt(document.getElementById('clu-limit').value) || 100;
+    var resultsEl = document.getElementById('clu-results');
+    var countEl = document.getElementById('clu-count');
+
+    resultsEl.textContent = 'Analyzing...';
+    countEl.textContent = '';
+
+    try {
+      var url = '/api/legacy/data/duplicate-check?threshold=' + threshold + '&limit=' + limit;
+      if (coarea) url += '&coarea=' + encodeURIComponent(coarea);
+      var resp = await fetch(url, { method: 'POST', headers: headers });
+      if (!resp.ok) throw new Error('Failed: ' + resp.status);
+      var data = await resp.json();
+
+      countEl.textContent = data.total + ' pairs found (showing up to ' + limit + ')';
+      var pairs = data.pairs || [];
+      if (!pairs.length) {
+        resultsEl.textContent = 'No duplicates found at this threshold.';
+        return;
+      }
+
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">Name A</th>' +
+        '<th class="py-2 px-2 text-left">Name B</th>' +
+        '<th class="py-2 px-2 text-center">Similarity</th>' +
+        '<th class="py-2 px-2 text-center">ID A</th>' +
+        '<th class="py-2 px-2 text-center">ID B</th></tr></thead><tbody>';
+
+      pairs.forEach(function(p) {
+        var pct = Math.round(p.similarity * 100);
+        var barColor = pct >= 95 ? 'bg-red-400' : pct >= 90 ? 'bg-amber-400' : 'bg-blue-400';
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2">' + esc(p.name_a) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.name_b) + '</td>' +
+          '<td class="py-1.5 px-2 text-center"><div class="flex items-center gap-1 justify-center">' +
+            '<div class="w-16 bg-gray-100 rounded-full h-1.5"><div class="h-1.5 rounded-full ' + barColor + '" style="width:' + pct + '%"></div></div>' +
+            '<span class="font-mono">' + pct + '%</span></div></td>' +
+          '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_a + '</td>' +
+          '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_b + '</td></tr>';
+      });
+
+      resultsEl.innerHTML = html + '</tbody></table>';
+    } catch(e) {
+      resultsEl.textContent = 'Error: ' + e.message;
+    }
+  });
+</script>

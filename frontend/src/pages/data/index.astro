@@ -38,34 +38,109 @@ import Layout from '../../components/layout/Layout.astro';
 
   <!-- Tabs -->
   <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
-    <div class="flex space-x-0" id="data-tabs">
-      <button class="tab-active px-4 py-3" data-tab="upload">Upload</button>
-      <button class="tab px-4 py-3" data-tab="entities">Entities</button>
-      <button class="tab px-4 py-3" data-tab="cost-centers">Cost Centers</button>
-      <button class="tab px-4 py-3" data-tab="profit-centers">Profit Centers</button>
-      <button class="tab px-4 py-3" data-tab="sample-data">Sample Data</button>
+    <div class="flex space-x-0 overflow-x-auto" id="data-tabs">
+      <button class="tab-active px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="cost-centers">Cost Centers</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="upload">Upload</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="sample-data">Sample Data</button>
     </div>
   </div>
 
   <!-- Tab Content -->
   <div class="card rounded-t-none border-t-0">
+    <!-- Entities Tab -->
+    <div id="tab-entities">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
+        <div class="flex items-center gap-2">
+          <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
+        </div>
+      </div>
+      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+    </div>
+
+    <!-- Cost Centers Tab -->
+    <div id="tab-cost-centers" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
+        <div class="flex items-center gap-2">
+          <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('cc-table','cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
+        </div>
+      </div>
+      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+    </div>
+
+    <!-- Profit Centers Tab -->
+    <div id="tab-profit-centers" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
+        <div class="flex items-center gap-2">
+          <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('pc-table','profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
+        </div>
+      </div>
+      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+    </div>
+
+    <!-- Balances Tab -->
+    <div id="tab-balances" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Balances</h3>
+        <div class="flex items-center gap-2">
+          <input id="filter-bal-cctr" type="text" placeholder="Cost Center..." class="input text-sm w-32" />
+          <input id="filter-bal-year" type="number" placeholder="Year..." class="input text-sm w-24" />
+          <button onclick="downloadTableCSV('bal-table','balances.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
+        </div>
+      </div>
+      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+    </div>
+
+    <!-- Hierarchies Tab -->
+    <div id="tab-hierarchies" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Hierarchies</h3>
+        <button id="delete-all-hier" class="btn-danger text-xs">Delete All</button>
+      </div>
+      <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+    </div>
+
     <!-- Upload Tab -->
-    <div id="tab-upload">
+    <div id="tab-upload" class="hidden">
       <h3 class="text-base font-semibold mb-3">Upload Data File</h3>
-      <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files for cost centers, profit centers, balances, or hierarchies.</p>
-      <form id="upload-form" class="space-y-4">
+      <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
+      <form id="upload-form" class="space-y-4 max-w-lg">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
           <select id="upload-type" class="input">
             <option value="cost_centers">Cost Centers</option>
             <option value="profit_centers">Profit Centers</option>
             <option value="balances">Balances</option>
+            <option value="entities">Entities</option>
             <option value="hierarchies">Hierarchies</option>
           </select>
         </div>
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+          <span class="font-medium">Template:</span>
+          <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
-          <input type="file" id="upload-file" accept=".csv,.xlsx,.xls" class="input" required />
+          <input type="file" id="upload-file" accept=".csv,.xlsx,.xls,.tsv" class="input" required />
         </div>
         <div class="flex gap-3">
           <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
@@ -73,47 +148,18 @@ import Layout from '../../components/layout/Layout.astro';
         <div id="upload-result" class="text-sm hidden"></div>
       </form>
 
-      <!-- Upload History -->
+      <!-- Upload History with Actions -->
       <div class="mt-6 pt-6 border-t border-gray-200">
         <h3 class="text-base font-semibold mb-3">Upload History</h3>
         <div id="upload-history" class="text-sm text-gray-500">Loading...</div>
       </div>
     </div>
 
-    <!-- Entities Tab -->
-    <div id="tab-entities" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Entities</h3>
-        <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
-      </div>
-      <div id="entities-table" class="text-sm text-gray-500">Loading...</div>
-    </div>
-
-    <!-- Cost Centers Tab -->
-    <div id="tab-cost-centers" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
-        <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
-      </div>
-      <div id="cc-table" class="text-sm text-gray-500">Loading...</div>
-    </div>
-
-    <!-- Profit Centers Tab -->
-    <div id="tab-profit-centers" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
-        <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
-      </div>
-      <div id="pc-table" class="text-sm text-gray-500">Loading...</div>
-    </div>
-
     <!-- Sample Data Tab -->
     <div id="tab-sample-data" class="hidden">
       <h3 class="text-base font-semibold mb-3">Sample Data Management</h3>
-      <p class="text-xs text-gray-500 mb-4">Generate or delete sample data for testing. Sample data includes entities, cost centers, profit centers, balances, and hierarchy entries.</p>
-
+      <p class="text-xs text-gray-500 mb-4">Generate or delete sample data for testing.</p>
       <div id="sample-status" class="mb-4 p-3 bg-gray-50 rounded text-sm text-gray-600">Loading status...</div>
-
       <div class="flex gap-3">
         <button id="gen-sample-btn" class="btn-success">Generate Sample Data</button>
         <button id="del-sample-btn" class="btn-danger">Delete Sample Data</button>
@@ -124,252 +170,451 @@ import Layout from '../../components/layout/Layout.astro';
 </Layout>
 
 <script is:inline>
-  (function() {
-    var token = localStorage.getItem('amplifi_token');
-    var headers = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
-    var authHdr = token ? { 'Authorization': 'Bearer ' + token } : {};
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var authHdr = token ? { 'Authorization': 'Bearer ' + token } : {};
+  var jsonHdr = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
 
-    function escapeHtml(text) {
-      var div = document.createElement('div');
-      div.textContent = text || '';
-      return div.innerHTML;
-    }
+  function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+  function fmt(n) { return (n || 0).toLocaleString(); }
 
-    // Tab switching
-    document.querySelectorAll('#data-tabs button').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var tab = this.getAttribute('data-tab');
-        document.querySelectorAll('#data-tabs button').forEach(function(b) {
-          b.className = 'tab px-4 py-3';
+  // CSV download of current visible table
+  window.downloadTableCSV = function(tableId, filename) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var tbl = table.querySelector('table');
+    if (!tbl) { alert('No data to download.'); return; }
+    var csv = [];
+    tbl.querySelectorAll('tr').forEach(function(row) {
+      var cells = [];
+      row.querySelectorAll('th,td').forEach(function(cell) {
+        var v = cell.textContent.replace(/"/g, '""').replace(/ [▲▼]$/, '');
+        cells.push('"' + v + '"');
+      });
+      csv.push(cells.join(','));
+    });
+    var blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Client-side column sorting for loaded page data
+  function sortTable(tableEl) {
+    var thead = tableEl.querySelector('thead');
+    if (!thead) return;
+    thead.querySelectorAll('th').forEach(function(th, colIdx) {
+      th.style.cursor = 'pointer';
+      th.title = 'Click to sort';
+      th.addEventListener('click', function() {
+        var tbody = tableEl.querySelector('tbody');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        var asc = th.dataset.sort !== 'asc';
+        thead.querySelectorAll('th').forEach(function(h) { delete h.dataset.sort; h.textContent = h.textContent.replace(/ [▲▼]$/, ''); });
+        th.dataset.sort = asc ? 'asc' : 'desc';
+        th.textContent += asc ? ' ▲' : ' ▼';
+        rows.sort(function(a, b) {
+          var ac = (a.cells[colIdx] || {}).textContent || '';
+          var bc = (b.cells[colIdx] || {}).textContent || '';
+          var an = parseFloat(ac.replace(/,/g, '')), bn = parseFloat(bc.replace(/,/g, ''));
+          if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+          return asc ? ac.localeCompare(bc) : bc.localeCompare(ac);
         });
-        this.className = 'tab-active px-4 py-3';
-        ['upload', 'entities', 'cost-centers', 'profit-centers', 'sample-data'].forEach(function(t) {
-          var el = document.getElementById('tab-' + t);
-          if (el) el.classList.toggle('hidden', t !== tab);
-        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
       });
     });
-
-    // Load data counts
-    function loadCounts() {
-      fetch('/api/data/counts', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          document.getElementById('cnt-entities').textContent = (data.entities || 0).toLocaleString();
-          document.getElementById('cnt-cc').textContent = (data.cost_centers || 0).toLocaleString();
-          document.getElementById('cnt-pc').textContent = (data.profit_centers || 0).toLocaleString();
-          document.getElementById('cnt-balances').textContent = (data.balances || 0).toLocaleString();
-          document.getElementById('cnt-hierarchies').textContent = (data.hierarchies || 0).toLocaleString();
-          document.getElementById('cnt-uploads').textContent = (data.upload_batches || 0).toLocaleString();
-        })
-        .catch(function() {});
-    }
-    loadCounts();
-
-    // Upload form
-    document.getElementById('upload-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      var fileInput = document.getElementById('upload-file');
-      var type = document.getElementById('upload-type').value;
-      var resultEl = document.getElementById('upload-result');
-      resultEl.classList.add('hidden');
-
-      if (!fileInput.files[0]) return;
-      var formData = new FormData();
-      formData.append('file', fileInput.files[0]);
-
-      document.getElementById('upload-btn').disabled = true;
-      document.getElementById('upload-btn').textContent = 'Uploading...';
-
-      try {
-        var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
-          method: 'POST', headers: authHdr, body: formData
-        });
-        var data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
-        resultEl.textContent = 'Upload successful: ' + (data.rows_imported || 'done');
-        resultEl.className = 'text-sm text-green-600';
-        resultEl.classList.remove('hidden');
-        loadCounts();
-        loadUploadHistory();
-      } catch(err) {
-        resultEl.textContent = 'Error: ' + err.message;
-        resultEl.className = 'text-sm text-red-600';
-        resultEl.classList.remove('hidden');
-      } finally {
-        document.getElementById('upload-btn').disabled = false;
-        document.getElementById('upload-btn').textContent = 'Upload';
-      }
+  }
+  // Apply sorting after each table render
+  var sortObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      var t = m.target.querySelector('table');
+      if (t) sortTable(t);
     });
+  });
+  ['entities-table','cc-table','pc-table','bal-table','hier-table'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) sortObserver.observe(el, { childList: true });
+  });
 
-    // Upload history
-    function loadUploadHistory() {
-      fetch('/api/admin/uploads', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var el = document.getElementById('upload-history');
-          var items = Array.isArray(data) ? data : (data.items || []);
-          if (items.length === 0) { el.textContent = 'No uploads yet.'; return; }
-          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-            '<th class="text-left py-1 px-2">Type</th><th class="text-left py-1 px-2">File</th>' +
-            '<th class="text-left py-1 px-2">Rows</th><th class="text-left py-1 px-2">Date</th></tr></thead><tbody>';
-          items.forEach(function(u) {
-            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2">' + escapeHtml(u.data_type || '--') +
-              '</td><td class="py-1 px-2">' + escapeHtml(u.file_name || '--') +
-              '</td><td class="py-1 px-2">' + (u.rows_imported || '--') +
-              '</td><td class="py-1 px-2">' + escapeHtml(u.created_at ? new Date(u.created_at).toLocaleDateString() : '--') + '</td></tr>';
-          });
-          html += '</tbody></table>';
-          el.innerHTML = html;
-        })
-        .catch(function() { document.getElementById('upload-history').textContent = 'Unable to load'; });
+  var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','upload','sample-data'];
+
+  // Tab switching
+  document.querySelectorAll('#data-tabs button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = this.getAttribute('data-tab');
+      document.querySelectorAll('#data-tabs button').forEach(function(b) { b.className = 'tab px-4 py-3 whitespace-nowrap'; });
+      this.className = 'tab-active px-4 py-3 whitespace-nowrap';
+      allTabs.forEach(function(t) {
+        var el = document.getElementById('tab-' + t);
+        if (el) el.classList.toggle('hidden', t !== tab);
+      });
+    });
+  });
+
+  // Load data counts
+  function loadCounts() {
+    fetch('/api/data/counts', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      document.getElementById('cnt-entities').textContent = fmt(d.entities);
+      document.getElementById('cnt-cc').textContent = fmt(d.cost_centers);
+      document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
+      document.getElementById('cnt-balances').textContent = fmt(d.balances);
+      document.getElementById('cnt-hierarchies').textContent = fmt(d.hierarchies);
+      document.getElementById('cnt-uploads').textContent = fmt(d.upload_batches);
+    }).catch(function() {});
+  }
+  loadCounts();
+
+  function pagerHtml(total, page, size, loadFn) {
+    var pages = Math.ceil(total / size) || 1;
+    var html = '<span class="text-gray-500">' + fmt(total) + ' total, page ' + page + '/' + pages + '</span><div class="flex gap-1">';
+    if (page > 1) html += '<button onclick="' + loadFn + '(' + (page-1) + ')" class="btn-sm">Prev</button>';
+    if (page < pages) html += '<button onclick="' + loadFn + '(' + (page+1) + ')" class="btn-sm">Next</button>';
+    return html + '</div>';
+  }
+
+  // --- Entities ---
+  window.loadEntities = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-entities').value;
+    var url = '/api/entities?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('entities-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No entities found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">Code</th><th class="py-2 px-2 text-left">Name</th>' +
+        '<th class="py-2 px-2 text-left">Country</th><th class="py-2 px-2 text-left">Region</th>' +
+        '<th class="py-2 px-2 text-left">Currency</th><th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(e) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.name) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.country) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.region) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.currency) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('entities-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadEntities');
+    }).catch(function(e) { document.getElementById('entities-table').textContent = 'Error: ' + e.message; });
+  };
+  loadEntities(1);
+  document.getElementById('search-entities').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEntities(1); }, 300); });
+
+  // --- Cost Centers ---
+  window.loadCC = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-cc').value;
+    var ccode = document.getElementById('filter-cc-ccode').value;
+    var url = '/api/legacy/cost-centers?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('cc-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No cost centers found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Short Text</th>' +
+        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Category</th>' +
+        '<th class="py-2 px-2 text-left">Responsible</th><th class="py-2 px-2 text-left">PC</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(c) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
+          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
+    }).catch(function(e) { document.getElementById('cc-table').textContent = 'Error: ' + e.message; });
+  };
+  loadCC(1);
+  document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
+  document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
+
+  // --- Profit Centers ---
+  window.loadPC = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-pc').value;
+    var ccode = document.getElementById('filter-pc-ccode').value;
+    var url = '/api/legacy/profit-centers?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('pc-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No profit centers found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">PC</th><th class="py-2 px-2 text-left">Short Text</th>' +
+        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Department</th>' +
+        '<th class="py-2 px-2 text-left">Responsible</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(p) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
+          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
+    }).catch(function(e) { document.getElementById('pc-table').textContent = 'Error: ' + e.message; });
+  };
+  loadPC(1);
+  document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
+  document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
+
+  // --- Balances ---
+  window.loadBalances = function(page) {
+    page = page || 1;
+    var cctr = document.getElementById('filter-bal-cctr').value;
+    var year = document.getElementById('filter-bal-year').value;
+    var url = '/api/legacy/balances?page=' + page + '&size=50';
+    if (cctr) url += '&cctr=' + encodeURIComponent(cctr);
+    if (year) url += '&fiscal_year=' + year;
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('bal-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No balances found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">Year</th><th class="py-2 px-2 text-left">Period</th>' +
+        '<th class="py-2 px-2 text-left">Account</th><th class="py-2 px-2 text-left">Class</th>' +
+        '<th class="py-2 px-2 text-right">TC Amount</th><th class="py-2 px-2 text-left">Cur</th>' +
+        '<th class="py-2 px-2 text-right">Postings</th></tr></thead><tbody>';
+      d.items.forEach(function(b) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(b.cctr) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(b.ccode) + '</td>' +
+          '<td class="py-1.5 px-2">' + b.fiscal_year + '</td>' +
+          '<td class="py-1.5 px-2">' + String(b.period).padStart(2,'0') + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(b.account) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(b.account_class) + '</td>' +
+          '<td class="py-1.5 px-2 text-right font-mono">' + Number(b.tc_amt).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(b.currency_tc) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(b.posting_count) + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('bal-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadBalances');
+    }).catch(function(e) { document.getElementById('bal-table').textContent = 'Error: ' + e.message; });
+  };
+  loadBalances(1);
+  document.getElementById('filter-bal-cctr').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
+  document.getElementById('filter-bal-year').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
+
+  // --- Hierarchies ---
+  function loadHierarchies() {
+    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('hier-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No hierarchies found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">Set Class</th><th class="py-2 px-2 text-left">Set Name</th>' +
+        '<th class="py-2 px-2 text-left">Description</th><th class="py-2 px-2 text-left">CO Area</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(h) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(h.setclass) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(h.description) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+    }).catch(function(e) { document.getElementById('hier-table').textContent = 'Error: ' + e.message; });
+  }
+  loadHierarchies();
+
+  // Populate entity filters
+  fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    ['filter-cc-ccode','filter-pc-ccode'].forEach(function(id) {
+      var sel = document.getElementById(id);
+      (d.items || []).forEach(function(e) {
+        var opt = document.createElement('option');
+        opt.value = e.ccode; opt.textContent = e.ccode + ' - ' + (e.name || '');
+        sel.appendChild(opt);
+      });
+    });
+  }).catch(function() {});
+
+  // --- Upload ---
+  document.getElementById('upload-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('upload-file');
+    var type = document.getElementById('upload-type').value;
+    var resultEl = document.getElementById('upload-result');
+    resultEl.classList.add('hidden');
+    if (!fileInput.files[0]) return;
+    var formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    document.getElementById('upload-btn').disabled = true;
+    document.getElementById('upload-btn').textContent = 'Uploading...';
+    try {
+      var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
+        method: 'POST', headers: authHdr, body: formData
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
+      resultEl.className = 'text-sm text-green-600';
+      resultEl.classList.remove('hidden');
+      loadCounts(); loadUploadHistory();
+    } catch(err) {
+      resultEl.textContent = 'Error: ' + err.message;
+      resultEl.className = 'text-sm text-red-600';
+      resultEl.classList.remove('hidden');
+    } finally {
+      document.getElementById('upload-btn').disabled = false;
+      document.getElementById('upload-btn').textContent = 'Upload';
     }
+  });
+
+  function loadUploadHistory() {
+    fetch('/api/admin/uploads?size=20', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('upload-history');
+      var items = d.items || [];
+      if (!items.length) { el.textContent = 'No uploads yet.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Type</th>' +
+        '<th class="py-2 px-2 text-left">File</th><th class="py-2 px-2 text-left">Status</th>' +
+        '<th class="py-2 px-2 text-right">Rows</th><th class="py-2 px-2 text-right">Valid</th>' +
+        '<th class="py-2 px-2 text-right">Errors</th><th class="py-2 px-2 text-right">Loaded</th>' +
+        '<th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
+      items.forEach(function(u) {
+        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : 'text-gray-600';
+        var actions = '';
+        if (u.status === 'uploaded') {
+          actions = '<button onclick="validateUpload(' + u.id + ')" class="text-blue-600 hover:underline mr-2">Validate</button>';
+        } else if (u.status === 'validated') {
+          actions = '<button onclick="loadUpload(' + u.id + ')" class="text-green-600 hover:underline mr-2">Load</button>';
+        } else if (u.status === 'loaded') {
+          actions = '<button onclick="rollbackUpload(' + u.id + ')" class="text-red-600 hover:underline">Rollback</button>';
+        }
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2">' + u.id + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.kind) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.filename) + '</td>' +
+          '<td class="py-1.5 px-2 ' + statusColor + ' font-medium">' + esc(u.status) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_total) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_valid) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_error) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_loaded) + '</td>' +
+          '<td class="py-1.5 px-2">' + actions + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+    }).catch(function(e) { document.getElementById('upload-history').textContent = 'Error loading uploads.'; });
+  }
+  loadUploadHistory();
+
+  window.validateUpload = async function(id) {
+    var res = await fetch('/api/admin/uploads/' + id + '/validate', { method: 'POST', headers: authHdr });
+    var d = await res.json();
+    alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : ''));
     loadUploadHistory();
+  };
+  window.loadUpload = async function(id) {
+    var res = await fetch('/api/admin/uploads/' + id + '/load', { method: 'POST', headers: authHdr });
+    var d = await res.json();
+    alert('Load: ' + d.status + (d.rows_loaded ? ' (' + d.rows_loaded + ' rows)' : ''));
+    loadUploadHistory(); loadCounts();
+  };
+  window.rollbackUpload = async function(id) {
+    if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
+    var res = await fetch('/api/admin/uploads/' + id + '/rollback', { method: 'POST', headers: authHdr });
+    var d = await res.json();
+    alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
+    loadUploadHistory(); loadCounts();
+  };
 
-    // Entities table
-    function loadEntities() {
-      fetch('/api/entities?page=1&size=50', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var el = document.getElementById('entities-table');
-          var items = data.items || [];
-          if (items.length === 0) { el.textContent = 'No entities.'; return; }
-          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-            '<th class="text-left py-1 px-2">ID</th><th class="text-left py-1 px-2">Code</th>' +
-            '<th class="text-left py-1 px-2">Name</th><th class="text-left py-1 px-2">Country</th></tr></thead><tbody>';
-          items.forEach(function(e) {
-            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2">' + e.id +
-              '</td><td class="py-1 px-2 font-mono">' + escapeHtml(e.code) +
-              '</td><td class="py-1 px-2">' + escapeHtml(e.name) +
-              '</td><td class="py-1 px-2">' + escapeHtml(e.country || '--') + '</td></tr>';
-          });
-          html += '</tbody></table>';
-          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
-          el.innerHTML = html;
-        })
-        .catch(function() { document.getElementById('entities-table').textContent = 'Unable to load'; });
-    }
-    loadEntities();
+  // --- Download upload template ---
+  document.getElementById('download-template-btn').addEventListener('click', async function() {
+    var kind = document.getElementById('upload-type').value;
+    try {
+      var res = await fetch('/api/admin/upload-templates/' + encodeURIComponent(kind), { headers: authHdr });
+      if (!res.ok) { alert('Failed to fetch template'); return; }
+      var d = await res.json();
+      var blob = new Blob([d.content], { type: 'text/csv' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = kind + '_template.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(e) { alert('Error: ' + e.message); }
+  });
 
-    // Cost centers table
-    function loadCC() {
-      fetch('/api/legacy/cost-centers?page=1&size=50', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var el = document.getElementById('cc-table');
-          var items = data.items || [];
-          if (items.length === 0) { el.textContent = 'No cost centers.'; return; }
-          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-            '<th class="text-left py-1 px-2">Code</th><th class="text-left py-1 px-2">Name</th>' +
-            '<th class="text-left py-1 px-2">Entity</th><th class="text-left py-1 px-2">Category</th></tr></thead><tbody>';
-          items.forEach(function(c) {
-            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2 font-mono">' + escapeHtml(c.code) +
-              '</td><td class="py-1 px-2">' + escapeHtml(c.name || c.description || '--') +
-              '</td><td class="py-1 px-2">' + escapeHtml(c.entity_code || '--') +
-              '</td><td class="py-1 px-2">' + escapeHtml(c.category || '--') + '</td></tr>';
-          });
-          html += '</tbody></table>';
-          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
-          el.innerHTML = html;
-        })
-        .catch(function() { document.getElementById('cc-table').textContent = 'Unable to load'; });
-    }
-    loadCC();
+  // --- Delete all buttons ---
+  document.getElementById('delete-all-entities').addEventListener('click', function() {
+    if (!confirm('Delete ALL entities?')) return;
+    fetch('/api/data/entities/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadEntities(1); });
+  });
+  document.getElementById('delete-all-cc').addEventListener('click', function() {
+    if (!confirm('Delete ALL cost centers?')) return;
+    fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadCC(1); });
+  });
+  document.getElementById('delete-all-pc').addEventListener('click', function() {
+    if (!confirm('Delete ALL profit centers?')) return;
+    fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadPC(1); });
+  });
+  document.getElementById('delete-all-bal').addEventListener('click', function() {
+    if (!confirm('Delete ALL balances?')) return;
+    fetch('/api/data/balances/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadBalances(1); });
+  });
+  document.getElementById('delete-all-hier').addEventListener('click', function() {
+    if (!confirm('Delete ALL hierarchies?')) return;
+    fetch('/api/data/hierarchies/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadHierarchies(); });
+  });
 
-    // Profit centers table
-    function loadPC() {
-      fetch('/api/legacy/profit-centers?page=1&size=50', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var el = document.getElementById('pc-table');
-          var items = data.items || [];
-          if (items.length === 0) { el.textContent = 'No profit centers.'; return; }
-          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-            '<th class="text-left py-1 px-2">Code</th><th class="text-left py-1 px-2">Name</th>' +
-            '<th class="text-left py-1 px-2">Entity</th></tr></thead><tbody>';
-          items.forEach(function(p) {
-            html += '<tr class="border-b border-gray-100"><td class="py-1 px-2 font-mono">' + escapeHtml(p.code) +
-              '</td><td class="py-1 px-2">' + escapeHtml(p.name || p.description || '--') +
-              '</td><td class="py-1 px-2">' + escapeHtml(p.entity_code || '--') + '</td></tr>';
-          });
-          html += '</tbody></table>';
-          if (data.total > 50) html += '<p class="text-xs text-gray-400 mt-2">Showing 50 of ' + data.total + '</p>';
-          el.innerHTML = html;
-        })
-        .catch(function() { document.getElementById('pc-table').textContent = 'Unable to load'; });
-    }
-    loadPC();
-
-    // Delete all buttons
-    document.getElementById('delete-all-entities').addEventListener('click', async function() {
-      if (!confirm('Delete ALL entities? This cannot be undone.')) return;
-      await fetch('/api/data/entities/all', { method: 'DELETE', headers: authHdr });
-      loadCounts(); loadEntities();
+  // --- Sample Data ---
+  function loadSampleStatus() {
+    fetch('/api/admin/sample-data', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('sample-status');
+      el.innerHTML = '<div class="grid grid-cols-3 gap-4">' +
+        '<div><span class="text-gray-500">Entities:</span> <strong>' + fmt(d.entities) + '</strong></div>' +
+        '<div><span class="text-gray-500">Cost Centers:</span> <strong>' + fmt(d.cost_centers) + '</strong></div>' +
+        '<div><span class="text-gray-500">Profit Centers:</span> <strong>' + fmt(d.profit_centers) + '</strong></div>' +
+        '<div><span class="text-gray-500">Balances:</span> <strong>' + fmt(d.balances) + '</strong></div>' +
+        '<div><span class="text-gray-500">Hierarchies:</span> <strong>' + fmt(d.hierarchies) + '</strong></div></div>';
     });
-    document.getElementById('delete-all-cc').addEventListener('click', async function() {
-      if (!confirm('Delete ALL cost centers?')) return;
-      await fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr });
-      loadCounts(); loadCC();
-    });
-    document.getElementById('delete-all-pc').addEventListener('click', async function() {
-      if (!confirm('Delete ALL profit centers?')) return;
-      await fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr });
-      loadCounts(); loadPC();
-    });
+  }
+  loadSampleStatus();
 
-    // Sample data
-    function loadSampleStatus() {
-      fetch('/api/admin/sample-data', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var el = document.getElementById('sample-status');
-          var parts = [];
-          for (var k in data) {
-            if (k !== 'status') parts.push(k + ': ' + data[k]);
-          }
-          el.textContent = parts.length > 0 ? parts.join(' | ') : 'No data counts available';
-        })
-        .catch(function() {});
-    }
-    loadSampleStatus();
+  document.getElementById('gen-sample-btn').addEventListener('click', async function() {
+    this.disabled = true; this.textContent = 'Generating...';
+    try {
+      var res = await fetch('/api/admin/sample-data', { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      document.getElementById('sample-result').textContent = 'Generated: ' + JSON.stringify(d.counts);
+      document.getElementById('sample-result').className = 'text-sm mt-3 text-green-600';
+      loadCounts(); loadSampleStatus();
+    } catch(e) {
+      document.getElementById('sample-result').textContent = 'Error: ' + e.message;
+      document.getElementById('sample-result').className = 'text-sm mt-3 text-red-600';
+    } finally { this.disabled = false; this.textContent = 'Generate Sample Data'; }
+  });
 
-    document.getElementById('gen-sample-btn').addEventListener('click', async function() {
-      var resultEl = document.getElementById('sample-result');
-      this.disabled = true; this.textContent = 'Generating...';
-      try {
-        var res = await fetch('/api/admin/sample-data', { method: 'POST', headers: authHdr });
-        var data = await res.json();
-        resultEl.textContent = 'Generated: ' + JSON.stringify(data);
-        resultEl.className = 'text-sm text-green-600 mt-3';
-        resultEl.classList.remove('hidden');
-        loadCounts(); loadSampleStatus(); loadEntities(); loadCC(); loadPC();
-      } catch(e) {
-        resultEl.textContent = 'Error: ' + e.message;
-        resultEl.className = 'text-sm text-red-600 mt-3';
-        resultEl.classList.remove('hidden');
-      } finally {
-        this.disabled = false; this.textContent = 'Generate Sample Data';
-      }
-    });
-
-    document.getElementById('del-sample-btn').addEventListener('click', async function() {
-      if (!confirm('Delete all sample data?')) return;
-      var resultEl = document.getElementById('sample-result');
-      this.disabled = true; this.textContent = 'Deleting...';
-      try {
-        var res = await fetch('/api/admin/sample-data', { method: 'DELETE', headers: authHdr });
-        var data = await res.json();
-        resultEl.textContent = 'Deleted: ' + JSON.stringify(data);
-        resultEl.className = 'text-sm text-green-600 mt-3';
-        resultEl.classList.remove('hidden');
-        loadCounts(); loadSampleStatus(); loadEntities(); loadCC(); loadPC();
-      } catch(e) {
-        resultEl.textContent = 'Error: ' + e.message;
-        resultEl.className = 'text-sm text-red-600 mt-3';
-        resultEl.classList.remove('hidden');
-      } finally {
-        this.disabled = false; this.textContent = 'Delete Sample Data';
-      }
-    });
-  })();
+  document.getElementById('del-sample-btn').addEventListener('click', async function() {
+    if (!confirm('Delete all sample data?')) return;
+    this.disabled = true; this.textContent = 'Deleting...';
+    try {
+      var res = await fetch('/api/admin/sample-data', { method: 'DELETE', headers: authHdr });
+      var d = await res.json();
+      document.getElementById('sample-result').textContent = 'Deleted: ' + JSON.stringify(d.counts);
+      document.getElementById('sample-result').className = 'text-sm mt-3 text-green-600';
+      loadCounts(); loadSampleStatus();
+    } catch(e) {
+      document.getElementById('sample-result').textContent = 'Error: ' + e.message;
+      document.getElementById('sample-result').className = 'text-sm mt-3 text-red-600';
+    } finally { this.disabled = false; this.textContent = 'Delete Sample Data'; }
+  });
+})();
 </script>

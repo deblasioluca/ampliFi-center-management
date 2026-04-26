@@ -1,0 +1,78 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Audit Log" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-bold">Audit Log</h2>
+    <div class="flex gap-2">
+      <select id="filter-action" class="input text-sm w-48">
+        <option value="">All Actions</option>
+        <option value="wave.cancel">Wave Cancel</option>
+        <option value="wave.lock">Wave Lock</option>
+        <option value="wave.signoff">Wave Sign Off</option>
+        <option value="wave.close">Wave Close</option>
+        <option value="review.decide">Review Decision</option>
+        <option value="user.create">User Create</option>
+        <option value="user.update">User Update</option>
+        <option value="upload.load">Upload Load</option>
+      </select>
+      <button id="btn-refresh" class="btn-secondary text-sm">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="audit-table" class="text-sm">Loading...</div>
+    <div id="audit-pager" class="mt-2"></div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
+
+  function pagerHtml(total, page, size, fn) {
+    var pages = Math.ceil(total / size);
+    if (pages <= 1) return '';
+    var html = '<div class="flex items-center gap-2 text-xs text-gray-500">';
+    html += '<span>Page ' + page + ' of ' + pages + ' (' + total + ' entries)</span>';
+    if (page > 1) html += '<button onclick="' + fn + '(' + (page-1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">&laquo; Prev</button>';
+    if (page < pages) html += '<button onclick="' + fn + '(' + (page+1) + ')" class="px-2 py-1 border rounded hover:bg-gray-50">Next &raquo;</button>';
+    html += '</div>';
+    return html;
+  }
+
+  window.loadAudit = function(page) {
+    page = page || 1;
+    var action = document.getElementById('filter-action').value;
+    var url = '/api/admin/audit?page=' + page + '&size=50';
+    if (action) url += '&action=' + encodeURIComponent(action);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('audit-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No audit entries found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">Timestamp</th>' +
+        '<th class="py-2 px-2 text-left">Action</th>' +
+        '<th class="py-2 px-2 text-left">Entity Type</th>' +
+        '<th class="py-2 px-2 text-left">Entity ID</th>' +
+        '<th class="py-2 px-2 text-left">Actor</th></tr></thead><tbody>';
+      d.items.forEach(function(e) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono text-xs">' + new Date(e.created_at).toLocaleString() + '</td>' +
+          '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded bg-gray-100 text-xs">' + esc(e.action) + '</span></td>' +
+          '<td class="py-1.5 px-2">' + esc(e.entity_type) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(e.entity_id) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.actor_email) + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('audit-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadAudit');
+    }).catch(function(e) { document.getElementById('audit-table').textContent = 'Error: ' + e.message; });
+  };
+  loadAudit(1);
+  document.getElementById('filter-action').addEventListener('change', function() { loadAudit(1); });
+  document.getElementById('btn-refresh').addEventListener('click', function() { loadAudit(1); });
+</script>

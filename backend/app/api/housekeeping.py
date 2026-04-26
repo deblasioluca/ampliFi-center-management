@@ -43,17 +43,67 @@ def list_cycles(
 
 @router.post("/admin/housekeeping/run")
 def run_housekeeping(
+    period: str | None = None,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin")),
 ) -> dict:
+    """Create and execute a housekeeping cycle."""
     import datetime
 
-    period = datetime.datetime.now(datetime.UTC).strftime("%Y-%m")
-    cycle = HousekeepingCycle(period=period, status="scheduled")
-    db.add(cycle)
-    db.commit()
-    db.refresh(cycle)
-    return {"id": cycle.id, "period": period, "status": "scheduled"}
+    from app.services.housekeeping import create_cycle, run_cycle
+
+    if not period:
+        period = datetime.datetime.now(datetime.UTC).strftime("%Y-%m")
+
+    try:
+        cycle = create_cycle(period=period, db=db)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+
+    db.flush()
+    try:
+        cycle = run_cycle(cycle.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+    return {
+        "id": cycle.id,
+        "period": period,
+        "status": cycle.status,
+        "kpis": cycle.kpis,
+    }
+
+
+@router.post("/admin/housekeeping/cycles/{cycle_id}/notify")
+def notify_owners(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Send email notifications to all owners with flagged items."""
+    from app.services.housekeeping import send_notifications
+
+    try:
+        result = send_notifications(cycle_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return result
+
+
+@router.post("/admin/housekeeping/cycles/{cycle_id}/close")
+def close_cycle(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Close a housekeeping cycle."""
+    from app.services.housekeeping import close_cycle as do_close
+
+    try:
+        cycle = do_close(cycle_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return {"id": cycle.id, "status": cycle.status}
 
 
 @router.get("/admin/housekeeping/cycles/{cycle_id}")

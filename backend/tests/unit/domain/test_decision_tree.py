@@ -22,6 +22,7 @@ def _base_features(**overrides) -> CenterFeatures:
         "months_since_last_posting": 0,
         "posting_count_window": 100,
         "hierarchy_membership_count": 1,
+        "opex_amt": 1000.0,  # default to having opex so mapping returns CC
     }
     defaults.update(overrides)
     return CenterFeatures(**defaults)
@@ -56,37 +57,50 @@ class TestCleansingTree:
 
 
 class TestMappingTree:
+    """Mapping tree per §04.2 — 6 branches."""
+
     def test_retire_returns_none(self):
         target = run_mapping_tree(_base_features(), CleansingOutcome.RETIRE)
         assert target == TargetObject.NONE
 
-    def test_bs_relevance_cc_and_pc(self):
-        f = _base_features(bs_amt=100.0, rev_amt=50.0)
-        target = run_mapping_tree(f, CleansingOutcome.KEEP)
-        assert target == TargetObject.CC_AND_PC
-
-    def test_bs_only_pc_only(self):
-        f = _base_features(bs_amt=100.0)
+    def test_has_revenue_without_feeder_pc_only(self):
+        f = _base_features(rev_amt=50.0)
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
         assert target == TargetObject.PC_ONLY
 
-    def test_project_real(self):
-        f = _base_features(is_project_related=True)
+    def test_has_revenue_with_feeder_cc_and_pc(self):
+        f = _base_features(rev_amt=50.0, is_feeder=True)
+        target = run_mapping_tree(f, CleansingOutcome.KEEP)
+        assert target == TargetObject.CC_AND_PC
+
+    def test_has_bs_and_revenue_pc_only(self):
+        f = _base_features(bs_amt=100.0, rev_amt=50.0, opex_amt=0.0)
+        target = run_mapping_tree(f, CleansingOutcome.KEEP)
+        assert target == TargetObject.PC_ONLY
+
+    def test_project_related_wbs_real(self):
+        f = _base_features(is_project_related=True, opex_amt=0.0)
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
         assert target == TargetObject.WBS_REAL
 
-    def test_project_allocation_stat(self):
-        f = _base_features(is_project_related=True, is_allocation_vehicle=True)
-        target = run_mapping_tree(f, CleansingOutcome.KEEP)
-        assert target == TargetObject.WBS_STAT
-
-    def test_feeder_cc(self):
-        f = _base_features(is_feeder=True)
+    def test_operational_costs_cc(self):
+        f = _base_features(opex_amt=5000.0)
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
         assert target == TargetObject.CC
 
-    def test_default_cc(self):
-        f = _base_features()
+    def test_allocation_vehicle_cc(self):
+        f = _base_features(opex_amt=0.0, is_allocation_vehicle=True)
+        target = run_mapping_tree(f, CleansingOutcome.KEEP)
+        assert target == TargetObject.CC
+
+    def test_info_only_wbs_stat(self):
+        f = _base_features(opex_amt=0.0, attrs={"used_for_info_only": True})
+        target = run_mapping_tree(f, CleansingOutcome.KEEP)
+        assert target == TargetObject.WBS_STAT
+
+    def test_no_signals_default_cc(self):
+        """Centers with zero opex, no revenue, no project, no allocation → CC (safe default)."""
+        f = _base_features(opex_amt=0.0)
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
         assert target == TargetObject.CC
 
