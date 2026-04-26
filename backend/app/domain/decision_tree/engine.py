@@ -141,7 +141,7 @@ def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> 
     """Deterministic cleansing tree — backward compatible wrapper."""
     path: list[str] = []
     p = params or {}
-    inactivity_months = p.get("inactivity_threshold_months", 12)
+    inactivity_months = p.get("inactivity_threshold_months", 24)
     posting_threshold = p.get("posting_threshold", 0)
     strict_hierarchy = p.get("strict_hierarchy_compliance", False)
 

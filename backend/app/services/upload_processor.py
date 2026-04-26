@@ -297,13 +297,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 select(LegacyCostCenter).where(
                     LegacyCostCenter.coarea == row["coarea"],
                     LegacyCostCenter.cctr == row["cctr"],
-                    LegacyCostCenter.refresh_batch == batch.id,
                 )
             ).scalar_one_or_none()
             if existing:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
+                existing.refresh_batch = batch.id
             else:
                 db.add(
                     LegacyCostCenter(
@@ -329,13 +329,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 select(LegacyProfitCenter).where(
                     LegacyProfitCenter.coarea == row.get("coarea", ""),
                     LegacyProfitCenter.pctr == row["pctr"],
-                    LegacyProfitCenter.refresh_batch == batch.id,
                 )
             ).scalar_one_or_none()
             if existing:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
+                existing.refresh_batch = batch.id
             else:
                 db.add(
                     LegacyProfitCenter(

@@ -203,6 +203,10 @@ class SAPConnectionCreate(BaseModel):
     allowed_tables: str | None = None
 
 
+class SAPConnectionUpdate(SAPConnectionCreate):
+    password: str | None = None  # optional on update
+
+
 class SAPConnectionOut(BaseModel):
     id: int
     name: str
@@ -277,7 +281,7 @@ def get_sap_connection(
 @router.put("/sap/{conn_id}")
 def update_sap_connection(
     conn_id: int,
-    body: SAPConnectionCreate,
+    body: SAPConnectionUpdate,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin")),
 ) -> SAPConnectionOut:
