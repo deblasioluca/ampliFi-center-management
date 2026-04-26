@@ -594,7 +594,7 @@ def create_review_scope(
             detail="Wave must be locked or in_review to create scopes",
         )
 
-    token = secrets.token_urlsafe(48)
+    token = secrets.token_urlsafe(32)
     expires = datetime.now(UTC) + timedelta(days=30)
 
     scope = ReviewScope(
@@ -1115,7 +1115,7 @@ def auto_assign_scopes(
     for email, assigned_proposals in reviewer_loads.items():
         if not assigned_proposals:
             continue
-        token = secrets.token_urlsafe(48)
+        token = secrets.token_urlsafe(32)
         expires = datetime.now(UTC) + timedelta(days=30)
         scope = ReviewScope(
             wave_id=wave_id,
