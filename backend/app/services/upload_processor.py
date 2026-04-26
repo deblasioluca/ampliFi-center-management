@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session
 from app.models.core import (
     Balance,
     Entity,
+    Hierarchy,
+    HierarchyLeaf,
+    HierarchyNode,
     LegacyCostCenter,
     LegacyProfitCenter,
     UploadBatch,
@@ -163,6 +166,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "balances",
         "entity",
         "entities",
+        "hierarchy",
+        "hierarchies",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
@@ -263,6 +268,50 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                         "col": "COMPANY_CODE",
                         "code": "REQUIRED",
                         "msg": "COMPANY_CODE is required",
+                    }
+                )
+                error_rows.add(i)
+        elif batch.kind in ("hierarchy", "hierarchies"):
+            row_type = (row.get("row_type") or "").upper()
+            if row_type not in ("SETHEADER", "SETNODE", "SETLEAF"):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "ROW_TYPE",
+                        "code": "INVALID",
+                        "msg": f"ROW_TYPE must be SETHEADER/SETNODE/SETLEAF, got '{row_type}'",
+                    }
+                )
+                error_rows.add(i)
+            elif row_type == "SETHEADER" and not row.get("setname"):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "SETNAME",
+                        "code": "REQUIRED",
+                        "msg": "SETNAME required",
+                    }
+                )
+                error_rows.add(i)
+            elif row_type == "SETNODE" and (
+                not row.get("parent_setname") or not row.get("child_setname")
+            ):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "PARENT/CHILD",
+                        "code": "REQUIRED",
+                        "msg": "PARENT_SETNAME and CHILD_SETNAME required",
+                    }
+                )
+                error_rows.add(i)
+            elif row_type == "SETLEAF" and not row.get("value"):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "VALUE",
+                        "code": "REQUIRED",
+                        "msg": "VALUE required",
                     }
                 )
                 error_rows.add(i)
@@ -473,6 +522,100 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             loaded += 1
 
+    elif batch.kind in ("hierarchy", "hierarchies"):
+        # Pass 1: create Hierarchy headers
+        hier_map: dict[tuple[str, str], Hierarchy] = {}
+        for row in normalized:
+            row_type = (row.get("row_type") or "").upper()
+            if row_type != "SETHEADER":
+                continue
+            setclass = row.get("setclass", "0101")
+            setname = row.get("setname", "")
+            if not setname:
+                continue
+            existing = db.execute(
+                select(Hierarchy).where(
+                    Hierarchy.setclass == setclass,
+                    Hierarchy.setname == setname,
+                    Hierarchy.refresh_batch == batch.id,
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                h = Hierarchy(
+                    setclass=setclass,
+                    setname=setname,
+                    description=row.get("description", ""),
+                    coarea=row.get("coarea", ""),
+                    refresh_batch=batch.id,
+                )
+                db.add(h)
+                db.flush()
+                hier_map[(setclass, setname)] = h
+            else:
+                hier_map[(setclass, setname)] = existing
+            loaded += 1
+
+        # Pass 2: create nodes
+        for row in normalized:
+            row_type = (row.get("row_type") or "").upper()
+            if row_type != "SETNODE":
+                continue
+            setclass = row.get("setclass", "0101")
+            setname = row.get("setname", "")
+            key = (setclass, setname)
+            hier = hier_map.get(key)
+            if not hier:
+                hier = db.execute(
+                    select(Hierarchy).where(
+                        Hierarchy.setclass == setclass, Hierarchy.setname == setname
+                    )
+                ).scalar_one_or_none()
+                if hier:
+                    hier_map[key] = hier
+            if not hier:
+                continue
+            seq = int(row.get("seq") or "0")
+            db.add(
+                HierarchyNode(
+                    hierarchy_id=hier.id,
+                    parent_setname=row.get("parent_setname", ""),
+                    child_setname=row.get("child_setname", ""),
+                    seq=seq,
+                )
+            )
+            loaded += 1
+
+        # Pass 3: create leaves
+        for row in normalized:
+            row_type = (row.get("row_type") or "").upper()
+            if row_type != "SETLEAF":
+                continue
+            setclass = row.get("setclass", "0101")
+            setname = row.get("setname", "")
+            key = (setclass, setname)
+            hier = hier_map.get(key)
+            if not hier:
+                hier = db.execute(
+                    select(Hierarchy).where(
+                        Hierarchy.setclass == setclass, Hierarchy.setname == setname
+                    )
+                ).scalar_one_or_none()
+                if hier:
+                    hier_map[key] = hier
+            if not hier:
+                continue
+            parent_set = row.get("parent_setname") or row.get("setname", "")
+            seq = int(row.get("seq") or "0")
+            db.add(
+                HierarchyLeaf(
+                    hierarchy_id=hier.id,
+                    setname=parent_set,
+                    value=row.get("value", ""),
+                    seq=seq,
+                )
+            )
+            loaded += 1
+
     batch.rows_loaded = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
@@ -505,6 +648,18 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
         deleted = r.rowcount
     elif batch.kind in ("entity", "entities"):
         raise ValueError("Entity uploads cannot be rolled back (no batch tracking on entities)")
+    elif batch.kind in ("hierarchy", "hierarchies"):
+        hier_ids = [
+            h.id
+            for h in db.execute(select(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+            .scalars()
+            .all()
+        ]
+        for hid in hier_ids:
+            db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
+            db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
+        r = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+        deleted = r.rowcount
 
     rows_loaded = batch.rows_loaded or 0
     rows_updated = max(0, rows_loaded - deleted)

@@ -205,6 +205,7 @@ class Wave(TimestampMixin, Base):
     )
 
     entities: Mapped[list[WaveEntity]] = relationship(back_populates="wave")
+    hierarchy_scopes: Mapped[list[WaveHierarchyScope]] = relationship(back_populates="wave")
     runs: Mapped[list[AnalysisRun]] = relationship(back_populates="wave")
     scopes: Mapped[list[ReviewScope]] = relationship(back_populates="wave")
 
@@ -226,6 +227,28 @@ class WaveEntity(Base):
 
     wave: Mapped[Wave] = relationship(back_populates="entities")
     entity: Mapped[Entity] = relationship()
+
+
+class WaveHierarchyScope(Base):
+    """Links a wave to specific hierarchy nodes for scoping."""
+
+    __tablename__ = "wave_hierarchy_scope"
+    __table_args__ = (
+        UniqueConstraint("wave_id", "hierarchy_id", "node_setname"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wave_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=False
+    )
+    hierarchy_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.hierarchy.id", ondelete="CASCADE"), nullable=False
+    )
+    node_setname: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    wave: Mapped[Wave] = relationship(back_populates="hierarchy_scopes")
+    hierarchy: Mapped[Hierarchy] = relationship()
 
 
 class AnalysisConfig(TimestampMixin, Base):

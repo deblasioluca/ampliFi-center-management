@@ -22,6 +22,7 @@ from app.models.core import (
     ReviewScope,
     Wave,
     WaveEntity,
+    WaveHierarchyScope,
 )
 
 router = APIRouter()
@@ -38,6 +39,11 @@ VALID_TRANSITIONS = {
 }
 
 
+class HierarchyScopeIn(BaseModel):
+    hierarchy_id: int
+    node_setname: str
+
+
 class WaveCreate(BaseModel):
     code: str
     name: str
@@ -45,6 +51,7 @@ class WaveCreate(BaseModel):
     is_full_scope: bool = False
     exclude_prior: bool = True
     entity_ccodes: list[str] = []
+    hierarchy_scopes: list[HierarchyScopeIn] = []
 
 
 class WaveUpdate(BaseModel):
@@ -125,6 +132,14 @@ def create_wave(
         entity = db.execute(select(Entity).where(Entity.ccode == ccode)).scalar_one_or_none()
         if entity:
             db.add(WaveEntity(wave_id=wave.id, entity_id=entity.id))
+    for hs in body.hierarchy_scopes:
+        db.add(
+            WaveHierarchyScope(
+                wave_id=wave.id,
+                hierarchy_id=hs.hierarchy_id,
+                node_setname=hs.node_setname,
+            )
+        )
     db.commit()
     db.refresh(wave)
     ec = (

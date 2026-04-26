@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_role
 from app.infra.db.session import get_db
 from app.models.core import (
+    AppUser,
     Balance,
     Entity,
     LegacyCostCenter,
@@ -61,4 +63,48 @@ def wave_stats(wave_id: int, db: Session = Depends(get_db)) -> dict:
         "wave_id": wave.id,
         "code": wave.code,
         "status": wave.status,
+    }
+
+
+@router.post("/balance-aggregation/refresh")
+def refresh_balance_mv(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Refresh the materialized view for balance aggregation."""
+    db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY cleanup.mv_balance_per_center"))
+    db.commit()
+    return {"status": "refreshed"}
+
+
+@router.get("/balance-aggregation")
+def balance_aggregation(
+    db: Session = Depends(get_db),
+    coarea: str | None = None,
+    ccode: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    """Query pre-aggregated balance stats per cost center."""
+    where_clauses: list[str] = []
+    params: dict = {"lim": min(limit, 5000), "off": offset}
+    if coarea:
+        where_clauses.append("coarea = :coarea")
+        params["coarea"] = coarea
+    if ccode:
+        where_clauses.append("ccode = :ccode")
+        params["ccode"] = ccode
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    count_sql = f"SELECT COUNT(*) FROM cleanup.mv_balance_per_center {where_sql}"  # noqa: S608
+    total = db.execute(text(count_sql), params).scalar() or 0
+
+    data_sql = f"SELECT coarea, cctr, ccode, row_count, total_postings, total_tc_amt, total_gc_amt, min_period, max_period, last_posting_period FROM cleanup.mv_balance_per_center {where_sql} ORDER BY total_postings DESC LIMIT :lim OFFSET :off"  # noqa: S608, E501
+    rows = db.execute(text(data_sql), params).mappings().all()
+    return {
+        "total": total,
+        "items": [dict(r) for r in rows],
     }
