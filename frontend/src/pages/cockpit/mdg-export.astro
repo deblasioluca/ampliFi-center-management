@@ -66,7 +66,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <script>
-    const token = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const token = localStorage.getItem('amplifi_token');
     const headers = { Authorization: `Bearer ${token}` };
 
     async function loadWaves() {
