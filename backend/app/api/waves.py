@@ -725,7 +725,7 @@ def create_review_scope(
         for p in proposals:
             if scope_ccodes:
                 cc = db.get(LegacyCostCenter, p.legacy_cc_id)
-                if cc and cc.ccode not in scope_ccodes:
+                if not cc or cc.ccode not in scope_ccodes:
                     continue
             db.add(
                 ReviewItem(
