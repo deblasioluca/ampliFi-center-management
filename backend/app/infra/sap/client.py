@@ -368,10 +368,13 @@ def fetch_adt_table(
 
         # Step 2: Datapreview query
         url = f"/sap/bc/adt/datapreview/ddic?rowNumber={max_rows}"
+        where_element = ""
+        if where:
+            where_element = f"\n  <dataPreview:whereClause>{where}</dataPreview:whereClause>"
         body = f"""<?xml version="1.0" encoding="utf-8"?>
 <dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
   <dataPreview:table>{table_name}</dataPreview:table>
-  <dataPreview:maxRows>{max_rows}</dataPreview:maxRows>
+  <dataPreview:maxRows>{max_rows}</dataPreview:maxRows>{where_element}
 </dataPreview:tableData>"""
 
         headers = {

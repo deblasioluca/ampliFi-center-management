@@ -263,10 +263,12 @@ def allocate_naming_id(wave_id: int, pool_type: str, proposal_id: int, db: Sessi
     Returns the allocated ID string, or None if no pool is configured.
     """
     pool = db.execute(
-        select(NamingPool).where(
+        select(NamingPool)
+        .where(
             NamingPool.wave_id == wave_id,
             NamingPool.pool_type == pool_type,
         )
+        .with_for_update()
     ).scalar_one_or_none()
 
     if not pool:
