@@ -97,6 +97,19 @@ export const prerender = false;
   function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
   function fmt(n) { return n != null ? Number(n).toLocaleString() : '--'; }
 
+  function sparkline(values, w, h) {
+    if (!values || values.length < 2) return '';
+    var max = Math.max.apply(null, values);
+    var min = Math.min.apply(null, values);
+    var range = max - min || 1;
+    var step = w / (values.length - 1);
+    var points = values.map(function(v, i) {
+      return Math.round(i * step) + ',' + Math.round(h - ((v - min) / range) * (h - 2) - 1);
+    }).join(' ');
+    var color = values[values.length-1] >= values[0] ? '#22c55e' : '#ef4444';
+    return '<svg width="' + w + '" height="' + h + '" class="inline-block"><polyline fill="none" stroke="' + color + '" stroke-width="1.5" points="' + points + '"/></svg>';
+  }
+
   var OUTCOME_COLORS = {
     'KEEP': '#22c55e', 'RETIRE': '#ef4444', 'MERGE_MAP': '#f59e0b', 'REDESIGN': '#3b82f6'
   };
@@ -198,6 +211,7 @@ export const prerender = false;
         '<th class="py-2 px-2 text-center">Target</th>' +
         '<th class="py-2 px-2 text-center">Confidence</th>' +
         '<th class="py-2 px-2 text-center">Override</th>' +
+        '<th class="py-2 px-2 text-center">Trend</th>' +
         '<th class="py-2 px-2 text-center">Actions</th></tr></thead><tbody>';
 
       items.forEach(function(p) {
@@ -217,6 +231,7 @@ export const prerender = false;
           '<td class="py-1.5 px-2 text-center">' + esc(p.target_object) + '</td>' +
           '<td class="py-1.5 px-2 text-center font-mono">' + (p.confidence ? Number(p.confidence).toFixed(2) : '--') + '</td>' +
           '<td class="py-1.5 px-2 text-center">' + overrideHtml + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + sparkline(p.posting_trend || [], 60, 20) + '</td>' +
           '<td class="py-1.5 px-2 text-center"><button class="text-amplifi-600 hover:underline text-xs" onclick="openWhy(' + p.id + ')">Why?</button></td></tr>';
       });
 

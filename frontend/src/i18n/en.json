@@ -1,0 +1,107 @@
+{
+  "app": {
+    "title": "ampliFi Center Management",
+    "subtitle": "Cost & Profit Center Clean-Up"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "my_tasks": "My Tasks",
+    "cockpit": "Cockpit",
+    "data": "Data",
+    "admin": "Admin",
+    "logout": "Logout",
+    "login": "Login"
+  },
+  "auth": {
+    "sign_in": "Sign In",
+    "email": "Email",
+    "password": "Password",
+    "login_failed": "Login failed",
+    "session_expired": "Session expired, please log in again"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "entities": "Entities",
+    "cost_centers": "Cost Centers",
+    "profit_centers": "Profit Centers",
+    "balances": "Balances",
+    "waves": "Waves",
+    "quick_actions": "Quick Actions"
+  },
+  "cockpit": {
+    "title": "Wave Cockpit",
+    "create_wave": "Create Wave",
+    "wave_code": "Wave Code",
+    "wave_name": "Wave Name",
+    "description": "Description",
+    "scope_entities": "Scope: Entities",
+    "scope_hierarchy": "Scope: Hierarchy Node",
+    "full_scope": "Full scope (all cost centers)",
+    "status": "Status",
+    "no_waves": "No waves found"
+  },
+  "analysis": {
+    "run_analysis": "Run Analysis",
+    "outcome": "Outcome",
+    "target_object": "Target Object",
+    "confidence": "Confidence",
+    "override": "Override",
+    "trend": "Trend",
+    "why_panel": "Why Panel",
+    "keep": "KEEP",
+    "retire": "RETIRE",
+    "merge_map": "MERGE_MAP",
+    "redesign": "REDESIGN"
+  },
+  "data": {
+    "title": "Data Management",
+    "upload": "Upload",
+    "entities": "Entities",
+    "cost_centers": "Cost Centers",
+    "profit_centers": "Profit Centers",
+    "balances": "Balances",
+    "hierarchies": "Hierarchies",
+    "sample_data": "Sample Data",
+    "generate": "Generate",
+    "delete_all": "Delete All",
+    "download_template": "Download Template"
+  },
+  "review": {
+    "title": "Review Scope",
+    "approve": "Approve",
+    "reject": "Reject",
+    "request_change": "Request Change",
+    "comment": "Comment",
+    "submit": "Submit Decision"
+  },
+  "admin": {
+    "title": "Administration",
+    "users": "Users",
+    "sap_connections": "SAP Connections",
+    "llm_settings": "LLM Settings",
+    "app_config": "App Config",
+    "gl_ranges": "GL Account Ranges",
+    "routines": "Routines",
+    "jobs": "Jobs",
+    "audit_log": "Audit Log"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "confirm": "Are you sure?",
+    "no_data": "No data found",
+    "search": "Search...",
+    "filter": "Filter",
+    "export_csv": "Export CSV",
+    "page": "Page",
+    "of": "of",
+    "items": "items",
+    "back": "Back"
+  }
+}

@@ -86,7 +86,7 @@ def list_proposals(
         .scalars()
         .all()
     )
-    from app.models.core import LegacyCostCenter
+    from app.models.core import Balance, LegacyCostCenter
 
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
@@ -97,6 +97,25 @@ def list_proposals(
             .all()
         )
         cc_map = {c.id: c for c in ccs}
+
+    # Fetch posting trends (last 12 periods) for sparklines
+    trend_map: dict[str, list[int]] = {}
+    cctrs = [cc_map[pid].cctr for pid in cc_ids if pid in cc_map]
+    if cctrs:
+        trend_rows = db.execute(
+            select(
+                Balance.cctr,
+                (Balance.fiscal_year * 100 + Balance.period).label("ym"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("cnt"),
+            )
+            .where(Balance.cctr.in_(cctrs))
+            .group_by(Balance.cctr, "ym")
+            .order_by(Balance.cctr, "ym")
+        ).all()
+        for cctr, _ym, cnt in trend_rows:
+            trend_map.setdefault(cctr, []).append(int(cnt))
+        for cctr in trend_map:
+            trend_map[cctr] = trend_map[cctr][-12:]
 
     return {
         "total": total,
@@ -120,6 +139,9 @@ def list_proposals(
                 "override_outcome": p.override_outcome,
                 "override_target": p.override_target,
                 "override_reason": p.override_reason,
+                "posting_trend": trend_map.get(
+                    cc_map[p.legacy_cc_id].cctr if p.legacy_cc_id in cc_map else "", []
+                ),
             }
             for p in proposals
         ],
