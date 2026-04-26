@@ -6,6 +6,7 @@ Implements SINGLE, SEQUENTIAL, and DEBATE modes using Jinja2 prompt templates.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import structlog
@@ -22,16 +23,30 @@ _jinja_env = Environment(
 )
 
 
+_BLOCK_SEPARATOR = "---PROMPT_SPLIT---"
+
+
 def _render(template_name: str, context: dict) -> tuple[str, str]:
-    """Render a prompt template, returning (system, user) strings."""
-    tpl = _jinja_env.get_template(template_name)
+    """Render a prompt template, returning (system, user) strings.
+
+    Templates use {% block system %} and {% block user %} Jinja2 blocks.
+    We inject a known separator between blocks during rendering, then split on it.
+    """
+    # Read template source, inject separator between endblock/block boundaries
+    source = _jinja_env.loader.get_source(_jinja_env, template_name)[0]
+
+    # Insert separator marker between {% endblock %} and {% block user %}
+    source = re.sub(
+        r"\{%\s*endblock\s*%\}\s*\{%\s*block\s+user\s*%\}",
+        f"{{% endblock %}}\n{_BLOCK_SEPARATOR}\n{{% block user %}}",
+        source,
+    )
+    tpl = _jinja_env.from_string(source)
     full = tpl.render(**context)
-    # Split on {% block system %} / {% block user %} markers
-    # Since Jinja already rendered, we use a simpler approach:
-    # The template renders system then user blocks sequentially
-    parts = full.strip().split("\n\n", 1)
-    if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip()
+
+    if _BLOCK_SEPARATOR in full:
+        system, user = full.split(_BLOCK_SEPARATOR, 1)
+        return system.strip(), user.strip()
     return "", full.strip()
 
 

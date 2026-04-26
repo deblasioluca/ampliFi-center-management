@@ -98,11 +98,11 @@ class TestMappingTree:
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
         assert target == TargetObject.WBS_STAT
 
-    def test_no_signals_none(self):
-        """Centers with zero opex, no revenue, no project, no allocation → NONE."""
+    def test_no_signals_default_cc(self):
+        """Centers with zero opex, no revenue, no project, no allocation → CC (safe default)."""
         f = _base_features(opex_amt=0.0)
         target = run_mapping_tree(f, CleansingOutcome.KEEP)
-        assert target == TargetObject.NONE
+        assert target == TargetObject.CC
 
 
 class TestEvaluateCenter:

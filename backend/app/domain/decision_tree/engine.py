@@ -239,8 +239,8 @@ def run_mapping_tree(
     if features.attrs.get("used_for_info_only", False):
         return TargetObject.WBS_STAT
 
-    # Fall-through: candidate for closing
-    return TargetObject.NONE
+    # Fall-through: KEEP centers default to CC (ensures target creation in lock_proposals)
+    return TargetObject.CC
 
 
 def evaluate_center(
