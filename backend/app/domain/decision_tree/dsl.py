@@ -1,17 +1,17 @@
 """DSL rule engine for no-code rule authoring (§04.5).
 
-Evaluates JSON-serializable rule definitions against CenterContext.
+Supports two interfaces:
+1. Expression-based (used by pipeline/tests): evaluate_dsl_rule(expression, ctx, ...)
+2. Rule-based (used by API/UI): evaluate_rule(ctx, rule)
 
-Rule format:
-{
-    "conditions": [
-        {"field": "months_since_last_posting", "op": ">=", "value": 12},
-        {"field": "posting_count_window", "op": "<=", "value": 0}
-    ],
-    "logic": "AND",  // AND | OR
-    "verdict": "RETIRE",
-    "reason": "custom.inactive_and_no_postings"
-}
+Expression format (combinators):
+  {"feature": "has_owner", "op": "==", "value": True}
+  {"all": [expr1, expr2]}
+  {"any": [expr1, expr2]}
+  {"not": expr}
+
+Rule format (flat conditions):
+  {"conditions": [...], "logic": "AND", "verdict": "RETIRE", "reason": "..."}
 """
 
 from __future__ import annotations
@@ -38,28 +38,71 @@ OPS: dict[str, Any] = {
 }
 
 
-def evaluate_condition(ctx: CenterContext, cond: dict) -> bool:
-    """Evaluate a single condition against a CenterContext."""
-    field = cond["field"]
-    op_name = cond.get("op", "==")
-    expected = cond.get("value")
+# ── Expression-based evaluation (combinators) ──
 
-    actual = getattr(ctx, field, None)
+
+def _eval_expr(expr: dict, ctx: CenterContext) -> bool:
+    """Recursively evaluate a DSL expression tree against a CenterContext."""
+    if "all" in expr:
+        return all(_eval_expr(sub, ctx) for sub in expr["all"])
+    if "any" in expr:
+        return any(_eval_expr(sub, ctx) for sub in expr["any"])
+    if "not" in expr:
+        return not _eval_expr(expr["not"], ctx)
+
+    # Leaf condition: {"feature": ..., "op": ..., "value": ...}
+    feature = expr.get("feature", expr.get("field"))
+    op_name = expr.get("op", "==")
+    expected = expr.get("value")
+
+    actual = getattr(ctx, feature, None) if feature else None
     op_fn = OPS.get(op_name)
     if not op_fn:
         return False
-
     try:
         return bool(op_fn(actual, expected))
     except (TypeError, ValueError):
         return False
 
 
-def evaluate_rule(ctx: CenterContext, rule: dict) -> RoutineResult:
-    """Evaluate a DSL rule against a CenterContext.
+def evaluate_dsl_rule(
+    *,
+    expression: dict,
+    ctx: CenterContext,
+    verdict_when_true: dict | str,
+    verdict_when_false: str = "PASS",
+    routine_code: str = "dsl.custom",
+) -> RoutineResult:
+    """Evaluate a DSL expression and return a RoutineResult.
 
-    Returns a RoutineResult with the configured verdict if all conditions match,
-    otherwise returns PASS.
+    This is the primary interface used by the pipeline engine and tests.
+    """
+    matched = _eval_expr(expression, ctx)
+
+    if matched:
+        if isinstance(verdict_when_true, dict):
+            outcome = verdict_when_true.get("outcome", "PASS")
+            reason = verdict_when_true.get("reason", "dsl.matched")
+        else:
+            outcome = str(verdict_when_true)
+            reason = "dsl.matched"
+        return RoutineResult(code=routine_code, verdict=outcome, reason=reason)
+
+    return RoutineResult(code=routine_code, verdict=verdict_when_false, reason="dsl.not_matched")
+
+
+# ── Flat-rule evaluation (API/UI) ──
+
+
+def evaluate_condition(ctx: CenterContext, cond: dict) -> bool:
+    """Evaluate a single flat condition against a CenterContext."""
+    return _eval_expr(cond, ctx)
+
+
+def evaluate_rule(ctx: CenterContext, rule: dict) -> RoutineResult:
+    """Evaluate a flat DSL rule (conditions list + logic).
+
+    Used by the API endpoints and rule builder UI.
     """
     conditions = rule.get("conditions", [])
     logic = rule.get("logic", "AND").upper()
@@ -71,8 +114,7 @@ def evaluate_rule(ctx: CenterContext, rule: dict) -> RoutineResult:
     if not conditions:
         return RoutineResult(code=code, verdict="PASS", reason="dsl.no_conditions")
 
-    results = [evaluate_condition(ctx, c) for c in conditions]
-
+    results = [_eval_expr(c, ctx) for c in conditions]
     matched = any(results) if logic == "OR" else all(results)
 
     if matched:
@@ -92,8 +134,11 @@ def evaluate_rule(ctx: CenterContext, rule: dict) -> RoutineResult:
     )
 
 
+# ── Validation ──
+
+
 def validate_rule(rule: dict) -> list[str]:
-    """Validate a DSL rule definition. Returns a list of errors."""
+    """Validate a flat DSL rule definition. Returns a list of errors."""
     errors: list[str] = []
     if not isinstance(rule, dict):
         return ["Rule must be a dictionary"]
@@ -108,15 +153,16 @@ def validate_rule(rule: dict) -> list[str]:
             if not isinstance(cond, dict):
                 errors.append(f"Condition {i} must be a dictionary")
                 continue
-            if "field" not in cond:
-                errors.append(f"Condition {i}: 'field' is required")
-            if "op" in cond and cond["op"] not in OPS:
-                errors.append(f"Condition {i}: unknown operator '{cond['op']}'")
+            if "field" not in cond and "feature" not in cond:
+                errors.append(f"Condition {i}: 'field' or 'feature' is required")
+            op_name = cond.get("op")
+            if op_name and op_name not in OPS:
+                errors.append(f"Condition {i}: unknown operator '{op_name}'")
 
     verdict = rule.get("verdict")
     if not verdict:
         errors.append("verdict is required")
-    elif verdict not in ("KEEP", "RETIRE", "MERGE_MAP", "REDESIGN", "PASS", "UNKNOWN"):
+    elif verdict not in ("KEEP", "RETIRE", "MERGE_MAP", "REDESIGN", "PASS", "UNKNOWN", "FLAG"):
         errors.append(f"Unknown verdict: {verdict}")
 
     logic = rule.get("logic", "AND")
@@ -124,7 +170,3 @@ def validate_rule(rule: dict) -> list[str]:
         errors.append(f"Unknown logic: {logic}")
 
     return errors
-
-
-# Alias for backward compatibility with tests
-evaluate_dsl_rule = evaluate_rule
