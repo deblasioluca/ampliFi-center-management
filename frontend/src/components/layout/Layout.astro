@@ -140,7 +140,7 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
         // Role-based nav visibility
         // admin sees everything; data_manager sees Data + Cockpit; reviewer sees Reviews
         var isAdmin = (role === 'admin');
-        var isDataMgr = (role === 'data_manager' || isAdmin);
+        var isDataMgr = (role === 'data_manager' || role === 'analyst' || isAdmin);
         var isReviewer = (role === 'reviewer' || isDataMgr);
 
         // Data Manager items
