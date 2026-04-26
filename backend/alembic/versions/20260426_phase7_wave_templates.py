@@ -27,11 +27,13 @@ def upgrade() -> None:
         sa.Column("exclude_prior", sa.Boolean(), server_default="true"),
         sa.Column("entity_ccodes", JSONB(), nullable=True),
         sa.Column(
-            "created_by", sa.Integer(),
+            "created_by",
+            sa.Integer(),
             sa.ForeignKey("cleanup.app_user.id", ondelete="SET NULL"),
         ),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True)),

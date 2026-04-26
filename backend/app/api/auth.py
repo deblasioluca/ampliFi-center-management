@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
@@ -33,7 +33,8 @@ class TokenResponse(BaseModel):
 
 class UserInfo(BaseModel):
     id: int
-    email: str
+    username: str
+    email: str | None = None
     display_name: str
     role: str
 
@@ -49,7 +50,7 @@ async def auth_info() -> dict:
 async def login(
     body: LoginRequest, response: Response, db: Session = Depends(get_db)
 ) -> TokenResponse:
-    user = authenticate_user(db, body.email, body.password)
+    user = authenticate_user(db, body.username, body.password)
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
     response.set_cookie(

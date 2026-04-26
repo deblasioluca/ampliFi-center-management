@@ -763,7 +763,8 @@ class AppUser(TimestampMixin, Base):
     __table_args__ = {"schema": "cleanup"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320))
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(

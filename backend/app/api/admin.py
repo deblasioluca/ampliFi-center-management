@@ -6,7 +6,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,8 @@ router = APIRouter()
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
+    email: str | None = None
     display_name: str
     password: str
     role: str = "analyst"
@@ -46,7 +47,8 @@ class UserUpdate(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    email: str
+    username: str
+    email: str | None = None
     display_name: str
     role: str
     is_active: bool
@@ -77,10 +79,13 @@ def create_user(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin")),
 ) -> UserOut:
-    existing = db.execute(select(AppUser).where(AppUser.email == body.email)).scalar_one_or_none()
+    existing = db.execute(
+        select(AppUser).where(AppUser.username == body.username)
+    ).scalar_one_or_none()
     if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Username already taken")
     user = AppUser(
+        username=body.username,
         email=body.email,
         display_name=body.display_name,
         password_hash=hash_password(body.password),

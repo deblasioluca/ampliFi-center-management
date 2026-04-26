@@ -214,6 +214,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "entities",
         "hierarchy",
         "hierarchies",
+        "employee",
+        "employees",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")

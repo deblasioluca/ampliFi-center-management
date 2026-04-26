@@ -53,12 +53,16 @@ import Layout from '../../components/layout/Layout.astro';
           <h3 class="text-sm font-semibold mb-3">Create User</h3>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs text-gray-500 mb-1">Email</label>
-              <input type="email" id="nu-email" class="input text-sm" placeholder="user@example.com" />
+              <label class="block text-xs text-gray-500 mb-1">Username</label>
+              <input type="text" id="nu-username" class="input text-sm" placeholder="jsmith" required />
             </div>
             <div>
               <label class="block text-xs text-gray-500 mb-1">Display Name</label>
               <input type="text" id="nu-name" class="input text-sm" placeholder="Full name" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Email (optional)</label>
+              <input type="email" id="nu-email" class="input text-sm" placeholder="user@example.com" />
             </div>
             <div>
               <label class="block text-xs text-gray-500 mb-1">Password</label>
@@ -67,8 +71,8 @@ import Layout from '../../components/layout/Layout.astro';
             <div>
               <label class="block text-xs text-gray-500 mb-1">Role</label>
               <select id="nu-role" class="input text-sm">
-                <option value="analyst">Analyst</option>
-                <option value="admin">Admin</option>
+                <option value="data_manager">Data Manager</option>
+                <option value="admin">System Admin</option>
                 <option value="reviewer">Reviewer</option>
                 <option value="viewer">Viewer</option>
               </select>
@@ -283,13 +287,15 @@ import Layout from '../../components/layout/Layout.astro';
           var items = data.items || [];
           if (items.length === 0) { el.textContent = 'No users.'; return; }
           var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
-            '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Name</th>' +
-            '<th class="text-left py-2 px-2">Role</th><th class="text-left py-2 px-2">Active</th>' +
+            '<th class="text-left py-2 px-2">Username</th><th class="text-left py-2 px-2">Name</th>' +
+            '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Role</th>' +
+            '<th class="text-left py-2 px-2">Active</th>' +
             '<th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
           items.forEach(function(u) {
             html += '<tr class="border-b border-gray-100">' +
-              '<td class="py-2 px-2">' + escapeHtml(u.email) + '</td>' +
+              '<td class="py-2 px-2 font-medium">' + escapeHtml(u.username) + '</td>' +
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
+              '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
               '<td class="py-2 px-2"><span class="text-xs px-2 py-0.5 rounded ' +
                 (u.role === 'admin' ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-600') + '">' + escapeHtml(u.role) + '</span></td>' +
               '<td class="py-2 px-2">' + (u.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td>' +
@@ -322,7 +328,8 @@ import Layout from '../../components/layout/Layout.astro';
         var res = await fetch('/api/admin/users', {
           method: 'POST', headers: jsonHdr,
           body: JSON.stringify({
-            email: document.getElementById('nu-email').value,
+            username: document.getElementById('nu-username').value,
+            email: document.getElementById('nu-email').value || null,
             display_name: document.getElementById('nu-name').value,
             password: document.getElementById('nu-pass').value,
             role: document.getElementById('nu-role').value,

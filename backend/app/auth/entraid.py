@@ -176,7 +176,18 @@ def upsert_user_from_claims(claims: dict, cfg: EntraIDConfig, db: Session) -> Ap
         if not user.role or user.role == "reviewer":
             user.role = role
     else:
+        # Derive username from email (part before @), ensure uniqueness
+        base_username = email.split("@")[0] if email else oid[:20]
+        username = base_username
+        suffix = 1
+        while (
+            db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+            is not None
+        ):
+            username = f"{base_username}{suffix}"
+            suffix += 1
         user = AppUser(
+            username=username,
             email=email,
             display_name=display_name,
             entraid_oid=oid,

@@ -21,7 +21,8 @@ def upgrade() -> None:
         "activity_feed",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
-            "user_id", sa.Integer(),
+            "user_id",
+            sa.Integer(),
             sa.ForeignKey("cleanup.app_user.id", ondelete="SET NULL"),
         ),
         sa.Column("action", sa.String(50), nullable=False),
@@ -31,7 +32,8 @@ def upgrade() -> None:
         sa.Column("detail", JSONB(), nullable=True),
         sa.Column("is_read", sa.Boolean(), server_default="false"),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
         ),
         schema="cleanup",

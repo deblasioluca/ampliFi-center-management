@@ -29,10 +29,8 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
         <div class="flex items-center justify-between h-14">
           <div class="flex items-center space-x-6">
             <a href="/" class="flex items-center space-x-2 font-semibold text-lg">
-              <svg class="w-7 h-7 text-amplifi-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              <span>ampliFi</span>
+              <img src="/ubs-logo.svg" alt="UBS" class="h-6" />
+              <span><span style="color:#E60000">a</span>mplif<span style="color:#E60000">i</span> Center Management</span>
             </a>
             <div class="w-px h-8 bg-white/20"></div>
 
@@ -119,7 +117,7 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
         if (token && userMenu) {
           try {
             var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
-            var name = ud.display_name || ud.email || 'User';
+            var name = ud.display_name || ud.username || 'User';
             var roleLabel = {
               'admin': 'System Admin',
               'data_manager': 'Data Manager',
@@ -162,7 +160,7 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
           });
         }
         // Review link: show for reviewers and data managers
-        if (role === 'admin' && !isReviewer) {
+        if (!isReviewer) {
           var revEl = document.getElementById('nav-review');
           if (revEl) revEl.style.display = 'none';
         }
