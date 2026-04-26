@@ -41,6 +41,10 @@ def upgrade() -> None:
                            WHERE username = candidate AND id != r.id) THEN
                     candidate := r.base || '_' || r.id;
                 END IF;
+                WHILE EXISTS (SELECT 1 FROM cleanup.app_user
+                              WHERE username = candidate AND id != r.id) LOOP
+                    candidate := candidate || '_';
+                END LOOP;
                 UPDATE cleanup.app_user SET username = candidate
                 WHERE id = r.id;
             END LOOP;
