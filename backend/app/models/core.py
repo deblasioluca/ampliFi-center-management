@@ -432,8 +432,8 @@ class ReviewItem(TimestampMixin, Base):
     scope_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.review_scope.id", ondelete="CASCADE"), nullable=False
     )
-    proposal_id: Mapped[int] = mapped_column(
-        ForeignKey("cleanup.center_proposal.id", ondelete="CASCADE"), nullable=False
+    proposal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.center_proposal.id", ondelete="CASCADE"), nullable=True
     )
     decision: Mapped[str] = mapped_column(
         String(20), default="PENDING"

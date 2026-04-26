@@ -543,7 +543,7 @@ import Layout from '../../components/layout/Layout.astro';
       var res = await fetch('/api/admin/upload-templates/' + encodeURIComponent(kind), { headers: authHdr });
       if (!res.ok) { alert('Failed to fetch template'); return; }
       var d = await res.json();
-      var blob = new Blob([d.csv], { type: 'text/csv' });
+      var blob = new Blob([d.content], { type: 'text/csv' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url; a.download = kind + '_template.csv';
