@@ -449,6 +449,7 @@ def set_preferred_run(
             detail=f"Cannot propose from status {wave.status}",
         )
     wave.status = "proposed"
+    wave.preferred_run_id = run_id
     wave.config = {"preferred_run_id": run_id}
     db.commit()
     return {"status": "proposed", "preferred_run_id": run_id}

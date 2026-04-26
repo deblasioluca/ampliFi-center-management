@@ -149,7 +149,7 @@ def bulk_approve(
 
     query = select(ReviewItem).where(
         ReviewItem.scope_id == scope_id,
-        ReviewItem.decision.is_(None),
+        ReviewItem.decision == "PENDING",
     )
     if item_ids:
         query = query.where(ReviewItem.id.in_(item_ids))
@@ -213,7 +213,7 @@ def sign_off(scope_id: int, user_id: int, db: Session) -> ReviewScope:
             .select_from(ReviewItem)
             .where(
                 ReviewItem.scope_id == scope_id,
-                ReviewItem.decision.is_(None),
+                ReviewItem.decision == "PENDING",
             )
         ).scalar()
         or 0
@@ -278,7 +278,7 @@ def get_scope_progress(scope_id: int, db: Session) -> dict:
             .select_from(ReviewItem)
             .where(
                 ReviewItem.scope_id == scope_id,
-                ReviewItem.decision.isnot(None),
+                ReviewItem.decision != "PENDING",
             )
         ).scalar()
         or 0
