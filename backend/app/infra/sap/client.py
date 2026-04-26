@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 import structlog
@@ -370,10 +371,13 @@ def fetch_adt_table(
         url = f"/sap/bc/adt/datapreview/ddic?rowNumber={max_rows}"
         where_element = ""
         if where:
-            where_element = f"\n  <dataPreview:whereClause>{where}</dataPreview:whereClause>"
+            where_element = (
+                f"\n  <dataPreview:whereClause>"
+                f"{xml_escape(where)}</dataPreview:whereClause>"
+            )
         body = f"""<?xml version="1.0" encoding="utf-8"?>
 <dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
-  <dataPreview:table>{table_name}</dataPreview:table>
+  <dataPreview:table>{xml_escape(table_name)}</dataPreview:table>
   <dataPreview:maxRows>{max_rows}</dataPreview:maxRows>{where_element}
 </dataPreview:tableData>"""
 

@@ -381,7 +381,7 @@ def cancel_wave(
         entity_type="wave",
         entity_id=wave.id,
         actor_id=user.id,
-        actor_email=user.username,
+        actor_email=user.email or user.username,
         before={"status": old_status},
         after={"status": "cancelled"},
     )
@@ -410,7 +410,7 @@ def lock_proposal(
         entity_type="wave",
         entity_id=wave.id,
         actor_id=user.id,
-        actor_email=user.username,
+        actor_email=user.email or user.username,
         before={"status": "proposed"},
         after={"status": "locked"},
     )
@@ -486,7 +486,7 @@ def signoff_wave(
         entity_type="wave",
         entity_id=wave.id,
         actor_id=user.id,
-        actor_email=user.username,
+        actor_email=user.email or user.username,
         before={"status": "in_review"},
         after={"status": "signed_off"},
     )
@@ -714,7 +714,7 @@ def reset_proposals(
         entity_type="wave",
         entity_id=wave.id,
         actor_id=user.id,
-        actor_email=user.username,
+        actor_email=user.email or user.username,
         after={
             "proposals_deleted": len(proposals),
             "ids_released": released_ids,
@@ -762,7 +762,7 @@ def delete_wave(
         entity_type="wave",
         entity_id=wave_id,
         actor_id=user.id,
-        actor_email=user.username,
+        actor_email=user.email or user.username,
         after={"wave_code": wave.code},
     )
     db.commit()
