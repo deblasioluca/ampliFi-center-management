@@ -592,7 +592,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             for k, v in row.items():
                 if k in _EMPLOYEE_MODEL_FIELDS:
                     model_kwargs[k] = v if v else None
-                elif k and v:
+                elif k and k != "_extras" and v:
                     extra_attrs[k] = v
             model_kwargs["attrs"] = extra_attrs if extra_attrs else None
             model_kwargs["refresh_batch"] = batch.id
