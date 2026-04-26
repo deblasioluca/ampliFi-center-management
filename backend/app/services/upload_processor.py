@@ -155,8 +155,14 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         raise ValueError("No file associated with this batch")
 
     supported = (
-        "cost_center", "cost_centers", "profit_center", "profit_centers",
-        "balance", "balances", "entity", "entities",
+        "cost_center",
+        "cost_centers",
+        "profit_center",
+        "profit_centers",
+        "balance",
+        "balances",
+        "entity",
+        "entities",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
