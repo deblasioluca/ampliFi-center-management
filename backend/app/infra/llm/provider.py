@@ -239,12 +239,25 @@ class SapBtpProvider:
         return completion.tokens_in * rate_in + completion.tokens_out * rate_out
 
 
-def get_provider(config: dict) -> LLMProvider:
-    """Factory: create an LLM provider from config."""
+def get_provider(config: dict, cache: bool = True) -> LLMProvider:
+    """Factory: create an LLM provider from config.
+
+    If cache=True and redis_url is configured, wraps the provider with
+    a Redis-backed response cache to avoid duplicate API calls.
+    """
     provider_type = config.get("provider", "azure")
     if provider_type == "azure":
-        return AzureOpenAIProvider(config)
+        inner: LLMProvider = AzureOpenAIProvider(config)
     elif provider_type == "btp":
-        return SapBtpProvider(config)
+        inner = SapBtpProvider(config)
     else:
         raise ValueError(f"Unknown LLM provider: {provider_type}")
+
+    if cache and config.get("cache_enabled", True):
+        from app.infra.llm.cache import CachedLLMProvider
+
+        redis_url = config.get("cache_redis_url", "redis://localhost:6380/3")
+        ttl = config.get("cache_ttl", 7 * 24 * 3600)
+        return CachedLLMProvider(inner, redis_url=redis_url, ttl=ttl)
+
+    return inner

@@ -301,3 +301,39 @@ def data_counts(
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
+
+
+# --- SAP OData Extraction ---
+
+
+class SAPExtractionRequest(BaseModel):
+    connection_id: int
+    kind: str
+    odata_params: dict | None = None
+
+
+@router.post("/sap-extract")
+def trigger_sap_extraction(
+    body: SAPExtractionRequest,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Trigger SAP OData extraction for a given data kind."""
+    from app.services.sap_extraction import extract_from_sap
+
+    try:
+        result = extract_from_sap(db, body.connection_id, body.kind, body.odata_params)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/sap-extract/available")
+def available_extractions(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> list[dict]:
+    """List SAP connections available for OData extraction."""
+    from app.services.sap_extraction import list_available_extractions
+
+    return list_available_extractions(db)

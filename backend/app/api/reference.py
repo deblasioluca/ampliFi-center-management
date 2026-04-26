@@ -316,3 +316,55 @@ def data_counts(db: Session = Depends(get_db)) -> dict:
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
+
+
+@router.post("/data/duplicate-check")
+def check_duplicates(
+    coarea: str | None = None,
+    threshold: float = 0.85,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Find near-duplicate cost center names using embeddings."""
+    from app.domain.ml.embeddings import find_duplicates
+
+    query = select(LegacyCostCenter).where(LegacyCostCenter.is_active.is_(True))
+    if coarea:
+        query = query.where(LegacyCostCenter.coarea == coarea)
+    ccs = db.execute(query).scalars().all()
+    names = [cc.txtsh or cc.txtmi or cc.cctr for cc in ccs]
+    ids = [cc.id for cc in ccs]
+    pairs = find_duplicates(names, ids, threshold=threshold)
+    return {"total": len(pairs), "pairs": pairs[:limit]}
+
+
+@router.post("/data/naming-suggestions")
+def naming_suggestions(
+    cctr: str,
+    coarea: str = "",
+    top_k: int = 5,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Suggest standardized names for a cost center."""
+    from app.domain.ml.embeddings import suggest_names
+
+    query = select(LegacyCostCenter).where(LegacyCostCenter.cctr == cctr)
+    if coarea:
+        query = query.where(LegacyCostCenter.coarea == coarea)
+    cc = db.execute(query).scalars().first()
+    if not cc:
+        return {"suggestions": [], "error": "Cost center not found"}
+    current = cc.txtsh or cc.txtmi or cc.cctr
+
+    ref_query = (
+        select(LegacyCostCenter.txtsh)
+        .where(
+            LegacyCostCenter.is_active.is_(True),
+            LegacyCostCenter.txtsh.isnot(None),
+            LegacyCostCenter.id != cc.id,
+        )
+        .limit(2000)
+    )
+    refs = [r[0] for r in db.execute(ref_query).all() if r[0]]
+    suggestions = suggest_names(current, refs, top_k=top_k)
+    return {"current_name": current, "suggestions": suggestions}

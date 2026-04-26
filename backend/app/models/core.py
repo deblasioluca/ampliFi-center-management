@@ -796,3 +796,20 @@ class NamingSequence(Base):
     )
     reserved_range_start: Mapped[int | None] = mapped_column(Integer)
     reserved_range_end: Mapped[int | None] = mapped_column(Integer)
+
+
+class GLAccountClassRange(TimestampMixin, Base):
+    """GL account class ranges for balance classification (§03.5)."""
+
+    __tablename__ = "gl_account_class_range"
+    __table_args__ = (
+        UniqueConstraint("class_code", "from_account"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    class_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    from_account: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_account: Mapped[str] = mapped_column(String(20), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(40))  # bs|rev|opex|other

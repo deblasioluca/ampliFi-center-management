@@ -95,6 +95,30 @@ def run_cycle(cycle_id: int, db: Session) -> HousekeepingCycle:
         "anomaly": 0,
     }
 
+    # Recurring-flag suppression: find centers that were flagged identically
+    # in a recent cycle and where the owner already decided KEEP.
+    suppress_months = config.get("suppress_recurring_months", 3)
+    suppressed: set[tuple[int, str]] = set()
+    if suppress_months > 0:
+        recent_items = (
+            db.execute(
+                select(HousekeepingItem)
+                .join(HousekeepingCycle)
+                .where(
+                    HousekeepingItem.decision == "KEEP",
+                    HousekeepingCycle.id != cycle.id,
+                )
+                .order_by(HousekeepingItem.decided_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for ri in recent_items:
+            if ri.decided_at and (now - ri.decided_at).days <= suppress_months * 30:
+                suppressed.add((ri.target_cc_id, ri.flag))
+
+    kpis["suppressed"] = 0
+
     for tcc in targets:
         flags: list[str] = []
 
@@ -129,8 +153,11 @@ def run_cycle(cycle_id: int, db: Session) -> HousekeepingCycle:
             flags.append("NO_OWNER")
             kpis["no_owner"] += 1
 
-        # Create housekeeping items for flagged centers
+        # Create housekeeping items for flagged centers (with suppression)
         for flag in flags:
+            if (tcc.id, flag) in suppressed:
+                kpis["suppressed"] += 1
+                continue
             token = secrets.token_urlsafe(32)
             item = HousekeepingItem(
                 cycle_id=cycle.id,
