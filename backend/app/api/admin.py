@@ -968,7 +968,9 @@ def llm_usage_summary(
     from app.infra.llm.guardrails import CostGuardrail
 
     # Load guardrail config from app_config
-    cfg = db.execute(select(AppConfig).where(AppConfig.key == "llm.guardrails")).scalar_one_or_none()
+    cfg = db.execute(
+        select(AppConfig).where(AppConfig.key == "llm.guardrails")
+    ).scalar_one_or_none()
     guardrail_config = cfg.value if cfg else {}
     guardrail = CostGuardrail(
         max_cost_per_call=guardrail_config.get("max_cost_per_call", 1.0),

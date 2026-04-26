@@ -6,7 +6,6 @@ heuristic predictions when no trained model is available.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +18,14 @@ MODELS_DIR = Path(__file__).parent.parent.parent.parent / "models"
 
 OUTCOME_CLASSES = ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"]
 TARGET_CLASSES = ["CC", "PC", "CC_AND_PC", "PC_ONLY", "WBS_REAL", "WBS_STAT", "NONE"]
-NAMING_CLASSES = ["operational", "technical", "project", "statistical", "allocation_vehicle", "unknown"]
+NAMING_CLASSES = [
+    "operational",
+    "technical",
+    "project",
+    "statistical",
+    "allocation_vehicle",
+    "unknown",
+]
 
 
 class BaseClassifier:
@@ -69,7 +75,7 @@ class BaseClassifier:
         arr = np.array([feature_values])
         proba = self._model.predict(arr)[0]
         if len(proba.shape) == 1 and proba.shape[0] == len(self.classes):
-            return dict(zip(self.classes, [float(p) for p in proba]))
+            return dict(zip(self.classes, [float(p) for p in proba], strict=False))
         return self._predict_heuristic(features)
 
     def _predict_heuristic(self, features: dict) -> dict[str, float]:
@@ -78,10 +84,17 @@ class BaseClassifier:
 
     def _expected_features(self) -> list[str]:
         return [
-            "bs_amt", "rev_amt", "opex_amt", "other_amt",
-            "posting_count_window", "months_active_in_window",
-            "months_since_last_posting", "period_count_with_postings",
-            "balance_volatility", "has_owner", "hierarchy_membership_count",
+            "bs_amt",
+            "rev_amt",
+            "opex_amt",
+            "other_amt",
+            "posting_count_window",
+            "months_active_in_window",
+            "months_since_last_posting",
+            "period_count_with_postings",
+            "balance_volatility",
+            "has_owner",
+            "hierarchy_membership_count",
         ]
 
     def explain(self, features: dict, top_k: int = 5) -> list[dict]:
@@ -111,7 +124,7 @@ class BaseClassifier:
                 sv = shap_values[0]
 
             # Sort by absolute magnitude
-            pairs = list(zip(feature_names, sv))
+            pairs = list(zip(feature_names, sv, strict=False))
             pairs.sort(key=lambda x: abs(x[1]), reverse=True)
             return [{"feature": f, "shap_value": float(v)} for f, v in pairs[:top_k]]
         except ImportError:
@@ -186,7 +199,7 @@ class OutcomeClassifier(BaseClassifier):
             "REDESIGN": redesign_score / total,
         }
 
-    def train(self, X: Any, y: Any, params: dict | None = None) -> None:
+    def train(self, x_train: Any, y: Any, params: dict | None = None) -> None:  # noqa: N803
         """Train the outcome classifier."""
         try:
             import lightgbm as lgb
@@ -205,7 +218,7 @@ class OutcomeClassifier(BaseClassifier):
             if params:
                 default_params.update(params)
 
-            dtrain = lgb.Dataset(X, label=y)
+            dtrain = lgb.Dataset(x_train, label=y)
             self._model = lgb.train(default_params, dtrain, num_boost_round=200)
             logger.info("ml.trained", model=self.model_name, samples=len(y))
         except ImportError:
@@ -257,10 +270,18 @@ class AnomalyDetector:
 
     def _score_with_model(self, features: dict) -> float:
         feature_values = np.array(
-            [[features.get(f, 0.0) for f in [
-                "bs_amt", "opex_amt", "posting_count_window",
-                "months_since_last_posting", "balance_volatility",
-            ]]]
+            [
+                [
+                    features.get(f, 0.0)
+                    for f in [
+                        "bs_amt",
+                        "opex_amt",
+                        "posting_count_window",
+                        "months_since_last_posting",
+                        "balance_volatility",
+                    ]
+                ]
+            ]
         )
         raw = self._model.decision_function(feature_values)[0]
         # IsolationForest: more negative = more anomalous
@@ -279,13 +300,13 @@ class AnomalyDetector:
             score += 0.2
         return min(1.0, score)
 
-    def train(self, X: Any) -> None:
+    def train(self, x_train: Any) -> None:  # noqa: N803
         """Train the anomaly detector."""
         try:
             from sklearn.ensemble import IsolationForest
 
             self._model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-            self._model.fit(X)
-            logger.info("ml.trained", model=self.model_name, samples=len(X))
+            self._model.fit(x_train)
+            logger.info("ml.trained", model=self.model_name, samples=len(x_train))
         except ImportError:
             logger.warning("ml.sklearn_not_installed")

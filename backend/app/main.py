@@ -139,7 +139,6 @@ app.include_router(docs_help_router.router, prefix="/api", tags=["help"])
 @app.get("/api/metrics")
 async def prometheus_metrics() -> Response:
     """Prometheus-compatible metrics endpoint (§18)."""
-    import time
 
     from sqlalchemy import text as sa_text
 
@@ -162,17 +161,16 @@ async def prometheus_metrics() -> Response:
                 lines.append(f'amplifi_waves_total{{status="{status}"}} {count}')
 
             # Cost center count
-            cc_count = conn.execute(
-                sa_text("SELECT COUNT(*) FROM cleanup.legacy_cost_center")
-            ).scalar() or 0
+            cc_count = (
+                conn.execute(sa_text("SELECT COUNT(*) FROM cleanup.legacy_cost_center")).scalar()
+                or 0
+            )
             lines.append("# HELP amplifi_cost_centers_total Total cost centers loaded")
             lines.append("# TYPE amplifi_cost_centers_total gauge")
             lines.append(f"amplifi_cost_centers_total {cc_count}")
 
             # Balance count
-            bal_count = conn.execute(
-                sa_text("SELECT COUNT(*) FROM cleanup.balance")
-            ).scalar() or 0
+            bal_count = conn.execute(sa_text("SELECT COUNT(*) FROM cleanup.balance")).scalar() or 0
             lines.append("# HELP amplifi_balances_total Total balance records")
             lines.append("# TYPE amplifi_balances_total gauge")
             lines.append(f"amplifi_balances_total {bal_count}")
@@ -187,13 +185,16 @@ async def prometheus_metrics() -> Response:
                 lines.append(f'amplifi_analysis_runs_total{{status="{status}"}} {count}')
 
             # User count
-            user_count = conn.execute(
-                sa_text("SELECT COUNT(*) FROM cleanup.app_user WHERE is_active = true")
-            ).scalar() or 0
+            user_count = (
+                conn.execute(
+                    sa_text("SELECT COUNT(*) FROM cleanup.app_user WHERE is_active = true")
+                ).scalar()
+                or 0
+            )
             lines.append("# HELP amplifi_active_users Total active users")
             lines.append("# TYPE amplifi_active_users gauge")
             lines.append(f"amplifi_active_users {user_count}")
     except Exception:
-        pass
+        logger.debug("metrics.db_query_failed")
 
     return Response(content="\n".join(lines) + "\n", media_type="text/plain")

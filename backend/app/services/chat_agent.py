@@ -15,13 +15,9 @@ from sqlalchemy.orm import Session
 from app.models.core import (
     AnalysisRun,
     CenterProposal,
-    Entity,
     HousekeepingCycle,
     HousekeepingItem,
     LegacyCostCenter,
-    ReviewItem,
-    ReviewScope,
-    Wave,
 )
 
 logger = structlog.get_logger()
@@ -50,7 +46,10 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "run_id": {"type": "integer"},
-                    "outcome": {"type": "string", "enum": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"]},
+                    "outcome": {
+                        "type": "string",
+                        "enum": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
+                    },
                     "entity_code": {"type": "string"},
                     "limit": {"type": "integer", "default": 20},
                 },
@@ -62,7 +61,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "proposal_detail",
-            "description": "Get full why-panel detail for a specific proposal including rule path, ML scores, LLM commentary",
+            "description": "Get full why-panel detail for a specific proposal",
             "parameters": {
                 "type": "object",
                 "properties": {"proposal_id": {"type": "integer"}},
@@ -146,20 +145,26 @@ def execute_tool(name: str, args: dict, db: Session) -> str:
         cc_ids = [p.legacy_cc_id for p in proposals]
         cc_map = {}
         if cc_ids:
-            ccs = db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+            ccs = (
+                db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids)))
+                .scalars()
+                .all()
+            )
             cc_map = {c.id: c for c in ccs}
         items = []
         for p in proposals:
             cc = cc_map.get(p.legacy_cc_id)
-            items.append({
-                "id": p.id,
-                "cctr": cc.cctr if cc else None,
-                "txtsh": cc.txtsh if cc else None,
-                "ccode": p.entity_code,
-                "outcome": p.cleansing_outcome,
-                "target": p.target_object,
-                "confidence": str(p.confidence) if p.confidence else None,
-            })
+            items.append(
+                {
+                    "id": p.id,
+                    "cctr": cc.cctr if cc else None,
+                    "txtsh": cc.txtsh if cc else None,
+                    "ccode": p.entity_code,
+                    "outcome": p.cleansing_outcome,
+                    "target": p.target_object,
+                    "confidence": str(p.confidence) if p.confidence else None,
+                }
+            )
         return json.dumps({"count": len(items), "items": items})
 
     elif name == "proposal_detail":
@@ -167,22 +172,27 @@ def execute_tool(name: str, args: dict, db: Session) -> str:
         if not p:
             return json.dumps({"error": "Proposal not found"})
         cc = db.get(LegacyCostCenter, p.legacy_cc_id)
-        return json.dumps({
-            "id": p.id,
-            "cctr": cc.cctr if cc else None,
-            "txtsh": cc.txtsh if cc else None,
-            "outcome": p.cleansing_outcome,
-            "target": p.target_object,
-            "rule_path": p.rule_path,
-            "ml_scores": p.ml_scores,
-            "llm_commentary": p.llm_commentary,
-            "confidence": str(p.confidence) if p.confidence else None,
-        })
+        return json.dumps(
+            {
+                "id": p.id,
+                "cctr": cc.cctr if cc else None,
+                "txtsh": cc.txtsh if cc else None,
+                "outcome": p.cleansing_outcome,
+                "target": p.target_object,
+                "rule_path": p.rule_path,
+                "ml_scores": p.ml_scores,
+                "llm_commentary": p.llm_commentary,
+                "confidence": str(p.confidence) if p.confidence else None,
+            }
+        )
 
     elif name == "entity_centers":
         query = select(LegacyCostCenter).where(LegacyCostCenter.ccode == args["ccode"])
         ccs = db.execute(query.limit(50)).scalars().all()
-        items = [{"id": c.id, "cctr": c.cctr, "txtsh": c.txtsh, "responsible": c.responsible} for c in ccs]
+        items = [
+            {"id": c.id, "cctr": c.cctr, "txtsh": c.txtsh, "responsible": c.responsible}
+            for c in ccs
+        ]
         return json.dumps({"count": len(items), "items": items})
 
     elif name == "explain_outcome":
@@ -229,28 +239,34 @@ def execute_tool(name: str, args: dict, db: Session) -> str:
                 .where(CenterProposal.run_id == run_id)
                 .group_by(CenterProposal.cleansing_outcome)
             ).all()
-            return json.dumps({o: c for o, c in rows})
+            return json.dumps(dict(rows))
 
     elif name == "housekeeping_status":
         cycle = db.get(HousekeepingCycle, args["cycle_id"])
         if not cycle:
             return json.dumps({"error": "Cycle not found"})
-        items = db.execute(
-            select(HousekeepingItem).where(HousekeepingItem.cycle_id == cycle.id)
-        ).scalars().all()
+        items = (
+            db.execute(select(HousekeepingItem).where(HousekeepingItem.cycle_id == cycle.id))
+            .scalars()
+            .all()
+        )
         by_flag: dict[str, int] = {}
         by_decision: dict[str, int] = {}
         for item in items:
             by_flag[item.flag or "UNKNOWN"] = by_flag.get(item.flag or "UNKNOWN", 0) + 1
-            by_decision[item.decision or "PENDING"] = by_decision.get(item.decision or "PENDING", 0) + 1
-        return json.dumps({
-            "cycle_id": cycle.id,
-            "period": cycle.period,
-            "status": cycle.status,
-            "total_items": len(items),
-            "by_flag": by_flag,
-            "by_decision": by_decision,
-        })
+            by_decision[item.decision or "PENDING"] = (
+                by_decision.get(item.decision or "PENDING", 0) + 1
+            )
+        return json.dumps(
+            {
+                "cycle_id": cycle.id,
+                "period": cycle.period,
+                "status": cycle.status,
+                "total_items": len(items),
+                "by_flag": by_flag,
+                "by_decision": by_decision,
+            }
+        )
 
     return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -330,19 +346,20 @@ def _static_response(user_message: str, context: dict, db: Session) -> str:
     if any(w in msg for w in ["help", "what can you", "commands"]):
         return (
             "I can help you with:\n"
-            "- **KPI summaries** — \"Show me the KPIs for this run\"\n"
-            "- **Proposal search** — \"Find all RETIRE proposals for entity 1000\"\n"
-            "- **Explanations** — \"Why was center 12345 marked KEEP?\"\n"
-            "- **Distributions** — \"Show outcome distribution by entity\"\n"
-            "- **Housekeeping** — \"What's the status of the current cycle?\"\n\n"
-            "Note: For full conversational capability, configure the LLM provider in Admin > LLM Settings."
+            '- **KPI summaries** — "Show me the KPIs for this run"\n'
+            '- **Proposal search** — "Find all RETIRE proposals for entity 1000"\n'
+            '- **Explanations** — "Why was center 12345 marked KEEP?"\n'
+            '- **Distributions** — "Show outcome distribution by entity"\n'
+            '- **Housekeeping** — "What\'s the status of the current cycle?"\n\n'
+            "Note: For full conversational capability, "
+            "configure the LLM provider in Admin > LLM Settings."
         )
 
     return (
         "I'm the ampliFi assistant. To unlock full conversational AI capabilities, "
         "please configure the LLM provider in **Admin > LLM Settings**.\n\n"
         "In the meantime, I can answer basic queries. Try asking:\n"
-        "- \"Show KPIs\"\n"
-        "- \"Help\"\n"
-        "- \"What can you do?\""
+        '- "Show KPIs"\n'
+        '- "Help"\n'
+        '- "What can you do?"'
     )

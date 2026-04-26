@@ -98,7 +98,7 @@ async def me(user: AppUser = Depends(get_current_user)) -> UserInfo | dict:
 @router.get("/oidc/start")
 async def oidc_start(request: Request, db: Session = Depends(get_db)) -> dict:
     """Start OIDC authorization code flow with PKCE."""
-    from app.auth.entraid import EntraIDConfig, build_auth_url, generate_pkce
+    from app.auth.entraid import EntraIDConfig, build_auth_url
     from app.models.core import AppConfig
 
     if settings.auth_provider != "entraid":

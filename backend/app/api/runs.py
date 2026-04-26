@@ -91,7 +91,11 @@ def list_proposals(
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
     if cc_ids:
-        ccs = db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+        ccs = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids)))
+            .scalars()
+            .all()
+        )
         cc_map = {c.id: c for c in ccs}
 
     return {
@@ -106,7 +110,9 @@ def list_proposals(
                 "txtsh": cc_map[p.legacy_cc_id].txtsh if p.legacy_cc_id in cc_map else None,
                 "ccode": cc_map[p.legacy_cc_id].ccode if p.legacy_cc_id in cc_map else None,
                 "coarea": cc_map[p.legacy_cc_id].coarea if p.legacy_cc_id in cc_map else None,
-                "responsible": cc_map[p.legacy_cc_id].responsible if p.legacy_cc_id in cc_map else None,
+                "responsible": cc_map[p.legacy_cc_id].responsible
+                if p.legacy_cc_id in cc_map
+                else None,
                 "cleansing_outcome": p.cleansing_outcome,
                 "target_object": p.target_object,
                 "merge_into_cctr": p.merge_into_cctr,
@@ -190,9 +196,7 @@ def trigger_llm_review(
         raise HTTPException(status_code=409, detail="Run must be completed")
 
     # Get LLM config
-    cfg = db.execute(
-        select(AppConfig).where(AppConfig.key == "llm")
-    ).scalar_one_or_none()
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "llm")).scalar_one_or_none()
     if not cfg or not cfg.value:
         raise HTTPException(status_code=400, detail="LLM not configured")
 
@@ -278,12 +282,18 @@ def compare_runs(run_a: int, run_b: int, db: Session = Depends(get_db)) -> dict:
 
     # Build outcome matrices
     props_a = db.execute(
-        select(CenterProposal.legacy_cc_id, CenterProposal.cleansing_outcome, CenterProposal.target_object)
-        .where(CenterProposal.run_id == run_a)
+        select(
+            CenterProposal.legacy_cc_id,
+            CenterProposal.cleansing_outcome,
+            CenterProposal.target_object,
+        ).where(CenterProposal.run_id == run_a)
     ).all()
     props_b = db.execute(
-        select(CenterProposal.legacy_cc_id, CenterProposal.cleansing_outcome, CenterProposal.target_object)
-        .where(CenterProposal.run_id == run_b)
+        select(
+            CenterProposal.legacy_cc_id,
+            CenterProposal.cleansing_outcome,
+            CenterProposal.target_object,
+        ).where(CenterProposal.run_id == run_b)
     ).all()
 
     map_a = {r[0]: (r[1], r[2]) for r in props_a}

@@ -11,12 +11,15 @@ from pathlib import Path
 import structlog
 from jinja2 import Environment, FileSystemLoader
 
-from app.infra.llm.provider import Completion, LLMProvider, Message
+from app.infra.llm.provider import LLMProvider, Message
 
 logger = structlog.get_logger()
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-_jinja_env = Environment(loader=FileSystemLoader(str(PROMPTS_DIR)), autoescape=False)
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(PROMPTS_DIR)),
+    autoescape=False,  # noqa: S701 — plain text templates, not HTML
+)
 
 
 def _render(template_name: str, context: dict) -> tuple[str, str]:
@@ -98,7 +101,10 @@ def sequential_pass(
     # Step 1: Drafter
     system, user = _render("review_draft.v3.j2", center_context)
     draft_completion = provider.complete(
-        model, [Message("system", system), Message("user", user)], temperature=0.0, max_tokens=max_tokens
+        model,
+        [Message("system", system), Message("user", user)],
+        temperature=0.0,
+        max_tokens=max_tokens,
     )
     drafter_output = _parse_json(draft_completion.text)
 
@@ -106,20 +112,34 @@ def sequential_pass(
     critic_context = {**center_context, "drafter_output": drafter_output}
     system, user = _render("review_critic.v3.j2", critic_context)
     critic_completion = provider.complete(
-        model, [Message("system", system), Message("user", user)], temperature=0.0, max_tokens=max_tokens
+        model,
+        [Message("system", system), Message("user", user)],
+        temperature=0.0,
+        max_tokens=max_tokens,
     )
     critic_output = _parse_json(critic_completion.text)
 
     # Step 3: Finaliser
-    final_context = {**center_context, "drafter_output": drafter_output, "critic_output": critic_output}
+    final_context = {
+        **center_context,
+        "drafter_output": drafter_output,
+        "critic_output": critic_output,
+    }
     system, user = _render("review_final.v3.j2", final_context)
     final_completion = provider.complete(
-        model, [Message("system", system), Message("user", user)], temperature=0.0, max_tokens=max_tokens
+        model,
+        [Message("system", system), Message("user", user)],
+        temperature=0.0,
+        max_tokens=max_tokens,
     )
     result = _parse_json(final_completion.text)
 
-    total_tokens_in = draft_completion.tokens_in + critic_completion.tokens_in + final_completion.tokens_in
-    total_tokens_out = draft_completion.tokens_out + critic_completion.tokens_out + final_completion.tokens_out
+    total_tokens_in = (
+        draft_completion.tokens_in + critic_completion.tokens_in + final_completion.tokens_in
+    )
+    total_tokens_out = (
+        draft_completion.tokens_out + critic_completion.tokens_out + final_completion.tokens_out
+    )
     total_cost = draft_completion.cost_usd + critic_completion.cost_usd + final_completion.cost_usd
 
     result["_llm_meta"] = {
@@ -150,15 +170,37 @@ def debate_pass(
     position_b = f"the outcome should be {alt_outcome} instead"
 
     # Round 1: Advocate A
-    ctx_a = {**center_context, "side": "A", "position": position_a, "opponent_arg": None, "prior_arg": None}
+    ctx_a = {
+        **center_context,
+        "side": "A",
+        "position": position_a,
+        "opponent_arg": None,
+        "prior_arg": None,
+    }
     sys_a, usr_a = _render("debate_advocate.v1.j2", ctx_a)
-    comp_a = provider.complete(model, [Message("system", sys_a), Message("user", usr_a)], temperature=0.0, max_tokens=max_tokens)
+    comp_a = provider.complete(
+        model,
+        [Message("system", sys_a), Message("user", usr_a)],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
     arg_a = _parse_json(comp_a.text)
 
     # Round 1: Advocate B
-    ctx_b = {**center_context, "side": "B", "position": position_b, "opponent_arg": arg_a, "prior_arg": None}
+    ctx_b = {
+        **center_context,
+        "side": "B",
+        "position": position_b,
+        "opponent_arg": arg_a,
+        "prior_arg": None,
+    }
     sys_b, usr_b = _render("debate_advocate.v1.j2", ctx_b)
-    comp_b = provider.complete(model, [Message("system", sys_b), Message("user", usr_b)], temperature=0.0, max_tokens=max_tokens)
+    comp_b = provider.complete(
+        model,
+        [Message("system", sys_b), Message("user", usr_b)],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
     arg_b = _parse_json(comp_b.text)
 
     total_tokens_in = comp_a.tokens_in + comp_b.tokens_in
@@ -168,18 +210,40 @@ def debate_pass(
     # Additional rebuttal rounds
     for _r in range(rounds):
         # Rebuttal A
-        ctx_a = {**center_context, "side": "A", "position": position_a, "opponent_arg": arg_b, "prior_arg": arg_a}
+        ctx_a = {
+            **center_context,
+            "side": "A",
+            "position": position_a,
+            "opponent_arg": arg_b,
+            "prior_arg": arg_a,
+        }
         sys_a, usr_a = _render("debate_advocate.v1.j2", ctx_a)
-        comp_a = provider.complete(model, [Message("system", sys_a), Message("user", usr_a)], temperature=0.0, max_tokens=max_tokens)
+        comp_a = provider.complete(
+            model,
+            [Message("system", sys_a), Message("user", usr_a)],
+            temperature=0.0,
+            max_tokens=max_tokens,
+        )
         arg_a = _parse_json(comp_a.text)
         total_tokens_in += comp_a.tokens_in
         total_tokens_out += comp_a.tokens_out
         total_cost += comp_a.cost_usd
 
         # Rebuttal B
-        ctx_b = {**center_context, "side": "B", "position": position_b, "opponent_arg": arg_a, "prior_arg": arg_b}
+        ctx_b = {
+            **center_context,
+            "side": "B",
+            "position": position_b,
+            "opponent_arg": arg_a,
+            "prior_arg": arg_b,
+        }
         sys_b, usr_b = _render("debate_advocate.v1.j2", ctx_b)
-        comp_b = provider.complete(model, [Message("system", sys_b), Message("user", usr_b)], temperature=0.0, max_tokens=max_tokens)
+        comp_b = provider.complete(
+            model,
+            [Message("system", sys_b), Message("user", usr_b)],
+            temperature=0.0,
+            max_tokens=max_tokens,
+        )
         arg_b = _parse_json(comp_b.text)
         total_tokens_in += comp_b.tokens_in
         total_tokens_out += comp_b.tokens_out
@@ -188,7 +252,12 @@ def debate_pass(
     # Judge
     judge_ctx = {**center_context, "advocate_a": arg_a, "advocate_b": arg_b}
     sys_j, usr_j = _render("debate_judge.v1.j2", judge_ctx)
-    comp_j = provider.complete(model, [Message("system", sys_j), Message("user", usr_j)], temperature=0.0, max_tokens=max_tokens)
+    comp_j = provider.complete(
+        model,
+        [Message("system", sys_j), Message("user", usr_j)],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
     result = _parse_json(comp_j.text)
     total_tokens_in += comp_j.tokens_in
     total_tokens_out += comp_j.tokens_out

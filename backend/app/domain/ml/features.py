@@ -33,7 +33,9 @@ FEATURE_COLUMNS = [
 ]
 
 
-def compute_center_features(db: Session, center: LegacyCostCenter, data_window_months: int = 18) -> dict:
+def compute_center_features(
+    db: Session, center: LegacyCostCenter, data_window_months: int = 18
+) -> dict:
     """Compute all numeric features for a single cost center."""
     # Balance aggregates
     balances = (
@@ -94,15 +96,12 @@ def compute_center_features(db: Session, center: LegacyCostCenter, data_window_m
     hierarchy_count = 0
     try:
         result = db.execute(
-            text(
-                "SELECT COUNT(*) FROM cleanup.set_leaf "
-                "WHERE cctr = :cctr AND coarea = :coarea"
-            ),
+            text("SELECT COUNT(*) FROM cleanup.set_leaf WHERE cctr = :cctr AND coarea = :coarea"),
             {"cctr": center.cctr, "coarea": center.coarea},
         ).scalar()
         hierarchy_count = result or 0
     except Exception:
-        pass
+        logger.debug("ml.hierarchy_count_failed", cctr=center.cctr)
 
     return {
         "bs_amt": float(bs_amt),
@@ -119,7 +118,9 @@ def compute_center_features(db: Session, center: LegacyCostCenter, data_window_m
     }
 
 
-def compute_batch_features(db: Session, centers: list[LegacyCostCenter], data_window_months: int = 18) -> dict[str, dict]:
+def compute_batch_features(
+    db: Session, centers: list[LegacyCostCenter], data_window_months: int = 18
+) -> dict[str, dict]:
     """Compute features for all centers in one batch (efficient SQL).
 
     Returns a dict keyed by cctr with feature dicts as values.
@@ -165,7 +166,7 @@ def compute_batch_features(db: Session, centers: list[LegacyCostCenter], data_wi
         for row in hier_rows:
             hier_map[row.cctr] = row.cnt
     except Exception:
-        pass
+        logger.debug("ml.batch_hierarchy_failed")
 
     results: dict[str, dict] = {}
     for c in centers:
@@ -177,7 +178,9 @@ def compute_batch_features(db: Session, centers: list[LegacyCostCenter], data_wi
             "other_amt": bdata.get("total_gc2", 0.0),
             "posting_count_window": bdata.get("posting_count", 0),
             "months_active_in_window": bdata.get("period_count", 0),
-            "months_since_last_posting": data_window_months if bdata.get("posting_count", 0) == 0 else 0,
+            "months_since_last_posting": data_window_months
+            if bdata.get("posting_count", 0) == 0
+            else 0,
             "period_count_with_postings": bdata.get("period_count", 0),
             "balance_volatility": 0.0,
             "has_owner": 1 if c.responsible else 0,

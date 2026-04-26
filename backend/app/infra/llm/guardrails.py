@@ -6,10 +6,10 @@ for auditing and cost reporting.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
@@ -31,15 +31,27 @@ class CostGuardrail:
     def check_pre_call(self, db: Session, estimated_cost: float = 0.0) -> tuple[bool, str]:
         """Check whether we're within budget before making an LLM call."""
         if estimated_cost > self.max_cost_per_call:
-            return False, f"Estimated cost ${estimated_cost:.4f} exceeds per-call limit ${self.max_cost_per_call:.2f}"
+            return (
+                False,
+                f"Estimated cost ${estimated_cost:.4f} exceeds "
+                f"per-call limit ${self.max_cost_per_call:.2f}",
+            )
 
         daily_spend = self._get_daily_spend(db)
         if daily_spend + estimated_cost > self.daily_cap_usd:
-            return False, f"Daily spend ${daily_spend:.2f} + ${estimated_cost:.4f} would exceed daily cap ${self.daily_cap_usd:.2f}"
+            return (
+                False,
+                f"Daily spend ${daily_spend:.2f} + ${estimated_cost:.4f} "
+                f"would exceed daily cap ${self.daily_cap_usd:.2f}",
+            )
 
         monthly_spend = self._get_monthly_spend(db)
         if monthly_spend + estimated_cost > self.monthly_cap_usd:
-            return False, f"Monthly spend ${monthly_spend:.2f} would exceed monthly cap ${self.monthly_cap_usd:.2f}"
+            return (
+                False,
+                f"Monthly spend ${monthly_spend:.2f} would exceed "
+                f"monthly cap ${self.monthly_cap_usd:.2f}",
+            )
 
         return True, "OK"
 
@@ -87,7 +99,11 @@ class CostGuardrail:
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         try:
             result = db.execute(
-                text("SELECT COALESCE(SUM(cost_usd), 0) FROM cleanup.llm_usage_log WHERE created_at >= :since"),
+                text(
+                    "SELECT COALESCE(SUM(cost_usd), 0) "
+                    "FROM cleanup.llm_usage_log "
+                    "WHERE created_at >= :since"
+                ),
                 {"since": today_start},
             ).scalar()
             return float(result or 0)
@@ -95,10 +111,16 @@ class CostGuardrail:
             return 0.0
 
     def _get_monthly_spend(self, db: Session) -> float:
-        month_start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_start = datetime.now(UTC).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
         try:
             result = db.execute(
-                text("SELECT COALESCE(SUM(cost_usd), 0) FROM cleanup.llm_usage_log WHERE created_at >= :since"),
+                text(
+                    "SELECT COALESCE(SUM(cost_usd), 0) "
+                    "FROM cleanup.llm_usage_log "
+                    "WHERE created_at >= :since"
+                ),
                 {"since": month_start},
             ).scalar()
             return float(result or 0)
@@ -114,15 +136,19 @@ class CostGuardrail:
         try:
             daily = db.execute(
                 text(
-                    "SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(tokens_in + tokens_out), 0), COUNT(*) "
-                    "FROM cleanup.llm_usage_log WHERE created_at >= :since"
+                    "SELECT COALESCE(SUM(cost_usd), 0), "
+                    "COALESCE(SUM(tokens_in+tokens_out), 0), "
+                    "COUNT(*) FROM cleanup.llm_usage_log "
+                    "WHERE created_at >= :since"
                 ),
                 {"since": today_start},
             ).one()
             monthly = db.execute(
                 text(
-                    "SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(tokens_in + tokens_out), 0), COUNT(*) "
-                    "FROM cleanup.llm_usage_log WHERE created_at >= :since"
+                    "SELECT COALESCE(SUM(cost_usd), 0), "
+                    "COALESCE(SUM(tokens_in+tokens_out), 0), "
+                    "COUNT(*) FROM cleanup.llm_usage_log "
+                    "WHERE created_at >= :since"
                 ),
                 {"since": month_start},
             ).one()
@@ -144,6 +170,11 @@ class CostGuardrail:
         except Exception:
             return {
                 "daily": {"cost_usd": 0, "tokens": 0, "calls": 0, "cap_usd": self.daily_cap_usd},
-                "monthly": {"cost_usd": 0, "tokens": 0, "calls": 0, "cap_usd": self.monthly_cap_usd},
+                "monthly": {
+                    "cost_usd": 0,
+                    "tokens": 0,
+                    "calls": 0,
+                    "cap_usd": self.monthly_cap_usd,
+                },
                 "per_call_limit_usd": self.max_cost_per_call,
             }
