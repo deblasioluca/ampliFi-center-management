@@ -242,11 +242,11 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     inactivity_months = params.get("inactivity_threshold_months", 24)
 
     for cc in cost_centers:
+        features = _build_features(cc, db, inactivity_months)
         if use_pipeline:
             ctx = _build_context(cc, db, inactivity_months)
             result = evaluate_center_with_pipeline(ctx, pipeline_config, registry)
         else:
-            features = _build_features(cc, db, inactivity_months)
             result = evaluate_center(features, params)
 
         # Store per-routine outputs
@@ -289,29 +289,17 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
             from app.domain.ml.classifiers import OutcomeClassifier, TargetObjectClassifier
 
             feature_dict = {
-                "bs_amt": features.bs_amt
-                if not use_pipeline
-                else (ctx.bs_amt if use_pipeline else 0),
-                "rev_amt": features.rev_amt
-                if not use_pipeline
-                else (ctx.rev_amt if use_pipeline else 0),
-                "opex_amt": features.opex_amt
-                if not use_pipeline
-                else (ctx.opex_amt if use_pipeline else 0),
+                "bs_amt": features.bs_amt,
+                "rev_amt": features.rev_amt,
+                "opex_amt": features.opex_amt,
                 "other_amt": 0.0,
-                "posting_count_window": (features.posting_count_window or 0)
-                if not use_pipeline
-                else (ctx.posting_count_window or 0),
+                "posting_count_window": features.posting_count_window or 0,
                 "months_active_in_window": 0,
-                "months_since_last_posting": (features.months_since_last_posting or 0)
-                if not use_pipeline
-                else (ctx.months_since_last_posting or 0),
+                "months_since_last_posting": features.months_since_last_posting or 0,
                 "period_count_with_postings": 0,
                 "balance_volatility": 0.0,
-                "has_owner": int(features.has_owner) if not use_pipeline else int(ctx.has_owner),
-                "hierarchy_membership_count": features.hierarchy_membership_count
-                if not use_pipeline
-                else ctx.hierarchy_membership_count,
+                "has_owner": int(features.has_owner),
+                "hierarchy_membership_count": features.hierarchy_membership_count,
             }
             oc = OutcomeClassifier()
             tc = TargetObjectClassifier()

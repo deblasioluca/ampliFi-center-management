@@ -191,7 +191,9 @@ async def oidc_callback(
 
     # Verify nonce to prevent token replay attacks
     expected_nonce = pkce_data.get("nonce", "")
-    if expected_nonce and claims.get("nonce") != expected_nonce:
+    if not expected_nonce:
+        raise HTTPException(status_code=400, detail="Missing nonce in OIDC session")
+    if claims.get("nonce") != expected_nonce:
         raise HTTPException(status_code=400, detail="OIDC nonce mismatch")
 
     user = upsert_user_from_claims(claims, cfg, db)
