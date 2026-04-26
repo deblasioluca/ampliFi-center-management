@@ -159,7 +159,7 @@ def upsert_user_from_claims(claims: dict, cfg: EntraIDConfig, db: Session) -> Ap
     user = db.execute(select(AppUser).where(AppUser.entraid_oid == oid)).scalar_one_or_none()
 
     if not user:
-        user = db.execute(select(AppUser).where(AppUser.email == email)).scalar_one_or_none()
+        user = db.execute(select(AppUser).where(AppUser.email == email)).scalars().first()
 
     # Determine role from group claims
     role = "reviewer"
