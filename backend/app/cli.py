@@ -54,8 +54,8 @@ def cmd_seed(args: argparse.Namespace) -> None:
         # Mapping tree routines
         ("rule.bs_relevance", "Balance sheet relevance", "rule", "mapping", 60),
         ("rule.has_direct_revenue", "Has direct revenue", "rule", "mapping", 70),
-        ("rule.has_operational_costs", "Has operational costs", "rule", "mapping", 80),
-        ("rule.collects_project_costs", "Collects project costs", "rule", "mapping", 90),
+        ("rule.collects_project_costs", "Collects project costs", "rule", "mapping", 80),
+        ("rule.has_operational_costs", "Has operational costs", "rule", "mapping", 90),
         ("rule.revenue_allocation_vehicle", "Revenue allocation vehicle", "rule", "mapping", 100),
         ("rule.cost_allocation_vehicle", "Cost allocation vehicle", "rule", "mapping", 110),
         ("rule.info_only", "Info-only / statistical", "rule", "mapping", 120),
