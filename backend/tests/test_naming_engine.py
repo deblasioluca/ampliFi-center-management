@@ -91,10 +91,7 @@ class TestNamingEngine:
             collision_policy="skip",
             legacy_survival=False,
         )
-        centers = [
-            {"source_cctr": f"OLD{i:03d}", "values": {"coarea": "1000"}}
-            for i in range(5)
-        ]
+        centers = [{"source_cctr": f"OLD{i:03d}", "values": {"coarea": "1000"}} for i in range(5)]
         results = self.engine.generate_batch(
             template=template,
             centers=centers,
