@@ -74,8 +74,22 @@ def upgrade() -> None:
         schema="cleanup",
     )
 
+    # Drop the old unique constraint on email (login is now by username)
+    op.drop_constraint(
+        "app_user_email_key",
+        "app_user",
+        type_="unique",
+        schema="cleanup",
+    )
+
 
 def downgrade() -> None:
+    op.create_unique_constraint(
+        "app_user_email_key",
+        "app_user",
+        ["email"],
+        schema="cleanup",
+    )
     op.alter_column(
         "app_user",
         "email",

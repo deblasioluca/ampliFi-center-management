@@ -614,7 +614,16 @@ def load_upload(batch_id: int, db: Session) -> dict:
             gpn = row.get("gpn", "").strip()
             if not gpn:
                 continue
-            existing = db.execute(select(Employee).where(Employee.gpn == gpn)).scalars().first()
+            existing = (
+                db.execute(
+                    select(Employee).where(
+                        Employee.gpn == gpn,
+                        Employee.refresh_batch == batch.id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
             # Separate model fields from extra attrs
             model_kwargs: dict = {}
             extra_attrs: dict = {}
