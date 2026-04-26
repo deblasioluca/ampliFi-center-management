@@ -92,6 +92,10 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     if wave.status not in ("proposed", "analysing"):
         raise ValueError(f"Cannot lock: wave is {wave.status}, expected proposed or analysing")
 
+    run = db.get(AnalysisRun, run_id)
+    if not run or run.wave_id != wave_id:
+        raise ValueError(f"Run {run_id} does not belong to wave {wave_id}")
+
     proposals = (
         db.execute(select(CenterProposal).where(CenterProposal.run_id == run_id)).scalars().all()
     )
@@ -137,7 +141,7 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
                 created_cc += 1
 
         # Create target profit center if target includes PC
-        if target in ("PC_ONLY", "CC_AND_PC"):
+        if target in ("PC", "PC_ONLY", "CC_AND_PC"):
             existing_pc = db.execute(
                 select(TargetProfitCenter).where(
                     TargetProfitCenter.coarea == legacy.coarea,
