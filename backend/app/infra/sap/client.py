@@ -22,7 +22,7 @@ def test_connection(conn: SAPConnection) -> dict[str, Any]:
             return _test_odata(conn, password, start)
         elif conn.protocol == "adt":
             return _test_adt(conn, password, start)
-        elif conn.protocol == "soap":
+        elif conn.protocol in ("soap", "soap_rfc"):
             return _test_soap(conn, password, start)
         else:
             return {"success": False, "error": f"Unsupported protocol: {conn.protocol}"}

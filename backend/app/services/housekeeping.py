@@ -221,11 +221,11 @@ def send_notifications(cycle_id: int, db: Session) -> dict:
             email_cfg = cfg.value if cfg else {}
 
             engine = EmailEngine(
-                host=email_cfg.get("smtp_host", "localhost"),
-                port=email_cfg.get("smtp_port", 1025),
-                username=email_cfg.get("smtp_user", ""),
-                password=email_cfg.get("smtp_pass", ""),
-                use_tls=email_cfg.get("smtp_tls", False),
+                host=email_cfg.get("host", "localhost"),
+                port=email_cfg.get("port", 1025),
+                username=email_cfg.get("username", ""),
+                password=email_cfg.get("password", ""),
+                use_tls=email_cfg.get("tls", "none") != "none",
             )
 
             flagged_lines = []
