@@ -57,6 +57,7 @@ import Layout from '../../components/layout/Layout.astro';
         <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
         <div class="flex items-center gap-2">
           <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
@@ -71,6 +72,7 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="flex items-center gap-2">
           <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
           <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('cc-table','cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
@@ -85,6 +87,7 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="flex items-center gap-2">
           <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
           <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('pc-table','profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
@@ -99,6 +102,7 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="flex items-center gap-2">
           <input id="filter-bal-cctr" type="text" placeholder="Cost Center..." class="input text-sm w-32" />
           <input id="filter-bal-year" type="number" placeholder="Year..." class="input text-sm w-24" />
+          <button onclick="downloadTableCSV('bal-table','balances.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
@@ -129,6 +133,10 @@ import Layout from '../../components/layout/Layout.astro';
             <option value="entities">Entities</option>
             <option value="hierarchies">Hierarchies</option>
           </select>
+        </div>
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+          <span class="font-medium">Template:</span>
+          <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
@@ -169,6 +177,66 @@ import Layout from '../../components/layout/Layout.astro';
 
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
   function fmt(n) { return (n || 0).toLocaleString(); }
+
+  // CSV download of current visible table
+  window.downloadTableCSV = function(tableId, filename) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var tbl = table.querySelector('table');
+    if (!tbl) { alert('No data to download.'); return; }
+    var csv = [];
+    tbl.querySelectorAll('tr').forEach(function(row) {
+      var cells = [];
+      row.querySelectorAll('th,td').forEach(function(cell) {
+        var v = cell.textContent.replace(/"/g, '""').replace(/ [▲▼]$/, '');
+        cells.push('"' + v + '"');
+      });
+      csv.push(cells.join(','));
+    });
+    var blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Client-side column sorting for loaded page data
+  function sortTable(tableEl) {
+    var thead = tableEl.querySelector('thead');
+    if (!thead) return;
+    thead.querySelectorAll('th').forEach(function(th, colIdx) {
+      th.style.cursor = 'pointer';
+      th.title = 'Click to sort';
+      th.addEventListener('click', function() {
+        var tbody = tableEl.querySelector('tbody');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        var asc = th.dataset.sort !== 'asc';
+        thead.querySelectorAll('th').forEach(function(h) { delete h.dataset.sort; h.textContent = h.textContent.replace(/ [▲▼]$/, ''); });
+        th.dataset.sort = asc ? 'asc' : 'desc';
+        th.textContent += asc ? ' ▲' : ' ▼';
+        rows.sort(function(a, b) {
+          var ac = (a.cells[colIdx] || {}).textContent || '';
+          var bc = (b.cells[colIdx] || {}).textContent || '';
+          var an = parseFloat(ac.replace(/,/g, '')), bn = parseFloat(bc.replace(/,/g, ''));
+          if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+          return asc ? ac.localeCompare(bc) : bc.localeCompare(ac);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+      });
+    });
+  }
+  // Apply sorting after each table render
+  var sortObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      var t = m.target.querySelector('table');
+      if (t) sortTable(t);
+    });
+  });
+  ['entities-table','cc-table','pc-table','bal-table','hier-table'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) sortObserver.observe(el, { childList: true });
+  });
 
   var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','upload','sample-data'];
 
@@ -467,6 +535,22 @@ import Layout from '../../components/layout/Layout.astro';
     alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
     loadUploadHistory(); loadCounts();
   };
+
+  // --- Download upload template ---
+  document.getElementById('download-template-btn').addEventListener('click', async function() {
+    var kind = document.getElementById('upload-type').value;
+    try {
+      var res = await fetch('/api/admin/upload-templates/' + encodeURIComponent(kind), { headers: authHdr });
+      if (!res.ok) { alert('Failed to fetch template'); return; }
+      var d = await res.json();
+      var blob = new Blob([d.csv], { type: 'text/csv' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = kind + '_template.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(e) { alert('Error: ' + e.message); }
+  });
 
   // --- Delete all buttons ---
   document.getElementById('delete-all-entities').addEventListener('click', function() {

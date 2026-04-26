@@ -148,18 +148,60 @@ import Layout from '../../components/layout/Layout.astro';
       <!-- App Config Tab -->
       <div id="panel-config" class="card hidden">
         <h2 class="text-lg font-semibold mb-4">Application Configuration</h2>
-        <p class="text-xs text-gray-500 mb-4">Key-value settings stored in the database. Use JSON values.</p>
-        <div class="space-y-3">
-          <div class="flex gap-3">
-            <input type="text" id="cfg-key" class="input flex-1" placeholder="Config key (e.g. email.smtp_host)" />
-            <button id="load-cfg-btn" class="btn-secondary text-xs">Load</button>
+        <p class="text-xs text-gray-500 mb-4">Application-wide settings. These control analysis thresholds, email delivery, and general behavior.</p>
+
+        <div class="space-y-6">
+          <!-- Predefined config sections -->
+          <div class="border rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">Analysis Thresholds</h3>
+            <p class="text-xs text-gray-500 mb-3">Control decision tree behavior (used by cleansing routines).</p>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div><label class="block text-gray-600 mb-1">Inactivity Threshold (months)</label><input type="number" class="input text-sm cfg-preset" data-key="analysis.inactivity_threshold_months" value="24" /></div>
+              <div><label class="block text-gray-600 mb-1">Min. Posting Count</label><input type="number" class="input text-sm cfg-preset" data-key="analysis.posting_threshold" value="0" /></div>
+              <div><label class="block text-gray-600 mb-1">Strict Hierarchy Compliance</label><select class="input text-sm cfg-preset" data-key="analysis.strict_hierarchy_compliance"><option value="false">No</option><option value="true">Yes</option></select></div>
+              <div><label class="block text-gray-600 mb-1">Auto-Approve Confidence (%)</label><input type="number" class="input text-sm cfg-preset" data-key="analysis.auto_approve_confidence" value="95" min="0" max="100" /></div>
+            </div>
           </div>
-          <textarea id="cfg-value" rows="6" class="input font-mono text-xs" placeholder='{"key": "value"}'></textarea>
+
+          <div class="border rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">Email / Notifications</h3>
+            <p class="text-xs text-gray-500 mb-3">SMTP settings for sending review invitations and notifications.</p>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div><label class="block text-gray-600 mb-1">SMTP Host</label><input type="text" class="input text-sm cfg-preset" data-key="email.smtp_host" placeholder="smtp.example.com" /></div>
+              <div><label class="block text-gray-600 mb-1">SMTP Port</label><input type="number" class="input text-sm cfg-preset" data-key="email.smtp_port" value="587" /></div>
+              <div><label class="block text-gray-600 mb-1">From Address</label><input type="email" class="input text-sm cfg-preset" data-key="email.from_address" placeholder="amplifi@company.com" /></div>
+              <div><label class="block text-gray-600 mb-1">From Name</label><input type="text" class="input text-sm cfg-preset" data-key="email.from_name" placeholder="ampliFi Center Management" /></div>
+            </div>
+          </div>
+
+          <div class="border rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">Housekeeping</h3>
+            <p class="text-xs text-gray-500 mb-3">Recurring housekeeping cycle settings.</p>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div><label class="block text-gray-600 mb-1">Cycle Frequency</label><select class="input text-sm cfg-preset" data-key="housekeeping.frequency"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option></select></div>
+              <div><label class="block text-gray-600 mb-1">Days Until Owner Response Due</label><input type="number" class="input text-sm cfg-preset" data-key="housekeeping.response_days" value="14" /></div>
+            </div>
+          </div>
+
           <div class="flex gap-2">
-            <button id="save-cfg-btn" class="btn-amplifi text-xs">Save</button>
+            <button id="save-all-cfg-btn" class="btn-amplifi text-sm">Save All Settings</button>
+            <button id="load-all-cfg-btn" class="btn-secondary text-sm">Reload from Server</button>
           </div>
           <div id="cfg-result" class="text-sm hidden"></div>
         </div>
+
+        <!-- Advanced: raw key-value editor -->
+        <details class="mt-6">
+          <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Advanced: Raw Config Editor</summary>
+          <div class="mt-3 space-y-3">
+            <div class="flex gap-3">
+              <input type="text" id="cfg-key" class="input flex-1 text-sm" placeholder="Config key (e.g. email.smtp_host)" />
+              <button id="load-cfg-btn" class="btn-secondary text-xs">Load</button>
+            </div>
+            <textarea id="cfg-value" rows="4" class="input font-mono text-xs" placeholder='{"key": "value"}'></textarea>
+            <button id="save-cfg-btn" class="btn-amplifi text-xs">Save</button>
+          </div>
+        </details>
       </div>
 
       <!-- Routines Tab -->
@@ -422,6 +464,48 @@ import Layout from '../../components/layout/Layout.astro';
         resultEl.classList.remove('hidden');
       }
     });
+
+    // ---- Preset Config Save/Load ----
+    function loadAllPresets() {
+      document.querySelectorAll('.cfg-preset').forEach(async function(el) {
+        var key = el.dataset.key;
+        try {
+          var res = await fetch('/api/admin/config/' + encodeURIComponent(key), { headers: authHdr });
+          if (res.ok) {
+            var data = await res.json();
+            if (data.value !== undefined && data.value !== null) {
+              if (el.tagName === 'SELECT') el.value = String(data.value);
+              else el.value = data.value;
+            }
+          }
+        } catch(e) {}
+      });
+    }
+    loadAllPresets();
+
+    document.getElementById('save-all-cfg-btn').addEventListener('click', async function() {
+      var resultEl = document.getElementById('cfg-result');
+      var fields = document.querySelectorAll('.cfg-preset');
+      var saved = 0;
+      for (var i = 0; i < fields.length; i++) {
+        var el = fields[i];
+        var key = el.dataset.key;
+        var val = el.value;
+        if (el.type === 'number') val = parseFloat(val) || 0;
+        try {
+          await fetch('/api/admin/config/' + encodeURIComponent(key), {
+            method: 'PUT', headers: jsonHdr, body: JSON.stringify({ value: val })
+          });
+          saved++;
+        } catch(e) {}
+      }
+      resultEl.textContent = 'Saved ' + saved + ' settings.';
+      resultEl.className = 'text-sm text-green-600';
+      resultEl.classList.remove('hidden');
+      setTimeout(function() { resultEl.classList.add('hidden'); }, 3000);
+    });
+
+    document.getElementById('load-all-cfg-btn').addEventListener('click', function() { loadAllPresets(); });
 
     // ---- Routines ----
     fetch('/api/admin/routines', { headers: authHdr })
