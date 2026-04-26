@@ -97,6 +97,17 @@ async def me(user: AppUser = Depends(get_current_user)) -> UserInfo | dict:
 _OIDC_COOKIE = "oidc_pkce"
 
 
+def _get_fernet():
+    """Derive a Fernet key from the app secret for encrypting OIDC cookies."""
+    import base64
+    import hashlib
+
+    from cryptography.fernet import Fernet
+
+    key_bytes = hashlib.sha256(settings.app_secret_key.get_secret_value().encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
 @router.get("/oidc/start")
 async def oidc_start(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
     """Start OIDC authorization code flow with PKCE."""
@@ -120,8 +131,9 @@ async def oidc_start(request: Request, response: Response, db: Session = Depends
     nonce = sec.token_urlsafe(32)
     auth_url, code_verifier = build_auth_url(cfg, state, nonce)
 
-    # Store state + verifier in a secure HttpOnly cookie (not in response body)
-    pkce_data = json.dumps({"state": state, "code_verifier": code_verifier, "nonce": nonce})
+    # Store state + verifier in an encrypted HttpOnly cookie
+    pkce_json = json.dumps({"state": state, "code_verifier": code_verifier, "nonce": nonce})
+    pkce_data = _get_fernet().encrypt(pkce_json.encode()).decode()
     response.set_cookie(
         key=_OIDC_COOKIE,
         value=pkce_data,
@@ -162,8 +174,8 @@ async def oidc_callback(
         raise HTTPException(status_code=400, detail="Missing OIDC session cookie")
 
     try:
-        pkce_data = json.loads(pkce_raw)
-    except (json.JSONDecodeError, TypeError) as exc:
+        pkce_data = json.loads(_get_fernet().decrypt(pkce_raw.encode()).decode())
+    except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid OIDC session cookie") from exc
 
     expected_state = pkce_data.get("state", "")

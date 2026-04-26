@@ -1164,7 +1164,7 @@ def auto_assign_scopes(
     if not proposals:
         raise HTTPException(status_code=409, detail="No proposals found for preferred run")
 
-    reviewers = params.reviewer_emails
+    reviewers = list(dict.fromkeys(params.reviewer_emails))  # deduplicate preserving order
     if not reviewers:
         raise HTTPException(status_code=400, detail="At least one reviewer required")
 
