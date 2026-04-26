@@ -121,7 +121,7 @@ async def oidc_start(request: Request, response: Response, db: Session = Depends
     auth_url, code_verifier = build_auth_url(cfg, state, nonce)
 
     # Store state + verifier in a secure HttpOnly cookie (not in response body)
-    pkce_data = json.dumps({"state": state, "code_verifier": code_verifier})
+    pkce_data = json.dumps({"state": state, "code_verifier": code_verifier, "nonce": nonce})
     response.set_cookie(
         key=_OIDC_COOKIE,
         value=pkce_data,
@@ -188,6 +188,12 @@ async def oidc_callback(
         raise HTTPException(status_code=401, detail="No id_token in response")
 
     claims = validate_id_token(cfg, id_token)
+
+    # Verify nonce to prevent token replay attacks
+    expected_nonce = pkce_data.get("nonce", "")
+    if expected_nonce and claims.get("nonce") != expected_nonce:
+        raise HTTPException(status_code=400, detail="OIDC nonce mismatch")
+
     user = upsert_user_from_claims(claims, cfg, db)
 
     access_token = create_access_token(user.id, user.role)

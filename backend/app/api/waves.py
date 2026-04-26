@@ -205,6 +205,106 @@ def create_wave(
     )
 
 
+# --- Wave Templates (must be defined before /{wave_id} to avoid shadowing) ---
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    description: str | None = None
+    config: dict | None = None
+    is_full_scope: bool = False
+    exclude_prior: bool = True
+    entity_ccodes: list[str] | None = None
+
+
+class TemplateOut(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    config: dict | None
+    is_full_scope: bool
+    exclude_prior: bool
+    entity_ccodes: list | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/templates")
+def list_templates(db: Session = Depends(get_db)) -> list[TemplateOut]:
+    rows = db.execute(select(WaveTemplate).order_by(WaveTemplate.name)).scalars().all()
+    return [TemplateOut.model_validate(r) for r in rows]
+
+
+@router.post("/templates")
+def create_template(
+    body: TemplateCreate,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> TemplateOut:
+    t = WaveTemplate(
+        name=body.name,
+        description=body.description,
+        config=body.config,
+        is_full_scope=body.is_full_scope,
+        exclude_prior=body.exclude_prior,
+        entity_ccodes=body.entity_ccodes,
+        created_by=user.id,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return TemplateOut.model_validate(t)
+
+
+@router.delete("/templates/{template_id}")
+def delete_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    t = db.get(WaveTemplate, template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(t)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/templates/{template_id}/create-wave")
+def create_wave_from_template(
+    template_id: int,
+    code: str,
+    name: str,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Create a new wave from an existing template."""
+    tpl = db.get(WaveTemplate, template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    wave = Wave(
+        code=code,
+        name=name,
+        description=tpl.description,
+        status="draft",
+        is_full_scope=tpl.is_full_scope,
+        exclude_prior=tpl.exclude_prior,
+        config=tpl.config,
+        created_by=user.id,
+    )
+    db.add(wave)
+    db.flush()
+    if tpl.entity_ccodes:
+        entities = (
+            db.execute(select(Entity).where(Entity.ccode.in_(tpl.entity_ccodes))).scalars().all()
+        )
+        for ent in entities:
+            db.add(WaveEntity(wave_id=wave.id, entity_id=ent.id))
+    db.commit()
+    db.refresh(wave)
+    return {"id": wave.id, "code": wave.code, "status": wave.status}
+
+
 @router.get("/{wave_id}")
 def get_wave(wave_id: int, db: Session = Depends(get_db)) -> WaveOut:
     wave = db.get(Wave, wave_id)
@@ -969,30 +1069,6 @@ def reviewer_workload(
     }
 
 
-# --- Wave Templates ---
-
-
-class TemplateCreate(BaseModel):
-    name: str
-    description: str | None = None
-    config: dict | None = None
-    is_full_scope: bool = False
-    exclude_prior: bool = True
-    entity_ccodes: list[str] | None = None
-
-
-class TemplateOut(BaseModel):
-    id: int
-    name: str
-    description: str | None
-    config: dict | None
-    is_full_scope: bool
-    exclude_prior: bool
-    entity_ccodes: list | None
-
-    model_config = {"from_attributes": True}
-
-
 # --- Auto-Approve ---
 
 
@@ -1150,79 +1226,3 @@ def auto_assign_scopes(
         "total_items": len(proposals),
         "strategy": params.strategy,
     }
-
-
-@router.get("/templates")
-def list_templates(db: Session = Depends(get_db)) -> list[TemplateOut]:
-    rows = db.execute(select(WaveTemplate).order_by(WaveTemplate.name)).scalars().all()
-    return [TemplateOut.model_validate(r) for r in rows]
-
-
-@router.post("/templates")
-def create_template(
-    body: TemplateCreate,
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin")),
-) -> TemplateOut:
-    t = WaveTemplate(
-        name=body.name,
-        description=body.description,
-        config=body.config,
-        is_full_scope=body.is_full_scope,
-        exclude_prior=body.exclude_prior,
-        entity_ccodes=body.entity_ccodes,
-        created_by=user.id,
-    )
-    db.add(t)
-    db.commit()
-    db.refresh(t)
-    return TemplateOut.model_validate(t)
-
-
-@router.delete("/templates/{template_id}")
-def delete_template(
-    template_id: int,
-    db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
-) -> dict:
-    t = db.get(WaveTemplate, template_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Template not found")
-    db.delete(t)
-    db.commit()
-    return {"deleted": True}
-
-
-@router.post("/templates/{template_id}/create-wave")
-def create_wave_from_template(
-    template_id: int,
-    code: str,
-    name: str,
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
-) -> dict:
-    """Create a new wave from an existing template."""
-    tpl = db.get(WaveTemplate, template_id)
-    if not tpl:
-        raise HTTPException(status_code=404, detail="Template not found")
-    wave = Wave(
-        code=code,
-        name=name,
-        description=tpl.description,
-        status="draft",
-        is_full_scope=tpl.is_full_scope,
-        exclude_prior=tpl.exclude_prior,
-        config=tpl.config,
-        created_by=user.id,
-    )
-    db.add(wave)
-    db.flush()
-    if tpl.entity_ccodes:
-        entities = (
-            db.execute(select(Entity).where(Entity.ccode.in_(tpl.entity_ccodes))).scalars().all()
-        )
-        for ent in entities:
-            db.add(WaveEntity(wave_id=wave.id, entity_id=ent.id))
-    db.commit()
-    db.refresh(wave)
-    return {"id": wave.id, "code": wave.code, "status": wave.status}
