@@ -4,8 +4,9 @@ Revision ID: phase3_001
 Revises: phase2_001
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "phase3_001"
 down_revision = "phase2_001"

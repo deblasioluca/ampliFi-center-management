@@ -5,8 +5,9 @@ Revises: phase10_decided_by
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "phase11_employee"
 down_revision = "phase10_decided_by"
@@ -59,9 +60,18 @@ def upgrade() -> None:
         sa.Column("locn_ctry_cd_1", sa.String(5)),
         sa.Column("building_cd_1", sa.String(20)),
         sa.Column("attrs", JSONB),
-        sa.Column("refresh_batch", sa.Integer, sa.ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column(
+            "refresh_batch", sa.Integer,
+            sa.ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL"),
+        ),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), onupdate=sa.func.now(),
+        ),
         sa.UniqueConstraint("gpn", "refresh_batch"),
         sa.Index("ix_emp_user_id", "user_id_pid"),
         sa.Index("ix_emp_ou_cd", "ou_cd"),
@@ -72,7 +82,11 @@ def upgrade() -> None:
     op.create_table(
         "naming_pool",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("wave_id", sa.Integer, sa.ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "wave_id", sa.Integer,
+            sa.ForeignKey("cleanup.wave.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("pool_type", sa.String(10), nullable=False),  # 'CC' or 'PC'
         sa.Column("range_start", sa.Integer, nullable=False),
         sa.Column("range_end", sa.Integer, nullable=False),
@@ -83,11 +97,23 @@ def upgrade() -> None:
     op.create_table(
         "naming_allocation",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("pool_id", sa.Integer, sa.ForeignKey("cleanup.naming_pool.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("proposal_id", sa.Integer, sa.ForeignKey("cleanup.center_proposal.id", ondelete="SET NULL")),
+        sa.Column(
+            "pool_id", sa.Integer,
+            sa.ForeignKey("cleanup.naming_pool.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "proposal_id", sa.Integer,
+            sa.ForeignKey(
+                "cleanup.center_proposal.id", ondelete="SET NULL",
+            ),
+        ),
         sa.Column("allocated_value", sa.String(20), nullable=False),
         sa.Column("is_released", sa.Boolean, default=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+        ),
         sa.Index("ix_nalloc_pool", "pool_id"),
         sa.Index("ix_nalloc_proposal", "proposal_id"),
         schema="cleanup",

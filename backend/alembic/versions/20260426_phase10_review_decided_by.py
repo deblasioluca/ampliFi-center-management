@@ -5,6 +5,7 @@ Revises: phase9_hk_flag
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "phase10_decided_by"

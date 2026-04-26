@@ -157,7 +157,13 @@ import Layout from '../../components/layout/Layout.astro';
       <!-- App Config Tab -->
       <div id="panel-config" class="card hidden">
         <h2 class="text-lg font-semibold mb-4">Application Configuration</h2>
-        <p class="text-xs text-gray-500 mb-4">Application-wide settings. These control analysis thresholds, email delivery, and general behavior.</p>
+        <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 mb-4">
+          <strong>What is this?</strong> Application-wide settings control how the analysis engine, email notifications, and housekeeping cycles behave.
+          <br/>• <strong>Analysis Thresholds</strong> — tune the decision tree: how many months of inactivity triggers retirement, minimum posting count, hierarchy compliance.
+          <br/>• <strong>Email / Notifications</strong> — SMTP server for sending review invitations and reminders.
+          <br/>• <strong>Housekeeping</strong> — frequency of recurring cost center health checks.
+          <br/>Most defaults are sensible. Adjust only if your SAP environment differs from standard.
+        </div>
 
         <div class="space-y-6">
           <!-- Predefined config sections -->
