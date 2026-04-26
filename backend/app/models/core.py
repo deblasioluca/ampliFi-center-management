@@ -798,6 +798,49 @@ class NamingSequence(Base):
     reserved_range_end: Mapped[int | None] = mapped_column(Integer)
 
 
+class ActivityFeedEntry(Base):
+    """Activity feed for audit trail and notifications."""
+
+    __tablename__ = "activity_feed"
+    __table_args__ = (
+        Index("ix_activity_feed_user", "user_id"),
+        Index("ix_activity_feed_ts", "created_at"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(30))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class WaveTemplate(TimestampMixin, Base):
+    """Reusable wave configuration template (§07.2)."""
+
+    __tablename__ = "wave_template"
+    __table_args__ = {"schema": "cleanup"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    config: Mapped[dict | None] = mapped_column(JSONB)
+    is_full_scope: Mapped[bool] = mapped_column(Boolean, default=False)
+    exclude_prior: Mapped[bool] = mapped_column(Boolean, default=True)
+    entity_ccodes: Mapped[list | None] = mapped_column(JSONB)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+
+
 class GLAccountClassRange(TimestampMixin, Base):
     """GL account class ranges for balance classification (§03.5)."""
 

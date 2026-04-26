@@ -128,8 +128,10 @@ app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 app.include_router(housekeeping_router.router, prefix="/api", tags=["housekeeping"])
 app.include_router(data_mgmt_router.router, prefix="/api/data", tags=["data-management"])
 
+from app.api import activity as activity_router  # noqa: E402
 from app.api import docs_help as docs_help_router  # noqa: E402
 
+app.include_router(activity_router.router, prefix="/api/activity", tags=["activity"])
 app.include_router(docs_help_router.router, prefix="/api", tags=["help"])
 
 

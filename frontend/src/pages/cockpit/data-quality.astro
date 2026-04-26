@@ -1,0 +1,161 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Data Quality Dashboard" requireAuth={true} adminOnly={true}>
+  <div class="mb-4">
+    <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
+    <h2 class="text-xl font-bold mt-2">Data Quality Dashboard</h2>
+    <p class="text-sm text-gray-500 mt-1">Overview of data completeness, consistency, and quality metrics</p>
+  </div>
+
+  <!-- Summary KPIs -->
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6" id="dq-kpis">
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">Completeness Score</div>
+      <div class="text-2xl font-bold text-green-600" id="kpi-completeness">--</div>
+    </div>
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">Missing Names</div>
+      <div class="text-2xl font-bold text-amber-600" id="kpi-missing-names">--</div>
+    </div>
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">Orphan CCs</div>
+      <div class="text-2xl font-bold text-red-600" id="kpi-orphans">--</div>
+    </div>
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">Duplicate Names</div>
+      <div class="text-2xl font-bold text-purple-600" id="kpi-duplicates">--</div>
+    </div>
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">No Balances</div>
+      <div class="text-2xl font-bold text-gray-600" id="kpi-no-balance">--</div>
+    </div>
+    <div class="card text-center py-3">
+      <div class="text-xs text-gray-500">Total CCs</div>
+      <div class="text-2xl font-bold text-amplifi-600" id="kpi-total">--</div>
+    </div>
+  </div>
+
+  <!-- Missing fields breakdown -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Field Completeness</h3>
+      <div id="field-completeness" class="space-y-2 text-sm">Loading...</div>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Entity Distribution</h3>
+      <div id="entity-distribution" class="space-y-2 text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Issues list -->
+  <div class="card">
+    <h3 class="text-sm font-semibold mb-3">Data Issues</h3>
+    <div id="issues-list" class="text-sm">Loading...</div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) window.location.href = '/login';
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  function pctBar(pct, color) {
+    return '<div class="flex items-center gap-2"><div class="flex-1 bg-gray-100 rounded-full h-2"><div class="h-2 rounded-full ' + color + '" style="width:' + pct + '%"></div></div><span class="text-xs font-mono w-10 text-right">' + pct + '%</span></div>';
+  }
+
+  async function loadQuality() {
+    try {
+      // Fetch all cost centers
+      var ccResp = await fetch('/api/legacy/cost-centers?size=500', { headers: headers });
+      var ccData = await ccResp.json();
+      var ccs = ccData.items || [];
+      var total = ccs.length;
+      document.getElementById('kpi-total').textContent = total;
+
+      // Compute quality metrics
+      var missingNames = 0, noEntity = 0, noResponsible = 0, inactive = 0, noBalance = 0;
+      var entityDist = {};
+
+      ccs.forEach(function(cc) {
+        if (!cc.txtsh && !cc.txtmi) missingNames++;
+        if (!cc.ccode) noEntity++;
+        if (!cc.responsible) noResponsible++;
+        if (!cc.is_active) inactive++;
+        var ent = cc.ccode || 'UNKNOWN';
+        entityDist[ent] = (entityDist[ent] || 0) + 1;
+      });
+
+      document.getElementById('kpi-missing-names').textContent = missingNames;
+      document.getElementById('kpi-orphans').textContent = noEntity;
+
+      // Completeness = % of CCs with all key fields populated
+      var complete = ccs.filter(function(cc) {
+        return cc.txtsh && cc.ccode && cc.responsible;
+      }).length;
+      var pct = total ? Math.round(complete / total * 100) : 0;
+      document.getElementById('kpi-completeness').textContent = pct + '%';
+
+      // Field completeness bars
+      var fields = [
+        { label: 'Short Name (txtsh)', val: ccs.filter(function(c) { return c.txtsh; }).length },
+        { label: 'Company Code', val: ccs.filter(function(c) { return c.ccode; }).length },
+        { label: 'Responsible', val: ccs.filter(function(c) { return c.responsible; }).length },
+        { label: 'CO Area', val: ccs.filter(function(c) { return c.coarea; }).length },
+        { label: 'Category', val: ccs.filter(function(c) { return c.category; }).length },
+      ];
+      var fcHtml = '';
+      fields.forEach(function(f) {
+        var p = total ? Math.round(f.val / total * 100) : 0;
+        var color = p >= 90 ? 'bg-green-400' : p >= 70 ? 'bg-amber-400' : 'bg-red-400';
+        fcHtml += '<div><div class="flex justify-between text-xs text-gray-600 mb-0.5"><span>' + f.label + '</span><span>' + f.val + '/' + total + '</span></div>' + pctBar(p, color) + '</div>';
+      });
+      document.getElementById('field-completeness').innerHTML = fcHtml;
+
+      // Entity distribution
+      var entHtml = '';
+      var entries = Object.entries(entityDist).sort(function(a, b) { return b[1] - a[1]; });
+      entries.slice(0, 15).forEach(function(e) {
+        var p = Math.round(e[1] / total * 100);
+        entHtml += '<div class="flex items-center gap-2 text-xs"><span class="font-mono w-16">' + e[0] + '</span><div class="flex-1 bg-gray-100 rounded-full h-2"><div class="h-2 rounded-full bg-amplifi-400" style="width:' + p + '%"></div></div><span class="w-12 text-right">' + e[1] + '</span></div>';
+      });
+      document.getElementById('entity-distribution').innerHTML = entHtml || '<span class="text-gray-400">No entities</span>';
+
+      // Duplicate check
+      try {
+        var dupResp = await fetch('/api/legacy/data/duplicate-check?threshold=0.90&limit=50', { method: 'POST', headers: headers });
+        var dupData = await dupResp.json();
+        document.getElementById('kpi-duplicates').textContent = dupData.total || 0;
+      } catch(e) {
+        document.getElementById('kpi-duplicates').textContent = '?';
+      }
+
+      // Issues
+      var issues = [];
+      if (missingNames > 0) issues.push({ severity: 'warning', text: missingNames + ' cost centers have no name (txtsh/txtmi empty)' });
+      if (noEntity > 0) issues.push({ severity: 'error', text: noEntity + ' cost centers have no company code' });
+      if (noResponsible > 0) issues.push({ severity: 'info', text: noResponsible + ' cost centers have no responsible person assigned' });
+      if (inactive > 0) issues.push({ severity: 'info', text: inactive + ' cost centers are flagged as inactive' });
+
+      var issHtml = '';
+      if (!issues.length) {
+        issHtml = '<span class="text-green-600 font-medium">No issues detected!</span>';
+      } else {
+        issues.forEach(function(iss) {
+          var icon = iss.severity === 'error' ? 'text-red-500' : iss.severity === 'warning' ? 'text-amber-500' : 'text-blue-500';
+          var dot = '<span class="inline-block w-2 h-2 rounded-full mr-2 ' + icon.replace('text-', 'bg-') + '"></span>';
+          issHtml += '<div class="py-1.5 border-b border-gray-100 flex items-center">' + dot + iss.text + '</div>';
+        });
+      }
+      document.getElementById('issues-list').innerHTML = issHtml;
+      document.getElementById('kpi-no-balance').textContent = '—';
+
+    } catch(e) {
+      document.getElementById('issues-list').textContent = 'Error loading data: ' + e.message;
+    }
+  }
+
+  loadQuality();
+</script>

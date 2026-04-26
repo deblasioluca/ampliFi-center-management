@@ -321,5 +321,47 @@ import Layout from '../components/layout/Layout.astro';
       document.getElementById('review-token').value = currentToken;
       loadScope(currentToken);
     }
+
+    // Keyboard navigation for review items table
+    var selectedRow = -1;
+    document.addEventListener('keydown', function(e) {
+      var table = document.querySelector('#review-items-table tbody');
+      if (!table) return;
+      var rows = table.querySelectorAll('tr');
+      if (!rows.length) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.preventDefault();
+        selectedRow = Math.min(selectedRow + 1, rows.length - 1);
+        highlightRow(rows);
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        e.preventDefault();
+        selectedRow = Math.max(selectedRow - 1, 0);
+        highlightRow(rows);
+      } else if (e.key === 'Enter' && selectedRow >= 0) {
+        e.preventDefault();
+        var btn = rows[selectedRow].querySelector('button');
+        if (btn) btn.click();
+      } else if (e.key === 'a' && selectedRow >= 0) {
+        // Quick approve
+        var approveBtn = rows[selectedRow].querySelector('.btn-approve');
+        if (approveBtn) approveBtn.click();
+      } else if (e.key === 'r' && selectedRow >= 0) {
+        // Quick reject
+        var rejectBtn = rows[selectedRow].querySelector('.btn-reject');
+        if (rejectBtn) rejectBtn.click();
+      }
+    });
+
+    function highlightRow(rows) {
+      rows.forEach(function(r, i) {
+        r.classList.toggle('bg-amplifi-50', i === selectedRow);
+        r.classList.toggle('ring-2', i === selectedRow);
+        r.classList.toggle('ring-amplifi-300', i === selectedRow);
+      });
+      if (selectedRow >= 0 && rows[selectedRow]) {
+        rows[selectedRow].scrollIntoView({ block: 'nearest' });
+      }
+    }
   })();
 </script>

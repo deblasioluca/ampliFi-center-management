@@ -23,6 +23,7 @@ from app.models.core import (
     Wave,
     WaveEntity,
     WaveHierarchyScope,
+    WaveTemplate,
 )
 
 router = APIRouter()
@@ -849,3 +850,170 @@ def wave_progress(wave_id: int, db: Session = Depends(get_db)) -> dict:
             for s in scopes
         ],
     }
+
+
+# --- Reviewer Workload Balancer ---
+
+
+@router.get("/{wave_id}/workload")
+def reviewer_workload(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Get reviewer workload distribution for a wave."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+
+    scopes = db.execute(select(ReviewScope).where(ReviewScope.wave_id == wave_id)).scalars().all()
+
+    workload = []
+    for s in scopes:
+        total_items = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == s.id)
+            ).scalar()
+            or 0
+        )
+        decided = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(
+                    ReviewItem.scope_id == s.id,
+                    ReviewItem.decision.isnot(None),
+                )
+            ).scalar()
+            or 0
+        )
+        pending = total_items - decided
+        workload.append(
+            {
+                "scope_id": s.id,
+                "name": s.name,
+                "reviewer": s.reviewer_email,
+                "status": s.status,
+                "total_items": total_items,
+                "decided": decided,
+                "pending": pending,
+                "completion_pct": round(decided / total_items * 100, 1) if total_items else 0,
+            }
+        )
+
+    total_all = sum(w["total_items"] for w in workload)
+    avg_per_reviewer = round(total_all / len(workload), 1) if workload else 0
+    max_load = max((w["total_items"] for w in workload), default=0)
+    min_load = min((w["total_items"] for w in workload), default=0)
+    imbalance = round((max_load - min_load) / avg_per_reviewer * 100, 1) if avg_per_reviewer else 0
+
+    return {
+        "wave_id": wave_id,
+        "reviewers": workload,
+        "summary": {
+            "total_items": total_all,
+            "total_reviewers": len(workload),
+            "avg_per_reviewer": avg_per_reviewer,
+            "max_load": max_load,
+            "min_load": min_load,
+            "imbalance_pct": imbalance,
+        },
+    }
+
+
+# --- Wave Templates ---
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    description: str | None = None
+    config: dict | None = None
+    is_full_scope: bool = False
+    exclude_prior: bool = True
+    entity_ccodes: list[str] | None = None
+
+
+class TemplateOut(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    config: dict | None
+    is_full_scope: bool
+    exclude_prior: bool
+    entity_ccodes: list | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/templates")
+def list_templates(db: Session = Depends(get_db)) -> list[TemplateOut]:
+    rows = db.execute(select(WaveTemplate).order_by(WaveTemplate.name)).scalars().all()
+    return [TemplateOut.model_validate(r) for r in rows]
+
+
+@router.post("/templates")
+def create_template(
+    body: TemplateCreate,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> TemplateOut:
+    t = WaveTemplate(
+        name=body.name,
+        description=body.description,
+        config=body.config,
+        is_full_scope=body.is_full_scope,
+        exclude_prior=body.exclude_prior,
+        entity_ccodes=body.entity_ccodes,
+        created_by=user.id,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return TemplateOut.model_validate(t)
+
+
+@router.delete("/templates/{template_id}")
+def delete_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    t = db.get(WaveTemplate, template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(t)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/templates/{template_id}/create-wave")
+def create_wave_from_template(
+    template_id: int,
+    code: str,
+    name: str,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Create a new wave from an existing template."""
+    tpl = db.get(WaveTemplate, template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    wave = Wave(
+        code=code,
+        name=name,
+        description=tpl.description,
+        status="draft",
+        is_full_scope=tpl.is_full_scope,
+        exclude_prior=tpl.exclude_prior,
+        config=tpl.config,
+        created_by=user.id,
+    )
+    db.add(wave)
+    db.flush()
+    if tpl.entity_ccodes:
+        entities = (
+            db.execute(select(Entity).where(Entity.ccode.in_(tpl.entity_ccodes))).scalars().all()
+        )
+        for ent in entities:
+            db.add(WaveEntity(wave_id=wave.id, entity_id=ent.id))
+    db.commit()
+    db.refresh(wave)
+    return {"id": wave.id, "code": wave.code, "status": wave.status}
