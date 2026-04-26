@@ -28,6 +28,51 @@ from app.models.core import (
 
 router = APIRouter()
 
+logger = __import__("structlog").get_logger()
+
+
+def _send_scope_invitation(scope: ReviewScope, wave: Wave, db: Session) -> None:
+    """Best-effort email invitation to reviewer."""
+    from app.models.core import AppConfig
+
+    try:
+        cfg = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
+        if not cfg or not cfg.value:
+            return
+        email_cfg = cfg.value
+        from app.infra.email.engine import EmailEngine
+
+        engine = EmailEngine(
+            host=email_cfg.get("host", "localhost"),
+            port=int(email_cfg.get("port", 1025)),
+            username=email_cfg.get("username", ""),
+            password=email_cfg.get("password", ""),
+            use_tls=email_cfg.get("use_tls", False),
+            from_address=email_cfg.get("from_address", "noreply@amplifi.dev"),
+        )
+        item_count = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
+            ).scalar()
+            or 0
+        )
+        engine.send(
+            to=scope.reviewer_email,
+            template_name="review_invitation",
+            context={
+                "reviewer_name": scope.reviewer_name or scope.reviewer_email,
+                "wave_name": wave.name,
+                "review_url": f"/review/{scope.token}",
+                "expires_at": str(scope.token_expires_at)[:10] if scope.token_expires_at else "N/A",
+                "scope_name": scope.name,
+                "item_count": item_count,
+            },
+        )
+        logger.info("email.invitation_sent", scope_id=scope.id, to=scope.reviewer_email)
+    except Exception:
+        logger.warning("email.invitation_failed", scope_id=scope.id, exc_info=True)
+
+
 VALID_TRANSITIONS = {
     "draft": ["analysing", "cancelled"],
     "analysing": ["proposed", "draft", "cancelled"],
@@ -596,6 +641,11 @@ def create_review_scope(
 
     db.commit()
     db.refresh(scope)
+
+    # Send invitation email if reviewer_email is provided
+    if body.reviewer_email:
+        _send_scope_invitation(scope, wave, db)
+
     return {
         "id": scope.id,
         "name": scope.name,
