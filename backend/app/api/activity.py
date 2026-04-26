@@ -28,11 +28,13 @@ def list_activity(
         (ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None))
     )
     rows = db.execute(query.limit(limit)).scalars().all()
+    # Only count user-owned unread entries (system notifications are shared
+    # rows that mark_all_read cannot clear, so exclude them from the badge).
     unread_count = (
         db.execute(
             select(func.count(ActivityFeedEntry.id))
             .where(ActivityFeedEntry.is_read.is_(False))
-            .where((ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None)))
+            .where(ActivityFeedEntry.user_id == user.id)
         ).scalar()
         or 0
     )

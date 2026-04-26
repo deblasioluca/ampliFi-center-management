@@ -560,7 +560,7 @@ export const prerender = false;
     loadWave();
   };
   window.exportMDG = async function(exportType) {
-    var res = await fetch('/api/waves/' + waveId + '/export?export_type=' + exportType, { headers: authHdr });
+    var res = await fetch('/api/waves/' + waveId + '/mdg-export?export_type=' + exportType, { headers: authHdr });
     if (!res.ok) { var d = await res.json(); alert(d.detail || 'Export failed'); return; }
     var d = await res.json();
     var blob = new Blob([d.content], { type: 'text/csv' });
