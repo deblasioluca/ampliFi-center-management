@@ -684,7 +684,7 @@ def reset_proposals(
     wave = db.get(Wave, wave_id)
     if not wave:
         raise HTTPException(status_code=404, detail="Wave not found")
-    if wave.status in ("locked", "in_review", "signed_off"):
+    if wave.status in ("locked", "in_review", "signed_off", "closed", "cancelled"):
         raise HTTPException(
             status_code=409,
             detail=f"Cannot reset proposals: wave is {wave.status}",

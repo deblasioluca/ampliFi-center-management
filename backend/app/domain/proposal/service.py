@@ -206,7 +206,11 @@ def resolve_owner_display(responsible: str | None, db: Session) -> str:
 
     gpn = responsible.strip()
     emp = (
-        db.execute(select(Employee).where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn)))
+        db.execute(
+            select(Employee)
+            .where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn))
+            .order_by(Employee.id.desc())
+        )
         .scalars()
         .first()
     )
