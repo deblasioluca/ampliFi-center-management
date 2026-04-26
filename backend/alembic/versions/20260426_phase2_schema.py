@@ -75,6 +75,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.alter_column(
+        "review_scope",
+        "token_expires_at",
+        existing_type=sa.DateTime(timezone=True),
+        nullable=False,
+        schema="cleanup",
+    )
     op.drop_column("review_scope", "signed_off_at", schema="cleanup")
     op.drop_column("review_scope", "total_items", schema="cleanup")
     op.drop_constraint("fk_review_scope_reviewer", "review_scope", schema="cleanup")

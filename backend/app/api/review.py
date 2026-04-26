@@ -22,7 +22,7 @@ def _get_scope(token: str, db: Session) -> ReviewScope:
     scope = db.execute(select(ReviewScope).where(ReviewScope.token == token)).scalar_one_or_none()
     if not scope:
         raise HTTPException(status_code=404, detail="Invalid review token")
-    if scope.token_expires_at < datetime.now(UTC):
+    if scope.token_expires_at is not None and scope.token_expires_at < datetime.now(UTC):
         raise HTTPException(status_code=410, detail="Review token expired")
     if scope.status in ("revoked", "completed", "expired"):
         raise HTTPException(status_code=410, detail=f"Review scope is {scope.status}")

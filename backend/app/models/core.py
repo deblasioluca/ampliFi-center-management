@@ -525,7 +525,7 @@ class HousekeepingCycle(TimestampMixin, Base):
 class HousekeepingItem(TimestampMixin, Base):
     __tablename__ = "housekeeping_item"
     __table_args__ = (
-        UniqueConstraint("cycle_id", "target_cc_id"),
+        UniqueConstraint("cycle_id", "target_cc_id", "flag"),
         {"schema": "cleanup"},
     )
 

@@ -110,6 +110,18 @@ class PipelineEngine:
                 )
                 continue
 
+            # Inject prior results into context for aggregate routines
+            ctx.flags["_prior_results"] = [
+                {
+                    "code": r.code,
+                    "verdict": r.verdict,
+                    "reason": r.reason,
+                    "payload": r.payload,
+                    "short_circuit": r.short_circuit,
+                }
+                for r in results
+            ]
+
             step_params = step.get("params", {})
             result = routine.run(ctx, step_params)
             results.append(result)
