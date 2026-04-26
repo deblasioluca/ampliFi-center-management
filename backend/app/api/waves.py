@@ -47,7 +47,7 @@ def _send_scope_invitation(scope: ReviewScope, wave: Wave, db: Session) -> None:
             port=int(email_cfg.get("port", 1025)),
             username=email_cfg.get("username", ""),
             password=email_cfg.get("password", ""),
-            use_tls=email_cfg.get("use_tls", False),
+            use_tls=email_cfg.get("tls", "none") != "none",
             from_address=email_cfg.get("from_address", "noreply@amplifi.dev"),
         )
         item_count = (

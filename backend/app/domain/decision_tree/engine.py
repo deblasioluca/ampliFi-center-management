@@ -208,7 +208,7 @@ def run_mapping_tree(
     params: dict | None = None,
 ) -> TargetObject | None:
     """Deterministic mapping tree (§04.2 slide 12) — backward compatible wrapper."""
-    skip = (CleansingOutcome.RETIRE, CleansingOutcome.MERGE_MAP)
+    skip = (CleansingOutcome.RETIRE, CleansingOutcome.MERGE_MAP, CleansingOutcome.REDESIGN)
     if cleansing in skip:
         return TargetObject.NONE
 
