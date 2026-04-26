@@ -35,13 +35,22 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
     <!-- Sidebar: Wave selector -->
     <div class="lg:col-span-1">
-      <div class="card">
+      <div class="card mb-4">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-gray-700">Waves</h3>
           <button id="create-wave-btn" class="text-xs text-amplifi-600 hover:text-amplifi-800">+ New</button>
         </div>
         <div id="wave-list" class="space-y-2 text-sm">Loading waves...</div>
       </div>
+      <a href="/cockpit/housekeeping" class="card block hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Housekeeping</p>
+            <p class="text-xs text-gray-500">Monthly cycle reviews</p>
+          </div>
+        </div>
+      </a>
 
       <!-- Create wave form (hidden by default) -->
       <div id="new-wave-form" class="card mt-4 hidden">

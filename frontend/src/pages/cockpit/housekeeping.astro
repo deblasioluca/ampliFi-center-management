@@ -1,0 +1,137 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Housekeeping" requireAuth={true} adminOnly={true}>
+  <div class="mb-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Housekeeping Cycles</h1>
+        <p class="text-sm text-gray-500 mt-1">Monthly/quarterly review of cost center health — flag inactive, missing owners, duplicate responsibility</p>
+      </div>
+      <div class="flex gap-2">
+        <a href="/cockpit" class="btn-secondary text-sm">Back to Cockpit</a>
+        <button id="btn-run" class="btn-amplifi text-sm">Run New Cycle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Cycle Summary -->
+  <div id="current-cycle" class="card mb-6 hidden">
+    <h2 class="text-lg font-semibold mb-3">Current Cycle</h2>
+    <div id="cycle-detail" class="text-sm"></div>
+  </div>
+
+  <!-- Cycles List -->
+  <div class="card">
+    <h2 class="text-lg font-semibold mb-3">All Cycles</h2>
+    <div id="cycles-table" class="text-sm">Loading...</div>
+    <div id="cycles-pager" class="mt-3"></div>
+  </div>
+
+  <!-- Run Cycle Modal -->
+  <div id="run-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <h2 class="text-lg font-semibold mb-4">Run Housekeeping Cycle</h2>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Period</label>
+          <input id="run-period" type="month" class="input text-sm" />
+          <p class="text-xs text-gray-500 mt-1">Leave empty for current month</p>
+        </div>
+        <p class="text-xs text-gray-500">This will scan all cost centers for: inactivity (no postings), missing/outdated responsible persons, orphan hierarchy nodes, duplicate assignments, and budget-zero centers.</p>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('run-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+          <button id="btn-confirm-run" class="btn-amplifi">Run</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+  var jsonHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+
+  document.getElementById('btn-run').addEventListener('click', function() {
+    document.getElementById('run-overlay').classList.remove('hidden');
+  });
+
+  function loadCycles(page) {
+    page = page || 1;
+    fetch('/api/admin/housekeeping/cycles?page=' + page + '&size=20', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('cycles-table');
+        if (!d.items || !d.items.length) { el.textContent = 'No housekeeping cycles yet. Click "Run New Cycle" to start.'; return; }
+        var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+          '<th class="py-2 px-3 text-left">ID</th>' +
+          '<th class="py-2 px-3 text-left">Period</th>' +
+          '<th class="py-2 px-3 text-left">Status</th>' +
+          '<th class="py-2 px-3 text-left">Actions</th></tr></thead><tbody>';
+        d.items.forEach(function(c) {
+          var statusColor = c.status === 'closed' ? 'bg-green-100 text-green-700' :
+                           c.status === 'running' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700';
+          html += '<tr class="border-b hover:bg-gray-50">' +
+            '<td class="py-2 px-3">' + c.id + '</td>' +
+            '<td class="py-2 px-3 font-mono">' + esc(c.period) + '</td>' +
+            '<td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-xs ' + statusColor + '">' + esc(c.status) + '</span></td>' +
+            '<td class="py-2 px-3"><button onclick="viewCycle(' + c.id + ')" class="text-blue-600 hover:underline text-xs">View</button>' +
+            (c.status !== 'closed' ? ' <button onclick="closeCycle(' + c.id + ')" class="text-orange-600 hover:underline text-xs ml-2">Close</button>' : '') +
+            '</td></tr>';
+        });
+        el.innerHTML = html + '</tbody></table>';
+      })
+      .catch(function(e) { document.getElementById('cycles-table').textContent = 'Error: ' + e.message; });
+  }
+  loadCycles(1);
+
+  document.getElementById('btn-confirm-run').addEventListener('click', async function() {
+    var period = document.getElementById('run-period').value;
+    this.disabled = true;
+    this.textContent = 'Running...';
+    try {
+      var url = '/api/admin/housekeeping/run';
+      if (period) url += '?period=' + encodeURIComponent(period);
+      var res = await fetch(url, { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Failed');
+      document.getElementById('run-overlay').classList.add('hidden');
+      loadCycles(1);
+      viewCycle(d.id);
+    } catch(e) { alert('Error: ' + e.message); }
+    this.disabled = false;
+    this.textContent = 'Run';
+  });
+
+  window.viewCycle = async function(cycleId) {
+    var res = await fetch('/api/admin/housekeeping/cycles/' + cycleId, { headers: authHdr });
+    var d = await res.json();
+    document.getElementById('current-cycle').classList.remove('hidden');
+    var html = '<div class="grid grid-cols-4 gap-4 mb-4">' +
+      '<div class="bg-gray-50 p-3 rounded text-center"><div class="text-lg font-bold">' + d.period + '</div><div class="text-xs text-gray-500">Period</div></div>' +
+      '<div class="bg-gray-50 p-3 rounded text-center"><div class="text-lg font-bold">' + d.status + '</div><div class="text-xs text-gray-500">Status</div></div>' +
+      '<div class="bg-gray-50 p-3 rounded text-center"><div class="text-lg font-bold">' + (d.item_count || 0) + '</div><div class="text-xs text-gray-500">Flagged Items</div></div>' +
+      '<div class="bg-gray-50 p-3 rounded text-center"><div class="text-lg font-bold">' + (d.kpis ? JSON.stringify(d.kpis) : 'N/A') + '</div><div class="text-xs text-gray-500">KPIs</div></div>' +
+      '</div>';
+    if (d.kpis) {
+      html += '<h3 class="text-sm font-medium mb-2">KPI Breakdown</h3><div class="grid grid-cols-3 gap-3 text-xs">';
+      Object.keys(d.kpis).forEach(function(k) {
+        html += '<div class="bg-blue-50 p-2 rounded"><span class="font-medium">' + esc(k) + ':</span> ' + d.kpis[k] + '</div>';
+      });
+      html += '</div>';
+    }
+    document.getElementById('cycle-detail').innerHTML = html;
+  };
+
+  window.closeCycle = async function(cycleId) {
+    if (!confirm('Close this housekeeping cycle?')) return;
+    var res = await fetch('/api/admin/housekeeping/cycles/' + cycleId + '/close', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadCycles(1);
+  };
+})();
+</script>

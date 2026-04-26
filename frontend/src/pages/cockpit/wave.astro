@@ -34,10 +34,19 @@ export const prerender = false;
     <!-- Scope Tab -->
     <div id="tab-scope">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-base font-semibold">Entity Scope</h3>
-        <button id="btn-add-entities" class="btn-amplifi text-sm">+ Add Entities</button>
+        <h3 class="text-base font-semibold">Wave Scope</h3>
+        <div class="flex gap-2">
+          <button id="btn-add-entities" class="btn-amplifi text-sm">+ Add Entities</button>
+          <button id="btn-add-hier" class="btn-secondary text-sm">+ Add Hierarchy Nodes</button>
+        </div>
       </div>
-      <div id="scope-entities" class="text-sm">Loading...</div>
+      <p class="text-xs text-gray-500 mb-3">Define scope by selecting entities (company codes) and/or hierarchy nodes. Only cost centers matching the selected scope will be included in the analysis.</p>
+      <h4 class="text-sm font-medium text-gray-700 mb-2">Entities in Scope</h4>
+      <div id="scope-entities" class="text-sm mb-4">Loading...</div>
+      <h4 class="text-sm font-medium text-gray-700 mb-2">Hierarchy Nodes in Scope</h4>
+      <div id="scope-hier-nodes" class="text-sm">
+        <p class="text-xs text-gray-400">No hierarchy nodes selected. Click "+ Add Hierarchy Nodes" to narrow scope by hierarchy.</p>
+      </div>
     </div>
 
     <!-- Analysis Tab -->
@@ -107,6 +116,26 @@ export const prerender = false;
       <div class="flex justify-end gap-2">
         <button onclick="document.getElementById('entities-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
         <button id="btn-confirm-add" class="btn-amplifi">Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Hierarchy Nodes Modal -->
+  <div id="hier-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Add Hierarchy Nodes to Scope</h2>
+      <div class="mb-3">
+        <label class="block text-xs font-medium mb-1">Select Hierarchy</label>
+        <select id="hier-select" class="input text-sm">
+          <option value="">Loading hierarchies...</option>
+        </select>
+      </div>
+      <div id="hier-nodes-list" class="max-h-64 overflow-y-auto border rounded p-2 text-xs space-y-1">
+        <p class="text-gray-400">Select a hierarchy to see its nodes</p>
+      </div>
+      <div class="flex justify-end gap-2 pt-3">
+        <button type="button" onclick="document.getElementById('hier-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+        <button type="button" id="btn-save-hier-scope" class="btn-amplifi">Add Selected</button>
       </div>
     </div>
   </div>
@@ -194,6 +223,7 @@ export const prerender = false;
       document.getElementById('wave-actions').innerHTML = actions;
 
       preferredRunId = (w.config || {}).preferred_run_id;
+      if (typeof loadHierScope === 'function') loadHierScope();
     });
 
     // Load progress
@@ -244,6 +274,70 @@ export const prerender = false;
     document.getElementById('entities-overlay').classList.add('hidden');
     loadScope(); loadWave();
   });
+
+  // --- Hierarchy Scope Picker ---
+  var selectedHierNodes = [];
+  document.getElementById('btn-add-hier').addEventListener('click', function() {
+    document.getElementById('hier-overlay').classList.remove('hidden');
+    var hierSel = document.getElementById('hier-select');
+    hierSel.innerHTML = '<option value="">Loading...</option>';
+    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var opts = '<option value="">-- Select hierarchy --</option>';
+      (d.items || []).forEach(function(h) {
+        opts += '<option value="' + h.id + '">' + esc(h.setname) + ' (' + esc(h.description || '') + ')</option>';
+      });
+      hierSel.innerHTML = opts;
+    });
+  });
+
+  document.getElementById('hier-select').addEventListener('change', function() {
+    var hierId = this.value;
+    var el = document.getElementById('hier-nodes-list');
+    if (!hierId) { el.innerHTML = '<p class="text-gray-400">Select a hierarchy</p>'; return; }
+    el.innerHTML = 'Loading nodes...';
+    fetch('/api/legacy/hierarchies/' + hierId + '/nodes?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.items || !d.items.length) { el.innerHTML = '<p class="text-gray-400">No nodes in this hierarchy.</p>'; return; }
+      var html = '';
+      (d.items || []).forEach(function(n) {
+        var indent = (n.level || 0) * 16;
+        html += '<label class="flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded" style="padding-left:' + (8 + indent) + 'px">' +
+          '<input type="checkbox" class="hier-node-cb" value="' + esc(n.setname) + '" data-hier="' + esc(d.hierarchy_id || '') + '" />' +
+          '<span class="font-mono text-xs">' + esc(n.setname) + '</span>' +
+          (n.description ? ' <span class="text-gray-500">' + esc(n.description) + '</span>' : '') +
+          '</label>';
+      });
+      el.innerHTML = html;
+    });
+  });
+
+  document.getElementById('btn-save-hier-scope').addEventListener('click', async function() {
+    var cbs = document.querySelectorAll('.hier-node-cb:checked');
+    var nodes = []; cbs.forEach(function(cb) { nodes.push(cb.value); });
+    if (!nodes.length) return;
+    selectedHierNodes = selectedHierNodes.concat(nodes);
+    // Update wave config with hierarchy scope
+    await fetch('/api/waves/' + waveId, {
+      method: 'PATCH', headers: jsonHdr,
+      body: JSON.stringify({ config: { hierarchy_scope: selectedHierNodes } })
+    });
+    document.getElementById('hier-overlay').classList.add('hidden');
+    // Display selected nodes
+    var el = document.getElementById('scope-hier-nodes');
+    el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
+      return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
+    }).join('') + '</div>';
+  });
+
+  // Load hierarchy scope from wave config
+  function loadHierScope() {
+    if (wave && wave.config && wave.config.hierarchy_scope) {
+      selectedHierNodes = wave.config.hierarchy_scope;
+      var el = document.getElementById('scope-hier-nodes');
+      el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
+        return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
+      }).join('') + '</div>';
+    }
+  }
 
   // --- Analysis ---
   function loadRuns() {
