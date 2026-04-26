@@ -22,9 +22,25 @@ def upgrade() -> None:
         schema="cleanup",
     )
 
-    # Backfill existing users: derive username from email (part before @)
+    # Backfill existing users: derive username from email prefix, with
+    # numeric suffix to resolve collisions (e.g. john, john2, john3)
     op.execute(
-        "UPDATE cleanup.app_user SET username = split_part(email, '@', 1) WHERE username IS NULL"
+        """
+        WITH ranked AS (
+            SELECT id,
+                   split_part(email, '@', 1) AS base,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY split_part(email, '@', 1) ORDER BY id
+                   ) AS rn
+            FROM cleanup.app_user
+            WHERE username IS NULL
+        )
+        UPDATE cleanup.app_user u
+        SET username = CASE WHEN r.rn = 1 THEN r.base
+                            ELSE r.base || r.rn END
+        FROM ranked r
+        WHERE u.id = r.id AND u.username IS NULL
+        """
     )
 
     # Make username NOT NULL and UNIQUE
