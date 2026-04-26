@@ -971,19 +971,16 @@ def auto_approve_obvious(
         raise HTTPException(status_code=409, detail="No preferred run set")
 
     # Get pending review items with their proposals
-    pending = (
-        db.execute(
-            select(ReviewItem, CenterProposal)
-            .join(CenterProposal, ReviewItem.proposal_id == CenterProposal.id)
-            .join(ReviewScope, ReviewItem.scope_id == ReviewScope.id)
-            .where(
-                ReviewScope.wave_id == wave_id,
-                ReviewItem.decision == "PENDING",
-                CenterProposal.run_id == preferred_run_id,
-            )
+    pending = db.execute(
+        select(ReviewItem, CenterProposal)
+        .join(CenterProposal, ReviewItem.proposal_id == CenterProposal.id)
+        .join(ReviewScope, ReviewItem.scope_id == ReviewScope.id)
+        .where(
+            ReviewScope.wave_id == wave_id,
+            ReviewItem.decision == "PENDING",
+            CenterProposal.run_id == preferred_run_id,
         )
-        .all()
-    )
+    ).all()
 
     approved_count = 0
     for item, proposal in pending:
@@ -1083,12 +1080,14 @@ def auto_assign_scopes(
         db.flush()
         for p in assigned_proposals:
             db.add(ReviewItem(scope_id=scope.id, proposal_id=p.id, decision="PENDING"))
-        created_scopes.append({
-            "scope_id": scope.id,
-            "reviewer": email,
-            "items": len(assigned_proposals),
-            "review_url": f"/review/{token}",
-        })
+        created_scopes.append(
+            {
+                "scope_id": scope.id,
+                "reviewer": email,
+                "items": len(assigned_proposals),
+                "review_url": f"/review/{token}",
+            }
+        )
 
     if wave.status == "locked":
         wave.status = "in_review"

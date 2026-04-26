@@ -371,18 +371,18 @@ def batch_compute_features(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    proposals = db.execute(
-        select(CenterProposal).where(CenterProposal.run_id == run_id)
-    ).scalars().all()
+    proposals = (
+        db.execute(select(CenterProposal).where(CenterProposal.run_id == run_id)).scalars().all()
+    )
 
     cc_ids = [p.legacy_cc_id for p in proposals]
     if not cc_ids:
         return {"features": [], "count": 0}
 
     # Batch query: all centers
-    centers = db.execute(
-        select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))
-    ).scalars().all()
+    centers = (
+        db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+    )
     cc_map = {c.id: c for c in centers}
 
     # Batch aggregation: balance sums per center
@@ -414,22 +414,24 @@ def batch_compute_features(
             continue
         bal = bal_map.get(cc.cctr)
         name = cc.txtsh or ""
-        features_list.append({
-            "cc_id": cc.id,
-            "cctr": cc.cctr,
-            "ccode": cc.ccode,
-            "verdict": p.cleansing_outcome,
-            "features": {
-                "is_active": 1.0 if cc.is_active else 0.0,
-                "months_since_last_posting": float(cc.months_since_last_posting or 0),
-                "posting_count_window": float(bal.posting_count if bal else 0),
-                "bs_amt": float(bal.bs_amt if bal else 0),
-                "opex_amt": float(bal.opex_amt if bal else 0),
-                "rev_amt": float(bal.rev_amt if bal else 0),
-                "hierarchy_depth": float(cc.hierarchy_depth or 0),
-                "name_length": float(len(name)),
-                "has_responsible": 1.0 if cc.responsible else 0.0,
-            },
-        })
+        features_list.append(
+            {
+                "cc_id": cc.id,
+                "cctr": cc.cctr,
+                "ccode": cc.ccode,
+                "verdict": p.cleansing_outcome,
+                "features": {
+                    "is_active": 1.0 if cc.is_active else 0.0,
+                    "months_since_last_posting": float(cc.months_since_last_posting or 0),
+                    "posting_count_window": float(bal.posting_count if bal else 0),
+                    "bs_amt": float(bal.bs_amt if bal else 0),
+                    "opex_amt": float(bal.opex_amt if bal else 0),
+                    "rev_amt": float(bal.rev_amt if bal else 0),
+                    "hierarchy_depth": float(cc.hierarchy_depth or 0),
+                    "name_length": float(len(name)),
+                    "has_responsible": 1.0 if cc.responsible else 0.0,
+                },
+            }
+        )
 
     return {"count": len(features_list), "features": features_list}
