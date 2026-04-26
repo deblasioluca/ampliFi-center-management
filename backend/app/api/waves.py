@@ -943,6 +943,165 @@ class TemplateOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- Auto-Approve ---
+
+
+class AutoApproveParams(BaseModel):
+    confidence_threshold: float = 0.85
+    max_items: int | None = None
+    verdicts: list[str] = ["KEEP"]
+
+
+@router.post("/{wave_id}/auto-approve")
+def auto_approve_obvious(
+    wave_id: int,
+    params: AutoApproveParams,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Auto-approve review items where the analysis confidence is above threshold."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status != "in_review":
+        raise HTTPException(status_code=409, detail="Wave must be in_review for auto-approve")
+
+    preferred_run_id = (wave.config or {}).get("preferred_run_id")
+    if not preferred_run_id:
+        raise HTTPException(status_code=409, detail="No preferred run set")
+
+    # Get pending review items with their proposals
+    pending = (
+        db.execute(
+            select(ReviewItem, CenterProposal)
+            .join(CenterProposal, ReviewItem.proposal_id == CenterProposal.id)
+            .join(ReviewScope, ReviewItem.scope_id == ReviewScope.id)
+            .where(
+                ReviewScope.wave_id == wave_id,
+                ReviewItem.decision == "PENDING",
+                CenterProposal.run_id == preferred_run_id,
+            )
+        )
+        .all()
+    )
+
+    approved_count = 0
+    for item, proposal in pending:
+        confidence = (proposal.meta or {}).get("confidence", 0)
+        if proposal.verdict in params.verdicts and confidence >= params.confidence_threshold:
+            item.decision = "APPROVED"
+            item.decided_by = f"auto:{user.id}"
+            approved_count += 1
+            if params.max_items and approved_count >= params.max_items:
+                break
+
+    db.commit()
+    return {
+        "approved": approved_count,
+        "remaining_pending": len(pending) - approved_count,
+        "threshold": params.confidence_threshold,
+        "verdicts": params.verdicts,
+    }
+
+
+# --- Workload-Aware Scope Assignment ---
+
+
+class AutoAssignParams(BaseModel):
+    reviewer_emails: list[str]
+    scope_type: str = "entity"
+    strategy: str = "round_robin"  # round_robin | balanced | entity_group
+
+
+@router.post("/{wave_id}/auto-assign")
+def auto_assign_scopes(
+    wave_id: int,
+    params: AutoAssignParams,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Automatically create review scopes and distribute proposals to reviewers."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("locked", "in_review"):
+        raise HTTPException(status_code=409, detail="Wave must be locked or in_review")
+
+    preferred_run_id = (wave.config or {}).get("preferred_run_id")
+    if not preferred_run_id:
+        raise HTTPException(status_code=409, detail="No preferred run set")
+
+    proposals = (
+        db.execute(select(CenterProposal).where(CenterProposal.run_id == preferred_run_id))
+        .scalars()
+        .all()
+    )
+    if not proposals:
+        raise HTTPException(status_code=409, detail="No proposals found for preferred run")
+
+    reviewers = params.reviewer_emails
+    if not reviewers:
+        raise HTTPException(status_code=400, detail="At least one reviewer required")
+
+    # Group proposals by entity if strategy is entity_group
+    if params.strategy == "entity_group":
+        entity_groups: dict[str, list] = {}
+        for p in proposals:
+            cc = db.get(LegacyCostCenter, p.legacy_cc_id)
+            ccode = cc.ccode if cc else "UNKNOWN"
+            entity_groups.setdefault(ccode, []).append(p)
+        # Distribute entity groups to reviewers round-robin
+        sorted_groups = sorted(entity_groups.items(), key=lambda x: -len(x[1]))
+        reviewer_loads: dict[str, list] = {r: [] for r in reviewers}
+        for _ccode, group_proposals in sorted_groups:
+            min_reviewer = min(reviewer_loads, key=lambda r: len(reviewer_loads[r]))
+            reviewer_loads[min_reviewer].extend(group_proposals)
+    else:
+        # round_robin or balanced
+        reviewer_loads = {r: [] for r in reviewers}
+        for i, p in enumerate(proposals):
+            target = reviewers[i % len(reviewers)]
+            reviewer_loads[target].append(p)
+
+    created_scopes = []
+    for email, assigned_proposals in reviewer_loads.items():
+        if not assigned_proposals:
+            continue
+        token = secrets.token_urlsafe(48)
+        expires = datetime.now(UTC) + timedelta(days=30)
+        scope = ReviewScope(
+            wave_id=wave_id,
+            name=f"Auto-assigned: {email}",
+            scope_type=params.scope_type,
+            scope_filter={"auto_assigned": True, "reviewer": email},
+            token=token,
+            token_expires_at=expires,
+            reviewer_email=email,
+            status="pending",
+        )
+        db.add(scope)
+        db.flush()
+        for p in assigned_proposals:
+            db.add(ReviewItem(scope_id=scope.id, proposal_id=p.id, decision="PENDING"))
+        created_scopes.append({
+            "scope_id": scope.id,
+            "reviewer": email,
+            "items": len(assigned_proposals),
+            "review_url": f"/review/{token}",
+        })
+
+    if wave.status == "locked":
+        wave.status = "in_review"
+
+    db.commit()
+    return {
+        "scopes_created": len(created_scopes),
+        "scopes": created_scopes,
+        "total_items": len(proposals),
+        "strategy": params.strategy,
+    }
+
+
 @router.get("/templates")
 def list_templates(db: Session = Depends(get_db)) -> list[TemplateOut]:
     rows = db.execute(select(WaveTemplate).order_by(WaveTemplate.name)).scalars().all()

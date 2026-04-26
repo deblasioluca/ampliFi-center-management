@@ -352,3 +352,84 @@ def compare_runs(run_a: int, run_b: int, db: Session = Depends(get_db)) -> dict:
             "total_b": len(map_b),
         },
     }
+
+
+@router.post("/{run_id}/batch-features")
+def batch_compute_features(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Batch-compute features for all centers in a run using server-side aggregation.
+
+    Instead of N+1 queries per center, this executes one SQL query for all centers
+    and returns pre-computed feature vectors suitable for ML model training.
+    """
+    from app.models.core import Balance, LegacyCostCenter
+
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    proposals = db.execute(
+        select(CenterProposal).where(CenterProposal.run_id == run_id)
+    ).scalars().all()
+
+    cc_ids = [p.legacy_cc_id for p in proposals]
+    if not cc_ids:
+        return {"features": [], "count": 0}
+
+    # Batch query: all centers
+    centers = db.execute(
+        select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))
+    ).scalars().all()
+    cc_map = {c.id: c for c in centers}
+
+    # Batch aggregation: balance sums per center
+    from sqlalchemy import case, literal_column
+
+    balance_agg = db.execute(
+        select(
+            Balance.cctr,
+            func.sum(
+                case((Balance.gl_class == "BS", Balance.amount), else_=literal_column("0"))
+            ).label("bs_amt"),
+            func.sum(
+                case((Balance.gl_class == "OPEX", Balance.amount), else_=literal_column("0"))
+            ).label("opex_amt"),
+            func.sum(
+                case((Balance.gl_class == "REV", Balance.amount), else_=literal_column("0"))
+            ).label("rev_amt"),
+            func.count(Balance.id).label("posting_count"),
+        )
+        .where(Balance.cctr.in_([c.cctr for c in centers if c]))
+        .group_by(Balance.cctr)
+    ).all()
+    bal_map = {row.cctr: row for row in balance_agg}
+
+    features_list = []
+    for p in proposals:
+        cc = cc_map.get(p.legacy_cc_id)
+        if not cc:
+            continue
+        bal = bal_map.get(cc.cctr)
+        name = cc.txtsh or ""
+        features_list.append({
+            "cc_id": cc.id,
+            "cctr": cc.cctr,
+            "ccode": cc.ccode,
+            "verdict": p.cleansing_outcome,
+            "features": {
+                "is_active": 1.0 if cc.is_active else 0.0,
+                "months_since_last_posting": float(cc.months_since_last_posting or 0),
+                "posting_count_window": float(bal.posting_count if bal else 0),
+                "bs_amt": float(bal.bs_amt if bal else 0),
+                "opex_amt": float(bal.opex_amt if bal else 0),
+                "rev_amt": float(bal.rev_amt if bal else 0),
+                "hierarchy_depth": float(cc.hierarchy_depth or 0),
+                "name_length": float(len(name)),
+                "has_responsible": 1.0 if cc.responsible else 0.0,
+            },
+        })
+
+    return {"count": len(features_list), "features": features_list}
