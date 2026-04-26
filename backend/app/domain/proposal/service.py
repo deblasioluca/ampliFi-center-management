@@ -101,8 +101,8 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     for proposal in proposals:
         outcome, target = get_effective_outcome(proposal)
 
-        if outcome in ("RETIRE", "MERGE_MAP"):
-            continue  # No target object for retired/merged centers
+        if outcome in ("RETIRE", "MERGE_MAP", "REDESIGN"):
+            continue  # No target object for retired/merged/redesigned centers
 
         legacy = db.get(LegacyCostCenter, proposal.legacy_cc_id)
         if not legacy:

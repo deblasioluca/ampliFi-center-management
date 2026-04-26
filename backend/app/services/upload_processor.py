@@ -393,6 +393,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
             except InvalidOperation:
                 tc = Decimal("0")
             try:
+                gc = Decimal(row.get("gc_amt", "0") or "0")
+            except InvalidOperation:
+                gc = Decimal("0")
+            try:
                 gc2 = Decimal(row.get("gc2_amt", "0") or "0")
             except InvalidOperation:
                 gc2 = Decimal("0")
@@ -407,8 +411,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     ccode=row.get("ccode", ""),
                     fiscal_year=fy,
                     period=per,
+                    account=row.get("account", ""),
                     account_class=row.get("account_class", ""),
                     tc_amt=tc,
+                    gc_amt=gc,
                     gc2_amt=gc2,
                     currency_tc=row.get("currency_tc", ""),
                     posting_count=pc,

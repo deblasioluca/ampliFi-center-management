@@ -139,14 +139,16 @@ class NamingEngine:
             if template.collision_policy == "error":
                 raise ValueError(f"Naming collision: {new_id} already exists")
             elif template.collision_policy == "append_suffix":
-                new_id = f"{new_id}_1"
-                if new_id not in existing:
-                    return GeneratedName(
-                        object_type=template.object_type,
-                        new_id=new_id,
-                        source_cctr=source_cctr,
-                        sequence_used=seq,
-                    )
+                base_id = new_id
+                for suffix in range(1, 100):
+                    suffixed = f"{base_id}_{suffix}"
+                    if suffixed not in existing:
+                        return GeneratedName(
+                            object_type=template.object_type,
+                            new_id=suffixed,
+                            source_cctr=source_cctr,
+                            sequence_used=seq,
+                        )
             # skip: try next sequence number
 
         raise ValueError(f"Could not generate unique ID after max attempts for {key}")
