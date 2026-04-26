@@ -462,6 +462,7 @@ class ReviewItem(TimestampMixin, Base):
         String(20), default="PENDING"
     )  # PENDING|APPROVED|NOT_REQUIRED|COMMENTED
     comment: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[str | None] = mapped_column(String(100))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     scope: Mapped[ReviewScope] = relationship(back_populates="items")
