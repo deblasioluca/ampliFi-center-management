@@ -184,7 +184,7 @@ def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> 
         if count == 0 and strict_hierarchy:
             path.append(f"hierarchy_membership={count} (strict) → REDESIGN")
             return TreeResult(cleansing=CleansingOutcome.REDESIGN, rule_path=path)
-        elif count != 1:
+        elif count > 1:
             path.append(f"hierarchy_membership={count} → MERGE_MAP")
             return TreeResult(cleansing=CleansingOutcome.MERGE_MAP, rule_path=path)
     path.append("hierarchy_ok")

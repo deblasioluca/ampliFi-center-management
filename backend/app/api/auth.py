@@ -94,10 +94,15 @@ async def me(user: AppUser = Depends(get_current_user)) -> UserInfo | dict:
 
 # --- Azure EntraID OIDC routes (§10.1.2) ---
 
+_OIDC_COOKIE = "oidc_pkce"
+
 
 @router.get("/oidc/start")
-async def oidc_start(request: Request, db: Session = Depends(get_db)) -> dict:
+async def oidc_start(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
     """Start OIDC authorization code flow with PKCE."""
+    import json
+    import secrets as sec
+
     from app.auth.entraid import EntraIDConfig, build_auth_url
     from app.models.core import AppConfig
 
@@ -111,29 +116,35 @@ async def oidc_start(request: Request, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=500, detail="EntraID not configured")
 
     cfg = EntraIDConfig(cfg_row.value)
-    import secrets as sec
-
     state = sec.token_urlsafe(32)
     nonce = sec.token_urlsafe(32)
     auth_url, code_verifier = build_auth_url(cfg, state, nonce)
 
-    # Store state and verifier in session (using a simple cookie for now)
-    return {
-        "auth_url": auth_url,
-        "state": state,
-        "code_verifier": code_verifier,
-    }
+    # Store state + verifier in a secure HttpOnly cookie (not in response body)
+    pkce_data = json.dumps({"state": state, "code_verifier": code_verifier})
+    response.set_cookie(
+        key=_OIDC_COOKIE,
+        value=pkce_data,
+        httponly=True,
+        secure=settings.app_env != "dev",
+        samesite="lax",
+        max_age=600,  # 10 min expiry
+    )
+
+    return {"auth_url": auth_url}
 
 
 @router.get("/oidc/callback")
 async def oidc_callback(
     code: str,
     state: str,
-    code_verifier: str = "",
-    response: Response = None,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     """Handle OIDC callback and exchange code for tokens."""
+    import json
+
     from app.auth.entraid import (
         EntraIDConfig,
         exchange_code,
@@ -141,6 +152,28 @@ async def oidc_callback(
         validate_id_token,
     )
     from app.models.core import AppConfig
+
+    if settings.auth_provider != "entraid":
+        raise HTTPException(status_code=400, detail="EntraID auth not enabled")
+
+    # Retrieve and validate PKCE state from secure cookie
+    pkce_raw = request.cookies.get(_OIDC_COOKIE)
+    if not pkce_raw:
+        raise HTTPException(status_code=400, detail="Missing OIDC session cookie")
+
+    try:
+        pkce_data = json.loads(pkce_raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid OIDC session cookie") from exc
+
+    expected_state = pkce_data.get("state", "")
+    code_verifier = pkce_data.get("code_verifier", "")
+
+    if not expected_state or state != expected_state:
+        raise HTTPException(status_code=400, detail="OIDC state mismatch (CSRF)")
+
+    # Clear the PKCE cookie
+    response.delete_cookie(_OIDC_COOKIE)
 
     cfg_row = db.execute(
         select(AppConfig).where(AppConfig.key == "auth.entraid")
@@ -160,14 +193,13 @@ async def oidc_callback(
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
 
-    if response:
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=settings.app_env != "dev",
-            samesite="lax",
-            max_age=settings.jwt_refresh_token_expire_days * 86400,
-        )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.app_env != "dev",
+        samesite="lax",
+        max_age=settings.jwt_refresh_token_expire_days * 86400,
+    )
 
     return TokenResponse(access_token=access_token)
