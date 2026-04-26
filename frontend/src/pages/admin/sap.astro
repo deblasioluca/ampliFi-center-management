@@ -7,7 +7,8 @@ import Layout from '../../components/layout/Layout.astro';
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-900">SAP Connections</h1>
-        <p class="text-sm text-gray-500 mt-1">Manage SAP system connections with ADT, OData, and SOAP/RFC protocols</p>
+        <p class="text-sm text-gray-500 mt-1">Manage SAP system connections — supports ADT, OData, and SOAP/RFC protocols.
+          Use <strong>Connection Trial</strong> to test all endpoints at once and get recommendations.</p>
       </div>
       <button id="btn-new" class="btn-amplifi">+ New Connection</button>
     </div>
@@ -17,34 +18,38 @@ import Layout from '../../components/layout/Layout.astro';
   <div id="connections-list" class="space-y-4">Loading...</div>
 
   <!-- Connection Form Modal -->
-  <div id="modal-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6">
+  <div id="modal-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-10">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6">
       <h2 id="modal-title" class="text-lg font-semibold mb-4">New SAP Connection</h2>
       <form id="sap-form" class="space-y-4">
         <input type="hidden" id="f-id" value="" />
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input id="f-name" type="text" class="input" required />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Connection Name</label>
+            <input id="f-name" type="text" class="input" required placeholder="e.g. S4_LEGACY_PROD" />
+            <p class="text-xs text-gray-400 mt-0.5">Unique identifier for this SAP system</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">System Type</label>
             <select id="f-system-type" class="input">
               <option value="S/4HANA">S/4HANA</option>
-              <option value="ECC">ECC</option>
+              <option value="ECC">ECC (ERP Central Component)</option>
               <option value="BW">BW/4HANA</option>
               <option value="MDG">MDG Hub</option>
+              <option value="CRM">CRM</option>
+              <option value="SRM">SRM</option>
             </select>
           </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-          <input id="f-desc" type="text" class="input" />
+          <input id="f-desc" type="text" class="input" placeholder="e.g. Legacy ECC – read-only finance user" />
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
             <input id="f-url" type="text" class="input" placeholder="https://host:port" required />
+            <p class="text-xs text-gray-400 mt-0.5">Including protocol and port</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Landscape</label>
@@ -66,22 +71,23 @@ import Layout from '../../components/layout/Layout.astro';
             <input id="f-lang" type="text" class="input" value="EN" maxlength="2" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Primary Protocol</label>
             <select id="f-protocol" class="input">
-              <option value="odata">OData</option>
-              <option value="adt">ADT</option>
+              <option value="odata">OData (recommended)</option>
+              <option value="adt">ADT (ABAP Dev Tools)</option>
               <option value="soap_rfc">SOAP/RFC</option>
             </select>
+            <p class="text-xs text-gray-400 mt-0.5">Use "Connection Trial" to test all 3</p>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-            <input id="f-user" type="text" class="input" required />
+            <input id="f-user" type="text" class="input" required placeholder="SAP user ID" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input id="f-pwd" type="password" class="input" />
+            <input id="f-pwd" type="password" class="input" placeholder="Leave blank to keep existing" />
           </div>
         </div>
         <div class="flex items-center gap-6 text-sm">
@@ -92,12 +98,13 @@ import Layout from '../../components/layout/Layout.astro';
             <input id="f-use-proxy" type="checkbox" /> Use Proxy
           </label>
           <label class="flex items-center gap-2">
-            <input id="f-saml2" type="checkbox" /> SAML2 Disabled
+            <input id="f-saml2" type="checkbox" /> Disable SAML2
           </label>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Allowed Tables (comma-separated)</label>
-          <input id="f-tables" type="text" class="input" placeholder="T001,CSKS,..." />
+          <label class="block text-sm font-medium text-gray-700 mb-1">Allowed Tables (for ADT/RFC extraction)</label>
+          <input id="f-tables" type="text" class="input" placeholder="T001,CSKS,CEPC,SETHEADER,SETNODE,SETLEAF,FAGLFLEXT" />
+          <p class="text-xs text-gray-400 mt-0.5">Comma-separated table names that RFC_READ_TABLE / ADT datapreview may access</p>
         </div>
         <div class="flex justify-end gap-3 pt-4 border-t">
           <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
@@ -107,14 +114,39 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 
-  <!-- Test Results Modal -->
+  <!-- Connection Trial Modal -->
+  <div id="trial-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-10">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Connection Trial Results</h2>
+        <button onclick="document.getElementById('trial-overlay').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">Tests login credentials, then probes all 3 SAP endpoints (ADT, OData, SOAP/RFC) independently.
+        Based on the results, the system recommends the best configuration.</p>
+      <div id="trial-results" class="text-sm">Testing...</div>
+    </div>
+  </div>
+
+  <!-- Service Discovery Modal -->
+  <div id="discover-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-10">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">OData Service Discovery</h2>
+        <button onclick="document.getElementById('discover-overlay').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">Lists all OData services available on the SAP gateway. Use this to find the right service for each data type.</p>
+      <div id="discover-results" class="text-sm">Discovering...</div>
+    </div>
+  </div>
+
+  <!-- Simple Test Modal (backward compat) -->
   <div id="test-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-20">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-      <h2 class="text-lg font-semibold mb-4">Connection Test Results</h2>
-      <div id="test-results" class="text-sm">Testing...</div>
-      <div class="flex justify-end mt-4">
-        <button onclick="document.getElementById('test-overlay').classList.add('hidden')" class="btn-secondary">Close</button>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Quick Test — <span id="test-proto"></span></h2>
+        <button onclick="document.getElementById('test-overlay').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
       </div>
+      <div id="test-results" class="text-sm">Testing...</div>
     </div>
   </div>
 </Layout>
@@ -129,38 +161,61 @@ import Layout from '../../components/layout/Layout.astro';
   function loadConnections() {
     fetch('/api/admin/sap', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(conns) {
       var el = document.getElementById('connections-list');
-      if (!conns.length) { el.innerHTML = '<div class="card text-center text-gray-500 py-8">No SAP connections configured. Click "New Connection" to add one.</div>'; return; }
+      if (!conns.length) {
+        el.innerHTML = '<div class="card text-center py-8"><p class="text-gray-500">No SAP connections configured.</p>' +
+          '<p class="text-xs text-gray-400 mt-2">Click "New Connection" to add your first SAP system. You\'ll configure the host, credentials, and protocol (OData/ADT/SOAP).</p></div>';
+        return;
+      }
       var html = '';
       conns.forEach(function(c) {
-        var proto = { odata: 'OData', adt: 'ADT', soap_rfc: 'SOAP/RFC' }[c.protocol] || c.protocol;
-        html += '<div class="card"><div class="flex items-start justify-between">' +
-          '<div><h3 class="font-semibold text-gray-900">' + esc(c.name) + '</h3>' +
-          '<p class="text-sm text-gray-500 mt-0.5">' + esc(c.description || '') + '</p>' +
-          '<div class="flex items-center gap-4 mt-2 text-xs text-gray-500">' +
+        var protoLabel = { odata: 'OData', adt: 'ADT', soap_rfc: 'SOAP/RFC' }[c.protocol] || c.protocol;
+        var protoColor = { odata: 'bg-green-50 text-green-700', adt: 'bg-blue-50 text-blue-700', soap_rfc: 'bg-orange-50 text-orange-700' }[c.protocol] || 'bg-gray-50 text-gray-700';
+        html += '<div class="card">' +
+          '<div class="flex items-start justify-between">' +
+          '<div class="flex-1">' +
+          '<div class="flex items-center gap-3">' +
+          '<h3 class="font-semibold text-gray-900">' + esc(c.name) + '</h3>' +
+          '<span class="text-xs px-2 py-0.5 rounded ' + protoColor + '">' + protoLabel + '</span>' +
+          '<span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">' + esc(c.system_type) + '</span>' +
+          (c.landscape_type ? '<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">' + esc(c.landscape_type) + '</span>' : '') +
+          (c.is_active ? '<span class="text-xs text-green-600">● Active</span>' : '<span class="text-xs text-red-500">● Inactive</span>') +
+          '</div>' +
+          (c.description ? '<p class="text-sm text-gray-500 mt-1">' + esc(c.description) + '</p>' : '') +
+          '<div class="flex items-center gap-4 mt-2 text-xs text-gray-400">' +
           '<span class="font-mono">' + esc(c.base_url) + '</span>' +
-          '<span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">' + esc(c.system_type) + '</span>' +
-          '<span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">' + proto + '</span>' +
           '<span>Client: ' + esc(c.client) + '</span>' +
           '<span>User: ' + esc(c.username) + '</span>' +
-          (c.landscape_type ? '<span class="bg-gray-100 px-2 py-0.5 rounded">' + esc(c.landscape_type) + '</span>' : '') +
-          (c.is_active ? '<span class="text-green-600">Active</span>' : '<span class="text-red-500">Inactive</span>') +
-          '</div></div>' +
-          '<div class="flex gap-2">' +
-          '<button onclick="testConn(' + c.id + ')" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100">Test</button>' +
+          (c.verify_ssl ? '<span title="SSL verified">🔒 SSL</span>' : '<span title="SSL not verified" class="text-yellow-600">⚠ No SSL</span>') +
+          '</div>' +
+          '</div>' +
+          '<div class="flex flex-col gap-1.5 ml-4">' +
+          '<div class="flex gap-1.5">' +
+          '<button onclick="runTrial(' + c.id + ')" class="btn-sm bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title="Test ALL endpoints (ADT + OData + SOAP)">🔬 Trial</button>' +
+          '<button onclick="testConn(' + c.id + ')" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100" title="Quick test of primary protocol">⚡ Test</button>' +
+          '<button onclick="discoverServices(' + c.id + ')" class="btn-sm bg-purple-50 text-purple-700 hover:bg-purple-100" title="Discover OData services">🔍 Discover</button>' +
+          '</div>' +
+          '<div class="flex gap-1.5">' +
           '<button onclick="editConn(' + c.id + ')" class="btn-sm">Edit</button>' +
+          '<button onclick="showBindings(' + c.id + ',\'' + esc(c.name) + '\')" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100">Bindings</button>' +
           '<button onclick="deleteConn(' + c.id + ',\'' + esc(c.name) + '\')" class="btn-sm text-red-600 hover:bg-red-50">Delete</button>' +
-          '</div></div></div>';
+          '</div>' +
+          '</div>' +
+          '</div>' +
+          '<div id="bindings-' + c.id + '" class="hidden mt-4 pt-4 border-t"></div>' +
+          '</div>';
       });
       el.innerHTML = html;
     }).catch(function(e) { document.getElementById('connections-list').textContent = 'Error: ' + e.message; });
   }
   loadConnections();
 
+  // --- Form ---
   var modal = document.getElementById('modal-overlay');
   document.getElementById('btn-new').addEventListener('click', function() {
     document.getElementById('modal-title').textContent = 'New SAP Connection';
     document.getElementById('sap-form').reset();
     document.getElementById('f-id').value = '';
+    document.getElementById('f-verify-ssl').checked = true;
     modal.classList.remove('hidden');
   });
   document.getElementById('btn-cancel').addEventListener('click', function() { modal.classList.add('hidden'); });
@@ -217,32 +272,200 @@ import Layout from '../../components/layout/Layout.astro';
   };
 
   window.deleteConn = async function(id, name) {
-    if (!confirm('Delete connection "' + name + '"?')) return;
+    if (!confirm('Delete connection "' + name + '"? This will also delete all object bindings.')) return;
     await fetch('/api/admin/sap/' + id, { method: 'DELETE', headers: authHdr });
     loadConnections();
   };
 
+  // --- Quick Test (single protocol) ---
   window.testConn = async function(id) {
     document.getElementById('test-overlay').classList.remove('hidden');
-    document.getElementById('test-results').innerHTML = '<div class="text-center py-4"><div class="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div><p class="mt-2">Testing connection...</p></div>';
+    document.getElementById('test-results').innerHTML = '<div class="text-center py-4"><div class="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div><p class="mt-2 text-gray-500">Testing primary protocol...</p></div>';
     try {
       var res = await fetch('/api/admin/sap/' + id + '/test', { method: 'POST', headers: authHdr });
       var d = await res.json();
+      document.getElementById('test-proto').textContent = (d.protocol || '').toUpperCase();
       var html = '';
       if (d.success) {
-        html = '<div class="bg-green-50 text-green-800 p-4 rounded mb-3"><strong>Connection successful!</strong></div>';
+        html = '<div class="bg-green-50 text-green-800 p-3 rounded-lg mb-3"><strong>Connection successful</strong></div>';
       } else {
-        html = '<div class="bg-red-50 text-red-800 p-4 rounded mb-3"><strong>Connection failed</strong></div>';
+        html = '<div class="bg-red-50 text-red-800 p-3 rounded-lg mb-3"><strong>Connection failed</strong></div>';
       }
-      if (d.latency_ms) html += '<p class="text-sm">Latency: <strong>' + d.latency_ms + ' ms</strong></p>';
-      if (d.error) html += '<p class="text-sm text-red-600 mt-2">Error: ' + esc(d.error) + '</p>';
-      if (d.details) {
-        html += '<details class="mt-3"><summary class="text-sm cursor-pointer text-gray-500">Details</summary><pre class="text-xs mt-2 bg-gray-50 p-3 rounded overflow-x-auto">' + esc(JSON.stringify(d.details, null, 2)) + '</pre></details>';
-      }
+      if (d.detail) html += '<p class="text-sm text-gray-700 mb-2">' + esc(d.detail) + '</p>';
+      if (d.latency_ms) html += '<p class="text-xs text-gray-500">Latency: ' + d.latency_ms + ' ms</p>';
+      if (d.error) html += '<p class="text-sm text-red-600 mt-2">' + esc(d.error) + '</p>';
+      if (d.sso_redirect) html += '<p class="text-sm text-yellow-700 mt-2">⚠ SSO redirect detected. Try enabling "Disable SAML2" on the connection.</p>';
+      if (d.services) html += '<p class="text-xs text-gray-500 mt-2">Services: ' + d.services.join(', ') + '</p>';
+      html += '<details class="mt-3"><summary class="text-xs cursor-pointer text-gray-400">Raw response</summary><pre class="text-xs mt-2 bg-gray-50 p-3 rounded overflow-x-auto max-h-48">' + esc(JSON.stringify(d, null, 2)) + '</pre></details>';
       document.getElementById('test-results').innerHTML = html;
     } catch(err) {
-      document.getElementById('test-results').innerHTML = '<div class="bg-red-50 text-red-800 p-4 rounded">Error: ' + esc(err.message) + '</div>';
+      document.getElementById('test-results').innerHTML = '<div class="bg-red-50 text-red-800 p-3 rounded">' + esc(err.message) + '</div>';
     }
+  };
+
+  // --- Connection Trial (all 3 endpoints) ---
+  window.runTrial = async function(id) {
+    document.getElementById('trial-overlay').classList.remove('hidden');
+    document.getElementById('trial-results').innerHTML = '<div class="text-center py-8"><div class="animate-spin inline-block w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full"></div><p class="mt-3 text-gray-500">Running connection trial...</p><p class="text-xs text-gray-400 mt-1">Testing login + ADT + OData + SOAP endpoints</p></div>';
+    try {
+      var res = await fetch('/api/admin/sap/' + id + '/trial', { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      var html = '';
+
+      // Login check
+      if (d.login_check) {
+        var lc = d.login_check;
+        var lcClass = lc.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800';
+        html += '<div class="border rounded-lg p-3 mb-4 ' + lcClass + '">' +
+          '<div class="flex items-center justify-between">' +
+          '<div><strong>Login Check</strong><span class="ml-2 text-xs">(HTTP ' + lc.status_code + ')</span></div>' +
+          '<span class="text-xs">' + (lc.latency_ms || 0) + ' ms</span>' +
+          '</div>' +
+          '<p class="text-sm mt-1">' + esc(lc.detail) + '</p>' +
+          (lc.sso_redirect ? '<p class="text-sm mt-1">⚠ SSO redirect — try enabling "Disable SAML2" in connection settings</p>' : '') +
+          '</div>';
+      }
+
+      // Endpoint probes matrix
+      html += '<h3 class="font-semibold text-sm mb-2">Endpoint Probes</h3>';
+      html += '<div class="grid grid-cols-3 gap-3 mb-4">';
+      var epLabels = { adt: 'ADT', odata: 'OData', soap: 'SOAP/RFC' };
+      var epDesc = {
+        adt: '/sap/bc/adt/ — ABAP Development Tools REST API. Requires S_DEVELOP authorization.',
+        odata: '/sap/opu/odata/ — OData services via SAP Gateway. Requires S_SERVICE authorization.',
+        soap: '/sap/bc/soap/rfc — SOAP web services / RFC. Requires S_RFC authorization.'
+      };
+      (d.probes || []).forEach(function(p) {
+        var cls = p.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50';
+        var icon = p.success ? '✓' : '✗';
+        var iconCls = p.success ? 'text-green-600' : 'text-red-600';
+        html += '<div class="border rounded-lg p-3 ' + cls + '">' +
+          '<div class="flex items-center gap-2 mb-1"><span class="text-lg ' + iconCls + '">' + icon + '</span><strong>' + (epLabels[p.endpoint] || p.endpoint) + '</strong></div>' +
+          '<p class="text-xs text-gray-600 mb-1">' + esc(epDesc[p.endpoint] || '') + '</p>' +
+          '<p class="text-xs">HTTP ' + p.status_code + ' · ' + (p.latency_ms || 0) + ' ms</p>' +
+          (p.detail ? '<p class="text-xs mt-1">' + esc(p.detail) + '</p>' : '') +
+          (p.error ? '<p class="text-xs text-red-600 mt-1">' + esc(p.error) + '</p>' : '') +
+          (p.sso_redirect ? '<p class="text-xs text-yellow-700 mt-1">SSO redirect detected</p>' : '') +
+          (p.csrf_token ? '<p class="text-xs text-green-700 mt-1">CSRF token obtained</p>' : '') +
+          (p.services_discovered && p.services_discovered.length ? '<p class="text-xs mt-1">Services: ' + p.services_discovered.slice(0,5).join(', ') + (p.services_discovered.length > 5 ? '...' : '') + '</p>' : '') +
+          '</div>';
+      });
+      html += '</div>';
+
+      // Recommendations
+      if (d.recommendations && d.recommendations.length) {
+        html += '<h3 class="font-semibold text-sm mb-2">Recommendations</h3>';
+        html += '<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">';
+        d.recommendations.forEach(function(r) {
+          var icon = r.reachable ? '✓' : '✗';
+          var cls = r.reachable ? 'text-green-600' : 'text-red-500';
+          html += '<div class="flex items-center gap-2 mb-1"><span class="' + cls + '">' + icon + '</span><strong>' + (epLabels[r.endpoint] || r.endpoint) + '</strong>: ' + esc(r.note || (r.reachable ? 'Available' : 'Not available')) + '</div>';
+        });
+        html += '</div>';
+      }
+
+      // Proposed config
+      if (d.proposed_config && d.proposed_config.preferred_protocol) {
+        html += '<div class="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">' +
+          '<strong>Recommended protocol:</strong> ' + esc(d.proposed_config.preferred_protocol.toUpperCase()) +
+          '<br/><strong>Available endpoints:</strong> ' + (d.proposed_config.endpoints_available || []).map(function(e) { return e.toUpperCase(); }).join(', ') +
+          '</div>';
+      }
+
+      document.getElementById('trial-results').innerHTML = html;
+    } catch(err) {
+      document.getElementById('trial-results').innerHTML = '<div class="bg-red-50 text-red-800 p-3 rounded">' + esc(err.message) + '</div>';
+    }
+  };
+
+  // --- Service Discovery ---
+  window.discoverServices = async function(id) {
+    document.getElementById('discover-overlay').classList.remove('hidden');
+    document.getElementById('discover-results').innerHTML = '<div class="text-center py-4"><div class="animate-spin inline-block w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full"></div><p class="mt-2 text-gray-500">Querying OData catalog...</p></div>';
+    try {
+      var res = await fetch('/api/admin/sap/' + id + '/discover/services', { headers: authHdr });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.detail || 'Failed'); }
+      var d = await res.json();
+      var html = '<p class="text-sm text-gray-700 mb-3"><strong>' + d.count + '</strong> OData services found on ' + esc(d.connection) + '</p>';
+      if (d.services && d.services.length) {
+        html += '<div class="mb-3"><input id="svc-search" type="text" class="input" placeholder="Search services..." oninput="filterServices()" /></div>';
+        html += '<div id="svc-list" class="max-h-96 overflow-y-auto">';
+        html += '<table class="w-full text-xs"><thead><tr class="bg-gray-50"><th class="px-2 py-1 text-left">Title</th><th class="px-2 py-1 text-left">ID</th><th class="px-2 py-1 text-left">Version</th><th class="px-2 py-1 text-left">URL</th></tr></thead><tbody>';
+        d.services.forEach(function(s) {
+          html += '<tr class="svc-row border-t hover:bg-blue-50" data-search="' + esc((s.title + ' ' + s.id + ' ' + s.description).toLowerCase()) + '">' +
+            '<td class="px-2 py-1">' + esc(s.title) + '</td>' +
+            '<td class="px-2 py-1 font-mono text-gray-500">' + esc(s.id) + '</td>' +
+            '<td class="px-2 py-1">' + esc(s.version) + '</td>' +
+            '<td class="px-2 py-1 text-gray-400 truncate max-w-[200px]">' + esc(s.url) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      } else {
+        html += '<p class="text-gray-500 text-sm">No services found. Check if OData is enabled on the SAP system and the user has S_SERVICE authorization.</p>';
+      }
+      document.getElementById('discover-results').innerHTML = html;
+    } catch(err) {
+      document.getElementById('discover-results').innerHTML = '<div class="bg-red-50 text-red-800 p-3 rounded">' + esc(err.message) + '</div>';
+    }
+  };
+
+  window.filterServices = function() {
+    var q = (document.getElementById('svc-search').value || '').toLowerCase();
+    document.querySelectorAll('.svc-row').forEach(function(row) {
+      row.style.display = (!q || row.getAttribute('data-search').indexOf(q) >= 0) ? '' : 'none';
+    });
+  };
+
+  // --- Object Bindings ---
+  window.showBindings = async function(connId, connName) {
+    var el = document.getElementById('bindings-' + connId);
+    if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = '<div class="text-gray-500 text-sm">Loading bindings...</div>';
+    try {
+      var res = await fetch('/api/admin/sap/' + connId + '/bindings', { headers: authHdr });
+      var bindings = await res.json();
+      var html = '<div class="flex items-center justify-between mb-3">' +
+        '<h4 class="text-sm font-semibold text-gray-700">Object Bindings — what to extract from ' + esc(connName) + '</h4>' +
+        '<button onclick="addBinding(' + connId + ')" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100">+ Add Binding</button>' +
+        '</div>';
+      html += '<p class="text-xs text-gray-400 mb-2">Each binding maps an SAP data object (cost centers, hierarchies, etc.) to an extraction query. Used by the SAP pull worker.</p>';
+      if (!bindings.length) {
+        html += '<p class="text-sm text-gray-400">No bindings yet. Add one to configure data extraction.</p>';
+      } else {
+        html += '<table class="w-full text-xs"><thead><tr class="bg-gray-50"><th class="px-2 py-1 text-left">Object Type</th><th class="px-2 py-1 text-left">Entity Set / Path</th><th class="px-2 py-1 text-left">Schedule</th><th class="px-2 py-1 text-left">Status</th><th class="px-2 py-1"></th></tr></thead><tbody>';
+        bindings.forEach(function(b) {
+          html += '<tr class="border-t"><td class="px-2 py-1 font-mono">' + esc(b.object_type) + '</td>' +
+            '<td class="px-2 py-1">' + esc(b.entity_set || b.path || '-') + '</td>' +
+            '<td class="px-2 py-1">' + esc(b.schedule_cron || 'Manual') + '</td>' +
+            '<td class="px-2 py-1">' + (b.enabled ? '<span class="text-green-600">Enabled</span>' : '<span class="text-red-500">Disabled</span>') + '</td>' +
+            '<td class="px-2 py-1"><button onclick="deleteBinding(' + connId + ',' + b.id + ')" class="text-red-500 hover:text-red-700">Delete</button></td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      el.innerHTML = html;
+    } catch(err) {
+      el.innerHTML = '<div class="text-red-600 text-sm">Error: ' + esc(err.message) + '</div>';
+    }
+  };
+
+  window.addBinding = async function(connId) {
+    var objectType = prompt('Object type (cost_center, profit_center, hierarchy, balance, gl_account, employee):');
+    if (!objectType) return;
+    var entitySet = prompt('OData entity set (optional, e.g. CostCenterSet):') || null;
+    try {
+      var res = await fetch('/api/admin/sap/' + connId + '/bindings', {
+        method: 'POST', headers: jsonHdr,
+        body: JSON.stringify({ object_type: objectType, entity_set: entitySet })
+      });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.detail || 'Failed'); }
+      showBindings(connId, '');
+    } catch(err) { alert('Error: ' + err.message); }
+  };
+
+  window.deleteBinding = async function(connId, bindingId) {
+    if (!confirm('Delete this binding?')) return;
+    await fetch('/api/admin/sap/' + connId + '/bindings/' + bindingId, { method: 'DELETE', headers: authHdr });
+    showBindings(connId, '');
   };
 })();
 </script>

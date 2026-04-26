@@ -9,7 +9,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <!-- Data Counts -->
-  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
     <div class="card text-center">
       <h4 class="text-xs font-medium text-gray-500 uppercase">Entities</h4>
       <p id="cnt-entities" class="text-xl font-bold text-gray-900 mt-1">--</p>
@@ -31,6 +31,10 @@ import Layout from '../../components/layout/Layout.astro';
       <p id="cnt-hierarchies" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
     <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Employees</h4>
+      <p id="cnt-employees" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    </div>
+    <div class="card text-center">
       <h4 class="text-xs font-medium text-gray-500 uppercase">Uploads</h4>
       <p id="cnt-uploads" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
@@ -44,6 +48,7 @@ import Layout from '../../components/layout/Layout.astro';
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="employees">Employees</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="upload">Upload</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="sample-data">Sample Data</button>
     </div>
@@ -114,9 +119,45 @@ import Layout from '../../components/layout/Layout.astro';
     <div id="tab-hierarchies" class="hidden">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-base font-semibold">Hierarchies</h3>
-        <button id="delete-all-hier" class="btn-danger text-xs">Delete All</button>
+        <div class="flex items-center gap-2">
+          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+            <button id="hier-view-list" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchHierView('list')">List</button>
+            <button id="hier-view-tree" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchHierView('tree')">Tree View</button>
+          </div>
+          <button id="delete-all-hier" class="btn-danger text-xs">Delete All</button>
+        </div>
       </div>
-      <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <!-- List view -->
+      <div id="hier-list-view">
+        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      </div>
+      <!-- Tree view -->
+      <div id="hier-tree-view" class="hidden">
+        <div class="flex items-center gap-3 mb-3">
+          <select id="hier-tree-select" class="input text-sm w-64">
+            <option value="">Select a hierarchy...</option>
+          </select>
+          <button id="expand-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(true)">Expand All</button>
+          <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
+          <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
+        </div>
+        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto">Select a hierarchy to view its tree structure.</div>
+      </div>
+    </div>
+
+    <!-- Employees Tab -->
+    <div id="tab-employees" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Employees (SAP HR Master Data)</h3>
+        <div class="flex items-center gap-2">
+          <input id="search-emp" type="text" placeholder="Search GPN, name, email..." class="input text-sm w-56" />
+          <button onclick="downloadTableCSV('emp-table','employees.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-emp" class="btn-danger text-xs">Delete All</button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
+      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
     <!-- Upload Tab -->
@@ -132,6 +173,7 @@ import Layout from '../../components/layout/Layout.astro';
             <option value="balances">Balances</option>
             <option value="entities">Entities</option>
             <option value="hierarchies">Hierarchies</option>
+            <option value="employees">Employees (SAP HR)</option>
           </select>
         </div>
         <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
@@ -233,12 +275,12 @@ import Layout from '../../components/layout/Layout.astro';
       if (t) sortTable(t);
     });
   });
-  ['entities-table','cc-table','pc-table','bal-table','hier-table'].forEach(function(id) {
+  ['entities-table','cc-table','pc-table','bal-table','hier-table','emp-table'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) sortObserver.observe(el, { childList: true });
   });
 
-  var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','upload','sample-data'];
+  var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -261,6 +303,7 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
       document.getElementById('cnt-balances').textContent = fmt(d.balances);
       document.getElementById('cnt-hierarchies').textContent = fmt(d.hierarchies);
+      document.getElementById('cnt-employees').textContent = fmt(d.employees || 0);
       document.getElementById('cnt-uploads').textContent = fmt(d.upload_batches);
     }).catch(function() {});
   }
@@ -435,6 +478,157 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadHierarchies();
 
+  // --- Hierarchy Tree View ---
+  var hierTreeData = null;
+  window.switchHierView = function(view) {
+    document.getElementById('hier-list-view').classList.toggle('hidden', view !== 'list');
+    document.getElementById('hier-tree-view').classList.toggle('hidden', view !== 'tree');
+    document.getElementById('hier-view-list').className = view === 'list' ? 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium' : 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
+    document.getElementById('hier-view-tree').className = view === 'tree' ? 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium' : 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
+    if (view === 'tree') populateHierSelector();
+  };
+
+  function populateHierSelector() {
+    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var sel = document.getElementById('hier-tree-select');
+      sel.innerHTML = '<option value="">Select a hierarchy...</option>';
+      (d.items || []).forEach(function(h) {
+        var opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = h.setclass + ' / ' + h.setname + (h.description ? ' — ' + h.description : '');
+        sel.appendChild(opt);
+      });
+    }).catch(function() {});
+  }
+
+  document.getElementById('hier-tree-select').addEventListener('change', function() {
+    var hierId = this.value;
+    if (!hierId) { document.getElementById('hier-tree-container').textContent = 'Select a hierarchy to view its tree structure.'; return; }
+    document.getElementById('hier-tree-container').innerHTML = '<span class="text-gray-400">Loading tree...</span>';
+    fetch('/api/legacy/hierarchies/' + hierId + '/tree', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      hierTreeData = d;
+      renderTree(d.tree, '');
+    }).catch(function(e) { document.getElementById('hier-tree-container').textContent = 'Error: ' + e.message; });
+  });
+
+  function renderTree(tree, filter) {
+    var container = document.getElementById('hier-tree-container');
+    if (!tree || !tree.length) { container.textContent = 'No nodes in this hierarchy.'; return; }
+    var html = '<div class="space-y-0.5">';
+    tree.forEach(function(node) { html += renderNode(node, 0, filter); });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function renderNode(node, depth, filter) {
+    var indent = depth * 24;
+    var hasChildren = node.children && node.children.length > 0;
+    var hasCCs = node.cost_centers && node.cost_centers.length > 0;
+    var matches = !filter || node.setname.toLowerCase().indexOf(filter) >= 0;
+    var childMatches = false;
+    var childHtml = '';
+    if (hasChildren) {
+      node.children.forEach(function(c) {
+        var ch = renderNode(c, depth + 1, filter);
+        if (ch) { childHtml += ch; childMatches = true; }
+      });
+    }
+    var ccHtml = '';
+    if (hasCCs) {
+      node.cost_centers.forEach(function(cc) {
+        var ccMatch = !filter || cc.cctr.toLowerCase().indexOf(filter) >= 0 || (cc.name || '').toLowerCase().indexOf(filter) >= 0;
+        if (ccMatch || matches) {
+          childMatches = true;
+          ccHtml += '<div class="flex items-center gap-2 py-0.5 text-xs" style="padding-left:' + ((depth+1)*24+16) + 'px">' +
+            '<span class="text-blue-500">&#9679;</span> ' +
+            '<span class="font-mono font-medium">' + esc(cc.cctr) + '</span>' +
+            '<span class="text-gray-500">' + esc(cc.name || '') + '</span>' +
+            (cc.ccode ? '<span class="text-gray-400 text-[10px]">[' + esc(cc.ccode) + ']</span>' : '') +
+            (cc.responsible ? '<span class="text-gray-400 text-[10px]">Owner: ' + esc(cc.responsible) + '</span>' : '') +
+            '</div>';
+        }
+      });
+    }
+    if (filter && !matches && !childMatches) return '';
+    var icon = hasChildren || hasCCs ? '<span class="tree-toggle cursor-pointer select-none text-gray-400 hover:text-gray-700 w-4 text-center inline-block" onclick="toggleTreeNode(this)">' + (hasChildren || hasCCs ? '&#9660;' : '&nbsp;') + '</span>' : '<span class="w-4 inline-block">&nbsp;</span>';
+    var typeLabel = node.type === 'leaf' ? '<span class="text-[10px] bg-green-100 text-green-700 px-1 rounded">LEAF</span>' : '<span class="text-[10px] bg-gray-100 text-gray-600 px-1 rounded">NODE</span>';
+    var ccCount = hasCCs ? '<span class="text-[10px] text-blue-500 ml-1">(' + node.cost_centers.length + ' CCs)</span>' : '';
+    var html = '<div class="tree-node">' +
+      '<div class="flex items-center gap-1 py-0.5 hover:bg-gray-50 rounded px-1" style="padding-left:' + indent + 'px">' +
+      icon + ' ' + typeLabel + ' <span class="font-mono font-medium text-sm">' + esc(node.setname) + '</span>' + ccCount +
+      '</div>';
+    if (hasChildren || hasCCs) {
+      html += '<div class="tree-children">' + childHtml + ccHtml + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  window.toggleTreeNode = function(el) {
+    var children = el.closest('.tree-node').querySelector('.tree-children');
+    if (children) {
+      var hidden = children.classList.toggle('hidden');
+      el.innerHTML = hidden ? '&#9654;' : '&#9660;';
+    }
+  };
+
+  window.toggleAllNodes = function(expand) {
+    document.querySelectorAll('.tree-children').forEach(function(el) {
+      el.classList.toggle('hidden', !expand);
+    });
+    document.querySelectorAll('.tree-toggle').forEach(function(el) {
+      el.innerHTML = expand ? '&#9660;' : '&#9654;';
+    });
+  };
+
+  document.getElementById('hier-tree-search').addEventListener('input', function() {
+    var filter = this.value.toLowerCase().trim();
+    if (hierTreeData) renderTree(hierTreeData.tree, filter);
+  });
+
+  // --- Employees ---
+  var empPage = 1;
+  window.loadEmployees = function(page) {
+    empPage = page || 1;
+    var search = document.getElementById('search-emp').value;
+    var url = '/api/employees?page=' + empPage + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('emp-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No employees found. Upload employee data via the Upload tab or extract from SAP.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">GPN</th>' +
+        '<th class="py-2 px-2 text-left">Name</th>' +
+        '<th class="py-2 px-2 text-left">Email</th>' +
+        '<th class="py-2 px-2 text-left">Status</th>' +
+        '<th class="py-2 px-2 text-left">Org Unit</th>' +
+        '<th class="py-2 px-2 text-left">Cost Center</th>' +
+        '<th class="py-2 px-2 text-left">Company</th>' +
+        '<th class="py-2 px-2 text-left">Job</th>' +
+        '<th class="py-2 px-2 text-left">Location</th>' +
+        '<th class="py-2 px-2 text-left">Manager</th>' +
+        '</tr></thead><tbody>';
+      d.items.forEach(function(e) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.gpn) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.display_name || e.bs_name || '') + '</td>' +
+          '<td class="py-1.5 px-2 text-blue-600">' + esc(e.email_address || '') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.emp_status || '') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.ou_cd || '') + (e.ou_desc ? ' <span class="text-gray-400">' + esc(e.ou_desc) + '</span>' : '') + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(e.local_cc_cd || '') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.gcrs_comp_cd || '') + '</td>' +
+          '<td class="py-1.5 px-2 text-xs">' + esc(e.job_desc || '') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.locn_city_name_1 || '') + '</td>' +
+          '<td class="py-1.5 px-2">' + (e.lm_gpn ? esc(e.lm_gpn) + ' ' + esc((e.lm_bs_firstname || '') + ' ' + (e.lm_bs_lastname || '')) : '') + '</td>' +
+          '</tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+      document.getElementById('emp-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadEmployees');
+    }).catch(function(e) { document.getElementById('emp-table').textContent = 'Error: ' + e.message; });
+  };
+  loadEmployees(1);
+  document.getElementById('search-emp').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEmployees(1); }, 300); });
+
   // Populate entity filters
   fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
     ['filter-cc-ccode','filter-pc-ccode'].forEach(function(id) {
@@ -572,6 +766,10 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('delete-all-hier').addEventListener('click', function() {
     if (!confirm('Delete ALL hierarchies?')) return;
     fetch('/api/data/hierarchies/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadHierarchies(); });
+  });
+  document.getElementById('delete-all-emp').addEventListener('click', function() {
+    if (!confirm('Delete ALL employee records?')) return;
+    fetch('/api/data/employees/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadEmployees(1); });
   });
 
   // --- Sample Data ---

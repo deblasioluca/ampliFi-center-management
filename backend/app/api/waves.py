@@ -670,6 +670,113 @@ def set_preferred_run(
     return {"status": "proposed", "preferred_run_id": run_id}
 
 
+@router.post("/{wave_id}/reset-proposals")
+def reset_proposals(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Delete all proposals for a wave and release allocated IDs.
+
+    Used when re-running analysis — clears old proposals and recycles
+    any CC/PC IDs allocated from the NamingPool back to the pool.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status in ("locked", "in_review", "signed_off"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot reset proposals: wave is {wave.status}",
+        )
+
+    from app.domain.proposal.service import release_proposal_ids
+
+    proposals = (
+        db.execute(
+            select(CenterProposal)
+            .join(AnalysisRun)
+            .where(AnalysisRun.wave_id == wave_id)
+        )
+        .scalars()
+        .all()
+    )
+
+    released_ids = 0
+    for p in proposals:
+        released_ids += release_proposal_ids(p.id, db)
+        db.delete(p)
+
+    if wave.status == "proposed":
+        wave.status = "analysing"
+
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.proposals_reset",
+        entity_type="wave",
+        entity_id=wave.id,
+        actor_id=user.id,
+        actor_email=user.email,
+        after={
+            "proposals_deleted": len(proposals),
+            "ids_released": released_ids,
+        },
+    )
+    db.commit()
+    return {
+        "proposals_deleted": len(proposals),
+        "ids_released": released_ids,
+    }
+
+
+@router.delete("/{wave_id}")
+def delete_wave(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Delete a wave and all associated data (proposals, scopes, runs)."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status in ("in_review", "signed_off"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete wave in status {wave.status}",
+        )
+
+    from app.domain.proposal.service import release_proposal_ids
+
+    proposals = (
+        db.execute(
+            select(CenterProposal)
+            .join(AnalysisRun)
+            .where(AnalysisRun.wave_id == wave_id)
+        )
+        .scalars()
+        .all()
+    )
+    for p in proposals:
+        release_proposal_ids(p.id, db)
+
+    db.delete(wave)
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.deleted",
+        entity_type="wave",
+        entity_id=wave_id,
+        actor_id=user.id,
+        actor_email=user.email,
+        after={"wave_code": wave.code},
+    )
+    db.commit()
+    return {"status": "deleted"}
+
+
 class ReviewScopeCreate(BaseModel):
     name: str
     scope_type: str = "entity"

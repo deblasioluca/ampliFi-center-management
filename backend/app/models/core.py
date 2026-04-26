@@ -39,6 +39,77 @@ class Entity(TimestampMixin, Base):
     attrs: Mapped[dict | None] = mapped_column(JSONB)
 
 
+class Employee(TimestampMixin, Base):
+    """Employee master data (sourced from SAP HR or manual CSV upload)."""
+
+    __tablename__ = "employee"
+    __table_args__ = (
+        UniqueConstraint("gpn", "refresh_batch"),
+        Index("ix_emp_user_id", "user_id_pid"),
+        Index("ix_emp_ou_cd", "ou_cd"),
+        Index("ix_emp_cost_pc", "local_cc_cd"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    gpn: Mapped[str] = mapped_column(String(20), nullable=False)
+    bs_name: Mapped[str | None] = mapped_column(String(200))
+    bs_firstname: Mapped[str | None] = mapped_column(String(100))
+    bs_lastname: Mapped[str | None] = mapped_column(String(100))
+    legal_family_name: Mapped[str | None] = mapped_column(String(100))
+    legal_first_name: Mapped[str | None] = mapped_column(String(100))
+    email_address: Mapped[str | None] = mapped_column(String(200))
+    emp_status: Mapped[str | None] = mapped_column(String(20))
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    gender_code: Mapped[str | None] = mapped_column(String(5))
+    user_id_pid: Mapped[str | None] = mapped_column(String(30))
+    user_id_tnumber: Mapped[str | None] = mapped_column(String(30))
+    uuname: Mapped[str | None] = mapped_column(String(30))
+    # Organizational
+    ou_pk: Mapped[str | None] = mapped_column(String(20))
+    ou_cd: Mapped[str | None] = mapped_column(String(20))
+    ou_desc: Mapped[str | None] = mapped_column(String(200))
+    wrk_in_ou_pk: Mapped[str | None] = mapped_column(String(20))
+    wrk_in_ou_cd: Mapped[str | None] = mapped_column(String(20))
+    wrk_in_ou_desc: Mapped[str | None] = mapped_column(String(200))
+    # Cost center / company
+    local_cc_cd: Mapped[str | None] = mapped_column(String(20))
+    local_cc_desc: Mapped[str | None] = mapped_column(String(200))
+    gcrs_comp_cd: Mapped[str | None] = mapped_column(String(20))
+    gcrs_comp_desc: Mapped[str | None] = mapped_column(String(200))
+    cost_pc_cd_e_ou: Mapped[str | None] = mapped_column(String(20))
+    cost_pc_cd_w_ou: Mapped[str | None] = mapped_column(String(20))
+    # Manager
+    lm_gpn: Mapped[str | None] = mapped_column(String(20))
+    lm_bs_firstname: Mapped[str | None] = mapped_column(String(100))
+    lm_bs_lastname: Mapped[str | None] = mapped_column(String(100))
+    supervisor_gpn: Mapped[str | None] = mapped_column(String(20))
+    # Job / rank
+    rank_cd: Mapped[str | None] = mapped_column(String(20))
+    rank_desc: Mapped[str | None] = mapped_column(String(200))
+    job_desc: Mapped[str | None] = mapped_column(String(200))
+    empl_class: Mapped[str | None] = mapped_column(String(20))
+    full_time_eq: Mapped[str | None] = mapped_column(String(10))
+    head_of_own_ou: Mapped[str | None] = mapped_column(String(5))
+    # Location
+    reg_region: Mapped[str | None] = mapped_column(String(50))
+    locn_city_name_1: Mapped[str | None] = mapped_column(String(100))
+    locn_ctry_cd_1: Mapped[str | None] = mapped_column(String(5))
+    building_cd_1: Mapped[str | None] = mapped_column(String(20))
+    # All remaining fields stored as JSON
+    attrs: Mapped[dict | None] = mapped_column(JSONB)
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
+
+    @property
+    def display_name(self) -> str:
+        """Format as 'GPN Name' for owner display."""
+        name = self.bs_name or f"{self.bs_firstname or ''} {self.bs_lastname or ''}".strip()
+        return f"{self.gpn} {name}".strip()
+
+
 class LegacyCostCenter(TimestampMixin, Base):
     __tablename__ = "legacy_cost_center"
     __table_args__ = (
@@ -857,3 +928,50 @@ class GLAccountClassRange(TimestampMixin, Base):
     from_account: Mapped[str] = mapped_column(String(20), nullable=False)
     to_account: Mapped[str] = mapped_column(String(20), nullable=False)
     category: Mapped[str | None] = mapped_column(String(40))  # bs|rev|opex|other
+
+
+class NamingPool(Base):
+    """Pool of allocatable CC/PC IDs per wave (supports ID recycling)."""
+
+    __tablename__ = "naming_pool"
+    __table_args__ = (
+        UniqueConstraint("wave_id", "pool_type"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wave_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=False
+    )
+    pool_type: Mapped[str] = mapped_column(String(10), nullable=False)  # CC or PC
+    range_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    range_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    allocations: Mapped[list[NamingAllocation]] = relationship(back_populates="pool")
+
+
+class NamingAllocation(Base):
+    """Individual ID allocation from a naming pool, supports release/recycle."""
+
+    __tablename__ = "naming_allocation"
+    __table_args__ = (
+        Index("ix_nalloc_pool", "pool_id"),
+        Index("ix_nalloc_proposal", "proposal_id"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pool_id: Mapped[int] = mapped_column(
+        ForeignKey("cleanup.naming_pool.id", ondelete="CASCADE"), nullable=False
+    )
+    proposal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.center_proposal.id", ondelete="SET NULL")
+    )
+    allocated_value: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_released: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    pool: Mapped[NamingPool] = relationship(back_populates="allocations")
