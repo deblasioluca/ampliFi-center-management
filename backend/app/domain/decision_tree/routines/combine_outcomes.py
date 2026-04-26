@@ -97,10 +97,10 @@ class CombineOutcomesRoutine:
         if cleansing_outcome in ("RETIRE", "REDESIGN"):
             target_object = "NONE"
 
-        # Fallthrough for mapping: if nothing matched → NONE (candidate for closing)
-        if cleansing_outcome in ("KEEP", "MERGE_MAP") and target_object == "NONE":
-            target_object = "NONE"
-            rule_path.append("mapping.fallthrough→NONE")
+        # Fallthrough for mapping: KEEP defaults to CC (ensures target creation)
+        if cleansing_outcome == "KEEP" and target_object == "NONE":
+            target_object = "CC"
+            rule_path.append("mapping.fallthrough→CC")
 
         # ML confidence from context
         if ctx.ml_outcome_probs:

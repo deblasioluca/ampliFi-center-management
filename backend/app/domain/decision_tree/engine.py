@@ -282,6 +282,9 @@ def evaluate_center_with_pipeline(
             target = TargetObject(target_str)
             if r.payload.get("ml_confidence") is not None:
                 confidence = r.payload["ml_confidence"]
+            # Clear stale merge_into if aggregate resolved to non-MERGE_MAP
+            if cleansing != CleansingOutcome.MERGE_MAP:
+                merge_into = None
         elif r.verdict in ("RETIRE", "MERGE_MAP", "REDESIGN"):
             cleansing = CleansingOutcome(r.verdict)
             if r.verdict == "MERGE_MAP":

@@ -792,7 +792,7 @@ def list_review_scopes(
                 "reviewer_email": s.reviewer_email,
                 "total_items": total_items,
                 "decided_items": decided_items,
-                "token": s.token,
+                "token_hint": s.token[:8] + "..." if s.token else None,
             }
         )
     return {"wave_id": wave_id, "items": items}
