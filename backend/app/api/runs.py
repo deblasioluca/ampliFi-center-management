@@ -392,13 +392,13 @@ def batch_compute_features(
         select(
             Balance.cctr,
             func.sum(
-                case((Balance.gl_class == "BS", Balance.amount), else_=literal_column("0"))
+                case((Balance.account_class == "BS", Balance.tc_amt), else_=literal_column("0"))
             ).label("bs_amt"),
             func.sum(
-                case((Balance.gl_class == "OPEX", Balance.amount), else_=literal_column("0"))
+                case((Balance.account_class == "OPEX", Balance.tc_amt), else_=literal_column("0"))
             ).label("opex_amt"),
             func.sum(
-                case((Balance.gl_class == "REV", Balance.amount), else_=literal_column("0"))
+                case((Balance.account_class == "REV", Balance.tc_amt), else_=literal_column("0"))
             ).label("rev_amt"),
             func.count(Balance.id).label("posting_count"),
         )

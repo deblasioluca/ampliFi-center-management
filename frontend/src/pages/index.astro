@@ -129,7 +129,7 @@ import Layout from '../components/layout/Layout.astro';
     var u = d.universe || {};
     document.getElementById('kpi-entities').textContent = fmt(u.entities_total);
     document.getElementById('kpi-cc').textContent = fmt(u.legacy_cc_total);
-    document.getElementById('kpi-pc').textContent = fmt(u.profit_centers_total);
+    document.getElementById('kpi-pc').textContent = fmt(u.legacy_pc_total);
     document.getElementById('kpi-bal').textContent = fmt(u.balances_total);
     document.getElementById('kpi-waves').textContent = fmt(u.waves_total);
   }).catch(function() {});

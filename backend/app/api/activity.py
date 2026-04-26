@@ -61,7 +61,9 @@ def mark_all_read(
 ) -> dict:
     db.execute(
         update(ActivityFeedEntry)
-        .where(ActivityFeedEntry.user_id == user.id)
+        .where(
+            (ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None))
+        )
         .where(ActivityFeedEntry.is_read.is_(False))
         .values(is_read=True)
     )

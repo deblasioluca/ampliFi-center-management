@@ -930,7 +930,7 @@ def reviewer_workload(
             db.execute(
                 select(func.count(ReviewItem.id)).where(
                     ReviewItem.scope_id == s.id,
-                    ReviewItem.decision.isnot(None),
+                    ReviewItem.decision != "PENDING",
                 )
             ).scalar()
             or 0
@@ -1034,8 +1034,8 @@ def auto_approve_obvious(
 
     approved_count = 0
     for item, proposal in pending:
-        confidence = (proposal.meta or {}).get("confidence", 0)
-        if proposal.verdict in params.verdicts and confidence >= params.confidence_threshold:
+        confidence = float(proposal.confidence or 0)
+        if proposal.cleansing_outcome in params.verdicts and confidence >= params.confidence_threshold:
             item.decision = "APPROVED"
             item.decided_by = f"auto:{user.id}"
             approved_count += 1
