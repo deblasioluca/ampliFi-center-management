@@ -112,6 +112,7 @@ async def oidc_start(request: Request, db: Session = Depends(get_db)) -> dict:
 
     cfg = EntraIDConfig(cfg_row.value)
     import secrets as sec
+
     state = sec.token_urlsafe(32)
     nonce = sec.token_urlsafe(32)
     auth_url, code_verifier = build_auth_url(cfg, state, nonce)

@@ -56,6 +56,7 @@ def generate_pkce() -> tuple[str, str]:
     verifier = secrets.token_urlsafe(64)
     challenge = hashlib.sha256(verifier.encode()).digest()
     import base64
+
     challenge_b64 = base64.urlsafe_b64encode(challenge).rstrip(b"=").decode()
     return verifier, challenge_b64
 
@@ -129,14 +130,10 @@ def upsert_user_from_claims(claims: dict, cfg: EntraIDConfig, db: Session) -> Ap
     email = claims.get("preferred_username") or claims.get("email") or claims.get("upn", "")
     display_name = claims.get("name", email)
 
-    user = db.execute(
-        select(AppUser).where(AppUser.external_id == oid)
-    ).scalar_one_or_none()
+    user = db.execute(select(AppUser).where(AppUser.external_id == oid)).scalar_one_or_none()
 
     if not user:
-        user = db.execute(
-            select(AppUser).where(AppUser.email == email)
-        ).scalar_one_or_none()
+        user = db.execute(select(AppUser).where(AppUser.email == email)).scalar_one_or_none()
 
     # Determine role from group claims
     role = "reviewer"

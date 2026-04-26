@@ -280,11 +280,13 @@ def search_help(q: str = Query(..., min_length=2)) -> dict:
         if q_lower in topic["content"].lower():
             score += 2
         if score > 0:
-            results.append({
-                "key": key,
-                "title": topic["title"],
-                "summary": topic["summary"],
-                "score": score,
-            })
+            results.append(
+                {
+                    "key": key,
+                    "title": topic["title"],
+                    "summary": topic["summary"],
+                    "score": score,
+                }
+            )
     results.sort(key=lambda x: x["score"], reverse=True)
     return {"query": q, "results": results}

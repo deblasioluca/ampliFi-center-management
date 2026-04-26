@@ -74,6 +74,22 @@ def run_housekeeping(
     }
 
 
+@router.post("/admin/housekeeping/cycles/{cycle_id}/notify")
+def notify_owners(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Send email notifications to all owners with flagged items."""
+    from app.services.housekeeping import send_notifications
+
+    try:
+        result = send_notifications(cycle_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return result
+
+
 @router.post("/admin/housekeeping/cycles/{cycle_id}/close")
 def close_cycle(
     cycle_id: int,

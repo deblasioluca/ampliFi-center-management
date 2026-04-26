@@ -111,9 +111,7 @@ class CostGuardrail:
             return 0.0
 
     def _get_monthly_spend(self, db: Session) -> float:
-        month_start = datetime.now(UTC).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        month_start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         try:
             result = db.execute(
                 text(

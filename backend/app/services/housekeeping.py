@@ -182,6 +182,90 @@ def decide_item(
     return item
 
 
+def send_notifications(cycle_id: int, db: Session) -> dict:
+    """Send housekeeping digest emails to all owners with flagged items."""
+    cycle = db.get(HousekeepingCycle, cycle_id)
+    if not cycle:
+        raise ValueError(f"Cycle {cycle_id} not found")
+    if cycle.status != "review_open":
+        raise ValueError(f"Cycle {cycle_id} is {cycle.status}, expected review_open")
+
+    items = (
+        db.execute(
+            select(HousekeepingItem).where(
+                HousekeepingItem.cycle_id == cycle_id,
+                HousekeepingItem.decision.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Group items by owner
+    owner_items: dict[str, list] = {}
+    for item in items:
+        email = item.owner_email
+        if not email:
+            continue
+        owner_items.setdefault(email, []).append(item)
+
+    sent_count = 0
+    failed_count = 0
+
+    for email, owner_group in owner_items.items():
+        try:
+            from app.infra.email.engine import EmailEngine
+            from app.models.core import AppConfig
+
+            cfg = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
+            email_cfg = cfg.value if cfg else {}
+
+            engine = EmailEngine(
+                host=email_cfg.get("smtp_host", "localhost"),
+                port=email_cfg.get("smtp_port", 1025),
+                username=email_cfg.get("smtp_user", ""),
+                password=email_cfg.get("smtp_pass", ""),
+                use_tls=email_cfg.get("smtp_tls", False),
+            )
+
+            flagged_lines = []
+            for it in owner_group:
+                tcc = db.get(TargetCostCenter, it.target_cc_id)
+                flag_desc = it.flag
+                cctr = tcc.cctr if tcc else "unknown"
+                flagged_lines.append(f"- {cctr}: {flag_desc}")
+
+            base_url = email_cfg.get("base_url", "http://localhost:4321")
+            engine.send(
+                to=email,
+                template_name="housekeeping_notification",
+                context={
+                    "owner_name": email.split("@")[0],
+                    "period": cycle.period,
+                    "flagged_centers": "\n".join(flagged_lines),
+                    "review_url": (
+                        f"{base_url}/housekeeping/{cycle.id}/owner/{owner_group[0].owner_token}"
+                    ),
+                },
+            )
+            sent_count += 1
+        except Exception as e:
+            logger.warning(
+                "housekeeping.notification_failed",
+                email=email,
+                error=str(e),
+            )
+            failed_count += 1
+
+    logger.info(
+        "housekeeping.notifications_sent",
+        cycle_id=cycle_id,
+        sent=sent_count,
+        failed=failed_count,
+    )
+    return {"sent": sent_count, "failed": failed_count}
+
+
 def close_cycle(cycle_id: int, db: Session) -> HousekeepingCycle:
     """Close a housekeeping cycle after all items are decided or expired."""
     cycle = db.get(HousekeepingCycle, cycle_id)
