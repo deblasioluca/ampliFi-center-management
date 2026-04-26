@@ -1,10 +1,26 @@
-"""Decision tree engine — deterministic cleansing & mapping trees (section 04)."""
+"""Decision tree engine — executes pipeline of registered routines (§04.5).
+
+The engine runs a configured pipeline of routines against a center context.
+Each routine produces a RoutineResult with a verdict. Short-circuiting
+verdicts halt the pipeline early. The aggregate routine combines all
+results into the final cleansing_outcome + target_object.
+
+Determinism rule (§04): Re-running a pipeline on the same data_snapshot
+with the same config MUST produce the same outcomes (LLM stochasticity
+captured separately).
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+
+import structlog
+
+from app.domain.decision_tree.context import CenterContext, RoutineResult
+from app.domain.decision_tree.registry import RoutineRegistry, get_registry
+
+logger = structlog.get_logger()
 
 
 class CleansingOutcome(StrEnum):
@@ -26,6 +42,8 @@ class TargetObject(StrEnum):
 
 @dataclass(frozen=True)
 class CenterFeatures:
+    """Legacy type for backward compatibility. Use CenterContext for new code."""
+
     coarea: str
     cctr: str
     ccode: str
@@ -54,45 +72,72 @@ class CenterFeatures:
 
 @dataclass
 class TreeResult:
+    """Combined result of running both trees on a center."""
+
     cleansing: CleansingOutcome
     target_object: TargetObject | None = None
     merge_into: str | None = None
     rule_path: list[str] = field(default_factory=list)
     confidence: float = 1.0
+    routine_results: list[RoutineResult] = field(default_factory=list)
 
 
-class RoutineProtocol(Protocol):
-    code: str
-    name: str
-    kind: str
-    tree: str
+class PipelineEngine:
+    """Executes a configured pipeline of routines against a center (§04.5)."""
 
-    def evaluate(self, features: CenterFeatures, params: dict) -> dict: ...
+    def __init__(self, registry: RoutineRegistry | None = None) -> None:
+        self._registry = registry or get_registry()
+
+    def execute(self, config: dict, ctx: CenterContext) -> list[RoutineResult]:
+        """Run pipeline steps in order, respecting short_circuit and enabled flags."""
+        results: list[RoutineResult] = []
+        pipeline = config.get("pipeline", [])
+
+        for step in pipeline:
+            if not step.get("enabled", True):
+                continue
+
+            routine_code = step.get("routine", "")
+            routine = self._registry.get(routine_code)
+            if routine is None:
+                logger.warning("engine.routine_not_found", code=routine_code)
+                results.append(
+                    RoutineResult(
+                        code=routine_code,
+                        verdict="ERROR",
+                        reason=f"routine.not_found:{routine_code}",
+                    )
+                )
+                continue
+
+            step_params = step.get("params", {})
+            result = routine.run(ctx, step_params)
+            results.append(result)
+
+            if result.short_circuit:
+                break
+
+        return results
+
+
+# ── Backward compatibility functions ─────────────────────────────────────
+# These wrap the old hardcoded logic for existing callers.
+# New code should use PipelineEngine directly.
 
 
 def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> TreeResult:
-    """Deterministic cleansing tree (section 04.1).
-
-    Decision order:
-    1. Inactive → RETIRE
-    2. No postings in window → RETIRE
-    3. Duplicate cluster member (not survivor) → MERGE_MAP
-    4. Non-compliant hierarchy placement → REDESIGN (strict mode)
-    5. Otherwise → KEEP
-    """
+    """Deterministic cleansing tree — backward compatible wrapper."""
     path: list[str] = []
     p = params or {}
-    inactivity_months = p.get("inactivity_threshold_months", 24)
+    inactivity_months = p.get("inactivity_threshold_months", 12)
     posting_threshold = p.get("posting_threshold", 0)
     strict_hierarchy = p.get("strict_hierarchy_compliance", False)
 
-    # Step 1: active check
     if not features.is_active:
         path.append("inactive=true → RETIRE")
         return TreeResult(cleansing=CleansingOutcome.RETIRE, rule_path=path)
     path.append("inactive=false")
 
-    # Step 2: posting activity
     if (
         features.months_since_last_posting is not None
         and features.months_since_last_posting >= inactivity_months
@@ -106,7 +151,11 @@ def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> 
         return TreeResult(cleansing=CleansingOutcome.RETIRE, rule_path=path)
     path.append("posting_activity=sufficient")
 
-    # Step 3: duplicate cluster
+    if not features.has_owner:
+        path.append("no_owner → RETIRE")
+        return TreeResult(cleansing=CleansingOutcome.RETIRE, rule_path=path)
+    path.append("owner=valid")
+
     if features.duplicate_cluster_id and features.duplicate_cluster_size > 1:
         cid = features.duplicate_cluster_id
         csz = features.duplicate_cluster_size
@@ -118,13 +167,25 @@ def run_cleansing_tree(features: CenterFeatures, params: dict | None = None) -> 
         )
     path.append("no_duplicate")
 
-    # Step 4: hierarchy compliance
-    if strict_hierarchy and features.hierarchy_membership_count == 0:
-        path.append("hierarchy_membership=0 (strict) → REDESIGN")
-        return TreeResult(cleansing=CleansingOutcome.REDESIGN, rule_path=path)
+    if features.hierarchy_membership_count != 1:
+        count = features.hierarchy_membership_count
+        if count == 0 and strict_hierarchy:
+            path.append(f"hierarchy_membership={count} (strict) → REDESIGN")
+            return TreeResult(cleansing=CleansingOutcome.REDESIGN, rule_path=path)
+        elif count != 1:
+            path.append(f"hierarchy_membership={count} → MERGE_MAP")
+            return TreeResult(cleansing=CleansingOutcome.MERGE_MAP, rule_path=path)
     path.append("hierarchy_ok")
 
-    # Step 5: KEEP
+    in_bw = features.attrs.get("in_bw_extractors", False)
+    in_grc = features.attrs.get("in_grc", False)
+    in_ic = features.attrs.get("in_intercompany", False)
+    if in_bw or in_grc or in_ic:
+        deps = [d for d, v in [("BW", in_bw), ("GRC", in_grc), ("IC", in_ic)] if v]
+        path.append(f"cross_system_deps={deps} → MERGE_MAP")
+        return TreeResult(cleansing=CleansingOutcome.MERGE_MAP, rule_path=path)
+    path.append("no_cross_deps")
+
     path.append("all_checks_passed → KEEP")
     return TreeResult(cleansing=CleansingOutcome.KEEP, rule_path=path)
 
@@ -134,44 +195,98 @@ def run_mapping_tree(
     cleansing: CleansingOutcome,
     params: dict | None = None,
 ) -> TargetObject | None:
-    """Deterministic mapping tree (section 04.2).
-
-    Assigns target object type based on financial profile.
-    Only runs for KEEP and REDESIGN outcomes.
-    """
-    if cleansing in (CleansingOutcome.RETIRE, CleansingOutcome.MERGE_MAP):
+    """Deterministic mapping tree (§04.2 slide 12) — backward compatible wrapper."""
+    if cleansing in (CleansingOutcome.RETIRE, CleansingOutcome.REDESIGN):
         return TargetObject.NONE
 
-    # Step 1: B/S relevance
-    if features.bs_amt != 0:
-        if features.rev_amt != 0 or features.opex_amt != 0:
+    # Step ①: direct revenue
+    has_rev = features.rev_amt != 0 or features.attrs.get("has_direct_revenue", False)
+    if has_rev:
+        if features.is_feeder:
             return TargetObject.CC_AND_PC
         return TargetObject.PC_ONLY
 
-    # Step 2: project-related
-    if features.is_project_related:
-        if features.is_allocation_vehicle:
-            return TargetObject.WBS_STAT
+    # Step ②: project costs
+    if features.is_project_related or features.attrs.get("collects_project_costs", False):
         return TargetObject.WBS_REAL
 
-    # Step 3: feeder / allocation
-    if features.is_feeder or features.is_allocation_vehicle:
+    # Step ③: operational costs
+    if features.opex_amt != 0 or features.attrs.get("has_operational_costs", False):
         return TargetObject.CC
 
-    # Step 4: operational with revenue
-    if features.rev_amt != 0:
-        return TargetObject.CC_AND_PC
+    # Step ④: revenue allocation vehicle
+    if features.attrs.get("used_for_revenue_allocation", False):
+        return TargetObject.WBS_REAL
 
-    # Step 5: default
-    return TargetObject.CC
+    # Step ⑤: cost allocation vehicle
+    if features.is_allocation_vehicle or features.attrs.get("used_for_cost_allocation", False):
+        return TargetObject.CC
+
+    # Step ⑥: information-only
+    if features.attrs.get("used_for_info_only", False):
+        return TargetObject.WBS_STAT
+
+    # Fall-through: candidate for closing
+    return TargetObject.NONE
 
 
 def evaluate_center(
     features: CenterFeatures,
     params: dict | None = None,
 ) -> TreeResult:
-    """Run both trees and return combined result."""
+    """Run both trees and return combined result (backward compatible)."""
     result = run_cleansing_tree(features, params)
     target = run_mapping_tree(features, result.cleansing, params)
     result.target_object = target
     return result
+
+
+def evaluate_center_with_pipeline(
+    ctx: CenterContext,
+    config: dict,
+    registry: RoutineRegistry | None = None,
+) -> TreeResult:
+    """Run the full pipeline engine and return a TreeResult.
+
+    This is the preferred entry point for new code.
+    """
+    engine = PipelineEngine(registry)
+    results = engine.execute(config, ctx)
+
+    # Extract final outcome from results
+    cleansing = CleansingOutcome.KEEP
+    target = TargetObject.NONE
+    rule_path: list[str] = []
+    merge_into: str | None = None
+    confidence = 1.0
+
+    for r in results:
+        rule_path.append(f"{r.code}:{r.verdict}:{r.reason}")
+
+        if r.code == "aggregate.combine_outcomes":
+            cleansing = CleansingOutcome(r.payload.get("cleansing_outcome", "KEEP"))
+            target_str = r.payload.get("target_object", "NONE")
+            target = TargetObject(target_str)
+            if r.payload.get("ml_confidence") is not None:
+                confidence = r.payload["ml_confidence"]
+        elif r.short_circuit and r.verdict in ("RETIRE", "MERGE_MAP", "REDESIGN"):
+            cleansing = CleansingOutcome(r.verdict)
+            if r.verdict == "MERGE_MAP":
+                merge_into = r.payload.get("cluster_id")
+        elif r.short_circuit and r.verdict in (
+            "CC",
+            "PC_ONLY",
+            "CC_AND_PC",
+            "WBS_REAL",
+            "WBS_STAT",
+        ):
+            target = TargetObject(r.verdict)
+
+    return TreeResult(
+        cleansing=cleansing,
+        target_object=target,
+        merge_into=merge_into,
+        rule_path=rule_path,
+        confidence=confidence,
+        routine_results=results,
+    )

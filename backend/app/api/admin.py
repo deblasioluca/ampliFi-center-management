@@ -697,3 +697,193 @@ def sample_status(
     from app.services.seed import sample_data_counts
 
     return sample_data_counts(db)
+
+
+# ── Upload templates ─────────────────────────────────────────────────────
+
+UPLOAD_TEMPLATES: dict[str, dict] = {
+    "cost_centers": {
+        "filename": "template_cost_centers.csv",
+        "description": "Legacy cost center upload template",
+        "columns": [
+            "COAREA",
+            "CCTR",
+            "TXTSH",
+            "TXTMI",
+            "RESPONSIBLE",
+            "CCODE",
+            "CCTRCGY",
+            "CURRENCY",
+            "PCTR",
+            "IS_ACTIVE",
+        ],
+        "sample_row": [
+            "1000",
+            "0000100001",
+            "Administration",
+            "General Administration",
+            "JDOE",
+            "DE01",
+            "H",
+            "EUR",
+            "0000100001",
+            "TRUE",
+        ],
+    },
+    "profit_centers": {
+        "filename": "template_profit_centers.csv",
+        "description": "Legacy profit center upload template",
+        "columns": [
+            "COAREA",
+            "PCTR",
+            "TXTSH",
+            "TXTMI",
+            "RESPONSIBLE",
+            "CCODE",
+            "DEPARTMENT",
+            "CURRENCY",
+            "CURRPCTR",
+            "IS_ACTIVE",
+        ],
+        "sample_row": [
+            "1000",
+            "0000100001",
+            "Sales DE",
+            "Sales Department Germany",
+            "JDOE",
+            "DE01",
+            "SALES",
+            "EUR",
+            "EUR",
+            "TRUE",
+        ],
+    },
+    "balances": {
+        "filename": "template_balances.csv",
+        "description": "Cost center balance upload template",
+        "columns": [
+            "COAREA",
+            "CCTR",
+            "CCODE",
+            "FISCAL_YEAR",
+            "PERIOD",
+            "ACCOUNT",
+            "ACCOUNT_CLASS",
+            "TC_AMT",
+            "GC_AMT",
+            "GC2_AMT",
+            "CURRENCY_TC",
+            "CURRENCY_GC",
+            "CURRENCY_GC2",
+            "POSTING_COUNT",
+        ],
+        "sample_row": [
+            "1000",
+            "0000100001",
+            "DE01",
+            "2025",
+            "1",
+            "400000",
+            "OPEX",
+            "15000.00",
+            "15000.00",
+            "16500.00",
+            "EUR",
+            "EUR",
+            "USD",
+            "42",
+        ],
+    },
+    "entities": {
+        "filename": "template_entities.csv",
+        "description": "Entity (company code) upload template",
+        "columns": ["CCODE", "NAME", "COUNTRY", "REGION", "CURRENCY", "IS_ACTIVE"],
+        "sample_row": ["DE01", "Germany Operations", "DE", "EMEA", "EUR", "TRUE"],
+    },
+    "hierarchies": {
+        "filename": "template_hierarchies.csv",
+        "description": "Hierarchy upload template (SETHEADER/SETNODE/SETLEAF rows)",
+        "columns": [
+            "ROW_TYPE",
+            "SETCLASS",
+            "SETNAME",
+            "DESCRIPTION",
+            "COAREA",
+            "PARENT_SETNAME",
+            "CHILD_SETNAME",
+            "VALUE",
+            "SEQ",
+        ],
+        "sample_row_header": [
+            "SETHEADER",
+            "0101",
+            "STDHIER",
+            "Standard Hierarchy",
+            "1000",
+            "",
+            "",
+            "",
+            "",
+        ],
+        "sample_row_node": ["SETNODE", "0101", "STDHIER", "", "1000", "STDHIER", "ADMIN", "", "1"],
+        "sample_row_leaf": [
+            "SETLEAF",
+            "0101",
+            "STDHIER",
+            "",
+            "1000",
+            "ADMIN",
+            "",
+            "0000100001",
+            "1",
+        ],
+    },
+}
+
+
+@router.get("/upload-templates")
+def list_upload_templates(
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """List available upload templates."""
+    return {
+        "templates": [
+            {"kind": k, "filename": v["filename"], "description": v["description"]}
+            for k, v in UPLOAD_TEMPLATES.items()
+        ]
+    }
+
+
+@router.get("/upload-templates/{kind}")
+def download_upload_template(
+    kind: str,
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Get CSV content for an upload template."""
+    tmpl = UPLOAD_TEMPLATES.get(kind)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"No template for kind: {kind}")
+
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(tmpl["columns"])
+
+    if kind == "hierarchies":
+        if "sample_row_header" in tmpl:
+            writer.writerow(tmpl["sample_row_header"])
+        if "sample_row_node" in tmpl:
+            writer.writerow(tmpl["sample_row_node"])
+        if "sample_row_leaf" in tmpl:
+            writer.writerow(tmpl["sample_row_leaf"])
+    elif "sample_row" in tmpl:
+        writer.writerow(tmpl["sample_row"])
+
+    return {
+        "kind": kind,
+        "filename": tmpl["filename"],
+        "content": output.getvalue(),
+        "content_type": "text/csv",
+    }

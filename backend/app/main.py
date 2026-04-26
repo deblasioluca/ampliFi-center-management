@@ -21,6 +21,12 @@ logger = structlog.get_logger()
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     logger.info("amplifi_cleanup.starting", env=settings.app_env)
+
+    # Boot routine registry
+    from app.domain.decision_tree.registry import boot_registry
+
+    boot_registry()
+
     yield
     logger.info("amplifi_cleanup.stopping")
 

@@ -577,6 +577,170 @@ def list_review_scopes(
     return {"wave_id": wave_id, "items": items}
 
 
+@router.post("/{wave_id}/proposals/{proposal_id}/override")
+def override_proposal(
+    wave_id: int,
+    proposal_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Override a proposal's cleansing outcome and/or target object."""
+    from app.domain.proposal.service import override_proposal as do_override
+
+    try:
+        proposal = do_override(
+            proposal_id=proposal_id,
+            new_outcome=body.get("outcome", ""),
+            new_target=body.get("target_object"),
+            reason=body.get("reason", ""),
+            user_id=user.id,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    return {
+        "id": proposal.id,
+        "cleansing_outcome": proposal.cleansing_outcome,
+        "target_object": proposal.target_object,
+        "override_outcome": proposal.override_outcome,
+        "override_target": proposal.override_target,
+        "override_reason": proposal.override_reason,
+    }
+
+
+@router.post("/{wave_id}/lock-and-create-targets")
+def lock_and_create_targets(
+    wave_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Lock proposals and create target CC/PC objects from approved proposals."""
+    from app.domain.proposal.service import lock_proposals
+
+    run_id = body.get("run_id")
+    if not run_id:
+        # Try to use preferred run from wave config
+        wave = db.get(Wave, wave_id)
+        if not wave:
+            raise HTTPException(status_code=404, detail="Wave not found")
+        run_id = (wave.config or {}).get("preferred_run_id")
+        if not run_id:
+            raise HTTPException(status_code=400, detail="No run_id specified and no preferred run")
+
+    try:
+        result = lock_proposals(wave_id, run_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    return result
+
+
+@router.get("/{wave_id}/mdg-export")
+def mdg_export(
+    wave_id: int,
+    export_type: str = "cost_center",
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Generate MDG export file for the wave's target objects."""
+    from app.infra.mdg.export import export_cost_centers, export_profit_centers, export_retire_list
+    from app.models.core import TargetCostCenter, TargetProfitCenter
+
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("signed_off", "closed"):
+        raise HTTPException(status_code=409, detail="Wave must be signed_off or closed for export")
+
+    if export_type == "cost_center":
+        targets = (
+            db.execute(select(TargetCostCenter).where(TargetCostCenter.approved_in_wave == wave_id))
+            .scalars()
+            .all()
+        )
+        centers = [
+            {
+                "cctr": t.cctr,
+                "coarea": t.coarea,
+                "txtsh": t.txtsh,
+                "txtmi": t.txtmi,
+                "responsible": t.responsible,
+                "ccode": t.ccode,
+                "cctrcgy": t.cctrcgy,
+                "currency": t.currency,
+                "pctr": t.pctr,
+            }
+            for t in targets
+        ]
+        result = export_cost_centers(centers, wave_id)
+    elif export_type == "profit_center":
+        targets = (
+            db.execute(
+                select(TargetProfitCenter).where(TargetProfitCenter.approved_in_wave == wave_id)
+            )
+            .scalars()
+            .all()
+        )
+        centers = [
+            {
+                "pctr": t.pctr,
+                "coarea": t.coarea,
+                "txtsh": t.txtsh,
+                "txtmi": t.txtmi,
+                "responsible": t.responsible,
+                "ccode": t.ccode,
+                "currency": t.currency,
+            }
+            for t in targets
+        ]
+        result = export_profit_centers(centers, wave_id)
+    elif export_type == "retire":
+        # Get proposals with RETIRE outcome for the preferred run
+        preferred_run_id = (wave.config or {}).get("preferred_run_id")
+        if not preferred_run_id:
+            raise HTTPException(status_code=400, detail="No preferred run set")
+        proposals = (
+            db.execute(
+                select(CenterProposal).where(
+                    CenterProposal.run_id == preferred_run_id,
+                    CenterProposal.cleansing_outcome == "RETIRE",
+                )
+            )
+            .scalars()
+            .all()
+        )
+        centers = []
+        for p in proposals:
+            cc = db.get(LegacyCostCenter, p.legacy_cc_id)
+            if cc:
+                centers.append(
+                    {
+                        "cctr": cc.cctr,
+                        "coarea": cc.coarea,
+                        "txtsh": cc.txtsh,
+                        "txtmi": cc.txtmi,
+                        "responsible": cc.responsible,
+                        "ccode": cc.ccode,
+                        "cctrcgy": cc.cctrcgy,
+                        "currency": cc.currency,
+                        "pctr": cc.pctr,
+                    }
+                )
+        result = export_retire_list(centers, wave_id)
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid export_type: {export_type}")
+
+    return {
+        "filename": result.filename,
+        "content": result.content,
+        "record_count": result.record_count,
+        "export_type": result.export_type,
+    }
+
+
 @router.get("/{wave_id}/progress")
 def wave_progress(wave_id: int, db: Session = Depends(get_db)) -> dict:
     wave = db.get(Wave, wave_id)

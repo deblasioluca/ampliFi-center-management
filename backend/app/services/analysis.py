@@ -1,4 +1,9 @@
-"""Analysis execution service — runs cleansing + mapping trees on wave centers."""
+"""Analysis execution service — runs cleansing + mapping trees on wave centers.
+
+Supports two modes:
+  1. Legacy: hardcoded evaluate_center() for backward compatibility
+  2. Pipeline: configurable routine pipeline via PipelineEngine (§04.5)
+"""
 
 from __future__ import annotations
 
@@ -9,10 +14,13 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.domain.decision_tree.context import CenterContext
 from app.domain.decision_tree.engine import (
     CenterFeatures,
     evaluate_center,
+    evaluate_center_with_pipeline,
 )
+from app.domain.decision_tree.registry import get_registry
 from app.models.core import (
     AnalysisConfig,
     AnalysisRun,
@@ -125,6 +133,69 @@ def _build_features(
     )
 
 
+def _build_context(cc: LegacyCostCenter, db: Session, inactivity_months: int = 24) -> CenterContext:
+    """Build CenterContext for the pipeline engine."""
+    features = _build_features(cc, db, inactivity_months)
+    attrs = features.attrs.copy() if features.attrs else {}
+    return CenterContext(
+        center_id=cc.id,
+        coarea=features.coarea,
+        cctr=features.cctr,
+        ccode=features.ccode,
+        txtsh=features.txtsh,
+        txtmi=features.txtmi,
+        responsible=features.responsible,
+        currency=features.currency,
+        cctrcgy=features.cctrcgy,
+        pctr=features.pctr,
+        is_active=features.is_active,
+        months_since_last_posting=features.months_since_last_posting,
+        posting_count_window=features.posting_count_window,
+        bs_amt=features.bs_amt,
+        rev_amt=features.rev_amt,
+        opex_amt=features.opex_amt,
+        total_balance=features.total_balance,
+        hierarchy_membership_count=features.hierarchy_membership_count,
+        has_owner=features.has_owner,
+        is_feeder=attrs.get("is_feeder", False),
+        is_allocation_vehicle=features.is_allocation_vehicle,
+        is_project_related=features.is_project_related,
+        in_bw_extractors=attrs.get("in_bw_extractors", False),
+        in_grc=attrs.get("in_grc", False),
+        in_intercompany=attrs.get("in_intercompany", False),
+        has_direct_revenue=attrs.get("has_direct_revenue", False),
+        has_operational_costs=attrs.get("has_operational_costs", False),
+        collects_project_costs=attrs.get("collects_project_costs", False),
+        used_for_revenue_allocation=attrs.get("used_for_revenue_allocation", False),
+        used_for_cost_allocation=attrs.get("used_for_cost_allocation", False),
+        used_for_info_only=attrs.get("used_for_info_only", False),
+        duplicate_cluster_id=features.duplicate_cluster_id,
+        duplicate_cluster_size=features.duplicate_cluster_size,
+        attrs=attrs,
+    )
+
+
+def _scope_query(wave: Wave, db: Session):
+    """Build the cost center query based on wave scope."""
+    entity_ids = select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave.id)
+    entity_ccodes = select(Entity.ccode).where(Entity.id.in_(entity_ids))
+
+    if wave.is_full_scope:
+        cc_query = select(LegacyCostCenter)
+        if wave.exclude_prior:
+            prior_entity_ids = (
+                select(WaveEntity.entity_id)
+                .join(Wave)
+                .where(Wave.status != "cancelled", Wave.id != wave.id)
+            )
+            prior_ccodes = select(Entity.ccode).where(Entity.id.in_(prior_entity_ids))
+            cc_query = cc_query.where(LegacyCostCenter.ccode.notin_(prior_ccodes))
+    else:
+        cc_query = select(LegacyCostCenter).where(LegacyCostCenter.ccode.in_(entity_ccodes))
+
+    return cc_query
+
+
 def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) -> AnalysisRun:
     """Execute decision tree analysis on all cost centers in a wave's scope."""
     wave = db.get(Wave, wave_id)
@@ -135,7 +206,6 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     if not config:
         raise ValueError(f"Config {config_id} not found")
 
-    # Create the analysis run
     run = AnalysisRun(
         wave_id=wave_id,
         config_id=config_id,
@@ -147,28 +217,13 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     db.add(run)
     db.flush()
 
-    # Get cost centers in scope
-    entity_ids = select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave_id)
-    entity_ccodes = select(Entity.ccode).where(Entity.id.in_(entity_ids))
-
-    if wave.is_full_scope:
-        # Full scope: all cost centers, optionally excluding prior waves
-        cc_query = select(LegacyCostCenter)
-        if wave.exclude_prior:
-            prior_entity_ids = (
-                select(WaveEntity.entity_id)
-                .join(Wave)
-                .where(Wave.status != "cancelled", Wave.id != wave_id)
-            )
-            prior_ccodes = select(Entity.ccode).where(Entity.id.in_(prior_entity_ids))
-            cc_query = cc_query.where(LegacyCostCenter.ccode.notin_(prior_ccodes))
-    else:
-        cc_query = select(LegacyCostCenter).where(LegacyCostCenter.ccode.in_(entity_ccodes))
-
+    cc_query = _scope_query(wave, db)
     cost_centers = db.execute(cc_query).scalars().all()
     params = config.config.get("params", {}) if config.config else {}
+    pipeline_config = config.config if config.config else {}
 
-    # Track KPI counters
+    use_pipeline = bool(pipeline_config.get("pipeline"))
+
     kpis = {
         "total_centers": len(cost_centers),
         "keep": 0,
@@ -183,30 +238,53 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
         "target_none": 0,
     }
 
+    registry = get_registry()
+    inactivity_months = params.get("inactivity_threshold_months", 24)
+
     for cc in cost_centers:
-        inactivity_months = params.get("inactivity_threshold_months", 24)
-        features = _build_features(cc, db, inactivity_months=inactivity_months)
-        result = evaluate_center(features, params)
+        if use_pipeline:
+            ctx = _build_context(cc, db, inactivity_months)
+            result = evaluate_center_with_pipeline(ctx, pipeline_config, registry)
+        else:
+            features = _build_features(cc, db, inactivity_months)
+            result = evaluate_center(features, params)
 
-        # Store routine output
-        output = RoutineOutput(
-            run_id=run.id,
-            routine_code="dt.cleansing+mapping",
-            legacy_cc_id=cc.id,
-            verdict=result.cleansing.value,
-            confidence=Decimal(str(result.confidence)),
-            payload={
-                "rule_path": result.rule_path,
-                "target_object": result.target_object.value if result.target_object else None,
-                "merge_into": result.merge_into,
-            },
-        )
-        db.add(output)
+        # Store per-routine outputs
+        for rr in result.routine_results:
+            output = RoutineOutput(
+                run_id=run.id,
+                routine_code=rr.code,
+                legacy_cc_id=cc.id,
+                verdict=rr.verdict,
+                confidence=Decimal(str(rr.score)) if rr.score is not None else Decimal("1.0"),
+                payload={
+                    "reason": rr.reason,
+                    "comment": rr.comment,
+                    "short_circuit": rr.short_circuit,
+                    **(rr.payload or {}),
+                },
+            )
+            db.add(output)
 
-        # Store proposal
+        if not result.routine_results:
+            output = RoutineOutput(
+                run_id=run.id,
+                routine_code="dt.cleansing+mapping",
+                legacy_cc_id=cc.id,
+                verdict=result.cleansing.value,
+                confidence=Decimal(str(result.confidence)),
+                payload={
+                    "rule_path": result.rule_path,
+                    "target_object": result.target_object.value if result.target_object else None,
+                    "merge_into": result.merge_into,
+                },
+            )
+            db.add(output)
+
         proposal = CenterProposal(
             run_id=run.id,
             legacy_cc_id=cc.id,
+            entity_code=cc.ccode or "",
             cleansing_outcome=result.cleansing.value,
             target_object=result.target_object.value if result.target_object else None,
             merge_into_cctr=result.merge_into,
@@ -215,7 +293,6 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
         )
         db.add(proposal)
 
-        # Update KPIs
         outcome_key = result.cleansing.value.lower()
         if outcome_key in kpis:
             kpis[outcome_key] += 1
@@ -229,7 +306,6 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     run.finished_at = datetime.now(UTC)
     run.kpis = kpis
 
-    # Update wave status
     if wave.status == "draft":
         wave.status = "analysing"
 
@@ -257,7 +333,7 @@ def get_or_create_default_config(db: Session) -> AnalysisConfig:
                 {
                     "routine": "rule.posting_activity",
                     "enabled": True,
-                    "params": {"inactivity_threshold_months": 24, "posting_threshold": 0},
+                    "params": {"posting_inactivity_threshold": 24, "posting_minimal_threshold": 0},
                 },
                 {"routine": "rule.ownership", "enabled": True, "params": {}},
                 {
@@ -271,6 +347,13 @@ def get_or_create_default_config(db: Session) -> AnalysisConfig:
                     "params": {"strict_hierarchy_mode": False},
                 },
                 {"routine": "rule.cross_system_dependency", "enabled": True, "params": {}},
+                {"routine": "rule.has_direct_revenue", "enabled": True, "params": {}},
+                {"routine": "rule.has_operational_costs", "enabled": True, "params": {}},
+                {"routine": "rule.collects_project_costs", "enabled": True, "params": {}},
+                {"routine": "rule.revenue_allocation_vehicle", "enabled": True, "params": {}},
+                {"routine": "rule.cost_allocation_vehicle", "enabled": True, "params": {}},
+                {"routine": "rule.info_only", "enabled": True, "params": {}},
+                {"routine": "aggregate.combine_outcomes", "enabled": True, "params": {}},
             ],
             "params": {
                 "inactivity_threshold_months": 24,

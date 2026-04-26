@@ -197,6 +197,9 @@ class Wave(TimestampMixin, Base):
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     signed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    preferred_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.analysis_run.id", ondelete="SET NULL")
+    )
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
@@ -362,6 +365,7 @@ class CenterProposal(TimestampMixin, Base):
     legacy_cc_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.legacy_cost_center.id", ondelete="CASCADE"), nullable=False
     )
+    entity_code: Mapped[str | None] = mapped_column(String(10))
     cleansing_outcome: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # KEEP|RETIRE|MERGE_MAP|REDESIGN
@@ -399,10 +403,15 @@ class ReviewScope(TimestampMixin, Base):
     )  # entity|hierarchy_node|list
     scope_filter: Mapped[dict] = mapped_column(JSONB, nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewer_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         String(20), default="pending"
     )  # pending|invited|in_progress|completed|expired|revoked
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    signed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewer_name: Mapped[str | None] = mapped_column(String(200))
