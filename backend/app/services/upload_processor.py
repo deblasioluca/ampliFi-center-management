@@ -61,12 +61,17 @@ BALANCE_COLUMNS = {
     "CCODE": "ccode",
     "SAP_MANAGEMENT_CENTER": "cctr",
     "CCTR": "cctr",
+    "FISCAL_YEAR": "fiscal_year",
     "PERIOD_YYYYMM": "period_raw",
     "PERIOD": "period_raw",
+    "ACCOUNT": "account",
     "CURR_CODE_ISO_TC": "currency_tc",
     "CURRENCY_TC": "currency_tc",
+    "CURRENCY_GC": "currency_gc",
+    "CURRENCY_GC2": "currency_gc2",
     "SUM_TC": "tc_amt",
     "TC_AMT": "tc_amt",
+    "GC_AMT": "gc_amt",
     "SUM_GC2": "gc2_amt",
     "GC2_AMT": "gc2_amt",
     "COUNT": "posting_count",
@@ -208,7 +213,21 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                 )
                 error_rows.add(i)
             pr = row.get("period_raw", "")
-            if pr and (len(pr) != 6 or not pr.isdigit()):
+            fy = row.get("fiscal_year", "")
+            if fy and pr:
+                if not fy.isdigit():
+                    msg = f"FISCAL_YEAR must be numeric, got: {fy}"
+                    errors.append(
+                        {"row": i, "col": "FISCAL_YEAR", "code": "FORMAT", "msg": msg},
+                    )
+                    error_rows.add(i)
+                if not pr.isdigit():
+                    msg = f"PERIOD must be numeric, got: {pr}"
+                    errors.append(
+                        {"row": i, "col": "PERIOD", "code": "FORMAT", "msg": msg},
+                    )
+                    error_rows.add(i)
+            elif pr and (len(pr) != 6 or not pr.isdigit()):
                 errors.append(
                     {
                         "row": i,
@@ -303,7 +322,6 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
-                existing.refresh_batch = batch.id
             else:
                 db.add(
                     LegacyCostCenter(
@@ -335,7 +353,6 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
-                existing.refresh_batch = batch.id
             else:
                 db.add(
                     LegacyProfitCenter(
@@ -357,9 +374,17 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not row.get("cctr"):
                 continue
             pr = row.get("period_raw", "")
+            fy_str = row.get("fiscal_year", "")
             try:
-                fy = int(pr[:4]) if pr and len(pr) == 6 else 0
-                per = int(pr[4:]) if pr and len(pr) == 6 else 0
+                if fy_str:
+                    fy = int(fy_str)
+                    per = int(pr) if pr else 0
+                elif pr and len(pr) == 6:
+                    fy = int(pr[:4])
+                    per = int(pr[4:])
+                else:
+                    fy = 0
+                    per = 0
             except (ValueError, TypeError):
                 fy = 0
                 per = 0
