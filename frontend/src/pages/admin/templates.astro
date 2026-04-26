@@ -1,0 +1,159 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Wave Templates" requireAuth={true} adminOnly={true}>
+  <div class="mb-4 flex items-center justify-between">
+    <div>
+      <h2 class="text-xl font-bold">Wave Templates</h2>
+      <p class="text-sm text-gray-500 mt-1">Pre-configured wave configurations for quick analysis setup</p>
+    </div>
+    <button id="new-template-btn" class="btn-amplifi text-sm">+ New Template</button>
+  </div>
+
+  <!-- Create form -->
+  <div id="create-form" class="card mb-6 hidden">
+    <h3 class="text-sm font-semibold mb-3">New Template</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Template Name</label>
+        <input id="tpl-name" type="text" class="input text-sm w-full" placeholder="e.g. Quarterly Cleanup" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Description</label>
+        <input id="tpl-desc" type="text" class="input text-sm w-full" placeholder="Description..." />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Entity Company Codes (comma-separated)</label>
+        <input id="tpl-ccodes" type="text" class="input text-sm w-full" placeholder="DE01,DE02,US01" />
+      </div>
+      <div class="flex gap-4 items-end pb-1">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" id="tpl-full-scope" />
+          Full Scope
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" id="tpl-exclude-prior" checked />
+          Exclude Prior
+        </label>
+      </div>
+    </div>
+    <div class="mt-3 flex gap-2">
+      <button id="save-template-btn" class="btn-amplifi text-sm">Save</button>
+      <button id="cancel-template-btn" class="btn-secondary text-sm">Cancel</button>
+    </div>
+    <div id="tpl-result" class="text-sm mt-2 hidden"></div>
+  </div>
+
+  <!-- Template list -->
+  <div id="template-list" class="space-y-3">Loading...</div>
+  <div id="tpl-empty" class="hidden card text-center text-sm text-gray-400 py-8">No templates yet. Create your first template above.</div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) window.location.href = '/login';
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  document.getElementById('new-template-btn').addEventListener('click', function() {
+    document.getElementById('create-form').classList.toggle('hidden');
+  });
+  document.getElementById('cancel-template-btn').addEventListener('click', function() {
+    document.getElementById('create-form').classList.add('hidden');
+  });
+
+  async function loadTemplates() {
+    try {
+      var r = await fetch('/api/waves/templates', { headers: headers });
+      var templates = await r.json();
+      var el = document.getElementById('template-list');
+      var emptyEl = document.getElementById('tpl-empty');
+
+      if (!templates.length) {
+        el.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+      emptyEl.classList.add('hidden');
+
+      el.innerHTML = templates.map(function(t) {
+        var ccodes = t.entity_ccodes ? t.entity_ccodes.join(', ') : 'All';
+        return '<div class="card">' +
+          '<div class="flex items-center justify-between">' +
+            '<div>' +
+              '<h4 class="font-medium text-sm">' + t.name + '</h4>' +
+              '<p class="text-xs text-gray-500 mt-0.5">' + (t.description || '') + '</p>' +
+              '<div class="flex gap-3 mt-1 text-xs text-gray-400">' +
+                '<span>Entities: ' + ccodes + '</span>' +
+                '<span>Full scope: ' + (t.is_full_scope ? 'Yes' : 'No') + '</span>' +
+                '<span>Exclude prior: ' + (t.exclude_prior ? 'Yes' : 'No') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="flex gap-2">' +
+              '<button class="use-tpl-btn btn-amplifi text-xs" data-id="' + t.id + '" data-name="' + t.name + '">Use</button>' +
+              '<button class="del-tpl-btn btn-secondary text-xs text-red-500" data-id="' + t.id + '">Delete</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      el.querySelectorAll('.del-tpl-btn').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          if (!confirm('Delete this template?')) return;
+          await fetch('/api/waves/templates/' + btn.dataset.id, { method: 'DELETE', headers: headers });
+          loadTemplates();
+        });
+      });
+
+      el.querySelectorAll('.use-tpl-btn').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          var code = prompt('Wave code?', 'WAVE-' + Date.now().toString(36).toUpperCase());
+          if (!code) return;
+          var name = prompt('Wave name?', 'Wave from ' + btn.dataset.name);
+          if (!name) return;
+          try {
+            var r = await fetch('/api/waves/templates/' + btn.dataset.id + '/create-wave?code=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(name), { method: 'POST', headers: headers });
+            if (r.ok) {
+              var d = await r.json();
+              alert('Wave created: ' + d.code);
+              window.location.href = '/cockpit';
+            } else {
+              var e = await r.json();
+              alert('Error: ' + (e.detail || 'Failed'));
+            }
+          } catch(e) { alert('Error: ' + e.message); }
+        });
+      });
+    } catch(e) {
+      document.getElementById('template-list').textContent = 'Error: ' + e.message;
+    }
+  }
+  loadTemplates();
+
+  document.getElementById('save-template-btn').addEventListener('click', async function() {
+    var res = document.getElementById('tpl-result');
+    res.classList.remove('hidden');
+    try {
+      var ccodes = document.getElementById('tpl-ccodes').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      var body = {
+        name: document.getElementById('tpl-name').value,
+        description: document.getElementById('tpl-desc').value,
+        is_full_scope: document.getElementById('tpl-full-scope').checked,
+        exclude_prior: document.getElementById('tpl-exclude-prior').checked,
+        entity_ccodes: ccodes.length ? ccodes : null,
+      };
+      var r = await fetch('/api/waves/templates', { method: 'POST', headers: headers, body: JSON.stringify(body) });
+      if (r.ok) {
+        res.innerHTML = '<span class="text-green-600 font-medium">Template saved!</span>';
+        document.getElementById('create-form').classList.add('hidden');
+        loadTemplates();
+      } else {
+        var e = await r.json();
+        res.innerHTML = '<span class="text-red-600">Error: ' + (e.detail || 'save failed') + '</span>';
+      }
+    } catch(e) {
+      res.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    }
+  });
+</script>

@@ -368,3 +368,51 @@ def naming_suggestions(
     refs = [r[0] for r in db.execute(ref_query).all() if r[0]]
     suggestions = suggest_names(current, refs, top_k=top_k)
     return {"current_name": current, "suggestions": suggestions}
+
+
+@router.post("/ml/predict")
+def ml_predict(
+    coarea: str | None = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Run ML prediction on cost centers (heuristic fallback if sklearn unavailable)."""
+    from app.domain.ml.classifier import predict
+
+    query = select(LegacyCostCenter).where(LegacyCostCenter.is_active.is_(True))
+    if coarea:
+        query = query.where(LegacyCostCenter.coarea == coarea)
+    ccs = db.execute(query.limit(limit)).scalars().all()
+
+    contexts = []
+    for cc in ccs:
+        contexts.append(
+            {
+                "cctr": cc.cctr,
+                "ccode": cc.ccode,
+                "txtsh": cc.txtsh,
+                "is_active": cc.is_active,
+                "responsible": cc.responsible,
+                "months_since_last_posting": None,
+                "posting_count_window": None,
+                "bs_amt": 0,
+                "opex_amt": 0,
+                "rev_amt": 0,
+                "hierarchy_depth": 0,
+            }
+        )
+
+    predictions = predict(contexts)
+    results = []
+    for cc, pred_result in zip(ccs, predictions, strict=False):
+        results.append(
+            {
+                "id": cc.id,
+                "cctr": cc.cctr,
+                "txtsh": cc.txtsh,
+                "ccode": cc.ccode,
+                **pred_result,
+            }
+        )
+
+    return {"total": len(results), "items": results}

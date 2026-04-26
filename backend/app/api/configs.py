@@ -154,6 +154,49 @@ def amend_config(
     return ConfigOut.model_validate(cfg)
 
 
+# --- DSL Rule Engine (§04.5) ---
+
+
+class DSLRuleValidation(BaseModel):
+    rule: dict
+
+
+@router.post("/dsl/validate")
+def validate_dsl_rule(body: DSLRuleValidation) -> dict:
+    """Validate a DSL rule definition without executing it."""
+    from app.domain.decision_tree.dsl import validate_rule
+
+    errors = validate_rule(body.rule)
+    return {"valid": len(errors) == 0, "errors": errors}
+
+
+@router.get("/dsl/operators")
+def list_dsl_operators() -> dict:
+    """List available DSL operators for the rule builder UI."""
+    from app.domain.decision_tree.dsl import OPS
+
+    return {
+        "operators": list(OPS.keys()),
+        "fields": [
+            "cctr",
+            "ccode",
+            "coarea",
+            "txtsh",
+            "txtmi",
+            "responsible",
+            "category",
+            "is_active",
+            "months_since_last_posting",
+            "posting_count_window",
+            "bs_amt",
+            "opex_amt",
+            "rev_amt",
+            "hierarchy_depth",
+        ],
+        "verdicts": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
+    }
+
+
 # --- GL Account Class Ranges (§03.5) ---
 
 

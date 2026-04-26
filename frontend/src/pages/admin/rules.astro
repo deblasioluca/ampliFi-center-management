@@ -1,0 +1,216 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Rule Builder" requireAuth={true} adminOnly={true}>
+  <div class="mb-4">
+    <h2 class="text-xl font-bold">Rule Builder</h2>
+    <p class="text-sm text-gray-500 mt-1">Create no-code DSL rules for the analysis pipeline</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Rule editor -->
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">New Rule</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Rule Name</label>
+          <input id="rule-name" type="text" class="input text-sm w-full" placeholder="e.g. Inactive CC retirement" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Logic</label>
+          <select id="rule-logic" class="input text-sm w-32">
+            <option value="AND">AND (all match)</option>
+            <option value="OR">OR (any match)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Conditions</label>
+          <div id="conditions-list" class="space-y-2"></div>
+          <button id="add-condition-btn" class="text-sm text-amplifi-600 hover:underline mt-2">+ Add condition</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Verdict</label>
+            <select id="rule-verdict" class="input text-sm w-full">
+              <option value="KEEP">KEEP</option>
+              <option value="RETIRE">RETIRE</option>
+              <option value="MERGE_MAP">MERGE_MAP</option>
+              <option value="REDESIGN">REDESIGN</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Short Circuit</label>
+            <select id="rule-sc" class="input text-sm w-full">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Reason Code</label>
+          <input id="rule-reason" type="text" class="input text-sm w-full" placeholder="e.g. custom.inactive_cc" />
+        </div>
+        <div class="flex gap-2">
+          <button id="validate-btn" class="btn-secondary text-sm">Validate</button>
+          <button id="save-rule-btn" class="btn-amplifi text-sm">Save Rule</button>
+        </div>
+        <div id="rule-result" class="text-sm hidden"></div>
+      </div>
+    </div>
+
+    <!-- Rule preview / JSON -->
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Rule JSON</h3>
+      <pre id="rule-json" class="bg-gray-50 border rounded p-3 text-xs font-mono overflow-auto max-h-96">{}</pre>
+
+      <h3 class="text-sm font-semibold mt-6 mb-3">Available Fields</h3>
+      <div id="fields-list" class="text-xs text-gray-600 space-y-1">Loading...</div>
+
+      <h3 class="text-sm font-semibold mt-6 mb-3">Available Operators</h3>
+      <div id="ops-list" class="flex flex-wrap gap-1 text-xs">Loading...</div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) window.location.href = '/login';
+  var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  var fields = [];
+  var operators = [];
+
+  async function loadMeta() {
+    try {
+      var r = await fetch('/api/configs/dsl/operators', { headers: headers });
+      var d = await r.json();
+      fields = d.fields || [];
+      operators = d.operators || [];
+      document.getElementById('fields-list').innerHTML = fields.map(function(f) {
+        return '<span class="inline-block bg-gray-100 rounded px-2 py-0.5 mr-1 mb-1 font-mono">' + f + '</span>';
+      }).join('');
+      document.getElementById('ops-list').innerHTML = operators.map(function(o) {
+        return '<span class="inline-block bg-blue-50 text-blue-700 rounded px-2 py-0.5 font-mono">' + o + '</span>';
+      }).join('');
+    } catch(e) {
+      document.getElementById('fields-list').textContent = 'Error loading metadata';
+    }
+  }
+  loadMeta();
+
+  function makeConditionRow() {
+    var div = document.createElement('div');
+    div.className = 'flex gap-2 items-center condition-row';
+    div.innerHTML = '<select class="cond-field input text-xs w-40"><option value="">field...</option></select>' +
+      '<select class="cond-op input text-xs w-20"><option value="">op...</option></select>' +
+      '<input class="cond-val input text-xs w-32" placeholder="value" />' +
+      '<button type="button" class="cond-remove text-red-400 hover:text-red-600 text-sm">&times;</button>';
+    var fieldSel = div.querySelector('.cond-field');
+    fields.forEach(function(f) {
+      var opt = document.createElement('option');
+      opt.value = f; opt.textContent = f;
+      fieldSel.appendChild(opt);
+    });
+    var opSel = div.querySelector('.cond-op');
+    operators.forEach(function(o) {
+      var opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      opSel.appendChild(opt);
+    });
+    div.querySelector('.cond-remove').addEventListener('click', function() { div.remove(); updateJson(); });
+    div.querySelectorAll('input, select').forEach(function(el) { el.addEventListener('change', updateJson); });
+    return div;
+  }
+
+  document.getElementById('add-condition-btn').addEventListener('click', function() {
+    document.getElementById('conditions-list').appendChild(makeConditionRow());
+    updateJson();
+  });
+
+  function buildRule() {
+    var rows = document.querySelectorAll('.condition-row');
+    var conditions = [];
+    rows.forEach(function(row) {
+      var f = row.querySelector('.cond-field').value;
+      var o = row.querySelector('.cond-op').value;
+      var v = row.querySelector('.cond-val').value;
+      if (f && o) {
+        var val = v;
+        if (!isNaN(v) && v !== '') val = Number(v);
+        if (v === 'true') val = true;
+        if (v === 'false') val = false;
+        conditions.push({ field: f, op: o, value: val });
+      }
+    });
+    return {
+      code: 'dsl.' + (document.getElementById('rule-name').value || 'custom').replace(/\s/g, '_').toLowerCase(),
+      conditions: conditions,
+      logic: document.getElementById('rule-logic').value,
+      verdict: document.getElementById('rule-verdict').value,
+      reason: document.getElementById('rule-reason').value || 'dsl.custom',
+      short_circuit: document.getElementById('rule-sc').value === 'true',
+    };
+  }
+
+  function updateJson() {
+    document.getElementById('rule-json').textContent = JSON.stringify(buildRule(), null, 2);
+  }
+
+  document.querySelectorAll('#rule-name, #rule-logic, #rule-verdict, #rule-sc, #rule-reason').forEach(function(el) {
+    el.addEventListener('input', updateJson);
+    el.addEventListener('change', updateJson);
+  });
+
+  document.getElementById('validate-btn').addEventListener('click', async function() {
+    var res = document.getElementById('rule-result');
+    res.classList.remove('hidden');
+    try {
+      var r = await fetch('/api/configs/dsl/validate', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({ rule: buildRule() })
+      });
+      var d = await r.json();
+      if (d.valid) {
+        res.innerHTML = '<span class="text-green-600 font-medium">Rule is valid</span>';
+      } else {
+        res.innerHTML = '<span class="text-red-600 font-medium">Errors:</span><ul class="list-disc ml-4 mt-1">' +
+          d.errors.map(function(e) { return '<li>' + e + '</li>'; }).join('') + '</ul>';
+      }
+    } catch(e) {
+      res.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    }
+  });
+
+  document.getElementById('save-rule-btn').addEventListener('click', async function() {
+    var rule = buildRule();
+    var res = document.getElementById('rule-result');
+    res.classList.remove('hidden');
+    // Save as a routine config
+    try {
+      var r = await fetch('/api/admin/routines', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({
+          code: rule.code,
+          tree: 'cleansing',
+          kind: 'rule',
+          label: document.getElementById('rule-name').value || 'Custom Rule',
+          enabled: true,
+          config: rule,
+          seq: 50,
+        })
+      });
+      if (r.ok) {
+        res.innerHTML = '<span class="text-green-600 font-medium">Rule saved successfully</span>';
+      } else {
+        var d = await r.json();
+        res.innerHTML = '<span class="text-red-600">Error: ' + (d.detail || 'save failed') + '</span>';
+      }
+    } catch(e) {
+      res.innerHTML = '<span class="text-red-600">Error: ' + e.message + '</span>';
+    }
+  });
+
+  // Initialize
+  updateJson();
+</script>
