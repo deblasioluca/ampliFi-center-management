@@ -1,0 +1,219 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+<Layout title="Pipeline Editor">
+  <div class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Analysis Pipeline Editor</h1>
+      <div class="flex gap-2">
+        <button id="btn-save" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+        <button id="btn-reset" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Reset</button>
+      </div>
+    </div>
+
+    <p class="text-gray-600 mb-6">
+      Configure the order and parameters of routines that execute during an analysis run.
+      Drag routines to reorder. Enable/disable individual steps.
+    </p>
+
+    <!-- Pipeline Steps -->
+    <div id="pipeline-steps" class="space-y-3">
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" checked class="w-4 h-4" data-step="aggregate">
+            <div>
+              <h3 class="font-semibold text-gray-800">1. Aggregate</h3>
+              <p class="text-sm text-gray-500">Compute balance aggregates per cost center</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('aggregate')">Configure</button>
+        </div>
+        <div id="params-aggregate" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm">
+            <span class="text-gray-600">Data window (months)</span>
+            <input type="number" value="18" class="ml-2 w-20 border rounded px-2 py-1" data-param="data_window_months">
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" checked class="w-4 h-4" data-step="cleansing_tree">
+            <div>
+              <h3 class="font-semibold text-gray-800">2. Cleansing Decision Tree</h3>
+              <p class="text-sm text-gray-500">Rule-based KEEP/RETIRE/MERGE_MAP/REDESIGN classification</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('cleansing_tree')">Configure</button>
+        </div>
+        <div id="params-cleansing_tree" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm">
+            <span class="text-gray-600">Retirement threshold (months inactive)</span>
+            <input type="number" value="12" class="ml-2 w-20 border rounded px-2 py-1" data-param="retirement_months">
+          </label>
+          <label class="block text-sm">
+            <span class="text-gray-600">Minimum posting count for KEEP</span>
+            <input type="number" value="1" class="ml-2 w-20 border rounded px-2 py-1" data-param="min_postings_keep">
+          </label>
+          <label class="block text-sm">
+            <span class="text-gray-600">Short-circuit on KEEP</span>
+            <input type="checkbox" checked class="ml-2 w-4 h-4" data-param="short_circuit_keep">
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" checked class="w-4 h-4" data-step="mapping_tree">
+            <div>
+              <h3 class="font-semibold text-gray-800">3. Mapping Decision Tree</h3>
+              <p class="text-sm text-gray-500">Determine target object type (CC/PC/WBS)</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('mapping_tree')">Configure</button>
+        </div>
+        <div id="params-mapping_tree" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm text-gray-600">Uses cleansing outcome as input. No additional parameters.</label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" checked class="w-4 h-4" data-step="ml_predict">
+            <div>
+              <h3 class="font-semibold text-gray-800">4. ML Prediction</h3>
+              <p class="text-sm text-gray-500">LightGBM outcome + target classifiers with SHAP</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('ml_predict')">Configure</button>
+        </div>
+        <div id="params-ml_predict" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm">
+            <span class="text-gray-600">Use trained model (falls back to heuristic)</span>
+            <input type="checkbox" checked class="ml-2 w-4 h-4" data-param="use_trained_model">
+          </label>
+          <label class="block text-sm">
+            <span class="text-gray-600">SHAP top-K features</span>
+            <input type="number" value="5" class="ml-2 w-20 border rounded px-2 py-1" data-param="shap_top_k">
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" class="w-4 h-4" data-step="llm_review">
+            <div>
+              <h3 class="font-semibold text-gray-800">5. LLM Review Pass</h3>
+              <p class="text-sm text-gray-500">AI review of proposals (requires LLM config)</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('llm_review')">Configure</button>
+        </div>
+        <div id="params-llm_review" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm">
+            <span class="text-gray-600">Review mode</span>
+            <select class="ml-2 border rounded px-2 py-1" data-param="llm_mode">
+              <option value="SINGLE">SINGLE (one call per center)</option>
+              <option value="SEQUENTIAL">SEQUENTIAL (draft → critic → final)</option>
+              <option value="DEBATE">DEBATE (advocate A/B + judge)</option>
+            </select>
+          </label>
+          <label class="block text-sm">
+            <span class="text-gray-600">Max centers to review</span>
+            <input type="number" value="100" class="ml-2 w-20 border rounded px-2 py-1" data-param="max_centers">
+          </label>
+          <label class="block text-sm">
+            <span class="text-gray-600">Only review outcomes</span>
+            <select multiple class="ml-2 border rounded px-2 py-1" data-param="outcomes_filter" style="height:80px">
+              <option value="RETIRE" selected>RETIRE</option>
+              <option value="MERGE_MAP" selected>MERGE_MAP</option>
+              <option value="REDESIGN" selected>REDESIGN</option>
+              <option value="KEEP">KEEP</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-400 cursor-move">☰</span>
+            <input type="checkbox" checked class="w-4 h-4" data-step="naming">
+            <div>
+              <h3 class="font-semibold text-gray-800">6. Naming Convention</h3>
+              <p class="text-sm text-gray-500">Generate target center names based on rules</p>
+            </div>
+          </div>
+          <button class="text-sm text-blue-600 hover:underline" onclick="toggleParams('naming')">Configure</button>
+        </div>
+        <div id="params-naming" class="hidden mt-3 pl-10 space-y-2">
+          <label class="block text-sm">
+            <span class="text-gray-600">Pattern</span>
+            <input type="text" value="{entity}-{purpose}-{counter:04d}" class="ml-2 w-64 border rounded px-2 py-1" data-param="naming_pattern">
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="mt-8 flex gap-6 text-sm text-gray-500">
+      <span class="flex items-center gap-1"><span class="w-3 h-3 bg-green-500 rounded"></span> Core rules</span>
+      <span class="flex items-center gap-1"><span class="w-3 h-3 bg-blue-500 rounded"></span> ML</span>
+      <span class="flex items-center gap-1"><span class="w-3 h-3 bg-purple-500 rounded"></span> LLM</span>
+      <span class="flex items-center gap-1"><span class="w-3 h-3 bg-yellow-500 rounded"></span> Post-processing</span>
+    </div>
+  </div>
+
+  <script>
+    function toggleParams(step) {
+      const el = document.getElementById(`params-${step}`);
+      if (el) el.classList.toggle('hidden');
+    }
+
+    document.getElementById('btn-save')?.addEventListener('click', async () => {
+      const steps = [];
+      document.querySelectorAll('[data-step]').forEach(cb => {
+        const step = cb.dataset.step;
+        const enabled = cb.checked;
+        const params = {};
+        const container = document.getElementById(`params-${step}`);
+        if (container) {
+          container.querySelectorAll('[data-param]').forEach(input => {
+            const key = input.dataset.param;
+            if (input.type === 'checkbox') params[key] = input.checked;
+            else if (input.type === 'number') params[key] = Number(input.value);
+            else if (input.multiple) {
+              params[key] = Array.from(input.selectedOptions).map(o => o.value);
+            } else params[key] = input.value;
+          });
+        }
+        steps.push({ step, enabled, params });
+      });
+
+      const token = localStorage.getItem('token');
+      try {
+        const resp = await fetch('/api/configs/pipeline', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ key: 'pipeline', value: { steps } }),
+        });
+        if (resp.ok) alert('Pipeline configuration saved.');
+        else alert('Save failed: ' + (await resp.text()));
+      } catch (e) { alert('Save failed: ' + e.message); }
+    });
+
+    document.getElementById('btn-reset')?.addEventListener('click', () => {
+      if (confirm('Reset to default pipeline configuration?')) location.reload();
+    });
+  </script>
+</Layout>
