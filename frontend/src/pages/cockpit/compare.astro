@@ -1,0 +1,182 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Run Comparison" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-bold">Run Comparison</h2>
+    <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back</a>
+  </div>
+
+  <div class="card mb-6">
+    <div class="grid grid-cols-3 gap-4 items-end">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Wave</label>
+        <select id="sel-wave" class="input text-sm w-full">
+          <option value="">Select Wave...</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Run A (baseline)</label>
+        <select id="sel-run-a" class="input text-sm w-full">
+          <option value="">Select...</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Run B (comparison)</label>
+        <select id="sel-run-b" class="input text-sm w-full">
+          <option value="">Select...</option>
+        </select>
+      </div>
+    </div>
+    <button id="btn-compare" class="btn-amplifi text-sm mt-4">Compare Runs</button>
+  </div>
+
+  <!-- KPI Comparison -->
+  <div id="kpi-comparison" class="hidden mb-6">
+    <h3 class="text-base font-semibold mb-3">KPI Comparison</h3>
+    <div id="kpi-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+  </div>
+
+  <!-- Outcome Transition Matrix -->
+  <div id="outcome-matrix-section" class="hidden mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Outcome Transition Matrix (Run A → Run B)</h3>
+      <div id="outcome-matrix"></div>
+    </div>
+  </div>
+
+  <!-- Target Transition Matrix -->
+  <div id="target-matrix-section" class="hidden mb-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold mb-3">Target Object Transition Matrix</h3>
+      <div id="target-matrix"></div>
+    </div>
+  </div>
+
+  <!-- Changed Centers -->
+  <div id="changed-section" class="hidden mb-6">
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold">Changed Centers</h3>
+        <span id="changed-count" class="text-xs text-gray-500"></span>
+      </div>
+      <div id="changed-table" class="text-sm"></div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
+  function fmt(n) { return n != null ? Number(n).toLocaleString() : '--'; }
+
+  var OUTCOME_COLORS = { KEEP: '#dcfce7', RETIRE: '#fee2e2', MERGE_MAP: '#fef3c7', REDESIGN: '#dbeafe', 'N/A': '#f3f4f6' };
+
+  // Load waves
+  fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    var sel = document.getElementById('sel-wave');
+    (d.items || []).forEach(function(w) {
+      var opt = document.createElement('option');
+      opt.value = w.id;
+      opt.textContent = w.name + ' (' + w.status + ')';
+      sel.appendChild(opt);
+    });
+  });
+
+  document.getElementById('sel-wave').addEventListener('change', function() {
+    if (!this.value) return;
+    fetch('/api/waves/' + this.value + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      ['sel-run-a', 'sel-run-b'].forEach(function(id) {
+        var sel = document.getElementById(id);
+        sel.innerHTML = '<option value="">Select...</option>';
+        (d.items || []).filter(function(r) { return r.status === 'completed'; }).forEach(function(r) {
+          var opt = document.createElement('option');
+          opt.value = r.id;
+          opt.textContent = 'Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
+          sel.appendChild(opt);
+        });
+      });
+    });
+  });
+
+  document.getElementById('btn-compare').addEventListener('click', function() {
+    var runA = document.getElementById('sel-run-a').value;
+    var runB = document.getElementById('sel-run-b').value;
+    if (!runA || !runB) { alert('Select two runs to compare.'); return; }
+
+    // Load KPIs for both runs
+    Promise.all([
+      fetch('/api/runs/' + runA, { headers: authHdr }).then(function(r) { return r.json(); }),
+      fetch('/api/runs/' + runB, { headers: authHdr }).then(function(r) { return r.json(); }),
+      fetch('/api/runs/' + runA + '/diff/' + runB, { headers: authHdr }).then(function(r) { return r.json(); })
+    ]).then(function(results) {
+      var rA = results[0], rB = results[1], comp = results[2];
+      var kA = rA.kpis || {}, kB = rB.kpis || {};
+
+      // KPI comparison
+      document.getElementById('kpi-comparison').classList.remove('hidden');
+      var metrics = ['total_centers', 'keep', 'retire', 'merge_map', 'redesign'];
+      var labels = ['Total', 'KEEP', 'RETIRE', 'MERGE', 'REDESIGN'];
+      var colors = ['bg-gray-100', 'bg-green-100', 'bg-red-100', 'bg-amber-100', 'bg-blue-100'];
+      document.getElementById('kpi-cards').innerHTML = metrics.map(function(m, i) {
+        var vA = kA[m] || 0, vB = kB[m] || 0;
+        var delta = vB - vA;
+        var deltaClass = delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-500';
+        return '<div class="rounded-lg p-3 ' + colors[i] + '">' +
+          '<div class="text-xs font-medium opacity-70">' + labels[i] + '</div>' +
+          '<div class="flex items-baseline gap-2">' +
+          '<span class="text-lg font-bold">' + fmt(vA) + '</span>' +
+          '<span class="text-gray-400">→</span>' +
+          '<span class="text-lg font-bold">' + fmt(vB) + '</span></div>' +
+          '<div class="text-xs ' + deltaClass + '">' + (delta >= 0 ? '+' : '') + delta + '</div></div>';
+      }).join('');
+
+      // Outcome matrix (data is under comp.diff)
+      var diff = comp.diff || comp;
+      if (diff.outcome_matrix) {
+        document.getElementById('outcome-matrix-section').classList.remove('hidden');
+        document.getElementById('outcome-matrix').innerHTML = renderMatrix(diff.outcome_matrix, 'Run A →', 'Run B →');
+      }
+      if (diff.target_matrix) {
+        document.getElementById('target-matrix-section').classList.remove('hidden');
+        document.getElementById('target-matrix').innerHTML = renderMatrix(diff.target_matrix, 'Run A →', 'Run B →');
+      }
+      if (diff.changed_count != null) {
+        document.getElementById('changed-section').classList.remove('hidden');
+        document.getElementById('changed-count').textContent = diff.changed_count + ' centers changed';
+      }
+    });
+  });
+
+  function renderMatrix(matrix, rowLabel, colLabel) {
+    var rows = Object.keys(matrix);
+    var colSet = {};
+    rows.forEach(function(r) { Object.keys(matrix[r]).forEach(function(c) { colSet[c] = true; }); });
+    var cols = Object.keys(colSet);
+    var maxVal = 0;
+    rows.forEach(function(r) { cols.forEach(function(c) { var v = (matrix[r] && matrix[r][c]) || 0; if (v > maxVal) maxVal = v; }); });
+
+    var html = '<table class="w-full text-xs"><thead><tr><th class="py-2 px-2 text-left">' + rowLabel + '</th>';
+    cols.forEach(function(c) { html += '<th class="py-2 px-2 text-center">' + c + '</th>'; });
+    html += '<th class="py-2 px-2 text-right">Total</th></tr></thead><tbody>';
+    rows.forEach(function(r) {
+      var rowTotal = 0;
+      html += '<tr><td class="py-1.5 px-2 font-medium" style="background:' + (OUTCOME_COLORS[r] || '#f9fafb') + '">' + r + '</td>';
+      cols.forEach(function(c) {
+        var v = (matrix[r] && matrix[r][c]) || 0;
+        rowTotal += v;
+        var intensity = maxVal ? (v / maxVal) : 0;
+        var diag = r === c;
+        var bg = diag ? 'rgba(34,197,94,' + (intensity * 0.4).toFixed(2) + ')' : (v > 0 ? 'rgba(239,68,68,' + (intensity * 0.4).toFixed(2) + ')' : 'transparent');
+        html += '<td class="py-1.5 px-2 text-center font-mono" style="background:' + bg + '">' + (v || '') + '</td>';
+      });
+      html += '<td class="py-1.5 px-2 text-right font-mono text-gray-500">' + rowTotal + '</td></tr>';
+    });
+    return html + '</tbody></table>';
+  }
+</script>

@@ -86,6 +86,14 @@ def list_proposals(
         .scalars()
         .all()
     )
+    from app.models.core import LegacyCostCenter
+
+    cc_ids = [p.legacy_cc_id for p in proposals]
+    cc_map: dict[int, LegacyCostCenter] = {}
+    if cc_ids:
+        ccs = db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+        cc_map = {c.id: c for c in ccs}
+
     return {
         "total": total,
         "page": pag.page,
@@ -94,9 +102,18 @@ def list_proposals(
             {
                 "id": p.id,
                 "legacy_cc_id": p.legacy_cc_id,
+                "cctr": cc_map[p.legacy_cc_id].cctr if p.legacy_cc_id in cc_map else None,
+                "txtsh": cc_map[p.legacy_cc_id].txtsh if p.legacy_cc_id in cc_map else None,
+                "ccode": cc_map[p.legacy_cc_id].ccode if p.legacy_cc_id in cc_map else None,
+                "coarea": cc_map[p.legacy_cc_id].coarea if p.legacy_cc_id in cc_map else None,
+                "responsible": cc_map[p.legacy_cc_id].responsible if p.legacy_cc_id in cc_map else None,
                 "cleansing_outcome": p.cleansing_outcome,
                 "target_object": p.target_object,
+                "merge_into_cctr": p.merge_into_cctr,
                 "confidence": str(p.confidence) if p.confidence else None,
+                "override_outcome": p.override_outcome,
+                "override_target": p.override_target,
+                "override_reason": p.override_reason,
             }
             for p in proposals
         ],
@@ -149,14 +166,157 @@ def override_proposal(
     return {"status": "overridden", "outcome": outcome}
 
 
+class LLMReviewRequest(BaseModel):
+    mode: str = "SINGLE"  # SINGLE | SEQUENTIAL | DEBATE
+    max_centers: int = 100
+    outcomes: list[str] | None = None  # Filter to specific outcomes
+    min_balance: float | None = None
+
+
+@router.post("/{run_id}/llm-review")
+def trigger_llm_review(
+    run_id: int,
+    body: LLMReviewRequest,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Trigger LLM review pass on proposals in a completed run."""
+    from app.models.core import AppConfig, LegacyCostCenter
+
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status != "completed":
+        raise HTTPException(status_code=409, detail="Run must be completed")
+
+    # Get LLM config
+    cfg = db.execute(
+        select(AppConfig).where(AppConfig.key == "llm")
+    ).scalar_one_or_none()
+    if not cfg or not cfg.value:
+        raise HTTPException(status_code=400, detail="LLM not configured")
+
+    llm_config = cfg.value
+
+    # Build provider
+    from app.infra.llm.provider import AzureOpenAIProvider, SapBtpProvider
+
+    provider_type = llm_config.get("provider", "azure")
+    if provider_type == "azure":
+        provider = AzureOpenAIProvider(llm_config)
+    elif provider_type == "btp":
+        provider = SapBtpProvider(llm_config)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown LLM provider: {provider_type}")
+
+    model = llm_config.get("model", "gpt-4o")
+
+    # Query proposals to review
+    query = select(CenterProposal).where(CenterProposal.run_id == run_id)
+    if body.outcomes:
+        query = query.where(CenterProposal.cleansing_outcome.in_(body.outcomes))
+    proposals = db.execute(query.limit(body.max_centers)).scalars().all()
+
+    from app.infra.llm.review_pass import build_center_context, run_review_pass
+
+    reviewed = 0
+    total_cost = 0.0
+    for proposal in proposals:
+        cc = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+        if not cc:
+            continue
+
+        center = {
+            "coarea": cc.coarea or "",
+            "cctr": cc.cctr or "",
+            "txtsh": cc.txtsh or "",
+            "txtmi": cc.txtmi or "",
+            "responsible": cc.responsible or "",
+            "ccode": cc.ccode or "",
+            "currency": cc.currency or "",
+        }
+        features = {
+            "months_since_last_posting": 0,
+            "posting_count_window": 0,
+            "bs_amt": 0,
+            "rev_amt": 0,
+            "opex_amt": 0,
+            "hierarchy_membership_count": 0,
+        }
+        outcome = {
+            "cleansing": proposal.cleansing_outcome,
+            "target_object": proposal.target_object,
+            "rule_path": (proposal.rule_path or {}).get("steps", []),
+        }
+        ml = proposal.ml_scores or {}
+
+        ctx = build_center_context(center, features, outcome, ml)
+
+        try:
+            result = run_review_pass(provider, model, body.mode, ctx)
+            proposal.llm_commentary = result
+            total_cost += result.get("_llm_meta", {}).get("cost_usd", 0.0)
+            reviewed += 1
+        except Exception as e:
+            proposal.llm_commentary = {"error": str(e)}
+
+    db.commit()
+    return {
+        "reviewed": reviewed,
+        "total_proposals": len(proposals),
+        "mode": body.mode,
+        "total_cost_usd": round(total_cost, 4),
+    }
+
+
 @router.get("/{run_a}/diff/{run_b}")
 def compare_runs(run_a: int, run_b: int, db: Session = Depends(get_db)) -> dict:
     a = db.get(AnalysisRun, run_a)
     b = db.get(AnalysisRun, run_b)
     if not a or not b:
         raise HTTPException(status_code=404, detail="Run not found")
+
+    # Build outcome matrices
+    props_a = db.execute(
+        select(CenterProposal.legacy_cc_id, CenterProposal.cleansing_outcome, CenterProposal.target_object)
+        .where(CenterProposal.run_id == run_a)
+    ).all()
+    props_b = db.execute(
+        select(CenterProposal.legacy_cc_id, CenterProposal.cleansing_outcome, CenterProposal.target_object)
+        .where(CenterProposal.run_id == run_b)
+    ).all()
+
+    map_a = {r[0]: (r[1], r[2]) for r in props_a}
+    map_b = {r[0]: (r[1], r[2]) for r in props_b}
+
+    # Outcome transition matrix
+    outcome_matrix: dict[str, dict[str, int]] = {}
+    target_matrix: dict[str, dict[str, int]] = {}
+    changed_ids: list[int] = []
+
+    all_ids = set(map_a.keys()) | set(map_b.keys())
+    for cc_id in all_ids:
+        oa = map_a.get(cc_id, ("N/A", "N/A"))
+        ob = map_b.get(cc_id, ("N/A", "N/A"))
+        # Outcome matrix
+        outcome_matrix.setdefault(oa[0], {}).setdefault(ob[0], 0)
+        outcome_matrix[oa[0]][ob[0]] += 1
+        # Target matrix
+        ta = oa[1] or "NONE"
+        tb = ob[1] or "NONE"
+        target_matrix.setdefault(ta, {}).setdefault(tb, 0)
+        target_matrix[ta][tb] += 1
+        if oa != ob:
+            changed_ids.append(cc_id)
+
     return {
         "run_a": {"id": a.id, "status": a.status, "kpis": a.kpis},
         "run_b": {"id": b.id, "status": b.status, "kpis": b.kpis},
-        "diff": {},
+        "diff": {
+            "outcome_matrix": outcome_matrix,
+            "target_matrix": target_matrix,
+            "changed_count": len(changed_ids),
+            "total_a": len(map_a),
+            "total_b": len(map_b),
+        },
     }

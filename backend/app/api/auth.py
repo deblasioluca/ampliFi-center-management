@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -89,3 +90,83 @@ async def me(user: AppUser = Depends(get_current_user)) -> UserInfo | dict:
     if user is None:
         return {"authenticated": False}
     return UserInfo.model_validate(user)
+
+
+# --- Azure EntraID OIDC routes (§10.1.2) ---
+
+
+@router.get("/oidc/start")
+async def oidc_start(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Start OIDC authorization code flow with PKCE."""
+    from app.auth.entraid import EntraIDConfig, build_auth_url, generate_pkce
+    from app.models.core import AppConfig
+
+    if settings.auth_provider != "entraid":
+        raise HTTPException(status_code=400, detail="EntraID auth not enabled")
+
+    cfg_row = db.execute(
+        select(AppConfig).where(AppConfig.key == "auth.entraid")
+    ).scalar_one_or_none()
+    if not cfg_row or not cfg_row.value:
+        raise HTTPException(status_code=500, detail="EntraID not configured")
+
+    cfg = EntraIDConfig(cfg_row.value)
+    import secrets as sec
+    state = sec.token_urlsafe(32)
+    nonce = sec.token_urlsafe(32)
+    auth_url, code_verifier = build_auth_url(cfg, state, nonce)
+
+    # Store state and verifier in session (using a simple cookie for now)
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "code_verifier": code_verifier,
+    }
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(
+    code: str,
+    state: str,
+    code_verifier: str = "",
+    response: Response = None,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Handle OIDC callback and exchange code for tokens."""
+    from app.auth.entraid import (
+        EntraIDConfig,
+        exchange_code,
+        upsert_user_from_claims,
+        validate_id_token,
+    )
+    from app.models.core import AppConfig
+
+    cfg_row = db.execute(
+        select(AppConfig).where(AppConfig.key == "auth.entraid")
+    ).scalar_one_or_none()
+    if not cfg_row or not cfg_row.value:
+        raise HTTPException(status_code=500, detail="EntraID not configured")
+
+    cfg = EntraIDConfig(cfg_row.value)
+    token_response = exchange_code(cfg, code, code_verifier)
+    id_token = token_response.get("id_token", "")
+    if not id_token:
+        raise HTTPException(status_code=401, detail="No id_token in response")
+
+    claims = validate_id_token(cfg, id_token)
+    user = upsert_user_from_claims(claims, cfg, db)
+
+    access_token = create_access_token(user.id, user.role)
+    refresh_token = create_refresh_token(user.id)
+
+    if response:
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=settings.app_env != "dev",
+            samesite="lax",
+            max_age=settings.jwt_refresh_token_expire_days * 86400,
+        )
+
+    return TokenResponse(access_token=access_token)

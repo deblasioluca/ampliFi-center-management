@@ -1,0 +1,21 @@
+[Unit]
+Description=ampliFi Center Management Frontend
+After=network.target amplifi-backend.service
+
+[Service]
+Type=simple
+User=macan
+Group=macan
+WorkingDirectory=/home/macan/Development/ampliFi-center-management/frontend
+Environment=PATH=/home/macan/.nvm/versions/node/v22.0.0/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOST=0.0.0.0
+Environment=PORT=4321
+ExecStart=/usr/bin/env node ./dist/server/entry.mjs
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=amplifi-frontend
+
+[Install]
+WantedBy=multi-user.target

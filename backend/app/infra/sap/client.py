@@ -22,6 +22,8 @@ def test_connection(conn: SAPConnection) -> dict[str, Any]:
             return _test_odata(conn, password, start)
         elif conn.protocol == "adt":
             return _test_adt(conn, password, start)
+        elif conn.protocol == "soap":
+            return _test_soap(conn, password, start)
         else:
             return {"success": False, "error": f"Unsupported protocol: {conn.protocol}"}
     except Exception as e:
@@ -70,6 +72,22 @@ def _test_adt(conn: SAPConnection, password: str, start: float) -> dict[str, Any
             "latency_ms": elapsed,
             "protocol": "adt",
             "status_code": resp.status_code,
+        }
+
+
+def _test_soap(conn: SAPConnection, password: str, start: float) -> dict[str, Any]:
+    """Test SOAP/RFC connectivity via an HTTP SOAP ping."""
+    url = f"{conn.base_url}/sap/bc/srt/wsdl/flv_10002A111AD1/bndg_url/sap/bc/srt/rfc/sap"
+    headers = {"sap-client": conn.client, "Content-Type": "text/xml; charset=utf-8"}
+    with httpx.Client(verify=conn.verify_ssl, timeout=30.0) as client:
+        resp = client.get(url, headers=headers, auth=(conn.username, password))
+        elapsed = int((time.monotonic() - start) * 1000)
+        return {
+            "success": resp.status_code in (200, 401, 403, 500),
+            "latency_ms": elapsed,
+            "protocol": "soap",
+            "status_code": resp.status_code,
+            "reachable": resp.status_code != 0,
         }
 
 

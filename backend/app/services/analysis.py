@@ -281,6 +281,37 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
             )
             db.add(output)
 
+        # ML predictions (heuristic fallback if no trained model)
+        ml_outcome_probs = {}
+        ml_target_probs = {}
+        ml_shap = []
+        try:
+            from app.domain.ml.classifiers import OutcomeClassifier, TargetObjectClassifier
+
+            feature_dict = {
+                "bs_amt": features.bs_amt if not use_pipeline else (ctx.bs_amt if use_pipeline else 0),
+                "rev_amt": features.rev_amt if not use_pipeline else (ctx.rev_amt if use_pipeline else 0),
+                "opex_amt": features.opex_amt if not use_pipeline else (ctx.opex_amt if use_pipeline else 0),
+                "other_amt": 0.0,
+                "posting_count_window": (features.posting_count_window or 0) if not use_pipeline else (ctx.posting_count_window or 0),
+                "months_active_in_window": 0,
+                "months_since_last_posting": (features.months_since_last_posting or 0) if not use_pipeline else (ctx.months_since_last_posting or 0),
+                "period_count_with_postings": 0,
+                "balance_volatility": 0.0,
+                "has_owner": int(features.has_owner) if not use_pipeline else int(ctx.has_owner),
+                "hierarchy_membership_count": features.hierarchy_membership_count if not use_pipeline else ctx.hierarchy_membership_count,
+            }
+            oc = OutcomeClassifier()
+            tc = TargetObjectClassifier()
+            ml_outcome_probs = oc.predict_proba(feature_dict)
+            ml_target_probs = tc.predict_proba(feature_dict)
+            ml_shap = oc.explain(feature_dict, top_k=5)
+        except Exception as ml_err:
+            log.warning("ML prediction failed for %s: %s", cc.cctr, ml_err)
+
+        # Compute ML confidence as max probability
+        ml_confidence = max(ml_outcome_probs.values()) if ml_outcome_probs else None
+
         proposal = CenterProposal(
             run_id=run.id,
             legacy_cc_id=cc.id,
@@ -289,7 +320,12 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
             target_object=result.target_object.value if result.target_object else None,
             merge_into_cctr=result.merge_into,
             rule_path={"steps": result.rule_path},
-            confidence=Decimal(str(result.confidence)),
+            confidence=Decimal(str(ml_confidence)) if ml_confidence else Decimal(str(result.confidence)),
+            ml_scores={
+                "outcome_probs": ml_outcome_probs,
+                "target_probs": ml_target_probs,
+                "shap": ml_shap,
+            } if ml_outcome_probs else None,
         )
         db.add(proposal)
 

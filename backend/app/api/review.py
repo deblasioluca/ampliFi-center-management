@@ -158,6 +158,32 @@ def bulk_decide(
     return {"decided": count}
 
 
+class RequestChanges(BaseModel):
+    comment: str
+
+
+@router.post("/{token}/request-changes")
+def request_changes(
+    token: str,
+    body: RequestChanges,
+    db: Session = Depends(get_db),
+) -> dict:
+    scope = _get_scope(token, db)
+    scope.status = "changes_requested"
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="review.request_changes",
+        entity_type="review_scope",
+        entity_id=scope.id,
+        actor_email=scope.reviewer_email,
+        after={"comment": body.comment},
+    )
+    db.commit()
+    return {"status": "changes_requested"}
+
+
 @router.post("/{token}/complete")
 def complete_review(token: str, db: Session = Depends(get_db)) -> dict:
     scope = _get_scope(token, db)

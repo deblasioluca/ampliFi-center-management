@@ -1,0 +1,21 @@
+[Unit]
+Description=ampliFi Center Management Backend
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=macan
+Group=macan
+WorkingDirectory=/home/macan/Development/ampliFi-center-management
+Environment=PATH=/home/macan/Development/ampliFi-center-management/.venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/macan/Development/ampliFi-center-management/.env
+ExecStart=/home/macan/Development/ampliFi-center-management/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8180 --workers 2
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=amplifi-backend
+
+[Install]
+WantedBy=multi-user.target

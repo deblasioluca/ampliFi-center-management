@@ -183,6 +183,69 @@ def set_config(
     return {"key": key, "value": body.value}
 
 
+# --- Email test ---
+
+
+@router.post("/config/email/test")
+def test_email_connection(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
+    if not cfg or not cfg.value:
+        return {"status": "error", "error": "No email configuration found"}
+    v = cfg.value
+    from app.infra.email.engine import EmailEngine
+
+    engine = EmailEngine(
+        host=v.get("host", "localhost"),
+        port=v.get("port", 587),
+        username=v.get("username", ""),
+        password=v.get("password", ""),
+        use_tls=v.get("tls", "none") != "none",
+        from_address=v.get("from_address", "noreply@amplifi.dev"),
+        from_name=v.get("from_name", "ampliFi"),
+    )
+    return engine.test_connection()
+
+
+class SendTestEmail(BaseModel):
+    to: str
+
+
+@router.post("/config/email/send-test")
+def send_test_email(
+    body: SendTestEmail,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
+    if not cfg or not cfg.value:
+        return {"sent": False, "error": "No email configuration found"}
+    v = cfg.value
+    from app.infra.email.engine import EmailEngine
+
+    engine = EmailEngine(
+        host=v.get("host", "localhost"),
+        port=v.get("port", 587),
+        username=v.get("username", ""),
+        password=v.get("password", ""),
+        use_tls=v.get("tls", "none") != "none",
+        from_address=v.get("from_address", "noreply@amplifi.dev"),
+        from_name=v.get("from_name", "ampliFi"),
+    )
+    result = engine.send(
+        to=body.to,
+        template_name="password_reset",
+        context={
+            "user_name": _user.display_name,
+            "reset_url": "https://amplifi.dev/test",
+            "expires_minutes": "60",
+        },
+    )
+    return {"sent": result}
+
+
 # --- SAP Connections ---
 
 
@@ -891,3 +954,25 @@ def download_upload_template(
         "content": output.getvalue(),
         "content_type": "text/csv",
     }
+
+
+# --- LLM Usage & Cost Tracking ---
+
+
+@router.get("/llm/usage")
+def llm_usage_summary(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Get LLM usage summary (daily/monthly spend, call counts)."""
+    from app.infra.llm.guardrails import CostGuardrail
+
+    # Load guardrail config from app_config
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "llm.guardrails")).scalar_one_or_none()
+    guardrail_config = cfg.value if cfg else {}
+    guardrail = CostGuardrail(
+        max_cost_per_call=guardrail_config.get("max_cost_per_call", 1.0),
+        daily_cap_usd=guardrail_config.get("daily_cap_usd", 50.0),
+        monthly_cap_usd=guardrail_config.get("monthly_cap_usd", 500.0),
+    )
+    return guardrail.get_usage_summary(db)

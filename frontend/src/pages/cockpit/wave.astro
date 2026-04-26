@@ -218,7 +218,13 @@ export const prerender = false;
       if (w.status === 'proposed') actions += '<button onclick="lockWave()" class="btn-sm bg-yellow-600 text-white">Lock Proposal</button>';
       if (w.status === 'locked') actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Invite Reviewers</button>';
       if (w.status === 'in_review') actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
-      if (w.status === 'signed_off') actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
+      if (w.status === 'signed_off') {
+        actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
+        actions += '<button onclick="exportMDG(\'profit_center\')" class="btn-sm bg-teal-600 text-white">Export PC (MDG)</button>';
+        actions += '<button onclick="exportMDG(\'retire\')" class="btn-sm bg-red-600 text-white">Export Retire List</button>';
+        actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
+      }
+      if (w.status === 'locked') actions += '<button onclick="unlockWave()" class="btn-sm text-yellow-700 border border-yellow-300">Unlock</button>';
       if (['draft','analysing','proposed'].includes(w.status)) actions += '<button onclick="cancelWave()" class="btn-sm text-red-600">Cancel</button>';
       document.getElementById('wave-actions').innerHTML = actions;
 
@@ -354,8 +360,11 @@ export const prerender = false;
           (isPreferred ? ' <span class="bg-purple-200 text-purple-800 px-2 py-0.5 rounded text-xs ml-2">Preferred</span>' : '') +
           ' <span class="' + statusColor + ' text-xs ml-2">' + r.status + '</span>' +
           '</div><div class="flex gap-2">';
-        if (r.status === 'completed' && !isPreferred) {
-          html += '<button onclick="proposeRun(' + r.id + ')" class="btn-sm bg-purple-600 text-white text-xs">Set as Preferred</button>';
+        if (r.status === 'completed') {
+          html += '<a href="/cockpit/run?id=' + r.id + '&wave=' + waveId + '" class="btn-sm bg-gray-600 text-white text-xs">View Details</a>';
+          if (!isPreferred) {
+            html += '<button onclick="proposeRun(' + r.id + ')" class="btn-sm bg-purple-600 text-white text-xs">Set as Preferred</button>';
+          }
         }
         html += '</div></div>';
         if (r.kpis) {
@@ -544,6 +553,22 @@ export const prerender = false;
     var res = await fetch('/api/waves/' + waveId + '/cancel', { method: 'POST', headers: authHdr });
     if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
     loadWave();
+  };
+  window.unlockWave = async function() {
+    var res = await fetch('/api/waves/' + waveId + '/proposal/unlock', { method: 'POST', headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    loadWave();
+  };
+  window.exportMDG = async function(exportType) {
+    var res = await fetch('/api/waves/' + waveId + '/export?export_type=' + exportType, { headers: authHdr });
+    if (!res.ok) { var d = await res.json(); alert(d.detail || 'Export failed'); return; }
+    var d = await res.json();
+    var blob = new Blob([d.content], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = d.filename;
+    a.click();
+    alert('Exported ' + d.record_count + ' records to ' + d.filename);
   };
 })();
 </script>

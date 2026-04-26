@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -210,7 +210,20 @@ def cancel_wave(
         raise HTTPException(status_code=404, detail="Wave not found")
     if "cancelled" not in VALID_TRANSITIONS.get(wave.status, []):
         raise HTTPException(status_code=409, detail=f"Cannot cancel wave in status {wave.status}")
+    old_status = wave.status
     wave.status = "cancelled"
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.cancel",
+        entity_type="wave",
+        entity_id=wave.id,
+        actor_id=user.id,
+        actor_email=user.email,
+        before={"status": old_status},
+        after={"status": "cancelled"},
+    )
     db.commit()
     return {"status": "cancelled"}
 
@@ -227,8 +240,19 @@ def lock_proposal(
     if wave.status != "proposed":
         raise HTTPException(status_code=409, detail="Wave must be in proposed status to lock")
     wave.status = "locked"
-
     wave.locked_at = datetime.now(UTC)
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.lock",
+        entity_type="wave",
+        entity_id=wave.id,
+        actor_id=user.id,
+        actor_email=user.email,
+        before={"status": "proposed"},
+        after={"status": "locked"},
+    )
     db.commit()
     return {"status": "locked"}
 
@@ -273,8 +297,38 @@ def signoff_wave(
     if wave.status != "in_review":
         raise HTTPException(status_code=409, detail="Wave must be in_review to sign off")
 
+    # Completeness check: block if any review items are still PENDING
+    pending_count = (
+        db.execute(
+            select(func.count(ReviewItem.id)).where(
+                ReviewItem.scope_id.in_(
+                    select(ReviewScope.id).where(ReviewScope.wave_id == wave.id)
+                ),
+                ReviewItem.decision == "PENDING",
+            )
+        ).scalar()
+        or 0
+    )
+    if pending_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot sign off: {pending_count} review items still PENDING",
+        )
+
     wave.status = "signed_off"
     wave.signed_off_at = datetime.now(UTC)
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.signoff",
+        entity_type="wave",
+        entity_id=wave.id,
+        actor_id=user.id,
+        actor_email=user.email,
+        before={"status": "in_review"},
+        after={"status": "signed_off"},
+    )
     db.commit()
     return {"status": "signed_off"}
 
