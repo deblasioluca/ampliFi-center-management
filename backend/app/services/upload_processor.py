@@ -39,6 +39,7 @@ CC_COLUMNS = {
     "CURRENCY": "currency",
     "PCTRCCTR": "pctr",
     "PCTR": "pctr",
+    "IS_ACTIVE": "is_active",
 }
 PC_COLUMNS = {
     "COAREA": "coarea",
@@ -54,6 +55,7 @@ PC_COLUMNS = {
     "CCODE": "ccode",
     "CURRPCTR": "currency",
     "CURRENCY": "currency",
+    "IS_ACTIVE": "is_active",
 }
 BALANCE_COLUMNS = {
     "COAREA": "coarea",
@@ -82,7 +84,10 @@ ENTITY_COLUMNS = {
     "COMPANY_CODE": "ccode",
     "CCODE": "ccode",
     "NAME": "name",
+    "COUNTRY": "country",
     "REGION": "region",
+    "CURRENCY": "currency",
+    "IS_ACTIVE": "is_active",
 }
 
 
@@ -318,10 +323,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     LegacyCostCenter.cctr == row["cctr"],
                 )
             ).scalar_one_or_none()
+            is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             if existing:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
+                if row.get("is_active"):
+                    existing.is_active = is_act
             else:
                 db.add(
                     LegacyCostCenter(
@@ -334,6 +342,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         ccode=row.get("ccode", ""),
                         currency=row.get("currency", ""),
                         pctr=row.get("pctr", ""),
+                        is_active=is_act,
                         refresh_batch=batch.id,
                     )
                 )
@@ -349,10 +358,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     LegacyProfitCenter.pctr == row["pctr"],
                 )
             ).scalar_one_or_none()
+            is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             if existing:
                 existing.txtsh = row.get("txtsh", existing.txtsh)
                 existing.txtmi = row.get("txtmi", existing.txtmi)
                 existing.responsible = row.get("responsible", existing.responsible)
+                if row.get("is_active"):
+                    existing.is_active = is_act
             else:
                 db.add(
                     LegacyProfitCenter(
@@ -364,6 +376,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         ccode=row.get("ccode", ""),
                         department=row.get("department", ""),
                         currency=row.get("currency", ""),
+                        is_active=is_act,
                         refresh_batch=batch.id,
                     )
                 )
@@ -432,13 +445,17 @@ def load_upload(batch_id: int, db: Session) -> dict:
             ).scalar_one_or_none()
             if existing:
                 existing.name = row.get("name", existing.name)
+                existing.country = row.get("country", existing.country)
                 existing.region = row.get("region", existing.region)
+                existing.currency = row.get("currency", existing.currency)
             else:
                 db.add(
                     Entity(
                         ccode=row["ccode"],
                         name=row.get("name", row["ccode"]),
+                        country=row.get("country"),
                         region=row.get("region"),
+                        currency=row.get("currency"),
                     )
                 )
             loaded += 1
