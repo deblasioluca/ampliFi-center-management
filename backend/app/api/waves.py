@@ -1115,6 +1115,7 @@ def auto_approve_obvious(
         if verdict_match and confidence >= params.confidence_threshold:
             item.decision = "APPROVED"
             item.decided_by = f"auto:{user.id}"
+            item.decided_at = datetime.now(UTC)
             approved_count += 1
             if params.max_items and approved_count >= params.max_items:
                 break
