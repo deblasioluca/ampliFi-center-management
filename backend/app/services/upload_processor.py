@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import csv
 import io
 import logging
@@ -27,6 +28,34 @@ from app.models.core import (
 )
 
 log = logging.getLogger(__name__)
+
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%Y%m%d",
+)
+
+
+def _parse_date(raw: str) -> datetime | None:
+    """Try common date formats; return None if unparseable."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
+        except ValueError:
+            continue
+    return None
+
 
 # Column mappings: normalize header names to model fields
 CC_COLUMNS = {
@@ -594,7 +623,21 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     model_kwargs[k] = v if v else None
                 elif k and k != "_extras" and v:
                     extra_attrs[k] = v
+            # Recover unmapped CSV columns from _extras (stored as repr by _normalize_headers)
+            extras_raw = row.get("_extras")
+            if extras_raw and isinstance(extras_raw, str):
+                try:
+                    parsed = ast.literal_eval(extras_raw)
+                    if isinstance(parsed, dict):
+                        extra_attrs.update(parsed)
+                except (ValueError, SyntaxError):
+                    pass
             model_kwargs["attrs"] = extra_attrs if extra_attrs else None
+            # Parse datetime fields from various CSV date formats
+            for dt_field in ("valid_from", "valid_to"):
+                raw = model_kwargs.get(dt_field)
+                if raw and isinstance(raw, str):
+                    model_kwargs[dt_field] = _parse_date(raw)
             model_kwargs["refresh_batch"] = batch.id
             if existing:
                 for k, v in model_kwargs.items():
