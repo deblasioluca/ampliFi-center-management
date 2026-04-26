@@ -372,8 +372,7 @@ def fetch_adt_table(
         where_element = ""
         if where:
             where_element = (
-                f"\n  <dataPreview:whereClause>"
-                f"{xml_escape(where)}</dataPreview:whereClause>"
+                f"\n  <dataPreview:whereClause>{xml_escape(where)}</dataPreview:whereClause>"
             )
         body = f"""<?xml version="1.0" encoding="utf-8"?>
 <dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
