@@ -18,7 +18,7 @@ class PaginationParams:
 
 def pagination(
     page: int = Query(1, ge=1),
-    size: int = Query(100, ge=1, le=1000),
+    size: int = Query(100, ge=1, le=10000),
 ) -> PaginationParams:
     return PaginationParams(page=page, size=size)
 

@@ -116,6 +116,59 @@ def cancel_run(
     return {"status": "cancelled"}
 
 
+@router.delete("/{run_id}")
+def delete_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Delete an analysis run and all its proposals."""
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status == "running":
+        raise HTTPException(status_code=409, detail="Cannot delete a running analysis")
+    from sqlalchemy import delete, select, update
+
+    from app.models.core import (
+        LLMReviewPass,
+        NamingAllocation,
+        RoutineOutput,
+        Wave,
+    )
+
+    # Release naming allocations before deleting proposals
+    proposal_ids = (
+        db.execute(select(CenterProposal.id).where(CenterProposal.run_id == run_id)).scalars().all()
+    )
+    if proposal_ids:
+        db.execute(
+            update(NamingAllocation)
+            .where(
+                NamingAllocation.proposal_id.in_(proposal_ids),
+                NamingAllocation.is_released.is_(False),
+            )
+            .values(is_released=True, proposal_id=None)
+        )
+
+    db.execute(delete(CenterProposal).where(CenterProposal.run_id == run_id))
+    db.execute(delete(RoutineOutput).where(RoutineOutput.run_id == run_id))
+    db.execute(delete(LLMReviewPass).where(LLMReviewPass.run_id == run_id))
+
+    # Clear stale preferred_run_id from any wave referencing this run
+    waves = db.execute(select(Wave).where(Wave.preferred_run_id == run_id)).scalars().all()
+    for wave in waves:
+        wave.preferred_run_id = None
+        if wave.config and wave.config.get("preferred_run_id") == run_id:
+            cfg = {**wave.config}
+            del cfg["preferred_run_id"]
+            wave.config = cfg
+
+    db.delete(run)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.get("/{run_id}/proposals")
 def list_proposals(
     run_id: int,
