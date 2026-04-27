@@ -243,6 +243,7 @@ import Layout from '../../components/layout/Layout.astro';
   var jsonHdr = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
 
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+  function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function fmt(n) { return (n || 0).toLocaleString(); }
 
   // CSV download of current visible table
@@ -383,6 +384,36 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('search-entities').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEntities(1); }, 300); });
 
   // --- Cost Centers ---
+  // Sortable table helper
+  var _tableSort = {};
+  window.sortTable = function(tableId, col, renderFn) {
+    var s = _tableSort[tableId] || { col: col, dir: 'asc' };
+    if (s.col === col) { s.dir = s.dir === 'asc' ? 'desc' : 'asc'; } else { s.col = col; s.dir = 'asc'; }
+    _tableSort[tableId] = s;
+    renderFn();
+  };
+  function sortTableData(tableId, data) {
+    var s = _tableSort[tableId];
+    if (!s) return data;
+    return data.slice().sort(function(a, b) {
+      var va = a[s.col], vb = b[s.col];
+      if (va == null) va = ''; if (vb == null) vb = '';
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      return (va < vb ? -1 : va > vb ? 1 : 0) * (s.dir === 'asc' ? 1 : -1);
+    });
+  }
+  function sortIcon(tableId, col) {
+    var s = _tableSort[tableId];
+    if (!s || s.col !== col) return ' <span class="text-gray-300 text-[10px]">↕</span>';
+    return s.dir === 'asc' ? ' ↑' : ' ↓';
+  }
+  function sortTh(tableId, col, label, renderFn) {
+    return '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortTable(\'' +
+      tableId + '\',\'' + col + '\',' + renderFn + ')">' + label + sortIcon(tableId, col) + '</th>';
+  }
+
+  var _ccData = [];
   window.loadCC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-cc').value;
@@ -391,35 +422,46 @@ import Layout from '../../components/layout/Layout.astro';
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var el = document.getElementById('cc-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No cost centers found.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Short Text</th>' +
-        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
-        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Category</th>' +
-        '<th class="py-2 px-2 text-left">Responsible</th><th class="py-2 px-2 text-left">PC</th>' +
-        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
-      d.items.forEach(function(c) {
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
-          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
+      _ccData = d.items || [];
+      _renderCCTable();
       document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
     }).catch(function(e) { document.getElementById('cc-table').textContent = 'Error: ' + e.message; });
+  };
+  window._renderCCTable = function() {
+    var el = document.getElementById('cc-table');
+    if (!_ccData.length) { el.textContent = 'No cost centers found.'; return; }
+    var items = sortTableData('cc', _ccData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('cc','cctr','CC','_renderCCTable') +
+      sortTh('cc','txtsh','Short Text','_renderCCTable') +
+      sortTh('cc','txtmi','Medium Text','_renderCCTable') +
+      sortTh('cc','ccode','Entity','_renderCCTable') +
+      sortTh('cc','coarea','CO Area','_renderCCTable') +
+      sortTh('cc','cctrcgy','Category','_renderCCTable') +
+      sortTh('cc','responsible','Responsible','_renderCCTable') +
+      sortTh('cc','pctr','PC','_renderCCTable') +
+      sortTh('cc','is_active','Active','_renderCCTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(c) {
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
+        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
   };
   loadCC(1);
   document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
   document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
 
   // --- Profit Centers ---
+  var _pcData = [];
   window.loadPC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-pc').value;
@@ -428,28 +470,37 @@ import Layout from '../../components/layout/Layout.astro';
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var el = document.getElementById('pc-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No profit centers found.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">PC</th><th class="py-2 px-2 text-left">Short Text</th>' +
-        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
-        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Department</th>' +
-        '<th class="py-2 px-2 text-left">Responsible</th>' +
-        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
-      d.items.forEach(function(p) {
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
-          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
+      _pcData = d.items || [];
+      _renderPCTable();
       document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
     }).catch(function(e) { document.getElementById('pc-table').textContent = 'Error: ' + e.message; });
+  };
+  window._renderPCTable = function() {
+    var el = document.getElementById('pc-table');
+    if (!_pcData.length) { el.textContent = 'No profit centers found.'; return; }
+    var items = sortTableData('pc', _pcData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('pc','pctr','PC','_renderPCTable') +
+      sortTh('pc','txtsh','Short Text','_renderPCTable') +
+      sortTh('pc','txtmi','Medium Text','_renderPCTable') +
+      sortTh('pc','ccode','Entity','_renderPCTable') +
+      sortTh('pc','coarea','CO Area','_renderPCTable') +
+      sortTh('pc','department','Department','_renderPCTable') +
+      sortTh('pc','responsible','Responsible','_renderPCTable') +
+      sortTh('pc','is_active','Active','_renderPCTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(p) {
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
+        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
   };
   loadPC(1);
   document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
@@ -494,23 +545,76 @@ import Layout from '../../components/layout/Layout.astro';
 
   // --- Hierarchies ---
   function loadHierarchies() {
-    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    // Use admin endpoint for labels, fallback to legacy endpoint
+    fetch('/api/admin/hierarchies', { headers: authHdr }).then(function(r) {
+      if (!r.ok) return fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r2) { return r2.json(); }).then(function(d) { return d.items || []; });
+      return r.json();
+    }).then(function(items) {
       var el = document.getElementById('hier-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No hierarchies found.'; return; }
+      if (!items || !items.length) { el.textContent = 'No hierarchies found.'; return; }
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">Set Class</th><th class="py-2 px-2 text-left">Set Name</th>' +
-        '<th class="py-2 px-2 text-left">Description</th><th class="py-2 px-2 text-left">CO Area</th>' +
-        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
-      d.items.forEach(function(h) {
+        '<th class="py-2 px-2 text-left">Type</th><th class="py-2 px-2 text-left">Set Name</th>' +
+        '<th class="py-2 px-2 text-left">Label</th><th class="py-2 px-2 text-left">Description</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th>' +
+        '<th class="py-2 px-2 text-center">Active</th><th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
+      items.forEach(function(h) {
+        var typeLabel = h.type_label || h.setclass;
         html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(h.setclass) + '</td>' +
+          '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' +
+            (typeLabel === 'Cost Center' ? 'bg-blue-100 text-blue-800' : typeLabel === 'Profit Center' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700') +
+            '">' + esc(typeLabel) + '</span></td>' +
           '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(h.description) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea) + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+          '<td class="py-1.5 px-2">' +
+            '<span id="hier-label-' + h.id + '-text">' + esc(h.display_label || h.label || '') + '</span>' +
+            '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" data-orig="' + escAttr(h.label || '') + '" placeholder="' + escAttr(h.display_label || '') + '" />' +
+          '</td>' +
+          '<td class="py-1.5 px-2 text-gray-500">' + esc(h.description || '') + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea || '') + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>' +
+          '<td class="py-1.5 px-2"><button class="text-blue-600 hover:underline text-[10px]" onclick="editHierLabel(' + h.id + ')">Edit Label</button></td></tr>';
       });
       el.innerHTML = html + '</tbody></table>';
     }).catch(function(e) { document.getElementById('hier-table').textContent = 'Error: ' + e.message; });
+  }
+  window.editHierLabel = function(hierId) {
+    var textEl = document.getElementById('hier-label-' + hierId + '-text');
+    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
+    if (!inputEl) return;
+    if (inputEl.classList.contains('hidden')) {
+      inputEl.classList.remove('hidden');
+      textEl.classList.add('hidden');
+      inputEl.focus();
+      inputEl.onkeydown = function(e) {
+        if (e.key === 'Enter') { saveHierLabel(hierId); }
+        if (e.key === 'Escape') { inputEl.classList.add('hidden'); textEl.classList.remove('hidden'); }
+      };
+      inputEl.onblur = function() { saveHierLabel(hierId); };
+    }
+  };
+  function saveHierLabel(hierId) {
+    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
+    var textEl = document.getElementById('hier-label-' + hierId + '-text');
+    if (!inputEl || inputEl.classList.contains('hidden')) return;
+    var label = inputEl.value.trim();
+    var origVal = inputEl.getAttribute('data-orig') || '';
+    // Skip save if value unchanged (prevents freezing auto-labels on blur)
+    if (label === origVal) {
+      inputEl.classList.add('hidden');
+      textEl.classList.remove('hidden');
+      return;
+    }
+    fetch('/api/admin/hierarchies/' + hierId + '?label=' + encodeURIComponent(label), {
+      method: 'PATCH', headers: authHdr
+    }).then(function(r) { if (!r.ok) throw new Error('Save failed'); return r.json(); }).then(function(h) {
+      textEl.textContent = h.display_label || h.label || '';
+      inputEl.value = h.label || '';
+      inputEl.setAttribute('data-orig', h.label || '');
+      inputEl.classList.add('hidden');
+      textEl.classList.remove('hidden');
+    }).catch(function() {
+      inputEl.classList.add('hidden');
+      textEl.classList.remove('hidden');
+    });
   }
   loadHierarchies();
 
@@ -904,15 +1008,17 @@ import Layout from '../../components/layout/Layout.astro';
                     '<td class="px-2 py-1 font-mono">' + esc(ot) + '</td>' +
                     '<td class="px-2 py-1 font-mono text-xs">' + esc(b.entity_set || b.path || '-') + '</td>' +
                     '<td class="px-2 py-1">';
-                  // Selection parameters based on object type
                   if (ot === 'cost_center' || ot === 'profit_center') {
-                    html += '<input id="' + uid + '_co" type="text" placeholder="CO Area (e.g. 1000)" ' +
-                      'class="border rounded px-2 py-0.5 text-xs w-32" />';
+                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-40" data-conn="' + c.connection_id + '">' +
+                      '<option value="">All CO Areas</option></select>';
                   } else if (ot === 'hierarchy') {
-                    html += '<input id="' + uid + '_hier" type="text" placeholder="Hierarchy name" ' +
-                      'class="border rounded px-2 py-0.5 text-xs w-32" />';
+                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-36 mr-1" data-conn="' + c.connection_id + '" data-hier-trigger="' + uid + '_hier">' +
+                      '<option value="">All CO Areas</option></select>' +
+                      '<select id="' + uid + '_hier" multiple class="border rounded px-2 py-0.5 text-xs w-48" style="min-height:28px;max-height:80px" data-conn="' + c.connection_id + '">' +
+                      '<option value="">Loading hierarchies...</option></select>';
                   } else if (ot === 'balance') {
-                    html += '<input id="' + uid + '_co" type="text" placeholder="CO Area" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
+                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-28 mr-1" data-conn="' + c.connection_id + '">' +
+                      '<option value="">All CO Areas</option></select>' +
                       '<input id="' + uid + '_pfrom" type="text" placeholder="Period from" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
                       '<input id="' + uid + '_pto" type="text" placeholder="Period to" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
                       '<input id="' + uid + '_cc" type="text" placeholder="Company code" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
@@ -926,13 +1032,88 @@ import Layout from '../../components/layout/Layout.astro';
               }
               html += '</div>';
               pending--;
-              if (pending === 0) listEl.innerHTML = html;
+              if (pending === 0) {
+                listEl.innerHTML = html;
+                // Populate CO Area dropdowns from SAP
+                populateCoAreaDropdowns();
+              }
             });
         });
       })
       .catch(function() {
         listEl.textContent = 'Failed to load SAP connections.';
       });
+
+    // Dynamic SAP lookups
+    var coAreaCache = {};
+    var hierCache = {};
+
+    function populateCoAreaDropdowns() {
+      var selects = listEl.querySelectorAll('select[data-conn]');
+      var connIds = new Set();
+      selects.forEach(function(sel) { connIds.add(sel.getAttribute('data-conn')); });
+      connIds.forEach(function(connId) {
+        if (coAreaCache[connId]) { fillCoAreaSelects(connId); return; }
+        fetch('/api/admin/sap/' + connId + '/lookup/co-areas', { headers: authHdr })
+          .then(function(r) { return r.ok ? r.json() : []; })
+          .then(function(areas) {
+            coAreaCache[connId] = areas;
+            fillCoAreaSelects(connId);
+            // Also load hierarchies for hierarchy selects
+            loadHierarchiesForConn(connId, '');
+          }).catch(function() {});
+      });
+    }
+
+    function fillCoAreaSelects(connId) {
+      var areas = coAreaCache[connId] || [];
+      listEl.querySelectorAll('select[data-conn="' + connId + '"]').forEach(function(sel) {
+        if (sel.multiple) return; // skip hierarchy multi-selects
+        var val = sel.value;
+        var opts = '<option value="">All CO Areas</option>';
+        areas.forEach(function(a) {
+          opts += '<option value="' + escAttr(a.co_area) + '">' + esc(a.co_area) + (a.description ? ' — ' + esc(a.description) : '') + '</option>';
+        });
+        sel.innerHTML = opts;
+        sel.value = val;
+        // Wire change event for hierarchy trigger
+        var hierTarget = sel.getAttribute('data-hier-trigger');
+        if (hierTarget) {
+          sel.addEventListener('change', function() {
+            loadHierarchiesForConn(connId, sel.value);
+          });
+        }
+      });
+    }
+
+    function loadHierarchiesForConn(connId, coArea) {
+      var cacheKey = connId + ':' + (coArea || '*');
+      if (hierCache[cacheKey]) { fillHierSelects(connId, hierCache[cacheKey]); return; }
+      var url = '/api/admin/sap/' + connId + '/lookup/hierarchies';
+      if (coArea) url += '?co_area=' + encodeURIComponent(coArea);
+      fetch(url, { headers: authHdr })
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(hiers) {
+          hierCache[cacheKey] = hiers;
+          fillHierSelects(connId, hiers);
+        }).catch(function() {});
+    }
+
+    function fillHierSelects(connId, hiers) {
+      listEl.querySelectorAll('select[multiple][data-conn="' + connId + '"]').forEach(function(sel) {
+        sel.innerHTML = '';
+        if (!hiers.length) {
+          sel.innerHTML = '<option value="" disabled>No hierarchies found</option>';
+          return;
+        }
+        hiers.forEach(function(h) {
+          var opt = document.createElement('option');
+          opt.value = h.set_name;
+          opt.textContent = h.set_name + (h.description ? ' — ' + h.description : '') + ' (' + h.kind + ')';
+          sel.appendChild(opt);
+        });
+      });
+    }
 
     window.extractBinding = async function(connId, bindingId, btn, uid, objType) {
       btn.disabled = true;
@@ -945,7 +1126,14 @@ import Layout from '../../components/layout/Layout.astro';
       var coEl = document.getElementById(uid + '_co');
       if (coEl && coEl.value.trim()) params.co_area = coEl.value.trim();
       var hierEl = document.getElementById(uid + '_hier');
-      if (hierEl && hierEl.value.trim()) params.hierarchy_name = hierEl.value.trim();
+      if (hierEl) {
+        if (hierEl.multiple) {
+          var selected = Array.from(hierEl.selectedOptions).map(function(o) { return o.value; }).filter(Boolean);
+          if (selected.length) params.hierarchy_name = selected.join(',');
+        } else if (hierEl.value.trim()) {
+          params.hierarchy_name = hierEl.value.trim();
+        }
+      }
       var pfromEl = document.getElementById(uid + '_pfrom');
       if (pfromEl && pfromEl.value.trim()) params.period_from = pfromEl.value.trim();
       var ptoEl = document.getElementById(uid + '_pto');

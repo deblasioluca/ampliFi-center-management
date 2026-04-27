@@ -203,6 +203,7 @@ class Hierarchy(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     setclass: Mapped[str] = mapped_column(String(10), nullable=False)
     setname: Mapped[str] = mapped_column(String(40), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(String(200))
     coarea: Mapped[str | None] = mapped_column(String(10))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -317,7 +317,12 @@ def _build_where_clause(kind: str, params: dict | None) -> str:
 
     hierarchy_name = params.get("hierarchy_name") or params.get("set_name")
     if hierarchy_name and kind == "hierarchy":
-        clauses.append(f"SETNAME = '{_sanitize(hierarchy_name)}'")
+        names = [n.strip() for n in hierarchy_name.split(",") if n.strip()]
+        if len(names) == 1:
+            clauses.append(f"SETNAME = '{_sanitize(names[0])}'")
+        elif names:
+            or_parts = " OR ".join(f"SETNAME = '{_sanitize(n)}'" for n in names)
+            clauses.append(f"({or_parts})")
 
     company_code = params.get("company_code")
     if company_code:
@@ -338,7 +343,12 @@ def _build_odata_filter(kind: str, params: dict | None) -> dict | None:
 
     hierarchy_name = params.get("hierarchy_name") or params.get("set_name")
     if hierarchy_name and kind == "hierarchy":
-        filters.append(f"SetName eq '{_sanitize(hierarchy_name)}'")
+        names = [n.strip() for n in hierarchy_name.split(",") if n.strip()]
+        if len(names) == 1:
+            filters.append(f"SetName eq '{_sanitize(names[0])}'")
+        elif names:
+            or_parts = " or ".join(f"SetName eq '{_sanitize(n)}'" for n in names)
+            filters.append(f"({or_parts})")
 
     company_code = params.get("company_code")
     if company_code:
