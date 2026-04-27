@@ -324,9 +324,7 @@ def my_review_scopes(
     for s in scopes:
         total = (
             db.execute(
-                select(func.count(ReviewItem.id)).where(
-                    ReviewItem.scope_id == s.id
-                )
+                select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == s.id)
             ).scalar()
             or 0
         )

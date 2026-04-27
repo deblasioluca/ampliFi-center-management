@@ -111,9 +111,7 @@ def scope_items(
         if proposal:
             row["cleansing_outcome"] = proposal.cleansing_outcome
             row["target_object"] = proposal.target_object
-            row["confidence"] = (
-                str(proposal.confidence) if proposal.confidence else None
-            )
+            row["confidence"] = str(proposal.confidence) if proposal.confidence else None
             row["rule_path"] = proposal.rule_path
             row["merge_into_cctr"] = proposal.merge_into_cctr
             row["entity_code"] = proposal.entity_code
@@ -236,8 +234,7 @@ def request_new_center(
     from datetime import datetime
 
     comment_text = (
-        f"NEW CENTER REQUEST \u2014 Purpose: {body.purpose}"
-        f" | Target: {body.target_object}"
+        f"NEW CENTER REQUEST \u2014 Purpose: {body.purpose} | Target: {body.target_object}"
     )
     if body.responsible:
         comment_text += f" | Responsible: {body.responsible}"
