@@ -241,13 +241,32 @@ import Layout from '../../components/layout/Layout.astro';
             return;
           }
           el.innerHTML = '';
+          var STEPS = ['draft','scope','analysing','proposed','locked','in_review','signed_off'];
+          var STEP_LABELS = ['Define','Scope','Analyse','Confirm','Start','Review','Done'];
+          function stepForStatus(s, ec) {
+            if (s === 'closed' || s === 'signed_off') return 6;
+            if (s === 'in_review') return 5;
+            if (s === 'locked') return 4;
+            if (s === 'proposed') return 3;
+            if (s === 'analysing') return 2;
+            if (s === 'draft' && ec > 0) return 1;
+            return 0;
+          }
           data.items.forEach(function(w) {
             var link = document.createElement('a');
             link.href = '#';
-            link.className = 'block p-2 rounded hover:bg-amplifi-50 transition-colors';
+            link.className = 'block p-3 rounded hover:bg-amplifi-50 transition-colors border-b';
             link.setAttribute('data-id', w.id);
-            link.innerHTML = '<span class="font-medium">' + escapeHtml(w.code) + '</span>' +
-              '<span class="text-xs text-gray-400 ml-2">' + escapeHtml(w.status) + '</span>';
+            var cs = stepForStatus(w.status, w.entity_count || 0);
+            var dots = '';
+            for (var si = 0; si < 7; si++) {
+              var col = si < cs ? '#22c55e' : si === cs ? '#3b82f6' : '#d1d5db';
+              dots += '<div title="' + STEP_LABELS[si] + '" style="width:8px;height:8px;border-radius:50%;background:' + col + '"></div>';
+            }
+            link.innerHTML = '<div class="flex items-center justify-between">' +
+              '<span class="font-medium">' + escapeHtml(w.code) + '</span>' +
+              '<span class="text-xs text-gray-400">' + escapeHtml(w.status.replace('_',' ')) + '</span></div>' +
+              '<div class="flex gap-1 mt-1">' + dots + '</div>';
             link.href = '/cockpit/wave?id=' + w.id;
             link.addEventListener('click', function(e) {
               // Navigate to wave detail page

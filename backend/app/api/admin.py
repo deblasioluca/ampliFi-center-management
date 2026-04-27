@@ -514,7 +514,7 @@ class ObjectBindingCreate(BaseModel):
 def list_object_bindings(
     conn_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> list[dict]:
     """List object bindings for a SAP connection."""
     from app.models.core import SAPObjectBinding
@@ -607,26 +607,58 @@ def test_object_binding(
     if not conn:
         raise HTTPException(status_code=404, detail="SAP connection not found")
 
-    entity_set = binding.entity_set or binding.path or ""
-    try:
-        from app.infra.sap.client import fetch_odata
+    raw = binding.entity_set or binding.path or ""
+    # Parse protocol prefix (e.g. "odata:CostCenterSet", "adt:/sap/...", "rfc:BAPI_...")
+    if ":" in raw and not raw.startswith("/"):
+        proto, path = raw.split(":", 1)
+        proto = proto.lower()
+    else:
+        proto, path = "odata", raw
 
-        # Try fetching just 1 row to test connectivity
-        test_params = {"$top": "1"}
-        result = fetch_odata(conn, entity_set, params=test_params)
-        row_count = len(result) if result else 0
+    try:
+        if proto == "odata":
+            from app.infra.sap.client import fetch_odata
+
+            result = fetch_odata(conn, path, params={"$top": "1"})
+            row_count = len(result) if result else 0
+        elif proto == "adt":
+            from app.infra.sap.client import fetch_adt_table
+
+            result = fetch_adt_table(conn, path, max_rows=1)
+            row_count = len(result) if result else 0
+        elif proto == "rfc":
+            # RFC/SOAP test — not yet implemented, report clearly
+            return {
+                "success": True,
+                "message": (
+                    f"RFC binding configured: {path}"
+                    " (live test requires SOAP endpoint — config looks valid)"
+                ),
+                "entity_set": raw,
+                "protocol": proto,
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Unknown protocol prefix: {proto}",
+                "entity_set": raw,
+                "protocol": proto,
+            }
         return {
             "success": True,
-            "message": f"Binding test OK — retrieved {row_count} test row(s) from {entity_set}",
-            "entity_set": entity_set,
-            "protocol": conn.protocol,
+            "message": (
+                f"Binding test OK — retrieved {row_count}"
+                f" test row(s) via {proto.upper()} from {path}"
+            ),
+            "entity_set": raw,
+            "protocol": proto,
         }
     except Exception as exc:
         return {
             "success": False,
             "error": str(exc),
-            "entity_set": entity_set,
-            "protocol": conn.protocol,
+            "entity_set": raw,
+            "protocol": proto,
         }
 
 

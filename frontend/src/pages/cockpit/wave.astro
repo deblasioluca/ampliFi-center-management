@@ -6,18 +6,26 @@ export const prerender = false;
 <Layout title="Wave Detail" requireAuth={true} requiredRole="data_manager">
   <div id="wave-header" class="mb-6">Loading wave...</div>
 
-  <!-- Status bar -->
-  <div id="status-bar" class="mb-6 hidden">
-    <div class="flex items-center gap-2 text-sm">
-      <span class="font-medium text-gray-500">Status:</span>
-      <span id="wave-status-badge" class="px-3 py-1 rounded-full text-xs font-medium"></span>
-      <div class="flex-1"></div>
-      <div id="wave-actions" class="flex gap-2"></div>
+  <!-- Wave Progress Pipeline -->
+  <div id="wave-pipeline" class="mb-6 hidden">
+    <div class="bg-white border rounded-lg p-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Wave Progress</span>
+        <span id="wave-status-badge" class="px-3 py-1 rounded-full text-xs font-medium"></span>
+      </div>
+      <div class="flex items-center gap-0" id="pipeline-steps">
+        <!-- Steps injected by JS -->
+      </div>
+      <div class="mt-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden" style="width:120px">
+            <div id="progress-bar" class="h-full bg-amplifi-500 transition-all" style="width:0%"></div>
+          </div>
+          <p id="progress-text" class="text-xs text-gray-500"></p>
+        </div>
+        <div id="wave-actions" class="flex gap-2"></div>
+      </div>
     </div>
-    <div class="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-      <div id="progress-bar" class="h-full bg-amplifi-500 transition-all" style="width:0%"></div>
-    </div>
-    <p id="progress-text" class="text-xs text-gray-500 mt-1"></p>
   </div>
 
   <!-- Tabs -->
@@ -213,6 +221,62 @@ export const prerender = false;
     closed: 'bg-gray-200 text-gray-600', cancelled: 'bg-red-100 text-red-700',
   };
 
+  // --- Wave Progress Pipeline ---
+  var PIPELINE_STEPS = [
+    { key: 'defining',   label: 'Defining Wave' },
+    { key: 'scope',      label: 'Defining Scope' },
+    { key: 'analysis',   label: 'Running Analysis' },
+    { key: 'confirmed',  label: 'Confirmed Analysis' },
+    { key: 'rev_start',  label: 'Review Started' },
+    { key: 'rev_progress', label: 'Review In Progress' },
+    { key: 'rev_done',   label: 'Review Completed' },
+  ];
+
+  function statusToStep(status, entityCount) {
+    if (status === 'cancelled') return -1;
+    if (status === 'closed' || status === 'signed_off') return 6;
+    if (status === 'in_review') return 5;
+    if (status === 'locked') return 4;
+    if (status === 'proposed') return 3;
+    if (status === 'analysing') return 2;
+    if (status === 'draft' && entityCount > 0) return 1;
+    return 0;
+  }
+
+  function renderPipeline(currentStep, reviewPct) {
+    var el = document.getElementById('pipeline-steps');
+    var html = '';
+    PIPELINE_STEPS.forEach(function(step, idx) {
+      var isDone = idx < currentStep;
+      var isCurrent = idx === currentStep;
+      var isFuture = idx > currentStep;
+
+      var bg = isDone ? 'bg-green-500' : isCurrent ? 'bg-blue-600' : 'bg-gray-200';
+      var textCol = isDone ? 'text-green-700' : isCurrent ? 'text-blue-700 font-semibold' : 'text-gray-400';
+      var circleCol = isDone ? 'bg-green-500 text-white' : isCurrent ? 'bg-blue-600 text-white ring-2 ring-blue-300' : 'bg-gray-200 text-gray-400';
+      var icon = isDone ? '&#10003;' : (idx + 1);
+
+      html += '<div class="flex flex-col items-center flex-1 relative">';
+      // connector line (left half)
+      if (idx > 0) {
+        var leftBg = isDone ? 'bg-green-500' : isCurrent ? 'bg-blue-400' : 'bg-gray-200';
+        html += '<div class="absolute top-3 right-1/2 w-full h-0.5 ' + leftBg + '" style="z-index:0"></div>';
+      }
+      // circle
+      html += '<div class="relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ' + circleCol + '">' + icon + '</div>';
+      // label
+      html += '<span class="text-[10px] mt-1 text-center leading-tight ' + textCol + '">' + step.label + '</span>';
+      // review % annotation
+      if (idx === 5 && isCurrent && reviewPct != null) {
+        html += '<span class="text-[9px] text-blue-600 font-semibold mt-0.5">' + reviewPct + '% reviewed</span>';
+      } else if (idx === 6 && isDone) {
+        html += '<span class="text-[9px] text-green-600 font-semibold mt-0.5">100%</span>';
+      }
+      html += '</div>';
+    });
+    el.innerHTML = html;
+  }
+
   function loadWave() {
     fetch('/api/waves/' + waveId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(w) {
       wave = w;
@@ -225,7 +289,11 @@ export const prerender = false;
       var badge = document.getElementById('wave-status-badge');
       badge.textContent = w.status.toUpperCase().replace('_', ' ');
       badge.className = 'px-3 py-1 rounded-full text-xs font-medium ' + (statusColors[w.status] || 'bg-gray-100');
-      document.getElementById('status-bar').classList.remove('hidden');
+      document.getElementById('wave-pipeline').classList.remove('hidden');
+
+      // Render pipeline (review % loaded separately below)
+      var currentStep = statusToStep(w.status, w.entity_count || 0);
+      renderPipeline(currentStep, null);
 
       // Actions based on state
       var actions = '';
@@ -247,11 +315,16 @@ export const prerender = false;
       if (typeof loadHierScope === 'function') loadHierScope();
     });
 
-    // Load progress
+    // Load progress + update pipeline review %
     fetch('/api/waves/' + waveId + '/progress', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(p) {
       var pct = p.completion_pct || 0;
       document.getElementById('progress-bar').style.width = pct + '%';
       document.getElementById('progress-text').textContent = p.decided_items + '/' + p.total_review_items + ' items reviewed (' + pct + '%)';
+      // Re-render pipeline with review % if wave is loaded
+      if (wave) {
+        var currentStep = statusToStep(wave.status, wave.entity_count || 0);
+        renderPipeline(currentStep, pct);
+      }
     }).catch(function() {});
   }
   loadWave();
