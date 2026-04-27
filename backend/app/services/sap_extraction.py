@@ -479,11 +479,7 @@ def extract_from_sap(
     rows = _map_fields(raw_data, field_map) if field_map else raw_data
 
     # Determine CSV columns — use field_map values + any extra columns
-    csv_columns = (
-        list(rows[0].keys())
-        if rows
-        else (list(field_map.values()) if field_map else [])
-    )
+    csv_columns = list(rows[0].keys()) if rows else (list(field_map.values()) if field_map else [])
 
     # Write CSV to temp file
     csv_buffer = io.StringIO()

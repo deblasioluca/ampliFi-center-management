@@ -333,10 +333,7 @@ def fetch_odata(
 # ADT data extraction (table read via datapreview)
 # ---------------------------------------------------------------------------
 
-_ADT_ACCEPT = (
-    "application/xml, application/atom+xml, "
-    "application/atomsvc+xml, text/xml, */*;q=0.8"
-)
+_ADT_ACCEPT = "application/xml, application/atom+xml, application/atomsvc+xml, text/xml, */*;q=0.8"
 _RETRYABLE_CODES = (400, 403, 404, 405, 406)
 
 
@@ -483,23 +480,17 @@ def call_soap_rfc(
     # Build SOAP envelope
     soap_body_parts: list[str] = []
     for param_name, param_value in imports.items():
-        soap_body_parts.append(
-            f"      <{param_name}>{xml_escape(param_value)}</{param_name}>"
-        )
+        soap_body_parts.append(f"      <{param_name}>{xml_escape(param_value)}</{param_name}>")
 
     for table_name, table_rows in tables.items():
         if not table_rows:
             continue
         table_items: list[str] = []
         for row in table_rows:
-            fields = "".join(
-                f"<{k}>{xml_escape(v)}</{k}>" for k, v in row.items()
-            )
+            fields = "".join(f"<{k}>{xml_escape(v)}</{k}>" for k, v in row.items())
             table_items.append(f"        <item>{fields}</item>")
         soap_body_parts.append(
-            f"      <{table_name}>\n"
-            + "\n".join(table_items)
-            + f"\n      </{table_name}>"
+            f"      <{table_name}>\n" + "\n".join(table_items) + f"\n      </{table_name}>"
         )
 
     soap_envelope = (
@@ -507,9 +498,7 @@ def call_soap_rfc(
         '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"'
         ' xmlns:ns1="urn:sap-com:document:sap:rfc:functions">\n'
         "  <SOAP-ENV:Body>\n"
-        f"    <ns1:{fm_name}>\n"
-        + "\n".join(soap_body_parts)
-        + f"\n    </ns1:{fm_name}>\n"
+        f"    <ns1:{fm_name}>\n" + "\n".join(soap_body_parts) + f"\n    </ns1:{fm_name}>\n"
         "  </SOAP-ENV:Body>\n"
         "</SOAP-ENV:Envelope>"
     )
