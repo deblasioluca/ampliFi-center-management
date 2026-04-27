@@ -626,22 +626,44 @@ def test_object_binding(
 
             from app.infra.sap.client import fetch_adt_table
 
-            # Extract table name from ADT URL path like /sap/bc/adt/datapreview/ddic?table=CSKS
             parsed = urlparse(path)
-            table_name = parse_qs(parsed.query).get("table", [path])[0]
+            table_name = parse_qs(parsed.query).get("table", [path.split(":")[-1]])[0]
             result = fetch_adt_table(conn, table_name, max_rows=1)
             row_count = len(result) if result else 0
         elif proto == "rfc":
-            # RFC/SOAP test — not yet implemented, report clearly
-            return {
-                "success": True,
-                "message": (
-                    f"RFC binding configured: {path}"
-                    " (live test requires SOAP endpoint — config looks valid)"
-                ),
-                "entity_set": raw,
-                "protocol": proto,
-            }
+            parts = path.split(":")
+            fm_name = parts[0] if parts else "RFC_READ_TABLE"
+
+            if fm_name == "RFC_READ_TABLE" and len(parts) > 1:
+                from app.infra.sap.client import call_rfc_read_table
+
+                table_name = parts[-1]
+                result = call_rfc_read_table(conn, table_name, max_rows=1)
+                row_count = len(result) if result else 0
+            elif fm_name.startswith("BAPI_"):
+                from app.infra.sap.client import call_bapi
+
+                bapi_result = call_bapi(conn, fm_name)
+                if not bapi_result.get("success"):
+                    return {
+                        "success": False,
+                        "error": bapi_result.get("error_message", "BAPI call failed"),
+                        "entity_set": raw,
+                        "protocol": proto,
+                    }
+                row_count = sum(len(rows) for rows in bapi_result.get("tables", {}).values())
+            else:
+                from app.infra.sap.client import call_soap_rfc
+
+                rfc_result = call_soap_rfc(conn, fm_name)
+                if not rfc_result.get("success"):
+                    return {
+                        "success": False,
+                        "error": rfc_result.get("error_message", "RFC call failed"),
+                        "entity_set": raw,
+                        "protocol": proto,
+                    }
+                row_count = sum(len(rows) for rows in rfc_result.get("tables", {}).values())
         else:
             return {
                 "success": False,
@@ -661,16 +683,29 @@ def test_object_binding(
     except Exception as exc:
         return {
             "success": False,
-            "error": str(exc),
+            "error": f"Test failed: {exc}",
             "entity_set": raw,
             "protocol": proto,
         }
+
+
+class ExtractionParams(BaseModel):
+    co_area: str | None = None
+    controlling_area: str | None = None
+    hierarchy_name: str | None = None
+    set_name: str | None = None
+    company_code: str | None = None
+    period_from: str | None = None
+    period_to: str | None = None
+    ledger: str | None = None
+    gaap: str | None = None
 
 
 @router.post("/sap/{conn_id}/bindings/{binding_id}/extract")
 def extract_via_binding(
     conn_id: int,
     binding_id: int,
+    body: ExtractionParams | None = None,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
@@ -683,16 +718,34 @@ def extract_via_binding(
 
     from app.services.sap_extraction import extract_from_sap
 
+    # Parse binding entity_set to determine protocol
+    raw = binding.entity_set or binding.path or ""
+    retrieval_method = None
+    if ":" in raw and not raw.startswith("/"):
+        retrieval_method = raw
+
+    # Merge binding.params with request body params (body takes precedence)
+    merged_params = dict(binding.params or {})
+    if body:
+        for k, v in body.model_dump(exclude_none=True).items():
+            merged_params[k] = v
+
     try:
         result = extract_from_sap(
             db,
             conn_id,
             binding.object_type,
-            binding.params,
+            merged_params or None,
+            retrieval_method=retrieval_method,
         )
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"SAP extraction failed: {e}",
+        ) from e
 
 
 # --- Uploads ---

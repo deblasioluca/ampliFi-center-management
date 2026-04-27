@@ -333,6 +333,12 @@ def fetch_odata(
 # ADT data extraction (table read via datapreview)
 # ---------------------------------------------------------------------------
 
+_ADT_ACCEPT = (
+    "application/xml, application/atom+xml, "
+    "application/atomsvc+xml, text/xml, */*;q=0.8"
+)
+_RETRYABLE_CODES = (400, 403, 404, 405, 406)
+
 
 def fetch_adt_table(
     conn: SAPConnection,
@@ -340,15 +346,28 @@ def fetch_adt_table(
     *,
     max_rows: int = 10000,
     where: str = "",
+    select: str = "*",
 ) -> list[dict[str, Any]]:
     """Read SAP table data via ADT datapreview endpoint.
 
-    Uses POST /sap/bc/adt/datapreview/ddic with XML body specifying
-    the table and optional WHERE clause. Results come back as XML
-    which we parse into dicts.
+    Tries multiple endpoint strategies (adopted from sap-ai-consultant):
+    1. datapreview/freestyle (S/4HANA 1909+)
+    2. datapreview/ddic?dataSourceName=TABLE
+    3. datapreview/TABLE (legacy)
+
+    Falls back to RFC_READ_TABLE via SOAP if all ADT endpoints fail
+    with 403/404.
     """
+    from app.infra.sap.xml_parser import parse_datapreview
+
     password = decrypt_password(conn.password_encrypted)
     base = conn.base_url.rstrip("/")
+
+    # Build SQL-like query
+    query_parts = [f"SELECT {select}", f"FROM {table_name.upper()}"]
+    if where:
+        query_parts.append(f"WHERE {where}")
+    query_str = " ".join(query_parts)
 
     with _create_sap_client(
         base_url=base,
@@ -360,50 +379,271 @@ def fetch_adt_table(
         saml2_disabled=conn.saml2_disabled,
         endpoint_type="adt",
     ) as client:
-        # Step 1: CSRF token fetch
+        # CSRF token fetch
         csrf_resp = client.get(
             "/sap/bc/adt/discovery",
             headers={"x-csrf-token": "Fetch"},
         )
         csrf_token = csrf_resp.headers.get("x-csrf-token", "")
 
-        # Step 2: Datapreview query
-        url = f"/sap/bc/adt/datapreview/ddic?rowNumber={max_rows}"
-        where_element = ""
-        if where:
-            where_element = (
-                f"\n  <dataPreview:whereClause>{xml_escape(where)}</dataPreview:whereClause>"
-            )
-        body = f"""<?xml version="1.0" encoding="utf-8"?>
-<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
-  <dataPreview:table>{xml_escape(table_name)}</dataPreview:table>
-  <dataPreview:maxRows>{max_rows}</dataPreview:maxRows>{where_element}
-</dataPreview:tableData>"""
-
-        headers = {
-            "Content-Type": "application/xml",
-            "Accept": "application/json",
+        base_headers = {
+            "Content-Type": "text/plain",
+            "Accept": _ADT_ACCEPT,
             "x-csrf-token": csrf_token,
         }
-        resp = client.post(url, content=body, headers=headers)
-        resp.raise_for_status()
+        params_base = {"rowNumber": str(max_rows)}
+        resp = None
 
-        # Parse JSON response
-        data = resp.json()
-        columns = data.get("columns", [])
-        rows_raw = data.get("dataPreview", [])
+        # Strategy 1: freestyle endpoint (S/4HANA 1909+)
+        try:
+            resp = client.post(
+                "/sap/bc/adt/datapreview/freestyle",
+                content=query_str,
+                headers=base_headers,
+                params=params_base,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in _RETRYABLE_CODES:
+                raise
+            resp = None
 
-        results: list[dict[str, Any]] = []
-        for row in rows_raw:
-            row_dict = {}
-            values = row.get("column", [])
-            for i, col in enumerate(columns):
-                col_name = col.get("name", f"col_{i}")
-                row_dict[col_name] = values[i] if i < len(values) else ""
-            results.append(row_dict)
+        # Strategy 2: ddic with dataSourceName
+        if resp is None:
+            try:
+                resp = client.post(
+                    "/sap/bc/adt/datapreview/ddic",
+                    content=query_str,
+                    headers=base_headers,
+                    params={**params_base, "dataSourceName": table_name.upper()},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in _RETRYABLE_CODES:
+                    raise
+                resp = None
 
+        # Strategy 3: table-specific path (legacy)
+        if resp is None:
+            try:
+                resp = client.post(
+                    f"/sap/bc/adt/datapreview/{table_name.upper()}",
+                    content=query_str,
+                    headers=base_headers,
+                    params=params_base,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in _RETRYABLE_CODES:
+                    raise
+                resp = None
+
+        # If all ADT strategies failed, fall back to RFC_READ_TABLE
+        if resp is None:
+            logger.info(
+                "sap.adt.fallback_to_rfc",
+                table=table_name,
+                note="All ADT datapreview endpoints failed, trying RFC_READ_TABLE via SOAP",
+            )
+            return call_rfc_read_table(conn, table_name, where=where, max_rows=max_rows)
+
+        # Parse XML response
+        raw = parse_datapreview(resp.content)
+        results = raw.get("rows", [])
         logger.info("sap.adt.table.fetch", table=table_name, rows=len(results))
         return results
+
+
+# ---------------------------------------------------------------------------
+# SOAP/RFC — call function modules via /sap/bc/soap/rfc
+# ---------------------------------------------------------------------------
+
+
+def call_soap_rfc(
+    conn: SAPConnection,
+    fm_name: str,
+    *,
+    imports: dict[str, str] | None = None,
+    tables: dict[str, list[dict[str, str]]] | None = None,
+) -> dict[str, Any]:
+    """Execute an RFC-enabled function module via SOAP over HTTP.
+
+    Adopted from sap-ai-consultant. Calls /sap/bc/soap/rfc which is
+    active by default on most S/4HANA systems.
+
+    Returns: dict with 'success', 'exports', 'tables', 'error_message'.
+    """
+    from app.infra.sap.xml_parser import parse_soap_rfc_response
+
+    imports = imports or {}
+    tables = tables or {}
+    password = decrypt_password(conn.password_encrypted)
+    base = conn.base_url.rstrip("/")
+
+    # Build SOAP envelope
+    soap_body_parts: list[str] = []
+    for param_name, param_value in imports.items():
+        soap_body_parts.append(
+            f"      <{param_name}>{xml_escape(param_value)}</{param_name}>"
+        )
+
+    for table_name, table_rows in tables.items():
+        if not table_rows:
+            continue
+        table_items: list[str] = []
+        for row in table_rows:
+            fields = "".join(
+                f"<{k}>{xml_escape(v)}</{k}>" for k, v in row.items()
+            )
+            table_items.append(f"        <item>{fields}</item>")
+        soap_body_parts.append(
+            f"      <{table_name}>\n"
+            + "\n".join(table_items)
+            + f"\n      </{table_name}>"
+        )
+
+    soap_envelope = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"'
+        ' xmlns:ns1="urn:sap-com:document:sap:rfc:functions">\n'
+        "  <SOAP-ENV:Body>\n"
+        f"    <ns1:{fm_name}>\n"
+        + "\n".join(soap_body_parts)
+        + f"\n    </ns1:{fm_name}>\n"
+        "  </SOAP-ENV:Body>\n"
+        "</SOAP-ENV:Envelope>"
+    )
+
+    with httpx.Client(
+        verify=conn.verify_ssl,
+        timeout=120.0,
+        follow_redirects=False,
+    ) as client:
+        headers = {
+            "Content-Type": "text/xml; charset=utf-8",
+            "SOAPAction": f"urn:sap-com:document:sap:rfc:functions:{fm_name}",
+            "sap-client": conn.client,
+            "Accept": "text/xml, application/xml",
+        }
+
+        resp = client.post(
+            f"{base}/sap/bc/soap/rfc",
+            content=soap_envelope,
+            headers=headers,
+            auth=(conn.username, password),
+        )
+
+        # CSRF retry on 403
+        if resp.status_code == 403:
+            csrf_resp = client.get(
+                f"{base}/sap/bc/soap/rfc",
+                headers={
+                    "x-csrf-token": "Fetch",
+                    "sap-client": conn.client,
+                },
+                auth=(conn.username, password),
+            )
+            csrf_token = csrf_resp.headers.get("x-csrf-token", "")
+            headers["x-csrf-token"] = csrf_token
+            resp = client.post(
+                f"{base}/sap/bc/soap/rfc",
+                content=soap_envelope,
+                headers=headers,
+                auth=(conn.username, password),
+            )
+
+        if resp.status_code >= 400:
+            return {
+                "success": False,
+                "exports": [],
+                "tables": {},
+                "error_message": f"HTTP {resp.status_code}: {resp.text[:500]}",
+            }
+
+        parsed = parse_soap_rfc_response(resp.content)
+        if parsed.get("error_message"):
+            return {
+                "success": False,
+                "exports": parsed.get("exports", []),
+                "tables": parsed.get("tables", {}),
+                "error_message": parsed["error_message"],
+            }
+
+        return {
+            "success": True,
+            "exports": parsed.get("exports", []),
+            "tables": parsed.get("tables", {}),
+            "error_message": "",
+        }
+
+
+def call_rfc_read_table(
+    conn: SAPConnection,
+    table_name: str,
+    *,
+    where: str = "",
+    max_rows: int = 10000,
+    fields: list[str] | None = None,
+    delimiter: str = "|",
+) -> list[dict[str, Any]]:
+    """Read an SAP table via RFC_READ_TABLE over SOAP.
+
+    Falls back method when ADT datapreview is not available.
+    """
+    imports = {
+        "QUERY_TABLE": table_name.upper(),
+        "DELIMITER": delimiter,
+        "ROWCOUNT": str(max_rows),
+    }
+
+    tables_param: dict[str, list[dict[str, str]]] = {}
+    if fields:
+        tables_param["FIELDS"] = [{"FIELDNAME": f} for f in fields]
+    if where:
+        # Split long WHERE into 72-char chunks (SAP limitation)
+        options = []
+        remaining = where
+        while remaining:
+            chunk = remaining[:72]
+            remaining = remaining[72:]
+            options.append({"TEXT": chunk})
+        tables_param["OPTIONS"] = options
+
+    result = call_soap_rfc(conn, "RFC_READ_TABLE", imports=imports, tables=tables_param)
+
+    if not result["success"]:
+        error = result.get("error_message", "RFC_READ_TABLE failed")
+        raise RuntimeError(f"RFC_READ_TABLE failed for {table_name}: {error}")
+
+    # Parse the DATA table — rows are delimited strings
+    data_rows = result.get("tables", {}).get("DATA", [])
+    field_names_raw = result.get("tables", {}).get("FIELDS", [])
+    col_names = [f.get("FIELDNAME", "").strip() for f in field_names_raw]
+
+    rows: list[dict[str, Any]] = []
+    for data_row in data_rows:
+        wa = data_row.get("WA", "")
+        values = wa.split(delimiter)
+        row_dict: dict[str, Any] = {}
+        for i, col in enumerate(col_names):
+            row_dict[col] = values[i].strip() if i < len(values) else ""
+        rows.append(row_dict)
+
+    logger.info("sap.rfc_read_table", table=table_name, rows=len(rows))
+    return rows
+
+
+def call_bapi(
+    conn: SAPConnection,
+    bapi_name: str,
+    imports: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Call a BAPI via SOAP and return the result.
+
+    Convenience wrapper around call_soap_rfc for BAPI calls like
+    BAPI_COSTCENTER_GETLIST, BAPI_PROFITCENTER_GETLIST, etc.
+    """
+    return call_soap_rfc(conn, bapi_name, imports=imports)
 
 
 # ---------------------------------------------------------------------------

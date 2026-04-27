@@ -887,13 +887,28 @@ import Layout from '../../components/layout/Layout.astro';
                   '<th class="px-2 py-1 text-left">Params</th>' +
                   '<th class="px-2 py-1"></th></tr></thead><tbody>';
                 bindings.forEach(function(b) {
-                  var paramsText = b.params ? JSON.stringify(b.params) : '-';
-                  if (paramsText.length > 40) paramsText = paramsText.substring(0, 37) + '...';
+                  var uid = 'ext_' + c.connection_id + '_' + b.id;
+                  var ot = b.object_type || '';
                   html += '<tr class="border-t">' +
-                    '<td class="px-2 py-1 font-mono">' + esc(b.object_type) + '</td>' +
+                    '<td class="px-2 py-1 font-mono">' + esc(ot) + '</td>' +
                     '<td class="px-2 py-1 font-mono text-xs">' + esc(b.entity_set || b.path || '-') + '</td>' +
-                    '<td class="px-2 py-1 text-gray-500" title="' + esc(b.params ? JSON.stringify(b.params) : '') + '">' + esc(paramsText) + '</td>' +
-                    '<td class="px-2 py-1"><button onclick="extractBinding(' + c.connection_id + ',' + b.id + ',this)" ' +
+                    '<td class="px-2 py-1">';
+                  // Selection parameters based on object type
+                  if (ot === 'cost_center' || ot === 'profit_center') {
+                    html += '<input id="' + uid + '_co" type="text" placeholder="CO Area (e.g. 1000)" ' +
+                      'class="border rounded px-2 py-0.5 text-xs w-32" />';
+                  } else if (ot === 'hierarchy') {
+                    html += '<input id="' + uid + '_hier" type="text" placeholder="Hierarchy name" ' +
+                      'class="border rounded px-2 py-0.5 text-xs w-32" />';
+                  } else if (ot === 'balance') {
+                    html += '<input id="' + uid + '_co" type="text" placeholder="CO Area" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
+                      '<input id="' + uid + '_pfrom" type="text" placeholder="Period from" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
+                      '<input id="' + uid + '_pto" type="text" placeholder="Period to" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
+                      '<input id="' + uid + '_cc" type="text" placeholder="Company code" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
+                      '<input id="' + uid + '_ledger" type="text" placeholder="Ledger" class="border rounded px-2 py-0.5 text-xs w-16" />';
+                  }
+                  html += '</td>' +
+                    '<td class="px-2 py-1"><button onclick="extractBinding(' + c.connection_id + ',' + b.id + ',this,\'' + uid + '\',\'' + esc(ot) + '\')" ' +
                     'class="btn-sm bg-blue-600 text-white hover:bg-blue-700 text-xs">Extract</button></td></tr>';
                 });
                 html += '</tbody></table>';
@@ -908,15 +923,30 @@ import Layout from '../../components/layout/Layout.astro';
         listEl.textContent = 'Failed to load SAP connections.';
       });
 
-    window.extractBinding = async function(connId, bindingId, btn) {
+    window.extractBinding = async function(connId, bindingId, btn, uid, objType) {
       btn.disabled = true;
       btn.textContent = 'Extracting...';
       resEl.className = 'text-sm mt-2 p-3 bg-blue-50 rounded text-blue-700';
       resEl.textContent = 'Connecting to SAP and extracting data...';
       resEl.classList.remove('hidden');
+      // Collect selection parameters
+      var params = {};
+      var coEl = document.getElementById(uid + '_co');
+      if (coEl && coEl.value.trim()) params.co_area = coEl.value.trim();
+      var hierEl = document.getElementById(uid + '_hier');
+      if (hierEl && hierEl.value.trim()) params.hierarchy_name = hierEl.value.trim();
+      var pfromEl = document.getElementById(uid + '_pfrom');
+      if (pfromEl && pfromEl.value.trim()) params.period_from = pfromEl.value.trim();
+      var ptoEl = document.getElementById(uid + '_pto');
+      if (ptoEl && ptoEl.value.trim()) params.period_to = ptoEl.value.trim();
+      var ccEl = document.getElementById(uid + '_cc');
+      if (ccEl && ccEl.value.trim()) params.company_code = ccEl.value.trim();
+      var ledgerEl = document.getElementById(uid + '_ledger');
+      if (ledgerEl && ledgerEl.value.trim()) params.ledger = ledgerEl.value.trim();
       try {
+        var fetchHeaders = Object.assign({}, authHdr, { 'Content-Type': 'application/json' });
         var res = await fetch('/api/admin/sap/' + connId + '/bindings/' + bindingId + '/extract', {
-          method: 'POST', headers: authHdr
+          method: 'POST', headers: fetchHeaders, body: JSON.stringify(params)
         });
         var ct = res.headers.get('content-type') || '';
         var d = ct.indexOf('json') >= 0 ? await res.json() : { detail: await res.text() };
