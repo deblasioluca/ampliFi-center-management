@@ -22,7 +22,8 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
-    username: str
+    username: str | None = None
+    email: str | None = None
     password: str
 
 
@@ -50,7 +51,10 @@ async def auth_info() -> dict:
 async def login(
     body: LoginRequest, response: Response, db: Session = Depends(get_db)
 ) -> TokenResponse:
-    user = authenticate_user(db, body.username, body.password)
+    login_id = body.username or body.email
+    if not login_id:
+        raise HTTPException(status_code=422, detail="Username is required")
+    user = authenticate_user(db, login_id, body.password)
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
     response.set_cookie(
