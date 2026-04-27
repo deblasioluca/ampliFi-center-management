@@ -1393,6 +1393,11 @@ import Layout from '../../components/layout/Layout.astro';
 
   var dbHierSelectedNode = null;
 
+  window.resetHierSelection = function() {
+    dbHierSelectedNode = null;
+    renderDB();
+  };
+
   window.selectHierNode = function(nodeName) {
     // Remove highlight from previous selection
     var prev = document.querySelector('[data-hier-node].bg-blue-50');
@@ -1538,7 +1543,7 @@ import Layout from '../../components/layout/Layout.astro';
     if (selEl) selIdx = parseInt(selEl.value) || 0;
     var hier = hiers[selIdx] || hiers[0];
 
-    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="dbHierSelectedNode=null;renderDB()">';
+    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="resetHierSelection()">';
     hiers.forEach(function(h, i) {
       html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
     });
