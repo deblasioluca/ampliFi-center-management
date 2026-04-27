@@ -368,3 +368,114 @@ def available_extractions(
     from app.services.sap_extraction import list_available_extractions
 
     return list_available_extractions(db)
+
+
+@router.get("/browser")
+def data_browser(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Unified data browser: all centers + balances + hierarchies."""
+    ccs = db.execute(select(LegacyCostCenter)).scalars().all()
+    pcs = db.execute(select(LegacyProfitCenter)).scalars().all()
+    pc_map = {p.pctr: p for p in pcs}
+
+    # Monthly balances grouped by cctr
+    bal_rows = db.execute(
+        select(
+            Balance.cctr,
+            Balance.fiscal_year,
+            Balance.period,
+            func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
+            func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
+        )
+        .group_by(Balance.cctr, Balance.fiscal_year, Balance.period)
+        .order_by(Balance.cctr, Balance.fiscal_year, Balance.period)
+    ).all()
+    balance_map: dict[str, list[dict]] = {}
+    for cctr, fy, per, amt, post in bal_rows:
+        balance_map.setdefault(cctr, []).append(
+            {
+                "fiscal_year": fy,
+                "period": per,
+                "amount": float(amt),
+                "postings": int(post),
+            }
+        )
+
+    items = []
+    for c in ccs:
+        pc = pc_map.get(c.pctr) if c.pctr else None
+        items.append(
+            {
+                "id": c.id,
+                "cctr": c.cctr,
+                "txtsh": c.txtsh,
+                "txtmi": c.txtmi,
+                "ccode": c.ccode,
+                "coarea": c.coarea,
+                "pctr": c.pctr,
+                "pc_txtsh": pc.txtsh if pc else None,
+                "responsible": c.responsible,
+                "cctrcgy": c.cctrcgy,
+                "is_active": c.is_active,
+                "monthly_balances": balance_map.get(c.cctr, []),
+            }
+        )
+
+    # Hierarchies with tree structure
+    hiers = (
+        db.execute(
+            select(Hierarchy)
+            .where(Hierarchy.is_active.is_(True))
+            .order_by(Hierarchy.setclass, Hierarchy.setname)
+        )
+        .scalars()
+        .all()
+    )
+    cls_labels = {
+        "0101": "Cost Center",
+        "0104": "Profit Center",
+        "0106": "Entity",
+    }
+    hier_trees = []
+    for h in hiers:
+        nodes = (
+            db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
+            .scalars()
+            .all()
+        )
+        leaves = (
+            db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
+            .scalars()
+            .all()
+        )
+        base = f"{cls_labels.get(h.setclass, h.setclass)}: {h.setname}"
+        if h.description:
+            base += f" — {h.description}"
+        hier_trees.append(
+            {
+                "id": h.id,
+                "setname": h.setname,
+                "setclass": h.setclass,
+                "label": h.label or base,
+                "coarea": h.coarea,
+                "nodes": [
+                    {
+                        "parent": n.parent_setname,
+                        "child": n.child_setname,
+                        "seq": n.seq,
+                    }
+                    for n in nodes
+                ],
+                "leaves": [
+                    {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
+                ],
+            }
+        )
+
+    return {
+        "total": len(items),
+        "items": items,
+        "hierarchies": hier_trees,
+    }
