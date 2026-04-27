@@ -380,21 +380,22 @@ def data_browser(
     pcs = db.execute(select(LegacyProfitCenter)).scalars().all()
     pc_map = {(p.coarea, p.pctr): p for p in pcs}
 
-    # Monthly balances grouped by cctr
+    # Monthly balances grouped by (coarea, cctr)
     bal_rows = db.execute(
         select(
+            Balance.coarea,
             Balance.cctr,
             Balance.fiscal_year,
             Balance.period,
             func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
             func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
         )
-        .group_by(Balance.cctr, Balance.fiscal_year, Balance.period)
-        .order_by(Balance.cctr, Balance.fiscal_year, Balance.period)
+        .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
+        .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
     ).all()
-    balance_map: dict[str, list[dict]] = {}
-    for cctr, fy, per, amt, post in bal_rows:
-        balance_map.setdefault(cctr, []).append(
+    balance_map: dict[tuple[str, str], list[dict]] = {}
+    for coarea, cctr, fy, per, amt, post in bal_rows:
+        balance_map.setdefault((coarea, cctr), []).append(
             {
                 "fiscal_year": fy,
                 "period": per,
@@ -419,7 +420,7 @@ def data_browser(
                 "responsible": c.responsible,
                 "cctrcgy": c.cctrcgy,
                 "is_active": c.is_active,
-                "monthly_balances": balance_map.get(c.cctr, []),
+                "monthly_balances": balance_map.get((c.coarea, c.cctr), []),
             }
         )
 
