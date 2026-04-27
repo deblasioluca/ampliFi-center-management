@@ -1394,6 +1394,11 @@ def get_datasphere_ddl(
     _user: AppUser = Depends(require_role("admin")),
 ) -> dict:
     """Generate HANA column-store DDL for Datasphere tables."""
+    import re
+
+    if not re.match(r"^[A-Za-z0-9_]+$", schema):
+        raise HTTPException(400, "Invalid schema name (only A-Z, 0-9, _ allowed)")
+
     from app.infra.datasphere.ddl import generate_all_ddl, generate_full_ddl
 
     if domain:

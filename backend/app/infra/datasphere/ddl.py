@@ -6,6 +6,19 @@ moved to Datasphere, using HANA-optimized column store types.
 
 from __future__ import annotations
 
+import re
+
+_SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def _sanitize_identifier(value: str) -> str:
+    """Validate that a SQL identifier contains only safe characters."""
+    if not _SAFE_IDENTIFIER.match(value):
+        msg = f"Invalid SQL identifier: {value!r} (only A-Z, 0-9, _ allowed)"
+        raise ValueError(msg)
+    return value
+
+
 # PostgreSQL → HANA type mapping
 PG_TO_HANA = {
     "VARCHAR": "NVARCHAR",
@@ -32,6 +45,8 @@ def _col(name: str, hana_type: str, nullable: bool = True, pk: bool = False) -> 
 
 def _table(schema: str, name: str, columns: list[str], comment: str = "") -> str:
     """Generate a CREATE TABLE statement with COLUMN STORE."""
+    schema = _sanitize_identifier(schema)
+    name = _sanitize_identifier(name)
     cols = ",\n".join(columns)
     ddl = f'CREATE COLUMN TABLE "{schema}"."{name}" (\n{cols}\n)'
     if comment:
@@ -401,6 +416,7 @@ def generate_all_ddl(schema: str = "ACM") -> dict[str, str]:
 
 def generate_full_ddl(schema: str = "ACM") -> str:
     """Return complete DDL script for all Datasphere tables."""
+    schema = _sanitize_identifier(schema)
     tables = generate_all_ddl(schema)
     header = f"""-- ============================================================
 -- ACM (ampliFi Center Management) — SAP Datasphere DDL

@@ -37,7 +37,7 @@ class DatasphereClient:
         url = self.url
         if "://" in url:
             url = url.split("://", 1)[1]
-        url = url.rstrip("/")
+        url = url.split("/", 1)[0]  # strip path
         if ":" in url:
             host, port_str = url.rsplit(":", 1)
             return host, int(port_str)
