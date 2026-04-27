@@ -1201,6 +1201,7 @@ import Layout from '../../components/layout/Layout.astro';
       .then(function(d) {
         dbData = d;
         dbColFilters = {};
+        dbHierSelectedNode = null;
         renderDB();
       })
       .catch(function(err) {
@@ -1224,7 +1225,11 @@ import Layout from '../../components/layout/Layout.astro';
       dbSort.col = col;
       dbSort.dir = 'asc';
     }
-    renderDB();
+    if (dbView === 'hierarchy' && dbHierSelectedNode) {
+      renderHierDetail();
+    } else {
+      renderDB();
+    }
   };
 
   function dbSortArrow(col) {
@@ -1251,12 +1256,9 @@ import Layout from '../../components/layout/Layout.astro';
     renderDB();
   };
 
-  window.renderDB = renderDB;
-  function renderDB() {
-    if (!dbData) return;
-    var el = document.getElementById('db-content');
+  function getFilteredItems() {
     var search = (document.getElementById('db-search').value || '').toLowerCase();
-    var items = dbData.items || [];
+    var items = (dbData && dbData.items) || [];
     if (search) {
       items = items.filter(function(it) {
         return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
@@ -1268,7 +1270,6 @@ import Layout from '../../components/layout/Layout.astro';
           (it.pctr || '').toLowerCase().indexOf(search) >= 0;
       });
     }
-    // Apply per-column filters
     Object.keys(dbColFilters).forEach(function(col) {
       var fv = dbColFilters[col];
       if (!fv) return;
@@ -1277,6 +1278,14 @@ import Layout from '../../components/layout/Layout.astro';
         return String(it[col] || '') === fv;
       });
     });
+    return items;
+  }
+
+  window.renderDB = renderDB;
+  function renderDB() {
+    if (!dbData) return;
+    var el = document.getElementById('db-content');
+    var items = getFilteredItems();
     if (dbView === 'tabular') {
       renderDBTabular(el, items);
     } else {
@@ -1383,35 +1392,44 @@ import Layout from '../../components/layout/Layout.astro';
     el.innerHTML = html + '</tbody></table>';
   }
 
-  function renderDBHierarchical(el, items) {
-    var hiers = (dbData.hierarchies || []);
-    if (!hiers.length) { el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchies via SAP extraction or upload.</span>'; return; }
+  var dbHierSelectedNode = null;
 
-    // Build a map of cctr -> item for leaf lookup
+  window.resetHierSelection = function() {
+    dbHierSelectedNode = null;
+    renderDB();
+  };
+
+  window.selectHierNode = function(nodeName) {
+    // Remove highlight from previous selection
+    var prev = document.querySelector('[data-hier-node].bg-blue-50');
+    if (prev) {
+      prev.classList.remove('font-bold', 'text-blue-700', 'bg-blue-50');
+      prev.classList.add(prev.dataset.hierNode === '__unassigned__' ? 'text-gray-500' : 'text-gray-800');
+    }
+    dbHierSelectedNode = nodeName;
+    // Add highlight to new selection
+    var cur = document.querySelector('[data-hier-node="' + CSS.escape(nodeName) + '"]');
+    if (cur) {
+      cur.classList.add('font-bold', 'text-blue-700', 'bg-blue-50');
+      cur.classList.remove('text-gray-800', 'text-gray-500');
+    }
+    renderHierDetail();
+  };
+
+  function renderHierDetail() {
+    var detailEl = document.getElementById('db-hier-detail');
+    if (!detailEl || !dbData) return;
+    var items = getFilteredItems();
     var ccMap = {};
     items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
 
-    // Build balance totals per CC for display
-    var balTotals = {};
-    items.forEach(function(it) {
-      var total = 0;
-      (it.monthly_balances || []).forEach(function(b) { total += b.amount; });
-      balTotals[it.cctr] = total;
-    });
-
-    // Hierarchy selector — read current selection before rebuilding
+    var hiers = dbData.hierarchies || [];
     var selIdx = 0;
     var selEl = document.getElementById('db-hier-select');
     if (selEl) selIdx = parseInt(selEl.value) || 0;
     var hier = hiers[selIdx] || hiers[0];
+    if (!hier) return;
 
-    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="renderDB()">';
-    hiers.forEach(function(h, i) {
-      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
-    });
-    html += '</select></div>';
-
-    // Build tree from nodes + leaves
     var childMap = {};
     (hier.nodes || []).forEach(function(n) {
       if (!childMap[n.parent]) childMap[n.parent] = [];
@@ -1422,7 +1440,132 @@ import Layout from '../../components/layout/Layout.astro';
       childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
     });
 
-    // Find root: nodes that appear as parents but not as children
+    // Collect all leaf CCs under the selected node (recursively)
+    var leafCCs = [];
+    function collectLeaves(node) {
+      var ch = childMap[node] || [];
+      ch.forEach(function(c) {
+        if (c.type === 'leaf') { if (ccMap[c.value]) leafCCs.push(ccMap[c.value]); }
+        else { collectLeaves(c.name); }
+      });
+    }
+
+    if (dbHierSelectedNode === '__unassigned__') {
+      var assigned = {};
+      (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
+      leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
+    } else if (dbHierSelectedNode) {
+      collectLeaves(dbHierSelectedNode);
+    } else {
+      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
+      return;
+    }
+
+    if (!leafCCs.length) {
+      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No cost centers under <b>' + esc(dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode) + '</b></div>';
+      return;
+    }
+
+    // Build table similar to tabular view
+    var periods = {};
+    leafCCs.forEach(function(it) {
+      (it.monthly_balances || []).forEach(function(b) {
+        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+        periods[key] = 1;
+      });
+    });
+    var pKeys = Object.keys(periods).sort();
+    var sorted = dbSortItems(leafCCs);
+
+    var label = dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode;
+    var html = '<div class="mb-2 flex items-center gap-2"><span class="font-semibold text-sm text-blue-800">' + esc(label) + '</span>';
+    html += '<span class="text-xs text-gray-500">(' + leafCCs.length + ' cost center' + (leafCCs.length !== 1 ? 's' : '') + ')</span></div>';
+    html += '<div class="overflow-auto" style="max-height:calc(100vh - 320px)"><table class="w-full text-xs border-collapse"><thead>';
+    html += '<tr class="border-b bg-gray-50 sticky top-0">';
+    var cols = [
+      { key: 'cctr', label: 'CC' },
+      { key: 'txtsh', label: 'Short Text' },
+      { key: 'ccode', label: 'Entity' },
+      { key: 'coarea', label: 'CO Area' },
+      { key: 'pctr', label: 'Profit Ctr' },
+      { key: 'pc_txtsh', label: 'PC Text' },
+      { key: 'responsible', label: 'Responsible' }
+    ];
+    cols.forEach(function(c) {
+      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap bg-gray-50" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
+    });
+    html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">Total</th>';
+    pKeys.forEach(function(pk) {
+      html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">' + esc(pk) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    sorted.forEach(function(it) {
+      var balMap = {};
+      var total = 0;
+      (it.monthly_balances || []).forEach(function(b) {
+        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
+        total += b.amount;
+      });
+      html += '<tr class="border-b hover:bg-gray-50">';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
+      var totalStr = total.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+      html += '<td class="py-1 px-2 text-right font-mono font-semibold' + (total < 0 ? ' text-red-600' : '') + '">' + totalStr + '</td>';
+      pKeys.forEach(function(pk) {
+        var b = balMap[pk];
+        if (b) {
+          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + '</td>';
+        } else {
+          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    detailEl.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function renderDBHierarchical(el, items) {
+    var hiers = (dbData.hierarchies || []);
+    if (!hiers.length) { el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchies via SAP extraction or upload.</span>'; return; }
+
+    var ccMap = {};
+    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
+
+    // Hierarchy selector — read current selection before rebuilding
+    var selIdx = 0;
+    var selEl = document.getElementById('db-hier-select');
+    if (selEl) selIdx = parseInt(selEl.value) || 0;
+    var hier = hiers[selIdx] || hiers[0];
+
+    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="resetHierSelection()">';
+    hiers.forEach(function(h, i) {
+      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+    });
+    html += '</select></div>';
+
+    // Split panel: tree left, detail right
+    html += '<div class="flex gap-3" style="min-height:400px">';
+
+    // Left panel — compact tree
+    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto" style="max-height:calc(100vh - 280px)">';
+
+    var childMap = {};
+    (hier.nodes || []).forEach(function(n) {
+      if (!childMap[n.parent]) childMap[n.parent] = [];
+      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
+    });
+    (hier.leaves || []).forEach(function(lf) {
+      if (!childMap[lf.setname]) childMap[lf.setname] = [];
+      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
+    });
+
     var allChildren = {};
     (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
     var roots = [];
@@ -1431,74 +1574,65 @@ import Layout from '../../components/layout/Layout.astro';
     });
     if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
 
+    function countLeaves(node) {
+      var ch = childMap[node] || [];
+      var cnt = 0;
+      ch.forEach(function(c) {
+        if (c.type === 'leaf') { if (ccMap[c.value]) cnt++; }
+        else { cnt += countLeaves(c.name); }
+      });
+      return cnt;
+    }
+
     function buildTree(nodeName, depth) {
-      var pad = depth * 20;
+      var pad = depth * 12;
+      var lc = countLeaves(nodeName);
+      var isSelected = dbHierSelectedNode === nodeName;
+      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
+      out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
+      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
+      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
-      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5">';
-      out += '<span class="font-medium text-blue-800 cursor-pointer" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\')">';
-      out += '&#9654; ' + esc(nodeName) + '</span></div>';
       out += '<div class="tree-children">';
       children.forEach(function(c) {
-        if (c.type === 'node') {
-          out += buildTree(c.name, depth + 1);
-        } else {
-          var cc = ccMap[c.value];
-          var bal = balTotals[c.value];
-          var leafPad = (depth + 1) * 20;
-          out += '<div style="padding-left:' + leafPad + 'px" class="py-1 hover:bg-gray-50 border-b border-gray-100">';
-          out += '<div class="flex items-center gap-2 flex-wrap">';
-          out += '<span class="font-mono text-xs font-medium">' + esc(c.value) + '</span>';
-          if (cc) {
-            out += '<span class="text-gray-700">' + esc(cc.txtsh || '') + '</span>';
-            out += '<span class="text-gray-400 text-[10px]">' + esc(cc.ccode || '') + '</span>';
-            if (cc.coarea) out += '<span class="text-gray-400 text-[10px]">CO: ' + esc(cc.coarea) + '</span>';
-            if (cc.pctr) out += '<span class="text-purple-600 text-[10px]">PC: ' + esc(cc.pctr) + (cc.pc_txtsh ? ' ' + esc(cc.pc_txtsh) : '') + '</span>';
-            if (cc.responsible) out += '<span class="text-orange-600 text-[10px]">' + esc(cc.responsible) + '</span>';
-          }
-          if (bal != null) {
-            var balStr = bal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-            out += '<span class="font-mono text-[10px] font-semibold' + (bal < 0 ? ' text-red-600' : ' text-green-700') + '">Total: ' + balStr + '</span>';
-          }
-          out += '</div>';
-          // Monthly balance breakdown
-          if (cc && cc.monthly_balances && cc.monthly_balances.length) {
-            out += '<div class="flex flex-wrap gap-x-3 gap-y-0 mt-0.5 ml-4">';
-            cc.monthly_balances.forEach(function(b) {
-              var pKey = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-              var bAmt = b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-              out += '<span class="text-[9px] font-mono' + (b.amount < 0 ? ' text-red-500' : ' text-gray-500') + '">' + pKey + ': ' + bAmt + '</span>';
-            });
-            out += '</div>';
-          }
-          out += '</div>';
-        }
+        if (c.type === 'node') out += buildTree(c.name, depth + 1);
       });
       out += '</div>';
       return out;
     }
 
-    roots.forEach(function(root) {
-      html += buildTree(root, 0);
-    });
+    roots.forEach(function(root) { html += buildTree(root, 0); });
 
-    // Show unassigned CCs (not in any hierarchy leaf)
+    // Unassigned entry
     var assigned = {};
     (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-    var unassigned = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
-    if (unassigned.length) {
-      html += '<div class="mt-4 pt-3 border-t"><span class="font-medium text-gray-500 cursor-pointer" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');this.querySelector(\'.ua-arrow\').textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6 \':\'\\u25BC \'">';
-      html += '<span class="ua-arrow">&#9654; </span>Unassigned (' + unassigned.length + ')</span></div>';
-      html += '<div class="hidden">';
-      unassigned.forEach(function(it) {
-        html += '<div style="padding-left:20px" class="py-0.5 text-gray-500">';
-        html += '<span class="font-mono">' + esc(it.cctr) + '</span> ' + esc(it.txtsh || '');
-        html += '</div>';
-      });
-      html += '</div>';
+    var unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
+    if (unassignedCount) {
+      var isUA = dbHierSelectedNode === '__unassigned__';
+      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '">';
+      html += 'Unassigned (' + unassignedCount + ')</div>';
     }
 
+    html += '</div>';
+
+    // Right panel — detail table
+    html += '<div class="flex-1 border rounded bg-white overflow-hidden" id="db-hier-detail">';
+    html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
+    html += '</div>';
+
+    html += '</div>';
     el.innerHTML = html;
+
+    // Bind click handlers via addEventListener (avoids XSS from inline onclick with dynamic data)
+    el.querySelectorAll('[data-hier-node]').forEach(function(nodeEl) {
+      nodeEl.addEventListener('click', function() {
+        selectHierNode(this.dataset.hierNode);
+      });
+    });
+
+    // If a node was previously selected, render its detail
+    if (dbHierSelectedNode) renderHierDetail();
   }
 
   // Wire search
