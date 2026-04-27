@@ -3,7 +3,7 @@ import Layout from '../../components/layout/Layout.astro';
 export const prerender = false;
 ---
 
-<Layout title="Wave Detail" requireAuth={true} adminOnly={true}>
+<Layout title="Wave Detail" requireAuth={true} requiredRole="data_manager">
   <div id="wave-header" class="mb-6">Loading wave...</div>
 
   <!-- Status bar -->

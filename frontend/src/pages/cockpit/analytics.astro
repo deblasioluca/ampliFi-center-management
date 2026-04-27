@@ -3,7 +3,8 @@ import Layout from '../../components/layout/Layout.astro';
 export const prerender = false;
 ---
 
-<Layout title="Analytics Dashboard" requireAuth={true} adminOnly={true}>
+<Layout title="Analytics Dashboard" requireAuth={true} requiredRole="data_manager">
+  <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
   <div class="flex items-center justify-between mb-6">
     <div>
       <h2 class="text-xl font-bold">Analytics Dashboard</h2>

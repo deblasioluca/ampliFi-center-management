@@ -3,11 +3,20 @@ import Layout from '../../components/layout/Layout.astro';
 export const prerender = false;
 ---
 
-<Layout title="Run Detail" requireAuth={true} adminOnly={true}>
+<Layout title="Run Detail" requireAuth={true} requiredRole="data_manager">
   <div id="run-header" class="mb-4">
     <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Wave</a>
     <h2 class="text-xl font-bold mt-2" id="run-title">Loading run...</h2>
     <div class="flex gap-2 mt-2 text-sm text-gray-500" id="run-meta"></div>
+  </div>
+
+  <!-- Help -->
+  <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4 text-xs text-gray-600">
+    <strong>Run Detail</strong> — Shows the results of one analysis run. The decision tree evaluated each cost center and proposed an outcome:
+    <strong class="text-green-700">KEEP</strong> (center continues),
+    <strong class="text-red-700">RETIRE</strong> (center sunsets),
+    <strong class="text-orange-700">MERGE_MAP</strong> (merged into another),
+    <strong class="text-blue-700">REDESIGN</strong> (restructured). Click <em>"Why?"</em> on any row to see the decision path.
   </div>
 
   <!-- KPI tiles -->

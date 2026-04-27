@@ -2,7 +2,7 @@
 import Layout from '../../components/layout/Layout.astro';
 ---
 
-<Layout title="Housekeeping" requireAuth={true} adminOnly={true}>
+<Layout title="Housekeeping" requireAuth={true} requiredRole="data_manager">
   <div class="mb-6">
     <div class="flex items-center justify-between">
       <div>

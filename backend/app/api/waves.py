@@ -305,6 +305,56 @@ def create_wave_from_template(
     return {"id": wave.id, "code": wave.code, "status": wave.status}
 
 
+@router.get("/review-scopes")
+def my_review_scopes(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(get_current_user),
+) -> list[dict]:
+    """List review scopes assigned to the current user."""
+    scopes = (
+        db.execute(
+            select(ReviewScope)
+            .where(ReviewScope.reviewer_user_id == user.id)
+            .order_by(ReviewScope.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+    result = []
+    for s in scopes:
+        total = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(
+                    ReviewItem.scope_id == s.id
+                )
+            ).scalar()
+            or 0
+        )
+        decided = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(
+                    ReviewItem.scope_id == s.id,
+                    ReviewItem.decision != "PENDING",
+                )
+            ).scalar()
+            or 0
+        )
+        wave = s.wave
+        result.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "scope_type": s.scope_type,
+                "status": s.status,
+                "token": s.token,
+                "total_items": total,
+                "decided_items": decided,
+                "wave_name": wave.name if wave else None,
+            }
+        )
+    return result
+
+
 @router.get("/{wave_id}")
 def get_wave(wave_id: int, db: Session = Depends(get_db)) -> WaveOut:
     wave = db.get(Wave, wave_id)
