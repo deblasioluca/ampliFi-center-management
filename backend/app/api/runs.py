@@ -130,7 +130,11 @@ def delete_run(
         raise HTTPException(status_code=409, detail="Cannot delete a running analysis")
     from sqlalchemy import delete
 
+    from app.models.core import LLMReviewPass, RoutineOutput
+
     db.execute(delete(CenterProposal).where(CenterProposal.run_id == run_id))
+    db.execute(delete(RoutineOutput).where(RoutineOutput.run_id == run_id))
+    db.execute(delete(LLMReviewPass).where(LLMReviewPass.run_id == run_id))
     db.delete(run)
     db.commit()
     return {"deleted": True}
