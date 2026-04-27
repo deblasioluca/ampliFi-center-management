@@ -594,7 +594,7 @@ import Layout from '../../components/layout/Layout.astro';
     }
     fetch('/api/admin/hierarchies/' + hierId + '?label=' + encodeURIComponent(label), {
       method: 'PATCH', headers: authHdr
-    }).then(function(r) { return r.json(); }).then(function(h) {
+    }).then(function(r) { if (!r.ok) throw new Error('Save failed'); return r.json(); }).then(function(h) {
       textEl.textContent = h.display_label || h.label || '';
       inputEl.value = h.label || '';
       inputEl.setAttribute('data-orig', h.label || '');
