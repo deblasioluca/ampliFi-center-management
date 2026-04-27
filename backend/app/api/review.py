@@ -146,6 +146,16 @@ def scope_items(
                 row["responsible"] = cc.responsible
                 row["cctrcgy"] = cc.cctrcgy
                 row["currency"] = cc.currency
+            else:
+                row["cctr"] = None
+                row["txtsh"] = None
+                row["txtmi"] = None
+                row["ccode"] = None
+                row["coarea"] = None
+                row["pctr"] = None
+                row["responsible"] = None
+                row["cctrcgy"] = None
+                row["currency"] = None
         else:
             row["cleansing_outcome"] = None
             row["cctr"] = None

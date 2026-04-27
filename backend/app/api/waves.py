@@ -995,6 +995,11 @@ def remind_reviewer(
         raise HTTPException(status_code=404, detail="Scope not found")
     if not scope.reviewer_email:
         raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    if scope.status in ("completed", "revoked", "expired"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot send reminder for scope in status {scope.status}",
+        )
     wave = db.get(Wave, scope.wave_id)
     _send_scope_invitation(scope, wave, db)
     return {"status": "reminder_sent", "scope_id": scope_id}
