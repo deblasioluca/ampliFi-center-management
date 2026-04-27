@@ -309,18 +309,18 @@ def data_browser(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    proposals = db.execute(
-        select(CenterProposal).where(CenterProposal.run_id == run_id)
-    ).scalars().all()
+    proposals = (
+        db.execute(select(CenterProposal).where(CenterProposal.run_id == run_id)).scalars().all()
+    )
 
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
     if cc_ids:
-        ccs = db.execute(
-            select(LegacyCostCenter).where(
-                LegacyCostCenter.id.in_(cc_ids)
-            )
-        ).scalars().all()
+        ccs = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids)))
+            .scalars()
+            .all()
+        )
         cc_map = {c.id: c for c in ccs}
 
     # Monthly balances for all relevant cost centers
@@ -340,12 +340,14 @@ def data_browser(
             .order_by(Balance.cctr, Balance.fiscal_year, Balance.period)
         ).all()
         for cctr, fy, per, amt, postings in bal_rows:
-            balance_map.setdefault(cctr, []).append({
-                "fiscal_year": fy,
-                "period": per,
-                "amount": float(amt),
-                "postings": int(postings),
-            })
+            balance_map.setdefault(cctr, []).append(
+                {
+                    "fiscal_year": fy,
+                    "period": per,
+                    "amount": float(amt),
+                    "postings": int(postings),
+                }
+            )
 
     # CC→PC mapping (current 1:1 from legacy CC pctr field)
     # and proposed n:1 from merge_into_cctr
@@ -356,57 +358,62 @@ def data_browser(
             pc_target_groups.setdefault(target, []).append(cc_map[p.legacy_cc_id].cctr)
 
     # Hierarchy tree for hierarchical view
-    hierarchies = db.execute(
-        select(Hierarchy).where(Hierarchy.is_active.is_(True))
-    ).scalars().all()
+    hierarchies = db.execute(select(Hierarchy).where(Hierarchy.is_active.is_(True))).scalars().all()
     hier_trees = []
     for h in hierarchies:
-        nodes = db.execute(
-            select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id)
-        ).scalars().all()
-        leaves = db.execute(
-            select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id)
-        ).scalars().all()
-        hier_trees.append({
-            "id": h.id,
-            "setname": h.setname,
-            "setclass": h.setclass,
-            "label": _hier_display_label(h),
-            "description": h.description,
-            "coarea": h.coarea,
-            "nodes": [
-                {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
-                for n in nodes
-            ],
-            "leaves": [
-                {"setname": lf.setname, "value": lf.value, "seq": lf.seq}
-                for lf in leaves
-            ],
-        })
+        nodes = (
+            db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
+            .scalars()
+            .all()
+        )
+        leaves = (
+            db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
+            .scalars()
+            .all()
+        )
+        hier_trees.append(
+            {
+                "id": h.id,
+                "setname": h.setname,
+                "setclass": h.setclass,
+                "label": _hier_display_label(h),
+                "description": h.description,
+                "coarea": h.coarea,
+                "nodes": [
+                    {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
+                    for n in nodes
+                ],
+                "leaves": [
+                    {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
+                ],
+            }
+        )
 
     items = []
     for p in proposals:
         cc = cc_map.get(p.legacy_cc_id)
         cctr = cc.cctr if cc else None
-        items.append({
-            "id": p.id,
-            "legacy_cc_id": p.legacy_cc_id,
-            "cctr": cctr,
-            "txtsh": cc.txtsh if cc else None,
-            "txtmi": cc.txtmi if cc else None,
-            "ccode": cc.ccode if cc else None,
-            "coarea": cc.coarea if cc else None,
-            "responsible": cc.responsible if cc else None,
-            "pctr": cc.pctr if cc else None,
-            "is_active": cc.is_active if cc else None,
-            "cleansing_outcome": p.cleansing_outcome,
-            "target_object": p.target_object,
-            "merge_into_cctr": p.merge_into_cctr,
-            "confidence": str(p.confidence) if p.confidence else None,
-            "override_outcome": p.override_outcome,
-            "override_target": p.override_target,
-            "monthly_balances": balance_map.get(cctr, []) if cctr else [],
-        })
+        items.append(
+            {
+                "id": p.id,
+                "legacy_cc_id": p.legacy_cc_id,
+                "cctr": cctr,
+                "txtsh": cc.txtsh if cc else None,
+                "txtmi": cc.txtmi if cc else None,
+                "ccode": cc.ccode if cc else None,
+                "coarea": cc.coarea if cc else None,
+                "responsible": cc.responsible if cc else None,
+                "pctr": cc.pctr if cc else None,
+                "is_active": cc.is_active if cc else None,
+                "cleansing_outcome": p.cleansing_outcome,
+                "target_object": p.target_object,
+                "merge_into_cctr": p.merge_into_cctr,
+                "confidence": str(p.confidence) if p.confidence else None,
+                "override_outcome": p.override_outcome,
+                "override_target": p.override_target,
+                "monthly_balances": balance_map.get(cctr, []) if cctr else [],
+            }
+        )
 
     return {
         "run_id": run_id,

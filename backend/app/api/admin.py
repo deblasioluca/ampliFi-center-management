@@ -788,10 +788,12 @@ def lookup_co_areas(
         if not kokrs or kokrs in seen:
             continue
         seen.add(kokrs)
-        result.append({
-            "co_area": kokrs,
-            "description": desc_map.get(kokrs, ""),
-        })
+        result.append(
+            {
+                "co_area": kokrs,
+                "description": desc_map.get(kokrs, ""),
+            }
+        )
     result.sort(key=lambda x: x["co_area"])
     return result
 
@@ -814,6 +816,7 @@ def lookup_hierarchies(
     where = "SETCLASS = '0101' OR SETCLASS = '0104'"
     if co_area:
         import re
+
         if not re.match(r"^[A-Za-z0-9_\-./]+$", co_area):
             raise HTTPException(status_code=400, detail="Invalid CO area value")
         where = f"(SETCLASS = '0101' OR SETCLASS = '0104') AND SUBCLASS = '{co_area}'"
@@ -832,17 +835,21 @@ def lookup_hierarchies(
         seen.add(setname)
         setclass = row.get("SETCLASS", "").strip()
         kind = (
-            "cost_center" if setclass == "0101"
-            else "profit_center" if setclass == "0104"
+            "cost_center"
+            if setclass == "0101"
+            else "profit_center"
+            if setclass == "0104"
             else setclass
         )
-        result.append({
-            "set_name": setname,
-            "description": row.get("DESSION", "").strip(),
-            "set_class": setclass,
-            "kind": kind,
-            "co_area": row.get("SUBCLASS", "").strip(),
-        })
+        result.append(
+            {
+                "set_name": setname,
+                "description": row.get("DESSION", "").strip(),
+                "set_class": setclass,
+                "kind": kind,
+                "co_area": row.get("SUBCLASS", "").strip(),
+            }
+        )
     result.sort(key=lambda x: (x["kind"], x["set_name"]))
     return result
 
@@ -875,9 +882,11 @@ def list_hierarchies(
     """List all hierarchies with their labels."""
     from app.models.core import Hierarchy
 
-    rows = db.execute(
-        select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)
-    ).scalars().all()
+    rows = (
+        db.execute(select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname))
+        .scalars()
+        .all()
+    )
     class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
     return [
         {
