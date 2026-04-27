@@ -1053,12 +1053,60 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
             "1",
         ],
     },
+    "employees": {
+        "filename": "template_employees.csv",
+        "description": "Employee (SAP HR) upload template",
+        "columns": [
+            "GPN",
+            "BS_FIRSTNAME",
+            "BS_LASTNAME",
+            "BS_NAME",
+            "EMAIL_ADDRESS",
+            "EMP_STATUS",
+            "JOB_DESC",
+            "OU_CD",
+            "OU_DESC",
+            "LOCAL_CC_CD",
+            "LOCAL_CC_DESC",
+            "GCRS_COMP_CD",
+            "GCRS_COMP_DESC",
+            "LOCN_CITY_NAME_1",
+            "LOCN_CTRY_CD_1",
+            "LM_GPN",
+            "LM_BS_FIRSTNAME",
+            "LM_BS_LASTNAME",
+            "RANK_DESC",
+            "FUNC_E_BUS_AREA",
+        ],
+        "sample_row": [
+            "10001",
+            "John",
+            "Doe",
+            "John Doe",
+            "john.doe@company.com",
+            "ACTIVE",
+            "Head of Finance",
+            "OU_FIN",
+            "Finance Department",
+            "0000100001",
+            "Administration",
+            "1000",
+            "Global Corp HQ",
+            "Zurich",
+            "CH",
+            "10002",
+            "Jane",
+            "Smith",
+            "Director",
+            "Finance",
+        ],
+    },
 }
 
 
 @router.get("/upload-templates")
 def list_upload_templates(
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     """List available upload templates."""
     return {
@@ -1072,7 +1120,7 @@ def list_upload_templates(
 @router.get("/upload-templates/{kind}")
 def download_upload_template(
     kind: str,
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     """Get CSV content for an upload template."""
     tmpl = UPLOAD_TEMPLATES.get(kind)

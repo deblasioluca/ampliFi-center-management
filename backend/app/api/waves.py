@@ -940,9 +940,45 @@ def list_review_scopes(
                 "total_items": total_items,
                 "decided_items": decided_items,
                 "token_hint": s.token[:8] + "..." if s.token else None,
+                "token": s.token,
             }
         )
     return {"wave_id": wave_id, "items": items}
+
+
+@router.post("/scopes/{scope_id}/invite")
+def invite_reviewer(
+    scope_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if not scope.reviewer_email:
+        raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    wave = db.get(Wave, scope.wave_id)
+    _send_scope_invitation(scope, wave, db)
+    scope.status = "invited"
+    scope.invited_at = func.now()
+    db.commit()
+    return {"status": "invited", "scope_id": scope_id}
+
+
+@router.post("/scopes/{scope_id}/remind")
+def remind_reviewer(
+    scope_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if not scope.reviewer_email:
+        raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    wave = db.get(Wave, scope.wave_id)
+    _send_scope_invitation(scope, wave, db)
+    return {"status": "reminder_sent", "scope_id": scope_id}
 
 
 @router.post("/{wave_id}/proposals/{proposal_id}/override")

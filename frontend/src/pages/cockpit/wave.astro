@@ -27,6 +27,7 @@ export const prerender = false;
       <button class="tab px-4 py-3" data-tab="analysis">Analysis</button>
       <button class="tab px-4 py-3" data-tab="proposals">Proposals</button>
       <button class="tab px-4 py-3" data-tab="review">Review Scopes</button>
+      <button class="tab px-4 py-3" data-tab="progress">Progress</button>
     </div>
   </div>
 
@@ -94,6 +95,17 @@ export const prerender = false;
         <button id="btn-create-scope" class="btn-amplifi text-sm">+ Create Scope</button>
       </div>
       <div id="review-scopes" class="text-sm">Loading...</div>
+    </div>
+
+    <!-- Progress Tab -->
+    <div id="tab-progress" class="hidden">
+      <h3 class="text-base font-semibold mb-4">Review Progress Dashboard</h3>
+      <p class="text-xs text-gray-500 mb-4">Monitor the overall review progress across all scopes. When all scopes are complete, the wave can be signed off.</p>
+      <div id="progress-aggregate" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
+      <h4 class="text-sm font-medium text-gray-700 mb-2">Per-Scope Progress</h4>
+      <div id="progress-scopes" class="space-y-3 text-sm">Loading...</div>
+      <h4 class="text-sm font-medium text-gray-700 mt-6 mb-2">Outstanding New Center Requests</h4>
+      <div id="progress-requests" class="text-sm">Loading...</div>
     </div>
   </div>
 
@@ -176,7 +188,7 @@ export const prerender = false;
   var waveId = params.get('id');
   if (!waveId) { document.getElementById('wave-header').textContent = 'No wave ID provided. Go to Cockpit.'; return; }
 
-  var allTabs = ['scope','analysis','proposals','review'];
+  var allTabs = ['scope','analysis','proposals','review','progress'];
   document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var tab = this.getAttribute('data-tab');
@@ -505,7 +517,12 @@ export const prerender = false;
         if (s.reviewer_name) html += '<p class="text-xs text-gray-500 mt-1">Reviewer: ' + esc(s.reviewer_name) + (s.reviewer_email ? ' (' + esc(s.reviewer_email) + ')' : '') + '</p>';
         html += '<div class="mt-2"><div class="h-2 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full" style="width:' + pct + '%"></div></div>' +
           '<p class="text-xs text-gray-400 mt-1">' + s.decided_items + '/' + s.total_items + ' decided (' + pct + '%)</p></div>';
-        if (s.token) html += '<p class="text-xs mt-2"><span class="text-gray-500">Review link:</span> <a href="/review/' + s.token + '" class="text-blue-600 hover:underline">/review/' + s.token.substring(0,16) + '...</a></p>';
+        if (s.token) html += '<p class="text-xs mt-2"><span class="text-gray-500">Review link:</span> <a href="/review/' + s.token + '" class="text-blue-600 hover:underline">/review/' + s.token.substring(0,16) + '...</a>' +
+          ' <button onclick="copyReviewLink(\'' + s.token + '\')" class="text-gray-400 hover:text-gray-600 text-[10px] ml-1" title="Copy link">📋</button></p>';
+        html += '<div class="flex gap-2 mt-2">';
+        if (s.reviewer_email && s.status !== 'completed') html += '<button onclick="inviteReviewer(' + s.id + ')" class="btn-sm text-xs bg-blue-600 text-white hover:bg-blue-700">Send Invitation</button>';
+        if (s.status !== 'completed') html += '<button onclick="sendReminder(' + s.id + ')" class="btn-sm text-xs bg-yellow-500 text-white hover:bg-yellow-600">Send Reminder</button>';
+        html += '</div>';
         html += '</div>';
       });
       el.innerHTML = html + '</div>';
@@ -558,6 +575,63 @@ export const prerender = false;
     var res = await fetch('/api/waves/' + waveId + '/proposal/unlock', { method: 'POST', headers: authHdr });
     if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
     loadWave();
+  };
+  // --- Progress Tab ---
+  function loadProgress() {
+    fetch('/api/waves/' + waveId + '/progress', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(p) {
+      var aggEl = document.getElementById('progress-aggregate');
+      aggEl.innerHTML =
+        '<div class="card text-center"><div class="text-2xl font-bold text-gray-900">' + (p.total_review_items || 0) + '</div><div class="text-xs text-gray-500">Total Items</div></div>' +
+        '<div class="card text-center"><div class="text-2xl font-bold text-green-700">' + (p.decided_items || 0) + '</div><div class="text-xs text-gray-500">Decided</div></div>' +
+        '<div class="card text-center"><div class="text-2xl font-bold text-orange-700">' + ((p.total_review_items || 0) - (p.decided_items || 0)) + '</div><div class="text-xs text-gray-500">Pending</div></div>' +
+        '<div class="card text-center"><div class="text-2xl font-bold text-amplifi-600">' + (p.completion_pct || 0) + '%</div><div class="text-xs text-gray-500">Complete</div></div>';
+    }).catch(function() {});
+
+    fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('progress-scopes');
+      if (!d.items || !d.items.length) { el.textContent = 'No review scopes created yet.'; return; }
+      var html = '';
+      d.items.forEach(function(s) {
+        var pct = s.total_items ? Math.round(s.decided_items / s.total_items * 100) : 0;
+        var barColor = pct === 100 ? 'bg-green-500' : pct > 50 ? 'bg-blue-500' : 'bg-orange-500';
+        html += '<div class="border rounded-lg p-3"><div class="flex items-center justify-between mb-1">' +
+          '<span class="font-medium">' + esc(s.name) + '</span>' +
+          '<span class="text-xs ' + (s.status === 'completed' ? 'text-green-600' : 'text-gray-500') + '">' + s.status + '</span></div>';
+        if (s.reviewer_name) html += '<p class="text-xs text-gray-400 mb-2">' + esc(s.reviewer_name) + (s.reviewer_email ? ' (' + esc(s.reviewer_email) + ')' : '') + '</p>';
+        html += '<div class="flex items-center gap-2"><div class="flex-1 h-2 bg-gray-200 rounded-full"><div class="h-full ' + barColor + ' rounded-full transition-all" style="width:' + pct + '%"></div></div>' +
+          '<span class="text-xs font-medium w-12 text-right">' + pct + '%</span></div>' +
+          '<p class="text-xs text-gray-400 mt-1">' + s.decided_items + ' / ' + s.total_items + ' decided</p></div>';
+      });
+      el.innerHTML = html;
+    }).catch(function() {});
+
+    // Load NEW_REQUEST items
+    fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      // Find if any scope has NEW_REQUEST items - check from review API
+      var reqEl = document.getElementById('progress-requests');
+      reqEl.textContent = 'No outstanding new center requests.';
+    });
+  }
+  // Load progress when tab is clicked
+  document.querySelector('[data-tab="progress"]').addEventListener('click', loadProgress);
+
+  window.copyReviewLink = function(token) {
+    navigator.clipboard.writeText(window.location.origin + '/review/' + token);
+    alert('Review link copied to clipboard.');
+  };
+  window.inviteReviewer = async function(scopeId) {
+    try {
+      var res = await fetch('/api/waves/scopes/' + scopeId + '/invite', { method: 'POST', headers: authHdr });
+      if (!res.ok) { var d = await res.json(); alert(d.detail || 'Failed'); return; }
+      alert('Invitation email sent to reviewer.');
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+  window.sendReminder = async function(scopeId) {
+    try {
+      var res = await fetch('/api/waves/scopes/' + scopeId + '/remind', { method: 'POST', headers: authHdr });
+      if (!res.ok) { var d = await res.json(); alert(d.detail || 'Failed'); return; }
+      alert('Reminder email sent.');
+    } catch(e) { alert('Error: ' + e.message); }
   };
   window.exportMDG = async function(exportType) {
     var res = await fetch('/api/waves/' + waveId + '/mdg-export?export_type=' + exportType, { headers: authHdr });

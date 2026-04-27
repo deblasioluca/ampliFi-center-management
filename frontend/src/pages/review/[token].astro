@@ -20,6 +20,8 @@ export const prerender = false;
         <select id="review-view" class="input text-sm w-48" onchange="window._switchView(this.value)">
           <option value="comparison">Side-by-Side Comparison</option>
           <option value="flat">Flat List</option>
+          <option value="hierarchy">Legacy Hierarchy</option>
+          <option value="proposed">Proposed (New) Structure</option>
           <option value="entity">Group by Entity</option>
           <option value="outcome">Group by Outcome</option>
         </select>
@@ -128,6 +130,8 @@ export const prerender = false;
       allItems = d.items || [];
       if (currentView === 'comparison') renderComparison(d);
       else if (currentView === 'flat') renderFlat(d);
+      else if (currentView === 'hierarchy') renderHierarchy(d);
+      else if (currentView === 'proposed') renderProposed(d);
       else renderGrouped(d, currentView);
     });
   }
@@ -339,6 +343,230 @@ export const prerender = false;
         });
         html += '</div></details>';
       });
+      html += '</div>';
+      el.innerHTML = html;
+    });
+  }
+
+  // ---- Hierarchy View (Legacy tree with bulk tick) ----
+  function renderHierarchy(d) {
+    // Fetch all items to build hierarchy
+    fetch('/api/review/' + reviewToken + '/items?size=1000').then(function(r) { return r.json(); }).then(function(dAll) {
+      if (!dAll.items || !dAll.items.length) { document.getElementById('review-content').innerHTML = '<p class="text-gray-500 py-8 text-center">No items to review.</p>'; return; }
+
+      // Group items by entity, then build a pseudo-hierarchy
+      var entities = {};
+      dAll.items.forEach(function(item) {
+        var entityKey = item.ccode || item.entity_code || 'Unknown';
+        if (!entities[entityKey]) entities[entityKey] = [];
+        entities[entityKey].push(item);
+      });
+
+      var el = document.getElementById('review-content');
+      var html = '<div class="text-xs text-gray-500 mb-3">Hierarchy view groups cost centers by entity. Check a node to approve all descendants.</div>';
+      html += '<div class="space-y-2">';
+
+      Object.keys(entities).sort().forEach(function(entity) {
+        var items = entities[entity];
+        var pendingCount = items.filter(function(i) { return i.decision === 'PENDING'; }).length;
+        var approvedCount = items.filter(function(i) { return i.decision === 'APPROVED'; }).length;
+        var totalCount = items.length;
+
+        html += '<div class="border rounded-lg overflow-hidden">';
+        html += '<div class="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b cursor-pointer" onclick="toggleHierChildren(this)">';
+        html += '<span class="tree-arrow text-gray-400">&#9660;</span>';
+        html += '<input type="checkbox" class="hier-entity-cb" data-entity="' + esc(entity) + '" onchange="hierBulkDecide(this)" ' + (approvedCount === totalCount ? 'checked' : '') + ' />';
+        html += '<span class="font-semibold text-sm">Entity: ' + esc(entity) + '</span>';
+        html += '<span class="text-xs text-gray-400 ml-2">' + totalCount + ' centers';
+        if (pendingCount > 0) html += ', <span class="text-orange-600">' + pendingCount + ' pending</span>';
+        html += '</span>';
+        html += '</div>';
+        html += '<div class="hier-children">';
+
+        items.forEach(function(item) {
+          var outColor = { KEEP: 'text-green-700', RETIRE: 'text-red-700', MERGE_MAP: 'text-orange-700', REDESIGN: 'text-blue-700' }[item.cleansing_outcome] || '';
+          var decBg = item.decision === 'APPROVED' ? 'bg-green-50' : item.decision === 'NOT_REQUIRED' ? 'bg-gray-50' : '';
+          html += '<div class="flex items-center gap-2 px-4 py-1.5 border-t text-xs hover:bg-blue-50/50 ' + decBg + '">';
+          html += '<span class="w-4"></span>';
+          html += '<input type="checkbox" class="hier-item-cb" data-id="' + item.id + '" ' + (item.decision === 'APPROVED' ? 'checked' : '') + ' onchange="hierItemDecide(this,' + item.id + ')" />';
+          html += '<span class="font-mono font-medium w-24">' + esc(item.cctr) + '</span>';
+          html += '<span class="' + outColor + ' w-20">' + esc(item.cleansing_outcome || '-') + '</span>';
+          html += '<span class="text-gray-600 flex-1">' + esc(item.txtsh || '-') + '</span>';
+          if (item.target_object) html += '<span class="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">→ ' + esc(item.target_object) + '</span>';
+          html += '<span class="w-20 text-right">';
+          if (item.decision !== 'PENDING') html += '<span class="px-1.5 py-0.5 rounded text-xs ' + (item.decision === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600') + '">' + item.decision + '</span>';
+          html += '</span>';
+          html += '</div>';
+        });
+
+        html += '</div></div>';
+      });
+
+      html += '</div>';
+      el.innerHTML = html;
+    });
+  }
+
+  window.toggleHierChildren = function(el) {
+    var children = el.closest('.border').querySelector('.hier-children');
+    if (children) {
+      var hidden = children.classList.toggle('hidden');
+      el.querySelector('.tree-arrow').innerHTML = hidden ? '&#9654;' : '&#9660;';
+    }
+  };
+
+  window.hierBulkDecide = function(cb) {
+    var entity = cb.getAttribute('data-entity');
+    var decision = cb.checked ? 'APPROVED' : 'PENDING';
+    // Find all pending items in this entity
+    fetch('/api/review/' + reviewToken + '/items?size=1000').then(function(r) { return r.json(); }).then(function(d) {
+      var ids = (d.items || []).filter(function(i) {
+        return (i.ccode === entity || i.entity_code === entity) && i.decision === 'PENDING';
+      }).map(function(i) { return i.id; });
+      if (!ids.length) { loadItems(1); return; }
+      fetch('/api/review/' + reviewToken + '/items/bulk-decide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_ids: ids, decision: decision })
+      }).then(function() { loadItems(1); });
+    });
+  };
+
+  window.hierItemDecide = function(cb, itemId) {
+    decide(itemId, cb.checked ? 'APPROVED' : 'PENDING');
+  };
+
+  // ---- Proposed (New) Structure View ----
+  function renderProposed(d) {
+    fetch('/api/review/' + reviewToken + '/items?size=1000').then(function(r) { return r.json(); }).then(function(dAll) {
+      if (!dAll.items || !dAll.items.length) { document.getElementById('review-content').innerHTML = '<p class="text-gray-500 py-8 text-center">No items.</p>'; return; }
+
+      // Group by target_object type, then by proposed PC
+      var keepItems = [];
+      var retireItems = [];
+      var mergeGroups = {};
+      var redesignItems = [];
+
+      dAll.items.forEach(function(item) {
+        if (item.cleansing_outcome === 'RETIRE') retireItems.push(item);
+        else if (item.cleansing_outcome === 'MERGE_MAP') {
+          var target = item.merge_into_cctr || 'TBD';
+          if (!mergeGroups[target]) mergeGroups[target] = [];
+          mergeGroups[target].push(item);
+        }
+        else if (item.cleansing_outcome === 'REDESIGN') redesignItems.push(item);
+        else keepItems.push(item);
+      });
+
+      // Group KEEP items by proposed profit center
+      var pcGroups = {};
+      keepItems.forEach(function(item) {
+        var pc = item.new_pctr || item.pctr || 'Unassigned';
+        if (!pcGroups[pc]) pcGroups[pc] = [];
+        pcGroups[pc].push(item);
+      });
+
+      var el = document.getElementById('review-content');
+      var html = '<div class="text-xs text-gray-500 mb-3">Proposed new structure showing how cost centers will be organized after rationalization. Multiple CCs can map to one PC (many-to-one).</div>';
+
+      // KPI summary
+      html += '<div class="grid grid-cols-4 gap-3 mb-4">';
+      html += '<div class="bg-green-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-green-700">' + keepItems.length + '</div><div class="text-xs text-green-600">Continue (KEEP)</div></div>';
+      html += '<div class="bg-red-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-red-700">' + retireItems.length + '</div><div class="text-xs text-red-600">Sunset (RETIRE)</div></div>';
+      var mergeCount = 0; Object.keys(mergeGroups).forEach(function(k) { mergeCount += mergeGroups[k].length; });
+      html += '<div class="bg-orange-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-orange-700">' + mergeCount + '</div><div class="text-xs text-orange-600">Merged (MERGE_MAP)</div></div>';
+      html += '<div class="bg-blue-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-blue-700">' + redesignItems.length + '</div><div class="text-xs text-blue-600">Redesigned</div></div>';
+      html += '</div>';
+
+      html += '<div class="space-y-3">';
+
+      // Proposed PC groups (KEEP items grouped by target PC)
+      if (Object.keys(pcGroups).length > 0) {
+        html += '<h3 class="text-sm font-semibold text-green-700 mb-2">New Profit Center Structure (Many CC → One PC)</h3>';
+        Object.keys(pcGroups).sort().forEach(function(pc) {
+          var items = pcGroups[pc];
+          html += '<details class="border rounded-lg overflow-hidden" open>';
+          html += '<summary class="flex items-center gap-2 px-4 py-2 bg-green-50 cursor-pointer">';
+          html += '<span class="font-mono font-semibold text-sm text-green-800">PC ' + esc(pc) + '</span>';
+          html += '<span class="text-xs text-green-600">(' + items.length + ' cost centers)</span>';
+          html += '</summary>';
+          items.forEach(function(item) {
+            var decColor = item.decision === 'APPROVED' ? 'bg-green-50' : item.decision === 'PENDING' ? '' : 'bg-gray-50';
+            html += '<div class="flex items-center gap-2 px-4 py-1.5 border-t text-xs ' + decColor + '">';
+            html += '<span class="w-4 text-green-500">&#9679;</span>';
+            html += '<span class="font-mono font-medium w-24">' + esc(item.new_cctr || item.cctr || '-') + '</span>';
+            html += '<span class="text-gray-600 flex-1">' + esc(item.new_txtsh || item.txtsh || '-') + '</span>';
+            html += '<span class="text-gray-400 text-[10px]">was: ' + esc(item.cctr || '-') + '</span>';
+            if (item.decision !== 'PENDING') html += '<span class="px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">' + item.decision + '</span>';
+            else html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs text-green-600 hover:underline">Approve</button>';
+            html += '</div>';
+          });
+          html += '</details>';
+        });
+      }
+
+      // Merge groups
+      if (Object.keys(mergeGroups).length > 0) {
+        html += '<h3 class="text-sm font-semibold text-orange-700 mt-4 mb-2">Merge Targets</h3>';
+        Object.keys(mergeGroups).sort().forEach(function(target) {
+          var items = mergeGroups[target];
+          html += '<details class="border rounded-lg overflow-hidden">';
+          html += '<summary class="flex items-center gap-2 px-4 py-2 bg-orange-50 cursor-pointer">';
+          html += '<span class="font-mono font-semibold text-sm text-orange-800">→ ' + esc(target) + '</span>';
+          html += '<span class="text-xs text-orange-600">(' + items.length + ' centers merging into this)</span>';
+          html += '</summary>';
+          items.forEach(function(item) {
+            html += '<div class="flex items-center gap-2 px-4 py-1.5 border-t text-xs">';
+            html += '<span class="w-4 text-orange-400">&#8594;</span>';
+            html += '<span class="font-mono w-24">' + esc(item.cctr || '-') + '</span>';
+            html += '<span class="text-gray-600 flex-1">' + esc(item.txtsh || '-') + '</span>';
+            if (item.decision !== 'PENDING') html += '<span class="px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700">' + item.decision + '</span>';
+            else html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs text-orange-600 hover:underline">Approve</button>';
+            html += '</div>';
+          });
+          html += '</details>';
+        });
+      }
+
+      // Retire list
+      if (retireItems.length > 0) {
+        html += '<details class="border rounded-lg overflow-hidden mt-4">';
+        html += '<summary class="flex items-center gap-2 px-4 py-2 bg-red-50 cursor-pointer">';
+        html += '<span class="font-semibold text-sm text-red-800">Centers to Sunset</span>';
+        html += '<span class="text-xs text-red-600">(' + retireItems.length + ' centers)</span>';
+        html += '</summary>';
+        retireItems.forEach(function(item) {
+          html += '<div class="flex items-center gap-2 px-4 py-1.5 border-t text-xs">';
+          html += '<span class="w-4 text-red-400">&#10005;</span>';
+          html += '<span class="font-mono w-24">' + esc(item.cctr || '-') + '</span>';
+          html += '<span class="text-gray-600 flex-1">' + esc(item.txtsh || '-') + '</span>';
+          if (item.decision !== 'PENDING') html += '<span class="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-700">' + item.decision + '</span>';
+          else html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs text-red-600 hover:underline">Approve</button>';
+          html += '</div>';
+        });
+        html += '</details>';
+      }
+
+      // Redesign list
+      if (redesignItems.length > 0) {
+        html += '<details class="border rounded-lg overflow-hidden mt-4">';
+        html += '<summary class="flex items-center gap-2 px-4 py-2 bg-blue-50 cursor-pointer">';
+        html += '<span class="font-semibold text-sm text-blue-800">Redesigned Centers</span>';
+        html += '<span class="text-xs text-blue-600">(' + redesignItems.length + ' centers)</span>';
+        html += '</summary>';
+        redesignItems.forEach(function(item) {
+          html += '<div class="flex items-center gap-2 px-4 py-1.5 border-t text-xs">';
+          html += '<span class="w-4 text-blue-400">&#9733;</span>';
+          html += '<span class="font-mono w-24">' + esc(item.new_cctr || item.cctr || '-') + '</span>';
+          html += '<span class="text-gray-600 flex-1">' + esc(item.new_txtsh || item.txtsh || '-') + '</span>';
+          html += '<span class="text-gray-400 text-[10px]">was: ' + esc(item.cctr || '-') + '</span>';
+          if (item.decision !== 'PENDING') html += '<span class="px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">' + item.decision + '</span>';
+          else html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs text-blue-600 hover:underline">Approve</button>';
+          html += '</div>';
+        });
+        html += '</details>';
+      }
+
       html += '</div>';
       el.innerHTML = html;
     });
