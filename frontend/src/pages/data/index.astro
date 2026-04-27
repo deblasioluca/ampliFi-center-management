@@ -1343,17 +1343,17 @@ import Layout from '../../components/layout/Layout.astro';
       balTotals[it.cctr] = total;
     });
 
-    // Hierarchy selector
-    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="renderDB()">';
-    hiers.forEach(function(h, i) {
-      html += '<option value="' + i + '">' + esc(h.label) + '</option>';
-    });
-    html += '</select></div>';
-
+    // Hierarchy selector — read current selection before rebuilding
     var selIdx = 0;
     var selEl = document.getElementById('db-hier-select');
     if (selEl) selIdx = parseInt(selEl.value) || 0;
     var hier = hiers[selIdx] || hiers[0];
+
+    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="renderDB()">';
+    hiers.forEach(function(h, i) {
+      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+    });
+    html += '</select></div>';
 
     // Build tree from nodes + leaves
     var childMap = {};

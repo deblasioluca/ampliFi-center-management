@@ -378,7 +378,7 @@ def data_browser(
     """Unified data browser: all centers + balances + hierarchies."""
     ccs = db.execute(select(LegacyCostCenter)).scalars().all()
     pcs = db.execute(select(LegacyProfitCenter)).scalars().all()
-    pc_map = {p.pctr: p for p in pcs}
+    pc_map = {(p.coarea, p.pctr): p for p in pcs}
 
     # Monthly balances grouped by cctr
     bal_rows = db.execute(
@@ -405,7 +405,7 @@ def data_browser(
 
     items = []
     for c in ccs:
-        pc = pc_map.get(c.pctr) if c.pctr else None
+        pc = pc_map.get((c.coarea, c.pctr)) if c.pctr else None
         items.append(
             {
                 "id": c.id,
