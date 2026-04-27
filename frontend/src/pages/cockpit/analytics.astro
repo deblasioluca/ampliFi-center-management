@@ -10,16 +10,35 @@ export const prerender = false;
       <h2 class="text-xl font-bold">Analytics Dashboard</h2>
       <p class="text-sm text-gray-500">Comprehensive visualizations of analysis results</p>
     </div>
-    <div class="flex gap-2 items-center">
+    <div class="flex gap-2 items-center flex-wrap">
       <select id="sel-wave" class="input text-sm w-48">
         <option value="">Select Wave...</option>
         <option value="__global__">— Global (all data) —</option>
+      </select>
+      <select id="sel-config" class="input text-sm w-52" title="Analysis configuration to use">
+        <option value="">Default Config</option>
       </select>
       <select id="sel-run" class="input text-sm w-48">
         <option value="">Select Run...</option>
       </select>
       <button id="btn-run-global" class="btn-amplifi text-sm whitespace-nowrap">Run Global Analysis</button>
+      <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-sm whitespace-nowrap hidden" title="Delete selected run">Delete Run</button>
+      <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm whitespace-nowrap" title="Manage analysis configurations">Configs</button>
     </div>
+  </div>
+
+  <!-- Config Manager Panel (hidden by default) -->
+  <div id="config-panel" class="hidden bg-white border rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold">Analysis Configurations</h3>
+      <div class="flex gap-2">
+        <button id="btn-new-config" class="btn-sm bg-blue-600 text-white hover:bg-blue-700 text-xs">+ New Config</button>
+        <button onclick="document.getElementById('config-panel').classList.add('hidden')" class="btn-sm bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs">Close</button>
+      </div>
+    </div>
+    <p class="text-xs text-gray-500 mb-3">Each configuration defines which analysis routines to run and their parameters. Create different configs for different analysis scenarios.</p>
+    <div id="config-list" class="space-y-2"></div>
+    <div id="config-editor" class="hidden mt-4 border-t pt-4"></div>
   </div>
 
   <!-- Persistent KPI Strip -->
@@ -112,6 +131,7 @@ export const prerender = false;
   var TARGET_COLORS = { CC: '#6366f1', PC: '#8b5cf6', CC_AND_PC: '#a78bfa', PC_ONLY: '#c084fc', WBS_REAL: '#e879f9', WBS_STAT: '#f0abfc', NONE: '#d1d5db' };
 
   function fmt(n) { if (n == null) return '--'; if (typeof n === 'string') return n; return Number(n).toLocaleString(); }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
   // Load waves
   fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -166,7 +186,32 @@ export const prerender = false;
 
   document.getElementById('sel-run').addEventListener('change', function() {
     var waveId = document.getElementById('sel-wave').value;
-    if (this.value) loadRunVisuals(this.value, waveId);
+    var delBtn = document.getElementById('btn-delete-run');
+    if (this.value) {
+      loadRunVisuals(this.value, waveId);
+      delBtn.classList.remove('hidden');
+    } else {
+      delBtn.classList.add('hidden');
+    }
+  });
+
+  document.getElementById('btn-delete-run').addEventListener('click', function() {
+    var runSel = document.getElementById('sel-run');
+    var runId = runSel.value;
+    if (!runId) return;
+    var runLabel = runSel.options[runSel.selectedIndex].textContent;
+    if (!confirm('Delete "' + runLabel + '"? This will permanently remove the run and all its proposals.')) return;
+    fetch('/api/runs/' + runId, { method: 'DELETE', headers: authHdr })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); });
+        // Refresh run list
+        var waveSel = document.getElementById('sel-wave');
+        if (waveSel.value === '__global__') { loadGlobalRuns(); }
+        else if (waveSel.value) { loadWaveRuns(waveSel.value); }
+        document.getElementById('kpi-strip').innerHTML = '';
+        document.getElementById('btn-delete-run').classList.add('hidden');
+      })
+      .catch(function(err) { alert('Error: ' + err.message); });
   });
 
   function loadRunVisuals(runId, waveId) {
@@ -443,14 +488,121 @@ export const prerender = false;
     el.innerHTML = html + '</div>';
   }
 
-  // Global Analysis button
+  // --- Config management ---
+  var jsonHdr = Object.assign({ 'Content-Type': 'application/json' }, authHdr);
+
+  function loadConfigs() {
+    fetch('/api/configs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(configs) {
+      // Populate dropdown
+      var sel = document.getElementById('sel-config');
+      sel.innerHTML = '<option value="">Default Config</option>';
+      configs.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name + ' (v' + c.version + ')';
+        sel.appendChild(opt);
+      });
+      // Populate config list in panel
+      var listEl = document.getElementById('config-list');
+      if (!configs.length) {
+        listEl.innerHTML = '<p class="text-sm text-gray-400">No custom configurations yet. Click "+ New Config" to create one.</p>';
+        return;
+      }
+      listEl.innerHTML = configs.map(function(c) {
+        var routineNames = (c.config.routines || []).map(function(r) { return r.code || r; }).join(', ') || 'Default pipeline';
+        return '<div class="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">' +
+          '<div><span class="font-semibold">' + esc(c.name) + '</span> <span class="text-gray-400">v' + c.version + '</span>' +
+          '<div class="text-xs text-gray-500">' + esc(routineNames) + '</div></div>' +
+          '<div class="flex gap-1">' +
+          '<button onclick="editConfig(\'' + esc(c.code) + '\')" class="btn-sm bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs">Edit</button>' +
+          '</div></div>';
+      }).join('');
+    });
+  }
+
+  function loadRoutines(callback) {
+    fetch('/api/admin/routines', { headers: authHdr }).then(function(r) { return r.json(); }).then(callback);
+  }
+
+  window.editConfig = function(code) {
+    fetch('/api/configs/' + code, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(cfg) {
+      loadRoutines(function(routines) {
+        showConfigEditor(cfg, routines);
+      });
+    });
+  };
+
+  function showConfigEditor(cfg, routines) {
+    var editorEl = document.getElementById('config-editor');
+    editorEl.classList.remove('hidden');
+    var selectedRoutines = (cfg ? (cfg.config.routines || []).map(function(r) { return r.code || r; }) : []);
+    var html = '<div class="space-y-3">' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Config Name</label>' +
+      '<input id="cfg-name" type="text" class="input text-sm w-full" value="' + esc(cfg ? cfg.name : '') + '" /></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Description</label>' +
+      '<input id="cfg-desc" type="text" class="input text-sm w-full" value="' + esc(cfg ? (cfg.description || '') : '') + '" /></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Code (unique identifier)</label>' +
+      '<input id="cfg-code" type="text" class="input text-sm w-48" value="' + esc(cfg ? cfg.code : '') + '" ' + (cfg ? 'readonly' : '') + ' /></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Select Routines to Include</label>' +
+      '<div class="grid grid-cols-1 md:grid-cols-2 gap-1">';
+    routines.forEach(function(r) {
+      var checked = selectedRoutines.indexOf(r.code) >= 0 ? ' checked' : '';
+      html += '<label class="flex items-center gap-2 text-sm p-1 bg-white rounded border">' +
+        '<input type="checkbox" class="cfg-routine" value="' + esc(r.code) + '"' + checked + ' />' +
+        '<span class="font-medium">' + esc(r.name) + '</span>' +
+        '<span class="text-xs text-gray-400">(' + r.kind + '/' + (r.tree || 'any') + ')</span></label>';
+    });
+    html += '</div></div>' +
+      '<div class="flex gap-2 mt-3">' +
+      '<button id="btn-save-config" class="btn-sm bg-blue-600 text-white hover:bg-blue-700">Save Config</button>' +
+      '<button onclick="document.getElementById(\'config-editor\').classList.add(\'hidden\')" class="btn-sm bg-gray-200 text-gray-600 hover:bg-gray-300">Cancel</button></div></div>';
+    editorEl.innerHTML = html;
+
+    document.getElementById('btn-save-config').addEventListener('click', function() {
+      var name = document.getElementById('cfg-name').value.trim();
+      var code = document.getElementById('cfg-code').value.trim();
+      var desc = document.getElementById('cfg-desc').value.trim();
+      if (!name || !code) { alert('Name and code are required'); return; }
+      var selectedCodes = [];
+      document.querySelectorAll('.cfg-routine:checked').forEach(function(cb) { selectedCodes.push(cb.value); });
+      var configData = { routines: selectedCodes.map(function(c) { return { code: c }; }) };
+      var url = cfg ? '/api/configs/' + code + '/amend' : '/api/configs';
+      fetch(url, {
+        method: 'POST', headers: jsonHdr,
+        body: JSON.stringify({ code: code, name: name, description: desc || null, config: configData })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); });
+        editorEl.classList.add('hidden');
+        loadConfigs();
+      }).catch(function(err) { alert('Error: ' + err.message); });
+    });
+  }
+
+  document.getElementById('btn-manage-configs').addEventListener('click', function() {
+    var panel = document.getElementById('config-panel');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) loadConfigs();
+  });
+
+  document.getElementById('btn-new-config').addEventListener('click', function() {
+    loadRoutines(function(routines) {
+      showConfigEditor(null, routines);
+    });
+  });
+
+  // Load config dropdown on page load
+  loadConfigs();
+
+  // Global Analysis button — pass selected config_id
   document.getElementById('btn-run-global').addEventListener('click', function() {
     var btn = this;
     btn.disabled = true;
     btn.textContent = 'Running...';
-    fetch('/api/runs/global', {
+    var configId = document.getElementById('sel-config').value;
+    var url = '/api/runs/global' + (configId ? '?config_id=' + configId : '');
+    fetch(url, {
       method: 'POST',
-      headers: Object.assign({ 'Content-Type': 'application/json' }, authHdr),
+      headers: jsonHdr,
     }).then(function(r) {
       if (!r.ok) return r.json().then(function(b) { throw new Error(b.detail || 'Failed'); });
       return r.json();

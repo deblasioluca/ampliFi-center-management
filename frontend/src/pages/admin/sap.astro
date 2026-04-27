@@ -284,7 +284,14 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('test-results').innerHTML = '<div class="text-center py-4"><div class="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div><p class="mt-2 text-gray-500">Testing primary protocol...</p></div>';
     try {
       var res = await fetch('/api/admin/sap/' + id + '/test', { method: 'POST', headers: authHdr });
-      var d = await res.json();
+      var d;
+      var ct = res.headers.get('content-type') || '';
+      if (ct.indexOf('application/json') !== -1) {
+        d = await res.json();
+      } else {
+        var txt = await res.text();
+        d = { success: false, error: txt || ('HTTP ' + res.status) };
+      }
       document.getElementById('test-proto').textContent = (d.protocol || '').toUpperCase();
       var html = '';
       if (d.success) {
@@ -449,10 +456,42 @@ import Layout from '../../components/layout/Layout.astro';
     }
   };
 
-  window.addBinding = async function(connId) {
-    var objectType = prompt('Object type (cost_center, profit_center, hierarchy, balance, gl_account, employee):');
-    if (!objectType) return;
-    var entitySet = prompt('OData entity set (optional, e.g. CostCenterSet):') || null;
+  window.addBinding = function(connId) {
+    var el = document.getElementById('bindings-' + connId);
+    if (document.getElementById('add-binding-form-' + connId)) return;
+    var OBJECT_TYPES = [
+      { value: 'cost_center', label: 'Cost Center', entitySet: 'CostCenterSet' },
+      { value: 'profit_center', label: 'Profit Center', entitySet: 'ProfitCenterSet' },
+      { value: 'hierarchy', label: 'Hierarchy', entitySet: 'CostCenterHierarchySet' },
+      { value: 'balance', label: 'Balance', entitySet: 'GLAccountBalanceSet' },
+      { value: 'gl_account', label: 'GL Account', entitySet: 'GLAccountSet' },
+      { value: 'employee', label: 'Employee', entitySet: 'EmployeeSet' },
+    ];
+    var html = '<div id="add-binding-form-' + connId + '" class="mt-3 p-3 bg-gray-50 rounded-lg border">' +
+      '<div class="text-sm font-semibold text-gray-700 mb-2">Add New Binding</div>' +
+      '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Object Type</label>' +
+      '<select id="bind-type-' + connId + '" class="w-full text-sm border rounded px-2 py-1">' +
+      OBJECT_TYPES.map(function(t) { return '<option value="' + t.value + '" data-entity="' + t.entitySet + '">' + t.label + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Entity Set / Path (optional)</label>' +
+      '<input id="bind-entity-' + connId + '" type="text" class="w-full text-sm border rounded px-2 py-1" placeholder="Auto-filled from type" /></div>' +
+      '<div class="flex items-end gap-2">' +
+      '<button onclick="submitBinding(' + connId + ')" class="btn-sm bg-blue-600 text-white hover:bg-blue-700">Save</button>' +
+      '<button onclick="document.getElementById(\'add-binding-form-' + connId + '\').remove()" class="btn-sm bg-gray-200 text-gray-700 hover:bg-gray-300">Cancel</button>' +
+      '</div></div></div>';
+    el.insertAdjacentHTML('beforeend', html);
+    var sel = document.getElementById('bind-type-' + connId);
+    var inp = document.getElementById('bind-entity-' + connId);
+    inp.value = sel.options[sel.selectedIndex].getAttribute('data-entity') || '';
+    sel.addEventListener('change', function() {
+      inp.value = sel.options[sel.selectedIndex].getAttribute('data-entity') || '';
+    });
+  };
+
+  window.submitBinding = async function(connId) {
+    var objectType = document.getElementById('bind-type-' + connId).value;
+    var entitySet = document.getElementById('bind-entity-' + connId).value || null;
     try {
       var res = await fetch('/api/admin/sap/' + connId + '/bindings', {
         method: 'POST', headers: jsonHdr,

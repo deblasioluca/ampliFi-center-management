@@ -116,6 +116,26 @@ def cancel_run(
     return {"status": "cancelled"}
 
 
+@router.delete("/{run_id}")
+def delete_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Delete an analysis run and all its proposals."""
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status == "running":
+        raise HTTPException(status_code=409, detail="Cannot delete a running analysis")
+    from sqlalchemy import delete
+
+    db.execute(delete(CenterProposal).where(CenterProposal.run_id == run_id))
+    db.delete(run)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.get("/{run_id}/proposals")
 def list_proposals(
     run_id: int,

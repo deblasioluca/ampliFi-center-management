@@ -370,17 +370,26 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
         "employees": 0,
     }
 
-    # Deduplicate sample cost centers only (scoped to known sample IDs)
+    # Clean up sample cost centers: remove duplicates and wrong-coarea rows
     from sqlalchemy import text
 
     sample_cctrs = list(SAMPLE_CC_CCTRS)
     if sample_cctrs:
+        # Remove sample CCs with wrong coarea (from older seeds)
         db.execute(
             text("""
             DELETE FROM cleanup.legacy_cost_center
-            WHERE coarea = :coarea AND cctr = ANY(:cctrs) AND id NOT IN (
+            WHERE cctr = ANY(:cctrs) AND coarea != :coarea
+            """),
+            {"coarea": COAREA, "cctrs": sample_cctrs},
+        )
+        # Remove duplicates within correct coarea (keep newest)
+        db.execute(
+            text("""
+            DELETE FROM cleanup.legacy_cost_center
+            WHERE cctr = ANY(:cctrs) AND coarea = :coarea AND id NOT IN (
                 SELECT MAX(id) FROM cleanup.legacy_cost_center
-                WHERE coarea = :coarea AND cctr = ANY(:cctrs)
+                WHERE cctr = ANY(:cctrs) AND coarea = :coarea
                 GROUP BY coarea, cctr
             )
             """),
