@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import tempfile
 from pathlib import Path
 
@@ -295,6 +296,16 @@ _PLURAL_MAP = {
 }
 
 
+_SAFE_VALUE_RE = re.compile(r"^[A-Za-z0-9_\-./]+$")
+
+
+def _sanitize(value: str) -> str:
+    """Reject values containing SQL metacharacters."""
+    if not _SAFE_VALUE_RE.match(value):
+        raise ValueError(f"Invalid filter value: {value!r}")
+    return value
+
+
 def _build_where_clause(kind: str, params: dict | None) -> str:
     """Build a WHERE clause from extraction parameters."""
     if not params:
@@ -302,19 +313,16 @@ def _build_where_clause(kind: str, params: dict | None) -> str:
     clauses: list[str] = []
     co_area = params.get("co_area") or params.get("controlling_area")
     if co_area and kind in ("cost_center", "profit_center", "balance"):
-        field = "KOKRS"
-        if kind == "balance":
-            field = "KOKRS"
-        clauses.append(f"{field} = '{co_area}'")
+        clauses.append(f"KOKRS = '{_sanitize(co_area)}'")
 
     hierarchy_name = params.get("hierarchy_name") or params.get("set_name")
     if hierarchy_name and kind == "hierarchy":
-        clauses.append(f"SETNAME = '{hierarchy_name}'")
+        clauses.append(f"SETNAME = '{_sanitize(hierarchy_name)}'")
 
     company_code = params.get("company_code")
     if company_code:
         field = "BUKRS" if kind != "balance" else "RBUKRS"
-        clauses.append(f"{field} = '{company_code}'")
+        clauses.append(f"{field} = '{_sanitize(company_code)}'")
 
     return " AND ".join(clauses)
 
@@ -325,28 +333,28 @@ def _build_odata_filter(kind: str, params: dict | None) -> dict | None:
         return None
     filters: list[str] = []
     co_area = params.get("co_area") or params.get("controlling_area")
-    if co_area and kind in ("cost_center", "profit_center"):
-        filters.append(f"ControllingArea eq '{co_area}'")
+    if co_area and kind in ("cost_center", "profit_center", "balance"):
+        filters.append(f"ControllingArea eq '{_sanitize(co_area)}'")
 
     hierarchy_name = params.get("hierarchy_name") or params.get("set_name")
     if hierarchy_name and kind == "hierarchy":
-        filters.append(f"SetName eq '{hierarchy_name}'")
+        filters.append(f"SetName eq '{_sanitize(hierarchy_name)}'")
 
     company_code = params.get("company_code")
     if company_code:
-        filters.append(f"CompanyCode eq '{company_code}'")
+        filters.append(f"CompanyCode eq '{_sanitize(company_code)}'")
 
     # Balance-specific filters
     period_from = params.get("period_from")
     period_to = params.get("period_to")
     if period_from and kind == "balance":
-        filters.append(f"FiscalPeriod ge '{period_from}'")
+        filters.append(f"FiscalPeriod ge '{_sanitize(period_from)}'")
     if period_to and kind == "balance":
-        filters.append(f"FiscalPeriod le '{period_to}'")
+        filters.append(f"FiscalPeriod le '{_sanitize(period_to)}'")
 
     ledger = params.get("ledger") or params.get("gaap")
     if ledger and kind == "balance":
-        filters.append(f"Ledger eq '{ledger}'")
+        filters.append(f"Ledger eq '{_sanitize(ledger)}'")
 
     if not filters:
         return None
@@ -493,15 +501,12 @@ def extract_from_sap(
     file_path = tmp_dir / filename
     file_path.write_text(csv_buffer.getvalue())
 
-    # Determine source label
-    source_label = retrieval_method or "odata"
     batch = UploadBatch(
         filename=filename,
         kind=normalized,
-        file_path=str(file_path),
+        storage_uri=str(file_path),
         status="uploaded",
         rows_total=len(rows),
-        source=f"sap_{source_label}:{conn.name}",
     )
     db.add(batch)
     db.commit()
