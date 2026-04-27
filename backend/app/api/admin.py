@@ -589,6 +589,75 @@ def delete_object_binding(
     return {"status": "deleted"}
 
 
+@router.post("/sap/{conn_id}/bindings/{binding_id}/test")
+def test_object_binding(
+    conn_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Test whether the retrieval method for a binding actually works."""
+    from app.models.core import SAPObjectBinding
+
+    binding = db.get(SAPObjectBinding, binding_id)
+    if not binding or binding.connection_id != conn_id:
+        raise HTTPException(status_code=404, detail="Object binding not found")
+
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+
+    entity_set = binding.entity_set or binding.path or ""
+    try:
+        from app.infra.sap.client import fetch_odata
+
+        # Try fetching just 1 row to test connectivity
+        test_params = {"$top": "1"}
+        result = fetch_odata(conn, entity_set, params=test_params)
+        row_count = len(result) if result else 0
+        return {
+            "success": True,
+            "message": f"Binding test OK — retrieved {row_count} test row(s) from {entity_set}",
+            "entity_set": entity_set,
+            "protocol": conn.protocol,
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "entity_set": entity_set,
+            "protocol": conn.protocol,
+        }
+
+
+@router.post("/sap/{conn_id}/bindings/{binding_id}/extract")
+def extract_via_binding(
+    conn_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Extract data from SAP using a specific binding's configuration."""
+    from app.models.core import SAPObjectBinding
+
+    binding = db.get(SAPObjectBinding, binding_id)
+    if not binding or binding.connection_id != conn_id:
+        raise HTTPException(status_code=404, detail="Object binding not found")
+
+    from app.services.sap_extraction import extract_from_sap
+
+    try:
+        result = extract_from_sap(
+            db,
+            conn_id,
+            binding.object_type,
+            binding.params,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 # --- Uploads ---
 
 

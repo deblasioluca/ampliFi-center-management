@@ -20,12 +20,30 @@ from app.models.core import SAPConnection, UploadBatch
 
 logger = structlog.get_logger()
 
-# SAP OData entity set mappings
+# SAP OData entity set mappings (accept both singular and plural forms)
 ENTITY_SETS = {
+    "cost_center": "API_COSTCENTER_SRV/A_CostCenter",
     "cost_centers": "API_COSTCENTER_SRV/A_CostCenter",
+    "profit_center": "API_PROFITCENTER_SRV/A_ProfitCenter",
     "profit_centers": "API_PROFITCENTER_SRV/A_ProfitCenter",
+    "entity": "API_COMPANYCODE_SRV/A_CompanyCode",
     "entities": "API_COMPANYCODE_SRV/A_CompanyCode",
+    "hierarchy": "API_COSTCENTER_SRV/A_CostCenterHierarchy",
+    "balance": "YY1_GLACCOUNTBALANCE/A_GLAccountBalance",
+    "gl_account": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
+    "employee": "API_BUSINESS_PARTNER/A_BusinessPartner",
 }
+
+# Canonical kind names (singular) for available_kinds listing
+CANONICAL_KINDS = [
+    "cost_center",
+    "profit_center",
+    "hierarchy",
+    "balance",
+    "gl_account",
+    "employee",
+    "entity",
+]
 
 # Field mappings from SAP OData response to our CSV format
 FIELD_MAP_CC = {
@@ -69,8 +87,17 @@ def extract_from_sap(
     if not raw_data:
         return {"rows_extracted": 0, "batch_id": None}
 
+    # Normalize kind to singular
+    normalized = kind.rstrip("s") if kind.endswith("ies") is False and kind.endswith("s") else kind
+    if kind in ("cost_centers", "cost_center"):
+        normalized = "cost_center"
+    elif kind in ("profit_centers", "profit_center"):
+        normalized = "profit_center"
+    elif kind in ("entities", "entity"):
+        normalized = "entity"
+
     # Map SAP fields to our CSV format
-    field_map = FIELD_MAP_CC if kind == "cost_centers" else FIELD_MAP_PC
+    field_map = FIELD_MAP_CC if normalized == "cost_center" else FIELD_MAP_PC
     rows: list[dict] = []
     for item in raw_data:
         row = {}
@@ -123,7 +150,7 @@ def list_available_extractions(db: Session) -> list[dict]:
             "connection_id": c.id,
             "name": c.name,
             "protocol": c.protocol,
-            "available_kinds": list(ENTITY_SETS.keys()) if c.protocol == "odata" else [],
+            "available_kinds": CANONICAL_KINDS,
         }
         for c in connections
     ]

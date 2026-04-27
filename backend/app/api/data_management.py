@@ -347,7 +347,7 @@ class SAPExtractionRequest(BaseModel):
 def trigger_sap_extraction(
     body: SAPExtractionRequest,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
     """Trigger SAP OData extraction for a given data kind."""
     from app.services.sap_extraction import extract_from_sap
@@ -362,7 +362,7 @@ def trigger_sap_extraction(
 @router.get("/sap-extract/available")
 def available_extractions(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> list[dict]:
     """List SAP connections available for OData extraction."""
     from app.services.sap_extraction import list_available_extractions
