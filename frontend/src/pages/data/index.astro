@@ -1274,7 +1274,7 @@ import Layout from '../../components/layout/Layout.astro';
     var periods = {};
     items.forEach(function(it) {
       (it.monthly_balances || []).forEach(function(b) {
-        var key = b.fiscal_year + '/' + String(b.period).padStart(3, '0');
+        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
         periods[key] = 1;
       });
     });
@@ -1380,7 +1380,7 @@ import Layout from '../../components/layout/Layout.astro';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
       var out = '<div style="padding-left:' + pad + 'px" class="py-0.5">';
-      out += '<span class="font-medium text-blue-800 cursor-pointer" onclick="this.parentElement.querySelector(\'.tree-children\')&&this.parentElement.querySelector(\'.tree-children\').classList.toggle(\'hidden\')">';
+      out += '<span class="font-medium text-blue-800 cursor-pointer" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\')">';
       out += '&#9654; ' + esc(nodeName) + '</span></div>';
       out += '<div class="tree-children">';
       children.forEach(function(c) {
