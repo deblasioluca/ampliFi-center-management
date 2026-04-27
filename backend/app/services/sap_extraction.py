@@ -532,6 +532,7 @@ def extract_from_sap(
             rows_loaded=load_result.get("rows_loaded", 0),
         )
     except Exception as exc:
+        db.rollback()
         logger.warning(
             "sap.extract.auto_load_failed",
             batch_id=batch.id,
