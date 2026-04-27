@@ -35,9 +35,9 @@ def test_connection(conn: SAPConnection) -> dict[str, Any]:
 
     For the full multi-endpoint trial use run_connection_trial() instead.
     """
-    password = decrypt_password(conn.password_encrypted)
     start = time.monotonic()
     try:
+        password = decrypt_password(conn.password_encrypted)
         if conn.protocol == "odata":
             return _test_odata(conn, password, start)
         elif conn.protocol == "adt":
