@@ -988,6 +988,8 @@ DATASPHERE_DOMAINS = [
     "profit_center",
     "entity",
     "hierarchy",
+    "hierarchy_node",
+    "hierarchy_leaf",
     "balance",
     "gl_account",
     "employee",

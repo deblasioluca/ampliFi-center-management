@@ -66,14 +66,13 @@ class DatasphereClient:
 
     def test_connection(self) -> dict[str, Any]:
         """Test the Datasphere connection and return status info."""
+        conn = None
+        cursor = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
             cursor.execute("SELECT CURRENT_SCHEMA, CURRENT_USER FROM DUMMY")
             row = cursor.fetchone()
-            cursor.close()
-            conn.close()
-            self._conn = None
             return {
                 "success": True,
                 "schema": row[0] if row else None,
@@ -90,6 +89,12 @@ class DatasphereClient:
                 "success": False,
                 "message": f"Connection failed: {exc}",
             }
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+            self._conn = None
 
     def execute_ddl(self, ddl: str) -> dict[str, Any]:
         """Execute DDL statement(s) on the Datasphere schema."""
