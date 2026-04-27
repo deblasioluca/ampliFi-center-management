@@ -464,11 +464,12 @@ import Layout from '../../components/layout/Layout.astro';
   RETRIEVAL_METHODS.soap_rfc = RETRIEVAL_METHODS.soap;
 
   var _connProtocols = {}; // cache connId -> protocol
+  var _connNames = {};     // cache connId -> name
 
-  window.showBindings = async function(connId, connName, protocol) {
-    if (protocol) _connProtocols[connId] = protocol;
+  async function _loadBindings(connId) {
     var el = document.getElementById('bindings-' + connId);
-    if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
+    var connName = _connNames[connId] || '';
+    var protocol = _connProtocols[connId] || 'unknown';
     el.classList.remove('hidden');
     el.innerHTML = '<div class="text-gray-500 text-sm">Loading bindings...</div>';
     try {
@@ -478,7 +479,7 @@ import Layout from '../../components/layout/Layout.astro';
         '<h4 class="text-sm font-semibold text-gray-700">Object Bindings — what to extract from ' + esc(connName) + '</h4>' +
         '<button onclick="addBinding(' + connId + ')" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100">+ Add Binding</button>' +
         '</div>';
-      html += '<p class="text-xs text-gray-400 mb-2">Each binding maps an SAP data object to an extraction query. The retrieval method depends on the connection protocol (' + esc(protocol || 'unknown') + ').</p>';
+      html += '<p class="text-xs text-gray-400 mb-2">Each binding maps an SAP data object to an extraction query. The retrieval method depends on the connection protocol (' + esc(protocol) + ').</p>';
       if (!bindings.length) {
         html += '<p class="text-sm text-gray-400">No bindings yet. Add one to configure data extraction.</p>';
       } else {
@@ -496,6 +497,14 @@ import Layout from '../../components/layout/Layout.astro';
     } catch(err) {
       el.innerHTML = '<div class="text-red-600 text-sm">Error: ' + esc(err.message) + '</div>';
     }
+  }
+
+  window.showBindings = async function(connId, connName, protocol) {
+    if (connName) _connNames[connId] = connName;
+    if (protocol) _connProtocols[connId] = protocol;
+    var el = document.getElementById('bindings-' + connId);
+    if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
+    await _loadBindings(connId);
   };
 
   window.addBinding = function(connId) {
@@ -558,14 +567,14 @@ import Layout from '../../components/layout/Layout.astro';
         body: JSON.stringify({ object_type: objectType, entity_set: entitySet })
       });
       if (!res.ok) { var err = await res.json(); throw new Error(err.detail || 'Failed'); }
-      showBindings(connId, '');
+      await _loadBindings(connId);
     } catch(err) { alert('Error: ' + err.message); }
   };
 
   window.deleteBinding = async function(connId, bindingId) {
     if (!confirm('Delete this binding?')) return;
     await fetch('/api/admin/sap/' + connId + '/bindings/' + bindingId, { method: 'DELETE', headers: authHdr });
-    showBindings(connId, '');
+    await _loadBindings(connId);
   };
 })();
 </script>

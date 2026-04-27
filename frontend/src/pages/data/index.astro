@@ -882,7 +882,7 @@ import Layout from '../../components/layout/Layout.astro';
         connections.forEach(function(c) {
           var opt = document.createElement('option');
           opt.value = c.connection_id;
-          opt.textContent = esc(c.name) + ' (' + esc(c.protocol || 'OData') + ')';
+          opt.textContent = (c.name || '') + ' (' + (c.protocol || 'OData') + ')';
           if (c.available_kinds && c.available_kinds.length) {
             opt.textContent += ' — ' + c.available_kinds.join(', ');
           }
