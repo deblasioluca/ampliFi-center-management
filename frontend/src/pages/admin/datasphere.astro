@@ -1,0 +1,369 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Data Storage" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Data Storage Configuration</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Configure where ACM stores data. Application data (users, config, workflow) always stays in the local database.
+      Master/analytical data (cost centers, balances, hierarchies, analysis results) can be routed to SAP Datasphere (HANA Cloud).
+    </p>
+  </div>
+
+  <!-- Storage Mode Toggle -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-semibold">Storage Mode</h2>
+        <p class="text-xs text-gray-500 mt-1">Switch between local PostgreSQL and SAP Datasphere for data storage</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="mode-label" class="text-sm font-medium text-gray-700">Local DB</span>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="ds-toggle" class="sr-only peer" />
+          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amplifi-600"></div>
+        </label>
+      </div>
+    </div>
+    <div id="ds-status" class="p-3 rounded bg-blue-50 text-blue-700 text-sm">
+      Loading configuration...
+    </div>
+  </div>
+
+  <!-- Datasphere Connection -->
+  <div id="ds-connection" class="card mb-6 hidden">
+    <h2 class="text-lg font-semibold mb-4">SAP Datasphere Connection</h2>
+    <p class="text-xs text-gray-500 mb-4">Connect to your HANA Cloud instance in SAP Datasphere</p>
+    <form id="ds-form" class="space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">HANA Cloud URL</label>
+          <input id="ds-url" type="text" class="input" placeholder="your-instance.hanacloud.ondemand.com:443" />
+          <p class="text-xs text-gray-400 mt-0.5">Host:port of your HANA Cloud instance</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Schema</label>
+          <input id="ds-schema" type="text" class="input" value="ACM" />
+          <p class="text-xs text-gray-400 mt-0.5">Target schema in Datasphere (default: ACM)</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+          <input id="ds-user" type="text" class="input" placeholder="DBADMIN" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <input id="ds-password" type="password" class="input" placeholder="Leave blank to keep existing" />
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="ds-ssl" type="checkbox" checked class="h-4 w-4 text-amplifi-600 rounded" />
+        <label for="ds-ssl" class="text-sm text-gray-700">Use SSL/TLS encryption</label>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-amplifi text-sm">Save Connection</button>
+        <button type="button" id="btn-test-ds" class="btn-outline text-sm">Test Connection</button>
+      </div>
+    </form>
+    <div id="ds-test-result" class="mt-3 hidden p-3 rounded text-sm"></div>
+  </div>
+
+  <!-- Domain Routing -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-semibold">Data Domain Routing</h2>
+        <p class="text-xs text-gray-500 mt-1">Choose which data domains to store locally vs. in Datasphere.
+          Application data (users, workflow, config) always stays local.</p>
+      </div>
+    </div>
+    <div id="domain-list" class="space-y-1">Loading domains...</div>
+  </div>
+
+  <!-- DDL Export -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-semibold">HANA DDL Export</h2>
+        <p class="text-xs text-gray-500 mt-1">Generate CREATE TABLE statements for SAP HANA column store.
+          Use these to set up the schema in Datasphere before enabling the connection.</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-ddl-copy" class="btn-outline text-xs">Copy DDL</button>
+        <button id="btn-ddl-download" class="btn-outline text-xs">Download .sql</button>
+      </div>
+    </div>
+    <div class="relative">
+      <pre id="ddl-output" class="bg-gray-900 text-green-400 text-xs p-4 rounded max-h-96 overflow-auto font-mono whitespace-pre">Loading DDL...</pre>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .btn-outline {
+    @apply px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors;
+  }
+  .domain-row { @apply flex items-center justify-between py-2 px-3 rounded; }
+  .domain-row:nth-child(odd) { @apply bg-gray-50; }
+  .domain-badge-local { @apply text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700; }
+  .domain-badge-ds { @apply text-xs px-2 py-0.5 rounded bg-green-100 text-green-700; }
+  .domain-badge-locked { @apply text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500; }
+</style>
+
+<script>
+  const API = '/api/admin/datasphere';
+  function getToken() { return localStorage.getItem('amplifi_token'); }
+  function authHeaders() { return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }; }
+
+  let config = null;
+  let domains = [];
+
+  async function loadConfig() {
+    try {
+      const res = await fetch(`${API}/config`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      config = await res.json();
+      renderConfig();
+    } catch (e) {
+      document.getElementById('ds-status').textContent = 'Error loading config: ' + e.message;
+    }
+  }
+
+  function renderConfig() {
+    const toggle = document.getElementById('ds-toggle');
+    const modeLabel = document.getElementById('mode-label');
+    const status = document.getElementById('ds-status');
+    const connSection = document.getElementById('ds-connection');
+
+    toggle.checked = config.is_active;
+    modeLabel.textContent = config.is_active ? 'SAP Datasphere' : 'Local DB';
+
+    if (config.is_active) {
+      status.className = 'p-3 rounded bg-green-50 text-green-700 text-sm';
+      status.textContent = 'Datasphere is ACTIVE — enabled domains are routed to HANA Cloud.';
+      connSection.classList.remove('hidden');
+    } else {
+      status.className = 'p-3 rounded bg-blue-50 text-blue-700 text-sm';
+      status.textContent = 'All data is stored locally in PostgreSQL. Enable Datasphere to route selected domains to HANA Cloud.';
+      connSection.classList.remove('hidden');
+    }
+
+    // Fill connection form
+    document.getElementById('ds-url').value = config.ds_url || '';
+    document.getElementById('ds-schema').value = config.ds_schema || 'ACM';
+    document.getElementById('ds-user').value = config.ds_user || '';
+    document.getElementById('ds-ssl').checked = config.ds_use_ssl !== false;
+  }
+
+  async function loadDomains() {
+    try {
+      const res = await fetch(`${API}/domains`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      domains = data.domains;
+      renderDomains();
+    } catch (e) {
+      document.getElementById('domain-list').textContent = 'Error: ' + e.message;
+    }
+  }
+
+  function renderDomains() {
+    const container = document.getElementById('domain-list');
+    const movable = domains.filter(d => d.movable);
+    const locked = domains.filter(d => !d.movable);
+
+    const domainLabels = {
+      'cost_center': 'Cost Centers (legacy)',
+      'profit_center': 'Profit Centers (legacy)',
+      'entity': 'Entities (Company Codes)',
+      'hierarchy': 'Hierarchies',
+      'hierarchy_node': 'Hierarchy Nodes',
+      'hierarchy_leaf': 'Hierarchy Leaves',
+      'balance': 'GL Balances',
+      'gl_account': 'GL Accounts',
+      'employee': 'Employees',
+      'analysis_run': 'Analysis Runs',
+      'center_proposal': 'Center Proposals',
+      'routine_output': 'Routine Outputs',
+      'target_cost_center': 'Target Cost Centers',
+      'target_profit_center': 'Target Profit Centers',
+      'signoff': 'Sign-off Records',
+    };
+
+    let html = '<p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Movable Domains (can route to Datasphere)</p>';
+    for (const d of movable) {
+      const label = domainLabels[d.domain] || d.domain;
+      const enabled = config && config.domain_config && config.domain_config[d.domain] && config.domain_config[d.domain].enabled;
+      const badge = enabled
+        ? `<span class="domain-badge-ds">Datasphere</span>`
+        : `<span class="domain-badge-local">Local DB</span>`;
+      const tableName = (config && config.domain_config && config.domain_config[d.domain] && config.domain_config[d.domain].table_name) || d.default_table;
+      html += `<div class="domain-row">
+        <div class="flex items-center gap-3">
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" class="sr-only peer domain-toggle" data-domain="${d.domain}" ${enabled ? 'checked' : ''} />
+            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amplifi-600"></div>
+          </label>
+          <div>
+            <span class="text-sm font-medium text-gray-800">${label}</span>
+            ${enabled ? `<span class="text-xs text-gray-400 ml-2">→ ${tableName}</span>` : ''}
+          </div>
+        </div>
+        ${badge}
+      </div>`;
+    }
+
+    html += '<p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2">Local-Only Domains (application data)</p>';
+    for (const d of locked.slice(0, 8)) {
+      html += `<div class="domain-row opacity-60">
+        <span class="text-sm text-gray-600">${d.domain.replace(/_/g, ' ')}</span>
+        <span class="domain-badge-locked">Local only</span>
+      </div>`;
+    }
+    if (locked.length > 8) {
+      html += `<div class="text-xs text-gray-400 px-3 py-1">+ ${locked.length - 8} more local-only domains</div>`;
+    }
+
+    container.innerHTML = html;
+
+    // Wire up domain toggles
+    container.querySelectorAll('.domain-toggle').forEach(el => {
+      el.addEventListener('change', async (e) => {
+        const domain = e.target.dataset.domain;
+        const enabled = e.target.checked;
+        await updateDomainConfig(domain, enabled);
+      });
+    });
+  }
+
+  async function updateDomainConfig(domain, enabled) {
+    if (!config) return;
+    const dc = { ...(config.domain_config || {}) };
+    dc[domain] = { enabled, table_name: dc[domain]?.table_name || null };
+    try {
+      const res = await fetch(`${API}/config`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ domain_config: dc }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      config.domain_config = dc;
+      renderDomains();
+    } catch (e) {
+      renderDomains();
+      alert('Error updating domain: ' + e.message);
+    }
+  }
+
+  async function loadDDL() {
+    try {
+      const schema = document.getElementById('ds-schema')?.value || 'ACM';
+      const res = await fetch(`${API}/ddl?schema=${encodeURIComponent(schema)}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      document.getElementById('ddl-output').textContent = data.ddl;
+    } catch (e) {
+      document.getElementById('ddl-output').textContent = '-- Error loading DDL: ' + e.message;
+    }
+  }
+
+  // Toggle handler
+  document.getElementById('ds-toggle').addEventListener('change', async (e) => {
+    const active = e.target.checked;
+    document.getElementById('mode-label').textContent = active ? 'SAP Datasphere' : 'Local DB';
+    try {
+      const res = await fetch(`${API}/config`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ is_active: active }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadConfig();
+      renderDomains();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  });
+
+  // Save connection form
+  document.getElementById('ds-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const body = {
+        ds_url: document.getElementById('ds-url').value,
+        ds_schema: document.getElementById('ds-schema').value,
+        ds_user: document.getElementById('ds-user').value,
+        ds_use_ssl: document.getElementById('ds-ssl').checked,
+        is_active: document.getElementById('ds-toggle').checked,
+      };
+      const pw = document.getElementById('ds-password').value;
+      if (pw) body.ds_password = pw;
+
+      const res = await fetch(`${API}/config`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const result = document.getElementById('ds-test-result');
+      result.className = 'mt-3 p-3 rounded text-sm bg-green-50 text-green-700';
+      result.textContent = 'Connection settings saved.';
+      result.classList.remove('hidden');
+      await loadConfig();
+    } catch (e) {
+      alert('Error saving: ' + e.message);
+    }
+  });
+
+  // Test connection
+  document.getElementById('btn-test-ds').addEventListener('click', async () => {
+    const result = document.getElementById('ds-test-result');
+    result.className = 'mt-3 p-3 rounded text-sm bg-gray-50 text-gray-600';
+    result.textContent = 'Testing connection...';
+    result.classList.remove('hidden');
+    try {
+      const res = await fetch(`${API}/test`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      if (data.success) {
+        result.className = 'mt-3 p-3 rounded text-sm bg-green-50 text-green-700';
+        result.textContent = data.message + (data.schema ? ` (schema: ${data.schema}, user: ${data.user})` : '');
+      } else {
+        result.className = 'mt-3 p-3 rounded text-sm bg-red-50 text-red-700';
+        result.textContent = data.message;
+      }
+    } catch (e) {
+      result.className = 'mt-3 p-3 rounded text-sm bg-red-50 text-red-700';
+      result.textContent = 'Error: ' + e.message;
+    }
+  });
+
+  // DDL copy
+  document.getElementById('btn-ddl-copy').addEventListener('click', () => {
+    const ddl = document.getElementById('ddl-output').textContent;
+    navigator.clipboard.writeText(ddl).then(() => {
+      document.getElementById('btn-ddl-copy').textContent = 'Copied!';
+      setTimeout(() => { document.getElementById('btn-ddl-copy').textContent = 'Copy DDL'; }, 2000);
+    });
+  });
+
+  // DDL download
+  document.getElementById('btn-ddl-download').addEventListener('click', () => {
+    const ddl = document.getElementById('ddl-output').textContent;
+    const blob = new Blob([ddl], { type: 'text/sql' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'acm_datasphere_ddl.sql';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Init
+  loadConfig().then(() => {
+    loadDomains();
+    loadDDL();
+  });
+</script>

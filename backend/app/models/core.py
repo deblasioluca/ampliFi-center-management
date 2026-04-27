@@ -978,3 +978,75 @@ class NamingAllocation(Base):
     )
 
     pool: Mapped[NamingPool] = relationship(back_populates="allocations")
+
+
+# ---------- datasphere integration ----------
+
+# Data domains that can be routed to Datasphere
+DATASPHERE_DOMAINS = [
+    "cost_center",
+    "profit_center",
+    "entity",
+    "hierarchy",
+    "hierarchy_node",
+    "hierarchy_leaf",
+    "balance",
+    "gl_account",
+    "employee",
+    "analysis_run",
+    "center_proposal",
+    "routine_output",
+    "target_cost_center",
+    "target_profit_center",
+    "signoff",
+]
+
+# Domains that ALWAYS stay local (application/workflow data)
+LOCAL_ONLY_DOMAINS = [
+    "app_user",
+    "app_config",
+    "sap_connection",
+    "sap_object_binding",
+    "wave",
+    "wave_entity",
+    "wave_hierarchy_scope",
+    "review_scope",
+    "review_item",
+    "upload_batch",
+    "upload_error",
+    "audit_log",
+    "activity_feed",
+    "task_run",
+    "naming_pool",
+    "naming_allocation",
+    "naming_sequence",
+    "wave_template",
+    "gl_account_class_range",
+    "analysis_config",
+    "routine",
+    "llm_review_pass",
+    "housekeeping_cycle",
+    "housekeeping_item",
+]
+
+
+class DatasphereConfig(TimestampMixin, Base):
+    """Per-domain storage routing config for SAP Datasphere integration."""
+
+    __tablename__ = "datasphere_config"
+    __table_args__ = {"schema": "cleanup"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Connection
+    ds_url: Mapped[str | None] = mapped_column(String(500))
+    ds_schema: Mapped[str] = mapped_column(String(100), nullable=False, default="ACM")
+    ds_user: Mapped[str | None] = mapped_column(String(200))
+    ds_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    ds_use_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Per-domain table mappings (JSONB: { domain: { enabled, table_name } })
+    domain_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Global toggle
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )

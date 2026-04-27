@@ -87,6 +87,13 @@ class Settings(BaseSettings):
         ""  # comma-separated, e.g. "http://localhost:4321,https://app.example.com"
     )
 
+    # --- SAP Datasphere ---
+    datasphere_url: str = ""  # HANA JDBC/ODBC endpoint
+    datasphere_schema: str = "ACM"  # target schema in Datasphere
+    datasphere_user: str = ""
+    datasphere_password: SecretStr = SecretStr("")
+    datasphere_use_ssl: bool = True
+
     # --- feature flags ---
     feature_mdg_api: bool = False
     feature_datasphere: bool = False
