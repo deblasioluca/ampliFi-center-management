@@ -320,6 +320,17 @@ import Layout from '../../components/layout/Layout.astro';
     });
   });
 
+  // Refresh all browse tabs + counts after data changes
+  function refreshAllData() {
+    loadCounts();
+    if (typeof loadCC === 'function') loadCC(1);
+    if (typeof loadPC === 'function') loadPC(1);
+    if (typeof loadEntities === 'function') loadEntities(1);
+    if (typeof loadBalances === 'function') loadBalances(1);
+    if (typeof loadHierarchies === 'function') loadHierarchies();
+    if (typeof loadEmployees === 'function') loadEmployees(1);
+  }
+
   // Load data counts
   function loadCounts() {
     fetch('/api/data/counts', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -687,7 +698,7 @@ import Layout from '../../components/layout/Layout.astro';
       resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
       resultEl.className = 'text-sm text-green-600';
       resultEl.classList.remove('hidden');
-      loadCounts(); loadUploadHistory();
+      refreshAllData(); loadUploadHistory();
     } catch(err) {
       resultEl.textContent = 'Error: ' + err.message;
       resultEl.className = 'text-sm text-red-600';
@@ -746,14 +757,14 @@ import Layout from '../../components/layout/Layout.astro';
     var res = await fetch('/api/admin/uploads/' + id + '/load', { method: 'POST', headers: authHdr });
     var d = await res.json();
     alert('Load: ' + d.status + (d.rows_loaded ? ' (' + d.rows_loaded + ' rows)' : ''));
-    loadUploadHistory(); loadCounts();
+    loadUploadHistory(); refreshAllData();
   };
   window.rollbackUpload = async function(id) {
     if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
     var res = await fetch('/api/admin/uploads/' + id + '/rollback', { method: 'POST', headers: authHdr });
     var d = await res.json();
     alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
-    loadUploadHistory(); loadCounts();
+    loadUploadHistory(); refreshAllData();
   };
   window.deleteUpload = async function(id) {
     if (!confirm('Delete this upload batch? If data was loaded, it will remain in the system — use Rollback first to remove loaded data.')) return;
@@ -764,7 +775,7 @@ import Layout from '../../components/layout/Layout.astro';
       });
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Delete failed');
-      loadUploadHistory(); loadCounts();
+      loadUploadHistory(); refreshAllData();
     } catch(e) { alert('Error: ' + e.message); }
   };
 
@@ -954,7 +965,9 @@ import Layout from '../../components/layout/Layout.astro';
         resEl.className = 'text-sm mt-2 p-3 bg-green-50 rounded text-green-700';
         resEl.textContent = 'Extraction successful: ' + (d.rows_extracted || 0) + ' records imported.';
         if (d.batch_id) resEl.textContent += ' Batch #' + d.batch_id;
-        loadCounts();
+        if (d.status) resEl.textContent += ' (Status: ' + d.status + ')';
+        refreshAllData();
+        loadUploadHistory();
       } catch(e) {
         resEl.className = 'text-sm mt-2 p-3 bg-red-50 rounded text-red-700';
         resEl.textContent = 'Error: ' + e.message;
