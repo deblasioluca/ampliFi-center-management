@@ -20,12 +20,34 @@ from app.models.core import SAPConnection, UploadBatch
 
 logger = structlog.get_logger()
 
-# SAP OData entity set mappings
+# SAP OData entity set mappings (accept both singular and plural forms)
 ENTITY_SETS = {
+    "cost_center": "API_COSTCENTER_SRV/A_CostCenter",
     "cost_centers": "API_COSTCENTER_SRV/A_CostCenter",
+    "profit_center": "API_PROFITCENTER_SRV/A_ProfitCenter",
     "profit_centers": "API_PROFITCENTER_SRV/A_ProfitCenter",
+    "entity": "API_COMPANYCODE_SRV/A_CompanyCode",
     "entities": "API_COMPANYCODE_SRV/A_CompanyCode",
+    "hierarchy": "API_COSTCENTER_SRV/A_CostCenterHierarchy",
+    "hierarchies": "API_COSTCENTER_SRV/A_CostCenterHierarchy",
+    "balance": "YY1_GLACCOUNTBALANCE/A_GLAccountBalance",
+    "balances": "YY1_GLACCOUNTBALANCE/A_GLAccountBalance",
+    "gl_account": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
+    "gl_accounts": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
+    "employee": "API_BUSINESS_PARTNER/A_BusinessPartner",
+    "employees": "API_BUSINESS_PARTNER/A_BusinessPartner",
 }
+
+# Canonical kind names (singular) for available_kinds listing
+CANONICAL_KINDS = [
+    "cost_center",
+    "profit_center",
+    "hierarchy",
+    "balance",
+    "gl_account",
+    "employee",
+    "entity",
+]
 
 # Field mappings from SAP OData response to our CSV format
 FIELD_MAP_CC = {
@@ -45,6 +67,82 @@ FIELD_MAP_PC = {
     "CompanyCode": "CCODE",
     "ProfitCenterShortName": "TXTSH",
     "ProfitCenterLongName": "TXTMI",
+}
+
+FIELD_MAP_HIERARCHY = {
+    "SetClass": "SET_CLASS",
+    "SetType": "SET_TYPE",
+    "SetName": "SET_NAME",
+    "Subset": "SUBSET",
+    "SubsetDescription": "SUBSET_DESC",
+    "HierarchyNode": "NODE_ID",
+    "ParentNode": "PARENT_NODE",
+    "NodeType": "NODE_TYPE",
+    "ValidityStartDate": "START_DATE",
+    "ValidityEndDate": "END_DATE",
+}
+
+FIELD_MAP_BALANCE = {
+    "CompanyCode": "CCODE",
+    "GLAccount": "GL_ACCOUNT",
+    "FiscalYear": "FISCAL_YEAR",
+    "FiscalPeriod": "PERIOD",
+    "ControllingArea": "COAREA",
+    "CostCenter": "CCTR",
+    "ProfitCenter": "PCTR",
+    "Ledger": "LEDGER",
+    "AmountInCompanyCodeCurrency": "AMOUNT_CC",
+    "CompanyCodeCurrency": "CURRENCY_CC",
+    "AmountInGlobalCurrency": "AMOUNT_GC",
+    "GlobalCurrency": "CURRENCY_GC",
+    "DebitAmountInCompanyCodeCurrency": "DEBIT_CC",
+    "CreditAmountInCompanyCodeCurrency": "CREDIT_CC",
+}
+
+FIELD_MAP_GL = {
+    "ChartOfAccounts": "CHART_OF_ACCOUNTS",
+    "GLAccount": "GL_ACCOUNT",
+    "GLAccountName": "GL_NAME",
+    "GLAccountLongName": "GL_LONG_NAME",
+    "GLAccountGroup": "GL_GROUP",
+    "CompanyCode": "CCODE",
+    "AccountType": "ACCOUNT_TYPE",
+    "IsBalanceSheetAccount": "IS_BS_ACCOUNT",
+    "IsProfitAndLossAccount": "IS_PL_ACCOUNT",
+}
+
+FIELD_MAP_EMPLOYEE = {
+    "BusinessPartner": "GPN",
+    "FirstName": "FIRST_NAME",
+    "LastName": "LAST_NAME",
+    "BusinessPartnerFullName": "FULL_NAME",
+    "OrganizationBPName1": "ORG_NAME",
+    "BusinessPartnerCategory": "CATEGORY",
+    "BusinessPartnerGrouping": "GROUPING",
+    "Language": "LANGUAGE",
+    "CreationDate": "CREATED_DATE",
+}
+
+FIELD_MAP_ENTITY = {
+    "CompanyCode": "CCODE",
+    "CompanyCodeName": "NAME",
+    "Country": "COUNTRY",
+    "Currency": "CURRENCY",
+    "Language": "LANGUAGE",
+    "ChartOfAccounts": "CHART_OF_ACCOUNTS",
+    "FiscalYearVariant": "FISCAL_YEAR_VARIANT",
+    "CityName": "CITY",
+}
+
+# Lookup dict for all field maps
+FIELD_MAPS = {
+    "cost_center": FIELD_MAP_CC,
+    "profit_center": FIELD_MAP_PC,
+    "hierarchy": FIELD_MAP_HIERARCHY,
+    "balance": FIELD_MAP_BALANCE,
+    "gl_account": FIELD_MAP_GL,
+    "employee": FIELD_MAP_EMPLOYEE,
+    "entity": FIELD_MAP_ENTITY,
 }
 
 
@@ -69,8 +167,22 @@ def extract_from_sap(
     if not raw_data:
         return {"rows_extracted": 0, "batch_id": None}
 
+    # Normalize kind to singular canonical form
+    plural_map = {
+        "cost_centers": "cost_center",
+        "profit_centers": "profit_center",
+        "entities": "entity",
+        "hierarchies": "hierarchy",
+        "balances": "balance",
+        "gl_accounts": "gl_account",
+        "employees": "employee",
+    }
+    normalized = plural_map.get(kind, kind)
+
     # Map SAP fields to our CSV format
-    field_map = FIELD_MAP_CC if kind == "cost_centers" else FIELD_MAP_PC
+    field_map = FIELD_MAPS.get(normalized)
+    if not field_map:
+        raise ValueError(f"No field mapping for extraction kind: {normalized}")
     rows: list[dict] = []
     for item in raw_data:
         row = {}
@@ -93,7 +205,7 @@ def extract_from_sap(
     # Create upload batch
     batch = UploadBatch(
         filename=filename,
-        kind=kind.rstrip("s"),
+        kind=normalized,
         file_path=str(file_path),
         status="uploaded",
         rows_total=len(rows),
@@ -123,7 +235,7 @@ def list_available_extractions(db: Session) -> list[dict]:
             "connection_id": c.id,
             "name": c.name,
             "protocol": c.protocol,
-            "available_kinds": list(ENTITY_SETS.keys()) if c.protocol == "odata" else [],
+            "available_kinds": CANONICAL_KINDS,
         }
         for c in connections
     ]

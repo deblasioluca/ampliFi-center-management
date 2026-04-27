@@ -132,6 +132,7 @@ export const prerender = false;
 
   function fmt(n) { if (n == null) return '--'; if (typeof n === 'string') return n; return Number(n).toLocaleString(); }
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
   // Load waves
   fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -538,17 +539,17 @@ export const prerender = false;
     var selectedRoutines = (cfg ? (cfg.config.routines || []).map(function(r) { return r.code || r; }) : []);
     var html = '<div class="space-y-3">' +
       '<div><label class="block text-xs text-gray-500 mb-1">Config Name</label>' +
-      '<input id="cfg-name" type="text" class="input text-sm w-full" value="' + esc(cfg ? cfg.name : '') + '" /></div>' +
+      '<input id="cfg-name" type="text" class="input text-sm w-full" value="' + escAttr(cfg ? cfg.name : '') + '" /></div>' +
       '<div><label class="block text-xs text-gray-500 mb-1">Description</label>' +
-      '<input id="cfg-desc" type="text" class="input text-sm w-full" value="' + esc(cfg ? (cfg.description || '') : '') + '" /></div>' +
+      '<input id="cfg-desc" type="text" class="input text-sm w-full" value="' + escAttr(cfg ? (cfg.description || '') : '') + '" /></div>' +
       '<div><label class="block text-xs text-gray-500 mb-1">Code (unique identifier)</label>' +
-      '<input id="cfg-code" type="text" class="input text-sm w-48" value="' + esc(cfg ? cfg.code : '') + '" ' + (cfg ? 'readonly' : '') + ' /></div>' +
+      '<input id="cfg-code" type="text" class="input text-sm w-48" value="' + escAttr(cfg ? cfg.code : '') + '" ' + (cfg ? 'readonly' : '') + ' /></div>' +
       '<div><label class="block text-xs text-gray-500 mb-1">Select Routines to Include</label>' +
       '<div class="grid grid-cols-1 md:grid-cols-2 gap-1">';
     routines.forEach(function(r) {
       var checked = selectedRoutines.indexOf(r.code) >= 0 ? ' checked' : '';
       html += '<label class="flex items-center gap-2 text-sm p-1 bg-white rounded border">' +
-        '<input type="checkbox" class="cfg-routine" value="' + esc(r.code) + '"' + checked + ' />' +
+        '<input type="checkbox" class="cfg-routine" value="' + escAttr(r.code) + '"' + checked + ' />' +
         '<span class="font-medium">' + esc(r.name) + '</span>' +
         '<span class="text-xs text-gray-400">(' + r.kind + '/' + (r.tree || 'any') + ')</span></label>';
     });

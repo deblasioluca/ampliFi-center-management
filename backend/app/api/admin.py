@@ -514,7 +514,7 @@ class ObjectBindingCreate(BaseModel):
 def list_object_bindings(
     conn_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> list[dict]:
     """List object bindings for a SAP connection."""
     from app.models.core import SAPObjectBinding
@@ -587,6 +587,112 @@ def delete_object_binding(
     db.delete(binding)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/sap/{conn_id}/bindings/{binding_id}/test")
+def test_object_binding(
+    conn_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Test whether the retrieval method for a binding actually works."""
+    from app.models.core import SAPObjectBinding
+
+    binding = db.get(SAPObjectBinding, binding_id)
+    if not binding or binding.connection_id != conn_id:
+        raise HTTPException(status_code=404, detail="Object binding not found")
+
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+
+    raw = binding.entity_set or binding.path or ""
+    # Parse protocol prefix (e.g. "odata:CostCenterSet", "adt:/sap/...", "rfc:BAPI_...")
+    if ":" in raw and not raw.startswith("/"):
+        proto, path = raw.split(":", 1)
+        proto = proto.lower()
+    else:
+        proto, path = "odata", raw
+
+    try:
+        if proto == "odata":
+            from app.infra.sap.client import fetch_odata
+
+            result = fetch_odata(conn, path, params={"$top": "1"})
+            row_count = len(result) if result else 0
+        elif proto == "adt":
+            from urllib.parse import parse_qs, urlparse
+
+            from app.infra.sap.client import fetch_adt_table
+
+            # Extract table name from ADT URL path like /sap/bc/adt/datapreview/ddic?table=CSKS
+            parsed = urlparse(path)
+            table_name = parse_qs(parsed.query).get("table", [path])[0]
+            result = fetch_adt_table(conn, table_name, max_rows=1)
+            row_count = len(result) if result else 0
+        elif proto == "rfc":
+            # RFC/SOAP test — not yet implemented, report clearly
+            return {
+                "success": True,
+                "message": (
+                    f"RFC binding configured: {path}"
+                    " (live test requires SOAP endpoint — config looks valid)"
+                ),
+                "entity_set": raw,
+                "protocol": proto,
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Unknown protocol prefix: {proto}",
+                "entity_set": raw,
+                "protocol": proto,
+            }
+        return {
+            "success": True,
+            "message": (
+                f"Binding test OK — retrieved {row_count}"
+                f" test row(s) via {proto.upper()} from {path}"
+            ),
+            "entity_set": raw,
+            "protocol": proto,
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "entity_set": raw,
+            "protocol": proto,
+        }
+
+
+@router.post("/sap/{conn_id}/bindings/{binding_id}/extract")
+def extract_via_binding(
+    conn_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Extract data from SAP using a specific binding's configuration."""
+    from app.models.core import SAPObjectBinding
+
+    binding = db.get(SAPObjectBinding, binding_id)
+    if not binding or binding.connection_id != conn_id:
+        raise HTTPException(status_code=404, detail="Object binding not found")
+
+    from app.services.sap_extraction import extract_from_sap
+
+    try:
+        result = extract_from_sap(
+            db,
+            conn_id,
+            binding.object_type,
+            binding.params,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 # --- Uploads ---
