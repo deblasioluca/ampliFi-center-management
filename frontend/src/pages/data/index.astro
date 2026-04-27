@@ -1394,7 +1394,19 @@ import Layout from '../../components/layout/Layout.astro';
   var dbHierSelectedNode = null;
 
   window.selectHierNode = function(nodeName) {
+    // Remove highlight from previous selection
+    var prev = document.querySelector('[data-hier-node].bg-blue-50');
+    if (prev) {
+      prev.classList.remove('font-bold', 'text-blue-700', 'bg-blue-50');
+      prev.classList.add(prev.dataset.hierNode === '__unassigned__' ? 'text-gray-500' : 'text-gray-800');
+    }
     dbHierSelectedNode = nodeName;
+    // Add highlight to new selection
+    var cur = document.querySelector('[data-hier-node="' + CSS.escape(nodeName) + '"]');
+    if (cur) {
+      cur.classList.add('font-bold', 'text-blue-700', 'bg-blue-50');
+      cur.classList.remove('text-gray-800', 'text-gray-500');
+    }
     renderHierDetail();
   };
 
@@ -1572,7 +1584,7 @@ import Layout from '../../components/layout/Layout.astro';
       var isSelected = dbHierSelectedNode === nodeName;
       var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
       out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
-      out += '<span class="text-xs cursor-pointer hover:text-blue-600 truncate' + (isSelected ? ' font-bold text-blue-700 bg-blue-50 px-1 rounded' : ' text-gray-800') + '" onclick="selectHierNode(\'' + escAttr(nodeName) + '\')" title="' + escAttr(nodeName) + '">';
+      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" onclick="selectHierNode(\'' + escAttr(nodeName) + '\')" title="' + escAttr(nodeName) + '">';
       out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
@@ -1592,7 +1604,7 @@ import Layout from '../../components/layout/Layout.astro';
     var unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
     if (unassignedCount) {
       var isUA = dbHierSelectedNode === '__unassigned__';
-      html += '<div class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '" onclick="selectHierNode(\'__unassigned__\')">';
+      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '" onclick="selectHierNode(\'__unassigned__\')">';
       html += 'Unassigned (' + unassignedCount + ')</div>';
     }
 
