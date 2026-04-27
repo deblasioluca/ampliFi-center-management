@@ -140,6 +140,14 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 		source $(VENV)/bin/activate && \
 		pip install -e ".[dev]" 2>&1 | tail -3 && \
 		echo "[ok] Backend dependencies updated"
+	@cd $(BACKEND_DIR) && \
+		source $(VENV)/bin/activate && \
+		python -m alembic upgrade head 2>&1 | tail -5 && \
+		echo "[ok] Database migrations applied"
+	@cd $(BACKEND_DIR) && \
+		source $(VENV)/bin/activate && \
+		python -m app.cli seed 2>&1 | tail -5 && \
+		echo "[ok] Admin user + sample data seeded"
 	@$(MAKE) restart
 	@echo "=== Update complete ==="
 

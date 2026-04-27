@@ -10,13 +10,15 @@ export const prerender = false;
       <h2 class="text-xl font-bold">Analytics Dashboard</h2>
       <p class="text-sm text-gray-500">Comprehensive visualizations of analysis results</p>
     </div>
-    <div class="flex gap-2">
+    <div class="flex gap-2 items-center">
       <select id="sel-wave" class="input text-sm w-48">
         <option value="">Select Wave...</option>
+        <option value="__global__">— Global (all data) —</option>
       </select>
       <select id="sel-run" class="input text-sm w-48">
         <option value="">Select Run...</option>
       </select>
+      <button id="btn-run-global" class="btn-amplifi text-sm whitespace-nowrap">Run Global Analysis</button>
     </div>
   </div>
 
@@ -115,15 +117,38 @@ export const prerender = false;
       opt.textContent = w.name + ' (' + w.status + ')';
       sel.appendChild(opt);
     });
-    // Auto-select first wave with completed analysis
+    // Auto-select from URL params or first available
     var params = new URLSearchParams(window.location.search);
     if (params.get('wave')) sel.value = params.get('wave');
-    if (sel.value) loadWaveRuns(sel.value);
+    else if (params.get('global') === '1') sel.value = '__global__';
+    if (sel.value) handleWaveSelect(sel.value);
   });
 
   document.getElementById('sel-wave').addEventListener('change', function() {
-    if (this.value) loadWaveRuns(this.value);
+    if (this.value) handleWaveSelect(this.value);
   });
+
+  function handleWaveSelect(val) {
+    if (val === '__global__') {
+      loadGlobalRuns();
+    } else {
+      loadWaveRuns(val);
+    }
+  }
+
+  function loadGlobalRuns() {
+    fetch('/api/runs/global/list?size=50', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var sel = document.getElementById('sel-run');
+      sel.innerHTML = '<option value="">Select Run...</option>';
+      (d.items || []).filter(function(r) { return r.status === 'completed'; }).forEach(function(r) {
+        var opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = 'Global Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
+        sel.appendChild(opt);
+      });
+      if (sel.options.length > 1) { sel.selectedIndex = 1; loadRunVisuals(sel.value, null); }
+    });
+  }
 
   function loadWaveRuns(waveId) {
     fetch('/api/waves/' + waveId + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -367,4 +392,29 @@ export const prerender = false;
     });
     el.innerHTML = html + '</div>';
   }
+
+  // Global Analysis button
+  document.getElementById('btn-run-global').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    fetch('/api/runs/global', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHdr),
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(b) { throw new Error(b.detail || 'Failed'); });
+      return r.json();
+    }).then(function(d) {
+      btn.textContent = 'Run Global Analysis';
+      btn.disabled = false;
+      alert('Global analysis completed — Run #' + d.run_id + ' (' + (d.kpis ? d.kpis.total_centers : '?') + ' centers)');
+      // Switch to global view and reload
+      document.getElementById('sel-wave').value = '__global__';
+      loadGlobalRuns();
+    }).catch(function(err) {
+      btn.textContent = 'Run Global Analysis';
+      btn.disabled = false;
+      alert('Error: ' + err.message);
+    });
+  });
 </script>

@@ -196,11 +196,18 @@ def _scope_query(wave: Wave, db: Session):
     return cc_query
 
 
-def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) -> AnalysisRun:
-    """Execute decision tree analysis on all cost centers in a wave's scope."""
-    wave = db.get(Wave, wave_id)
-    if not wave:
-        raise ValueError(f"Wave {wave_id} not found")
+def execute_analysis(wave_id: int | None, config_id: int, user_id: int, db: Session) -> AnalysisRun:
+    """Execute decision tree analysis.
+
+    If *wave_id* is provided, only cost centers in the wave's scope are
+    analysed. If *wave_id* is ``None``, **all** cost centers are analysed
+    (global / full-scope analysis).
+    """
+    wave = None
+    if wave_id is not None:
+        wave = db.get(Wave, wave_id)
+        if not wave:
+            raise ValueError(f"Wave {wave_id} not found")
 
     config = db.get(AnalysisConfig, config_id)
     if not config:
@@ -217,7 +224,7 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     db.add(run)
     db.flush()
 
-    cc_query = _scope_query(wave, db)
+    cc_query = _scope_query(wave, db) if wave is not None else select(LegacyCostCenter)
     cost_centers = db.execute(cc_query).scalars().all()
     params = config.config.get("params", {}) if config.config else {}
     pipeline_config = config.config if config.config else {}
@@ -346,7 +353,7 @@ def execute_analysis(wave_id: int, config_id: int, user_id: int, db: Session) ->
     run.finished_at = datetime.now(UTC)
     run.kpis = kpis
 
-    if wave.status == "draft":
+    if wave is not None and wave.status == "draft":
         wave.status = "analysing"
 
     db.commit()
