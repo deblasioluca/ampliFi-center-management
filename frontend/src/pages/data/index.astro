@@ -1201,6 +1201,7 @@ import Layout from '../../components/layout/Layout.astro';
       .then(function(d) {
         dbData = d;
         dbColFilters = {};
+        dbHierSelectedNode = null;
         renderDB();
       })
       .catch(function(err) {
@@ -1589,7 +1590,7 @@ import Layout from '../../components/layout/Layout.astro';
       var isSelected = dbHierSelectedNode === nodeName;
       var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
       out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
-      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" onclick="selectHierNode(\'' + escAttr(nodeName) + '\')" title="' + escAttr(nodeName) + '">';
+      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
       out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
@@ -1609,7 +1610,7 @@ import Layout from '../../components/layout/Layout.astro';
     var unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
     if (unassignedCount) {
       var isUA = dbHierSelectedNode === '__unassigned__';
-      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '" onclick="selectHierNode(\'__unassigned__\')">';
+      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '">';
       html += 'Unassigned (' + unassignedCount + ')</div>';
     }
 
@@ -1622,6 +1623,13 @@ import Layout from '../../components/layout/Layout.astro';
 
     html += '</div>';
     el.innerHTML = html;
+
+    // Bind click handlers via addEventListener (avoids XSS from inline onclick with dynamic data)
+    el.querySelectorAll('[data-hier-node]').forEach(function(nodeEl) {
+      nodeEl.addEventListener('click', function() {
+        selectHierNode(this.dataset.hierNode);
+      });
+    });
 
     // If a node was previously selected, render its detail
     if (dbHierSelectedNode) renderHierDetail();
