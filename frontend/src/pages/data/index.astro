@@ -1192,7 +1192,7 @@ import Layout from '../../components/layout/Layout.astro';
   function loadDataBrowser() {
     var el = document.getElementById('db-content');
     el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
-    fetch('/api/data/browser', { headers: authHdr })
+    (window.apiFetch || fetch)('/api/data/browser')
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
