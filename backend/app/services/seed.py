@@ -370,19 +370,23 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
         "employees": 0,
     }
 
-    # Deduplicate legacy cost centers (remove older duplicates, keep newest)
+    # Deduplicate sample cost centers only (scoped to known sample IDs)
     from sqlalchemy import text
 
-    db.execute(
-        text("""
-        DELETE FROM cleanup.legacy_cost_center
-        WHERE id NOT IN (
-            SELECT MAX(id) FROM cleanup.legacy_cost_center
-            GROUP BY coarea, cctr
+    sample_cctrs = tuple(SAMPLE_CC_CCTRS)
+    if sample_cctrs:
+        db.execute(
+            text("""
+            DELETE FROM cleanup.legacy_cost_center
+            WHERE coarea = :coarea AND cctr IN :cctrs AND id NOT IN (
+                SELECT MAX(id) FROM cleanup.legacy_cost_center
+                WHERE coarea = :coarea AND cctr IN :cctrs
+                GROUP BY coarea, cctr
+            )
+            """),
+            {"coarea": COAREA, "cctrs": sample_cctrs},
         )
-        """)
-    )
-    db.flush()
+        db.flush()
 
     # Entities
     for ccode, name, country, region, currency in SAMPLE_ENTITIES:
