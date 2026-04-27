@@ -554,8 +554,8 @@ import Layout from '../../components/layout/Layout.astro';
             '">' + esc(typeLabel) + '</span></td>' +
           '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
           '<td class="py-1.5 px-2">' +
-            '<span id="hier-label-' + h.id + '-text">' + esc(h.label || '') + '</span>' +
-            '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" />' +
+            '<span id="hier-label-' + h.id + '-text">' + esc(h.display_label || h.label || '') + '</span>' +
+            '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" data-orig="' + escAttr(h.label || '') + '" placeholder="' + escAttr(h.display_label || '') + '" />' +
           '</td>' +
           '<td class="py-1.5 px-2 text-gray-500">' + esc(h.description || '') + '</td>' +
           '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea || '') + '</td>' +
@@ -585,11 +585,19 @@ import Layout from '../../components/layout/Layout.astro';
     var textEl = document.getElementById('hier-label-' + hierId + '-text');
     if (!inputEl || inputEl.classList.contains('hidden')) return;
     var label = inputEl.value.trim();
+    var origVal = inputEl.getAttribute('data-orig') || '';
+    // Skip save if value unchanged (prevents freezing auto-labels on blur)
+    if (label === origVal) {
+      inputEl.classList.add('hidden');
+      textEl.classList.remove('hidden');
+      return;
+    }
     fetch('/api/admin/hierarchies/' + hierId + '?label=' + encodeURIComponent(label), {
       method: 'PATCH', headers: authHdr
     }).then(function(r) { return r.json(); }).then(function(h) {
-      textEl.textContent = h.label || '';
+      textEl.textContent = h.display_label || h.label || '';
       inputEl.value = h.label || '';
+      inputEl.setAttribute('data-orig', h.label || '');
       inputEl.classList.add('hidden');
       textEl.classList.remove('hidden');
     }).catch(function() {

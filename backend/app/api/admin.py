@@ -893,7 +893,8 @@ def list_hierarchies(
             "id": h.id,
             "setclass": h.setclass,
             "setname": h.setname,
-            "label": _hier_label(h, class_labels),
+            "label": h.label or "",
+            "display_label": _hier_label(h, class_labels),
             "description": h.description,
             "coarea": h.coarea,
             "is_active": h.is_active,
@@ -918,7 +919,7 @@ def update_hierarchy(
     if not h:
         raise HTTPException(status_code=404, detail="Hierarchy not found")
     if label is not None:
-        h.label = label
+        h.label = label if label else None
     if is_active is not None:
         h.is_active = is_active
     db.commit()
@@ -927,7 +928,8 @@ def update_hierarchy(
         "id": h.id,
         "setclass": h.setclass,
         "setname": h.setname,
-        "label": _hier_label(h),
+        "label": h.label or "",
+        "display_label": _hier_label(h),
         "description": h.description,
         "coarea": h.coarea,
         "is_active": h.is_active,
