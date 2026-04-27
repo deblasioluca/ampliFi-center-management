@@ -538,7 +538,8 @@ def extract_from_sap(
             error=str(exc),
         )
 
-    return {"rows_extracted": len(rows), "batch_id": batch.id}
+    db.refresh(batch)
+    return {"rows_extracted": len(rows), "batch_id": batch.id, "status": batch.status}
 
 
 def list_available_extractions(db: Session) -> list[dict]:
