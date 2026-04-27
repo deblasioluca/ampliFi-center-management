@@ -96,6 +96,26 @@ def scope_items(
     total_q = select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
     if decision:
         total_q = total_q.where(ReviewItem.decision == decision)
+    if search:
+        from app.models.core import LegacyCostCenter
+
+        total_q = (
+            total_q.join(
+                CenterProposal,
+                ReviewItem.proposal_id == CenterProposal.id,
+                isouter=True,
+            )
+            .join(
+                LegacyCostCenter,
+                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+                isouter=True,
+            )
+            .where(
+                LegacyCostCenter.cctr.ilike(f"%{search}%")
+                | LegacyCostCenter.txtsh.ilike(f"%{search}%")
+                | LegacyCostCenter.ccode.ilike(f"%{search}%")
+            )
+        )
     total = db.execute(total_q).scalar() or 0
     result = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size))
     items = result.unique().scalars().all()
