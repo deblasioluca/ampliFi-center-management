@@ -1344,19 +1344,25 @@ def update_datasphere_config(
         config = DatasphereConfig(ds_schema="ACM")
         db.add(config)
 
-    config.ds_url = body.ds_url
-    config.ds_schema = body.ds_schema
-    config.ds_user = body.ds_user
-    config.ds_use_ssl = body.ds_use_ssl
-    config.is_active = body.is_active
+    provided = body.model_fields_set
+    if "ds_url" in provided:
+        config.ds_url = body.ds_url
+    if "ds_schema" in provided:
+        config.ds_schema = body.ds_schema
+    if "ds_user" in provided:
+        config.ds_user = body.ds_user
+    if "ds_use_ssl" in provided:
+        config.ds_use_ssl = body.ds_use_ssl
+    if "is_active" in provided:
+        config.is_active = body.is_active
     config.updated_by = user.id
 
-    if body.ds_password:
-        from app.infra.crypto import encrypt_password
+    if "ds_password" in provided and body.ds_password:
+        from app.infra.sap.encryption import encrypt_password
 
         config.ds_password_encrypted = encrypt_password(body.ds_password)
 
-    if body.domain_config is not None:
+    if "domain_config" in provided and body.domain_config is not None:
         config.domain_config = body.domain_config
 
     db.commit()

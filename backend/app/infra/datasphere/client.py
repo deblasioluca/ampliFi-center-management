@@ -93,6 +93,8 @@ class DatasphereClient:
 
     def execute_ddl(self, ddl: str) -> dict[str, Any]:
         """Execute DDL statement(s) on the Datasphere schema."""
+        conn = None
+        cursor = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
@@ -101,12 +103,15 @@ class DatasphereClient:
                 if stmt:
                     cursor.execute(stmt)
             conn.commit()
-            cursor.close()
-            conn.close()
-            self._conn = None
             return {"success": True, "message": "DDL executed successfully"}
         except Exception as exc:
             return {"success": False, "message": f"DDL execution failed: {exc}"}
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+            self._conn = None
 
     def close(self) -> None:
         if self._conn:

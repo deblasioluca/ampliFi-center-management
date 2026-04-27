@@ -122,7 +122,7 @@ def _build_client(db: Session) -> Any | None:
     password = ""
     if config.ds_password_encrypted:
         try:
-            from app.infra.crypto import decrypt_password
+            from app.infra.sap.encryption import decrypt_password
 
             password = decrypt_password(config.ds_password_encrypted)
         except Exception:
