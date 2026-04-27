@@ -778,7 +778,7 @@ def lookup_co_areas(
             d = tr.get("BEZEI", "").strip()
             if k and d:
                 desc_map[k] = d
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     result = []
@@ -831,7 +831,11 @@ def lookup_hierarchies(
             continue
         seen.add(setname)
         setclass = row.get("SETCLASS", "").strip()
-        kind = "cost_center" if setclass == "0101" else "profit_center" if setclass == "0104" else setclass
+        kind = (
+            "cost_center" if setclass == "0101"
+            else "profit_center" if setclass == "0104"
+            else setclass
+        )
         result.append({
             "set_name": setname,
             "description": row.get("DESSION", "").strip(),
@@ -845,6 +849,23 @@ def lookup_hierarchies(
 
 # --- Hierarchy Management ---
 
+_HIER_CLASS_LABELS = {
+    "0101": "Cost Center",
+    "0104": "Profit Center",
+    "0106": "Entity",
+}
+
+
+def _hier_label(h: object, labels: dict[str, str] | None = None) -> str:
+    """Build display label for a hierarchy."""
+    if getattr(h, "label", None):
+        return h.label  # type: ignore[return-value]
+    cls = labels or _HIER_CLASS_LABELS
+    base = f"{cls.get(h.setclass, h.setclass)}: {h.setname}"  # type: ignore[attr-defined]
+    if h.description:  # type: ignore[attr-defined]
+        base += f" — {h.description}"
+    return base
+
 
 @router.get("/hierarchies")
 def list_hierarchies(
@@ -854,14 +875,16 @@ def list_hierarchies(
     """List all hierarchies with their labels."""
     from app.models.core import Hierarchy
 
-    rows = db.execute(select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)).scalars().all()
+    rows = db.execute(
+        select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)
+    ).scalars().all()
     class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
     return [
         {
             "id": h.id,
             "setclass": h.setclass,
             "setname": h.setname,
-            "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}" + (f" — {h.description}" if h.description else ""),
+            "label": _hier_label(h, class_labels),
             "description": h.description,
             "coarea": h.coarea,
             "is_active": h.is_active,
@@ -891,12 +914,11 @@ def update_hierarchy(
         h.is_active = is_active
     db.commit()
     db.refresh(h)
-    class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
     return {
         "id": h.id,
         "setclass": h.setclass,
         "setname": h.setname,
-        "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}",
+        "label": _hier_label(h),
         "description": h.description,
         "coarea": h.coarea,
         "is_active": h.is_active,

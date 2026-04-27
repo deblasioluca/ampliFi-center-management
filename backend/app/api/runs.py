@@ -15,6 +15,17 @@ from app.models.core import AnalysisRun, AppUser, CenterProposal
 
 router = APIRouter()
 
+_HIER_CLS = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+
+
+def _hier_display_label(h: object) -> str:
+    if getattr(h, "label", None):
+        return h.label  # type: ignore[return-value]
+    base = f"{_HIER_CLS.get(h.setclass, h.setclass)}: {h.setname}"  # type: ignore[attr-defined]
+    if h.description:  # type: ignore[attr-defined]
+        base += f" — {h.description}"
+    return base
+
 
 class RunOut(BaseModel):
     id: int
@@ -285,8 +296,14 @@ def data_browser(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
-    """Combined data browser: legacy centers + monthly balances + analysis results + CC→PC mapping."""
-    from app.models.core import Balance, Hierarchy, HierarchyLeaf, HierarchyNode, LegacyCostCenter
+    """Combined data browser: centers + balances + results."""
+    from app.models.core import (
+        Balance,
+        Hierarchy,
+        HierarchyLeaf,
+        HierarchyNode,
+        LegacyCostCenter,
+    )
 
     run = db.get(AnalysisRun, run_id)
     if not run:
@@ -299,7 +316,11 @@ def data_browser(
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
     if cc_ids:
-        ccs = db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+        ccs = db.execute(
+            select(LegacyCostCenter).where(
+                LegacyCostCenter.id.in_(cc_ids)
+            )
+        ).scalars().all()
         cc_map = {c.id: c for c in ccs}
 
     # Monthly balances for all relevant cost centers
@@ -335,7 +356,9 @@ def data_browser(
             pc_target_groups.setdefault(target, []).append(cc_map[p.legacy_cc_id].cctr)
 
     # Hierarchy tree for hierarchical view
-    hierarchies = db.execute(select(Hierarchy).where(Hierarchy.is_active.is_(True))).scalars().all()
+    hierarchies = db.execute(
+        select(Hierarchy).where(Hierarchy.is_active.is_(True))
+    ).scalars().all()
     hier_trees = []
     for h in hierarchies:
         nodes = db.execute(
@@ -344,16 +367,21 @@ def data_browser(
         leaves = db.execute(
             select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id)
         ).scalars().all()
-        class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
         hier_trees.append({
             "id": h.id,
             "setname": h.setname,
             "setclass": h.setclass,
-            "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}" + (f" — {h.description}" if h.description else ""),
+            "label": _hier_display_label(h),
             "description": h.description,
             "coarea": h.coarea,
-            "nodes": [{"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq} for n in nodes],
-            "leaves": [{"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves],
+            "nodes": [
+                {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
+                for n in nodes
+            ],
+            "leaves": [
+                {"setname": lf.setname, "value": lf.value, "seq": lf.seq}
+                for lf in leaves
+            ],
         })
 
     items = []
