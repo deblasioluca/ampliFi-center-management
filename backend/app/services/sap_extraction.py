@@ -519,6 +519,25 @@ def extract_from_sap(
         rows=len(rows),
         batch_id=batch.id,
     )
+
+    # Auto-validate and auto-load into the target tables
+    from app.services.upload_processor import load_upload, validate_upload
+
+    try:
+        validate_upload(batch.id, db)
+        load_result = load_upload(batch.id, db)
+        logger.info(
+            "sap.extract.auto_loaded",
+            batch_id=batch.id,
+            rows_loaded=load_result.get("rows_loaded", 0),
+        )
+    except Exception as exc:
+        logger.warning(
+            "sap.extract.auto_load_failed",
+            batch_id=batch.id,
+            error=str(exc),
+        )
+
     return {"rows_extracted": len(rows), "batch_id": batch.id}
 
 
