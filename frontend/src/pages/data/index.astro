@@ -49,7 +49,8 @@ import Layout from '../../components/layout/Layout.astro';
   <!-- Tabs -->
   <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
     <div class="flex space-x-0 overflow-x-auto" id="data-tabs">
-      <button class="tab-active px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
+      <button class="tab-active px-4 py-3 whitespace-nowrap font-semibold text-blue-700" data-tab="data-browser">Data Browser</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="cost-centers">Cost Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
@@ -62,8 +63,24 @@ import Layout from '../../components/layout/Layout.astro';
 
   <!-- Tab Content -->
   <div class="card rounded-t-none border-t-0">
+    <!-- Data Browser Tab -->
+    <div id="tab-data-browser">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Data Browser</h3>
+        <div class="flex items-center gap-2">
+          <button id="db-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchDataBrowserView('tabular')">Tabular</button>
+          <button id="db-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchDataBrowserView('hierarchy')">Hierarchical</button>
+          <input id="db-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
+          <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+        </div>
+      </div>
+      <div id="db-content" class="text-xs overflow-x-auto">
+        <span class="text-sm text-gray-400">Loading data browser...</span>
+      </div>
+    </div>
+
     <!-- Entities Tab -->
-    <div id="tab-entities">
+    <div id="tab-entities" class="hidden">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
         <div class="flex items-center gap-2">
@@ -306,7 +323,7 @@ import Layout from '../../components/layout/Layout.astro';
     if (el) sortObserver.observe(el, { childList: true });
   });
 
-  var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','employees','upload','sample-data'];
+  var allTabs = ['data-browser','entities','cost-centers','profit-centers','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -330,6 +347,7 @@ import Layout from '../../components/layout/Layout.astro';
     if (typeof loadBalances === 'function') loadBalances(1);
     if (typeof loadHierarchies === 'function') loadHierarchies();
     if (typeof loadEmployees === 'function') loadEmployees(1);
+    if (typeof loadDataBrowser === 'function') loadDataBrowser();
   }
 
   // Load data counts
@@ -1165,5 +1183,259 @@ import Layout from '../../components/layout/Layout.astro';
       }
     };
   })();
+
+  // ─── Data Browser (unified view) ───────────────────────────────────
+  var dbData = null;
+  var dbView = 'tabular';
+  var dbSort = { col: 'cctr', dir: 'asc' };
+
+  function loadDataBrowser() {
+    var el = document.getElementById('db-content');
+    el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
+    fetch('/api/data/browser', { headers: authHdr })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(d) {
+        dbData = d;
+        renderDB();
+      })
+      .catch(function(err) {
+        el.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
+      });
+  }
+
+  window.switchDataBrowserView = function(view) {
+    dbView = view;
+    var tabBtn = document.getElementById('db-view-tabular');
+    var hierBtn = document.getElementById('db-view-hierarchy');
+    if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    renderDB();
+  };
+
+  window.sortDB = function(col) {
+    if (dbSort.col === col) {
+      dbSort.dir = dbSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      dbSort.col = col;
+      dbSort.dir = 'asc';
+    }
+    renderDB();
+  };
+
+  function dbSortArrow(col) {
+    if (dbSort.col !== col) return ' <span class="text-gray-300">&#8597;</span>';
+    return dbSort.dir === 'asc' ? ' &#8593;' : ' &#8595;';
+  }
+
+  function dbSortItems(items) {
+    var col = dbSort.col, dir = dbSort.dir === 'asc' ? 1 : -1;
+    return items.slice().sort(function(a, b) {
+      var va = a[col], vb = b[col];
+      if (va == null) va = '';
+      if (vb == null) vb = '';
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  window.renderDB = renderDB;
+  function renderDB() {
+    if (!dbData) return;
+    var el = document.getElementById('db-content');
+    var search = (document.getElementById('db-search').value || '').toLowerCase();
+    var items = dbData.items || [];
+    if (search) {
+      items = items.filter(function(it) {
+        return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.txtmi || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.ccode || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.pctr || '').toLowerCase().indexOf(search) >= 0;
+      });
+    }
+    if (dbView === 'tabular') {
+      renderDBTabular(el, items);
+    } else {
+      renderDBHierarchical(el, items);
+    }
+  }
+
+  function renderDBTabular(el, items) {
+    if (!items.length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
+    var sorted = dbSortItems(items);
+    // Collect all balance periods
+    var periods = {};
+    items.forEach(function(it) {
+      (it.monthly_balances || []).forEach(function(b) {
+        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+        periods[key] = 1;
+      });
+    });
+    var pKeys = Object.keys(periods).sort();
+
+    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
+    var cols = [
+      { key: 'cctr', label: 'CC' },
+      { key: 'txtsh', label: 'Short Text' },
+      { key: 'ccode', label: 'Entity' },
+      { key: 'coarea', label: 'CO Area' },
+      { key: 'pctr', label: 'Profit Ctr' },
+      { key: 'pc_txtsh', label: 'PC Text' },
+      { key: 'responsible', label: 'Responsible' },
+      { key: 'is_active', label: 'Active' }
+    ];
+    cols.forEach(function(c) {
+      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
+    });
+    pKeys.forEach(function(pk) {
+      html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(pk) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    sorted.forEach(function(it) {
+      var balMap = {};
+      (it.monthly_balances || []).forEach(function(b) {
+        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
+      });
+      html += '<tr class="border-b hover:bg-gray-50">';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
+      html += '<td class="py-1 px-2 text-center">' + (it.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      pKeys.forEach(function(pk) {
+        var b = balMap[pk];
+        if (b) {
+          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + '</td>';
+        } else {
+          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  }
+
+  function renderDBHierarchical(el, items) {
+    var hiers = (dbData.hierarchies || []);
+    if (!hiers.length) { el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchies via SAP extraction or upload.</span>'; return; }
+
+    // Build a map of cctr -> item for leaf lookup
+    var ccMap = {};
+    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
+
+    // Build balance totals per CC for display
+    var balTotals = {};
+    items.forEach(function(it) {
+      var total = 0;
+      (it.monthly_balances || []).forEach(function(b) { total += b.amount; });
+      balTotals[it.cctr] = total;
+    });
+
+    // Hierarchy selector — read current selection before rebuilding
+    var selIdx = 0;
+    var selEl = document.getElementById('db-hier-select');
+    if (selEl) selIdx = parseInt(selEl.value) || 0;
+    var hier = hiers[selIdx] || hiers[0];
+
+    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="renderDB()">';
+    hiers.forEach(function(h, i) {
+      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+    });
+    html += '</select></div>';
+
+    // Build tree from nodes + leaves
+    var childMap = {};
+    (hier.nodes || []).forEach(function(n) {
+      if (!childMap[n.parent]) childMap[n.parent] = [];
+      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
+    });
+    (hier.leaves || []).forEach(function(lf) {
+      if (!childMap[lf.setname]) childMap[lf.setname] = [];
+      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
+    });
+
+    // Find root: nodes that appear as parents but not as children
+    var allChildren = {};
+    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
+    var roots = [];
+    (hier.nodes || []).forEach(function(n) {
+      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
+    });
+    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
+
+    function buildTree(nodeName, depth) {
+      var pad = depth * 20;
+      var children = childMap[nodeName] || [];
+      children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
+      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5">';
+      out += '<span class="font-medium text-blue-800 cursor-pointer" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\')">';
+      out += '&#9654; ' + esc(nodeName) + '</span></div>';
+      out += '<div class="tree-children">';
+      children.forEach(function(c) {
+        if (c.type === 'node') {
+          out += buildTree(c.name, depth + 1);
+        } else {
+          var cc = ccMap[c.value];
+          var bal = balTotals[c.value];
+          out += '<div style="padding-left:' + ((depth + 1) * 20) + 'px" class="py-0.5 flex items-center gap-3 hover:bg-gray-50">';
+          out += '<span class="font-mono text-xs">' + esc(c.value) + '</span>';
+          if (cc) {
+            out += ' <span class="text-gray-600">' + esc(cc.txtsh || '') + '</span>';
+            out += ' <span class="text-gray-400 text-[10px]">' + esc(cc.ccode || '') + '</span>';
+            if (cc.pctr) out += ' <span class="text-purple-600 text-[10px]">PC: ' + esc(cc.pctr) + '</span>';
+          }
+          if (bal != null) {
+            var balStr = bal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+            out += ' <span class="font-mono text-[10px]' + (bal < 0 ? ' text-red-600' : ' text-green-700') + '">' + balStr + '</span>';
+          }
+          out += '</div>';
+        }
+      });
+      out += '</div>';
+      return out;
+    }
+
+    roots.forEach(function(root) {
+      html += buildTree(root, 0);
+    });
+
+    // Show unassigned CCs (not in any hierarchy leaf)
+    var assigned = {};
+    (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
+    var unassigned = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
+    if (unassigned.length) {
+      html += '<div class="mt-4 pt-3 border-t"><span class="font-medium text-gray-500">Unassigned (' + unassigned.length + ')</span></div>';
+      unassigned.forEach(function(it) {
+        html += '<div style="padding-left:20px" class="py-0.5 text-gray-500">';
+        html += '<span class="font-mono">' + esc(it.cctr) + '</span> ' + esc(it.txtsh || '');
+        html += '</div>';
+      });
+    }
+
+    el.innerHTML = html;
+  }
+
+  // Wire search
+  document.getElementById('db-search').addEventListener('input', function() {
+    clearTimeout(this._t);
+    this._t = setTimeout(function() { renderDB(); }, 300);
+  });
+
+  // Load on page init
+  loadDataBrowser();
+
 })();
 </script>

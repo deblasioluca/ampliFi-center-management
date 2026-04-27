@@ -654,13 +654,20 @@ export const prerender = false;
     var el = document.getElementById('data-browser-content');
     el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
     fetch('/api/runs/' + runId + '/data-browser', { headers: authHdr })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function(d) {
         browserData = d;
+        if (!d.items || !d.items.length) {
+          el.innerHTML = '<span class="text-gray-400">No proposals found for this run. Run analysis first to see data.</span>';
+          return;
+        }
         renderBrowser();
       })
       .catch(function(err) {
-        el.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
+        el.innerHTML = '<span class="text-red-500">Error loading data browser: ' + esc(err.message) + '</span>';
       });
   }
 
