@@ -1255,12 +1255,9 @@ import Layout from '../../components/layout/Layout.astro';
     renderDB();
   };
 
-  window.renderDB = renderDB;
-  function renderDB() {
-    if (!dbData) return;
-    var el = document.getElementById('db-content');
+  function getFilteredItems() {
     var search = (document.getElementById('db-search').value || '').toLowerCase();
-    var items = dbData.items || [];
+    var items = (dbData && dbData.items) || [];
     if (search) {
       items = items.filter(function(it) {
         return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
@@ -1272,7 +1269,6 @@ import Layout from '../../components/layout/Layout.astro';
           (it.pctr || '').toLowerCase().indexOf(search) >= 0;
       });
     }
-    // Apply per-column filters
     Object.keys(dbColFilters).forEach(function(col) {
       var fv = dbColFilters[col];
       if (!fv) return;
@@ -1281,6 +1277,14 @@ import Layout from '../../components/layout/Layout.astro';
         return String(it[col] || '') === fv;
       });
     });
+    return items;
+  }
+
+  window.renderDB = renderDB;
+  function renderDB() {
+    if (!dbData) return;
+    var el = document.getElementById('db-content');
+    var items = getFilteredItems();
     if (dbView === 'tabular') {
       renderDBTabular(el, items);
     } else {
@@ -1397,7 +1401,7 @@ import Layout from '../../components/layout/Layout.astro';
   function renderHierDetail() {
     var detailEl = document.getElementById('db-hier-detail');
     if (!detailEl || !dbData) return;
-    var items = dbData.items || [];
+    var items = getFilteredItems();
     var ccMap = {};
     items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
 
@@ -1555,7 +1559,10 @@ import Layout from '../../components/layout/Layout.astro';
     function countLeaves(node) {
       var ch = childMap[node] || [];
       var cnt = 0;
-      ch.forEach(function(c) { cnt += c.type === 'leaf' ? 1 : countLeaves(c.name); });
+      ch.forEach(function(c) {
+        if (c.type === 'leaf') { if (ccMap[c.value]) cnt++; }
+        else { cnt += countLeaves(c.name); }
+      });
       return cnt;
     }
 
