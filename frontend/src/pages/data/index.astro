@@ -168,33 +168,76 @@ import Layout from '../../components/layout/Layout.astro';
 
     <!-- Upload Tab -->
     <div id="tab-upload" class="hidden">
-      <h3 class="text-base font-semibold mb-3">Upload Data File</h3>
-      <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
-      <form id="upload-form" class="space-y-4 max-w-lg">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Option A: File Upload -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
-          <select id="upload-type" class="input">
-            <option value="cost_centers">Cost Centers</option>
-            <option value="profit_centers">Profit Centers</option>
-            <option value="balances">Balances</option>
-            <option value="entities">Entities</option>
-            <option value="hierarchies">Hierarchies</option>
-            <option value="employees">Employees (SAP HR)</option>
-          </select>
+          <h3 class="text-base font-semibold mb-1">Option A: Upload from File</h3>
+          <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
+          <form id="upload-form" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+              <select id="upload-type" class="input">
+                <option value="cost_centers">Cost Centers</option>
+                <option value="profit_centers">Profit Centers</option>
+                <option value="balances">Balances</option>
+                <option value="entities">Entities</option>
+                <option value="hierarchies">Hierarchies</option>
+                <option value="employees">Employees (SAP HR)</option>
+              </select>
+            </div>
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+              <span class="font-medium">Template:</span>
+              <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
+              <input type="file" id="upload-file" accept=".csv,.xlsx,.xls,.tsv" class="input" required />
+            </div>
+            <div class="flex gap-3">
+              <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
+            </div>
+            <div id="upload-result" class="text-sm hidden"></div>
+          </form>
         </div>
-        <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-          <span class="font-medium">Template:</span>
-          <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
-        </div>
+
+        <!-- Option B: Source from SAP -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
-          <input type="file" id="upload-file" accept=".csv,.xlsx,.xls,.tsv" class="input" required />
+          <h3 class="text-base font-semibold mb-1">Option B: Source from SAP</h3>
+          <p class="text-xs text-gray-500 mb-4">Extract data directly from a connected SAP system via OData. Configure connections under <a href="/admin/sap" class="text-blue-600 underline">Admin &rarr; SAP Connections</a>.</p>
+          <div id="sap-extract-area" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">SAP Connection</label>
+              <select id="sap-extract-conn" class="input">
+                <option value="">Loading connections...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data Type to Extract</label>
+              <select id="sap-extract-kind" class="input">
+                <option value="cost_center">Cost Centers</option>
+                <option value="profit_center">Profit Centers</option>
+                <option value="hierarchy">Hierarchies</option>
+                <option value="balance">Balances</option>
+                <option value="gl_account">GL Accounts</option>
+                <option value="employee">Employees</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">OData Parameters (optional)</label>
+              <input id="sap-extract-params" type="text" class="input text-sm" placeholder='e.g. {"$filter": "CompanyCode eq \'1000\'"}' />
+              <p class="text-[11px] text-gray-400 mt-1">JSON object with OData query params ($filter, $top, $select, etc.)</p>
+            </div>
+            <div class="flex gap-3">
+              <button id="sap-extract-btn" class="btn-amplifi">Extract from SAP</button>
+            </div>
+            <div id="sap-extract-result" class="text-sm hidden"></div>
+          </div>
+          <div id="sap-no-connections" class="hidden p-4 bg-gray-50 rounded-lg text-center">
+            <p class="text-sm text-gray-500">No SAP connections configured yet.</p>
+            <a href="/admin/sap" class="text-blue-600 text-sm underline mt-1 inline-block">Configure SAP Connections &rarr;</a>
+          </div>
         </div>
-        <div class="flex gap-3">
-          <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
-        </div>
-        <div id="upload-result" class="text-sm hidden"></div>
-      </form>
+      </div>
 
       <!-- Upload History with Actions -->
       <div class="mt-6 pt-6 border-t border-gray-200">
@@ -820,5 +863,72 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('sample-result').className = 'text-sm mt-3 text-red-600';
     } finally { this.disabled = false; this.textContent = 'Delete Sample Data'; }
   });
+
+  // --- SAP Extraction ---
+  (function initSAPExtract() {
+    fetch('/api/data/sap-extract/available', { headers: authHdr })
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(connections) {
+        var sel = document.getElementById('sap-extract-conn');
+        var area = document.getElementById('sap-extract-area');
+        var noConn = document.getElementById('sap-no-connections');
+        if (!connections || !connections.length) {
+          area.classList.add('hidden');
+          noConn.classList.remove('hidden');
+          sel.innerHTML = '<option value="">No connections available</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">Select SAP connection...</option>';
+        connections.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c.connection_id;
+          opt.textContent = esc(c.name) + ' (' + esc(c.protocol || 'OData') + ')';
+          if (c.available_kinds && c.available_kinds.length) {
+            opt.textContent += ' — ' + c.available_kinds.join(', ');
+          }
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function() {
+        document.getElementById('sap-extract-conn').innerHTML = '<option value="">Failed to load connections</option>';
+      });
+
+    document.getElementById('sap-extract-btn').addEventListener('click', async function() {
+      var connId = document.getElementById('sap-extract-conn').value;
+      if (!connId) { alert('Please select a SAP connection.'); return; }
+      var kind = document.getElementById('sap-extract-kind').value;
+      var paramsStr = document.getElementById('sap-extract-params').value.trim();
+      var odataParams = null;
+      if (paramsStr) {
+        try { odataParams = JSON.parse(paramsStr); } catch(e) { alert('Invalid JSON in OData parameters: ' + e.message); return; }
+      }
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Extracting...';
+      var resEl = document.getElementById('sap-extract-result');
+      resEl.className = 'text-sm mt-2 p-3 bg-blue-50 rounded text-blue-700';
+      resEl.textContent = 'Connecting to SAP and extracting ' + kind + ' data...';
+      resEl.classList.remove('hidden');
+      try {
+        var res = await fetch('/api/data/sap-extract', {
+          method: 'POST',
+          headers: jsonHdr,
+          body: JSON.stringify({ connection_id: parseInt(connId), kind: kind, odata_params: odataParams })
+        });
+        var d = await res.json();
+        if (!res.ok) throw new Error(d.detail || 'Extraction failed');
+        resEl.className = 'text-sm mt-2 p-3 bg-green-50 rounded text-green-700';
+        resEl.textContent = 'Extraction successful: ' + (d.records_imported || d.count || 0) + ' records imported.';
+        if (d.message) resEl.textContent += ' ' + d.message;
+        loadCounts();
+      } catch(e) {
+        resEl.className = 'text-sm mt-2 p-3 bg-red-50 rounded text-red-700';
+        resEl.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Extract from SAP';
+      }
+    });
+  })();
 })();
 </script>
