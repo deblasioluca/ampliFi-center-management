@@ -979,7 +979,7 @@ def invite_reviewer(
     wave = db.get(Wave, scope.wave_id)
     _send_scope_invitation(scope, wave, db)
     scope.status = "invited"
-    scope.invited_at = func.now()
+    scope.invited_at = datetime.now(UTC)
     db.commit()
     return {"status": "invited", "scope_id": scope_id}
 

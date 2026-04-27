@@ -365,8 +365,8 @@ class AnalysisRun(TimestampMixin, Base):
     __table_args__ = {"schema": "cleanup"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    wave_id: Mapped[int] = mapped_column(
-        ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=False
+    wave_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.wave.id", ondelete="CASCADE"), nullable=True
     )
     config_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.analysis_config.id", ondelete="RESTRICT"), nullable=False

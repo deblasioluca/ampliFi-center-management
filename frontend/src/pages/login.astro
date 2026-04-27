@@ -64,7 +64,11 @@ import '../styles/global.css';
           if (!res.ok) {
             var body = {};
             try { body = await res.json(); } catch(ex) {}
-            throw new Error(body.detail || 'Invalid credentials');
+            var detail = body.detail;
+            var msg = typeof detail === 'string' ? detail
+              : Array.isArray(detail) ? detail.map(function(d) { return d.msg || JSON.stringify(d); }).join('; ')
+              : detail ? JSON.stringify(detail) : 'Invalid credentials';
+            throw new Error(msg);
           }
           var data = await res.json();
           localStorage.setItem('amplifi_token', data.access_token);

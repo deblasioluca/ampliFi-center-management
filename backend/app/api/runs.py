@@ -18,7 +18,7 @@ router = APIRouter()
 
 class RunOut(BaseModel):
     id: int
-    wave_id: int
+    wave_id: int | None = None
     config_id: int
     status: str
     kpis: dict | None = None
@@ -26,6 +26,62 @@ class RunOut(BaseModel):
     finished_at: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+@router.post("/global")
+def run_global_analysis(
+    config_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run analysis on ALL cost centers (not scoped to any wave)."""
+    from app.services.analysis import execute_analysis, get_or_create_default_config
+
+    if config_id is None:
+        config = get_or_create_default_config(db)
+        config_id = config.id
+
+    try:
+        run = execute_analysis(None, config_id, user.id, db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}") from None
+
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "kpis": run.kpis,
+        "started_at": str(run.started_at) if run.started_at else None,
+        "finished_at": str(run.finished_at) if run.finished_at else None,
+    }
+
+
+@router.get("/global/list")
+def list_global_runs(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+) -> dict:
+    """List analysis runs not tied to any wave (global runs)."""
+    query = select(AnalysisRun).where(AnalysisRun.wave_id.is_(None)).order_by(AnalysisRun.id.desc())
+    total = (
+        db.execute(select(func.count(AnalysisRun.id)).where(AnalysisRun.wave_id.is_(None))).scalar()
+        or 0
+    )
+    items = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": r.id,
+                "status": r.status,
+                "kpis": r.kpis,
+                "started_at": str(r.started_at) if r.started_at else None,
+                "finished_at": str(r.finished_at) if r.finished_at else None,
+            }
+            for r in items
+        ],
+    }
 
 
 @router.get("/{run_id}")

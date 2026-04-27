@@ -74,7 +74,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     let detail = '';
     try {
       const body = await res.json();
-      detail = body.detail || '';
+      const d = body.detail;
+      detail = typeof d === 'string' ? d
+        : Array.isArray(d) ? d.map((e: Record<string, unknown>) => e.msg || JSON.stringify(e)).join('; ')
+        : d ? JSON.stringify(d) : '';
     } catch { /* ignore */ }
     throw new Error(detail || `HTTP ${res.status}`);
   }
