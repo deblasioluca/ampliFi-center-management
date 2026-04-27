@@ -373,14 +373,14 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
     # Deduplicate sample cost centers only (scoped to known sample IDs)
     from sqlalchemy import text
 
-    sample_cctrs = tuple(SAMPLE_CC_CCTRS)
+    sample_cctrs = list(SAMPLE_CC_CCTRS)
     if sample_cctrs:
         db.execute(
             text("""
             DELETE FROM cleanup.legacy_cost_center
-            WHERE coarea = :coarea AND cctr IN :cctrs AND id NOT IN (
+            WHERE coarea = :coarea AND cctr = ANY(:cctrs) AND id NOT IN (
                 SELECT MAX(id) FROM cleanup.legacy_cost_center
-                WHERE coarea = :coarea AND cctr IN :cctrs
+                WHERE coarea = :coarea AND cctr = ANY(:cctrs)
                 GROUP BY coarea, cctr
             )
             """),
