@@ -1417,12 +1417,15 @@ import Layout from '../../components/layout/Layout.astro';
     (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
     var unassigned = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
     if (unassigned.length) {
-      html += '<div class="mt-4 pt-3 border-t"><span class="font-medium text-gray-500">Unassigned (' + unassigned.length + ')</span></div>';
+      html += '<div class="mt-4 pt-3 border-t"><span class="font-medium text-gray-500 cursor-pointer" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');this.querySelector(\'.ua-arrow\').textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6 \':\'\\u25BC \'">';
+      html += '<span class="ua-arrow">&#9654; </span>Unassigned (' + unassigned.length + ')</span></div>';
+      html += '<div class="hidden">';
       unassigned.forEach(function(it) {
         html += '<div style="padding-left:20px" class="py-0.5 text-gray-500">';
         html += '<span class="font-mono">' + esc(it.cctr) + '</span> ' + esc(it.txtsh || '');
         html += '</div>';
       });
+      html += '</div>';
     }
 
     el.innerHTML = html;
