@@ -3,7 +3,7 @@ import Layout from '../../components/layout/Layout.astro';
 export const prerender = false;
 ---
 
-<Layout title="Cluster Explorer" requireAuth={true} adminOnly={true}>
+<Layout title="Cluster Explorer" requireAuth={true} requiredRole="data_manager">
   <div class="mb-4">
     <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
     <h2 class="text-xl font-bold mt-2">Cluster Explorer</h2>

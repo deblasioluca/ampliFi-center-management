@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # --- auth ---
     app_secret_key: SecretStr = SecretStr("change-me-in-production-please")
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 30
+    jwt_access_token_expire_minutes: int = 480
     jwt_refresh_token_expire_days: int = 7
     auth_provider: str = "local"  # 'local' | 'entraid'
 

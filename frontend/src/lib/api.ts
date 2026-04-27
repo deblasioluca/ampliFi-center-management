@@ -38,6 +38,30 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (res.status === 401) {
+    // Try to refresh the token before giving up
+    try {
+      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data.access_token && typeof window !== 'undefined') {
+          localStorage.setItem('amplifi_token', data.access_token);
+          // Retry the original request with the new token
+          const retryHeaders: Record<string, string> = {
+            ...headers,
+            Authorization: `Bearer ${data.access_token}`,
+          };
+          const retryRes = await fetch(url, {
+            ...options,
+            headers: retryHeaders,
+            credentials: 'include',
+          });
+          if (retryRes.ok) return retryRes.json();
+        }
+      }
+    } catch { /* refresh failed, fall through to login redirect */ }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('amplifi_token');
       localStorage.removeItem('amplifi_user');
@@ -60,10 +84,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // Auth
 export const auth = {
-  login: (email: string, password: string) =>
+  login: (username: string, password: string) =>
     request<{ access_token: string }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
   me: () => request<{ id: number; email: string; display_name: string; role: string }>('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),

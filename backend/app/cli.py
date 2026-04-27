@@ -37,7 +37,14 @@ def cmd_seed(args: argparse.Namespace) -> None:
         db.commit()
         logger.info("seed.user.created", username="admin")
     else:
-        logger.info("seed.user.exists", username="admin")
+        # Ensure admin can always log in: reset password, unlock, activate
+        existing.password_hash = hash_password("admin")
+        existing.is_active = True
+        existing.failed_logins = 0
+        existing.locked_until = None
+        existing.role = "admin"
+        db.commit()
+        logger.info("seed.user.reset", username="admin")
 
     # ── Sample data (entities, CCs, PCs, balances, hierarchy) ────────
     counts = generate_sample_data(db)

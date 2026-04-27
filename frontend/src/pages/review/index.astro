@@ -1,0 +1,59 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="My Reviews" requireAuth={true}>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">My Reviews</h1>
+    <p class="text-sm text-gray-500 mt-1">Review scopes assigned to you. Open a scope to compare current vs. proposed centers, approve, reject, or request changes.</p>
+  </div>
+
+  <div id="review-list" class="space-y-4">
+    <p class="text-gray-400 text-sm">Loading review scopes...</p>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var token = localStorage.getItem('amplifi_token');
+  if (!token) { document.getElementById('review-list').innerHTML = '<p class="text-gray-500">Please log in to see your reviews.</p>'; return; }
+
+  fetch('/api/waves/review-scopes', { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(function(r) { return r.json(); })
+    .then(function(scopes) {
+      var el = document.getElementById('review-list');
+      if (!scopes || !scopes.length) {
+        el.innerHTML = '<div class="bg-gray-50 rounded-lg p-8 text-center">' +
+          '<p class="text-gray-500 mb-2">No review scopes assigned to you yet.</p>' +
+          '<p class="text-xs text-gray-400">Review scopes are assigned by the data manager after analysis is complete and proposals are locked.</p>' +
+          '</div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < scopes.length; i++) {
+        var s = scopes[i];
+        var statusColor = s.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          s.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                          s.status === 'expired' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-700';
+        var pct = s.total_items ? Math.round((s.decided_items || 0) / s.total_items * 100) : 0;
+        html += '<a href="/review/' + (s.token || '') + '" class="block card hover:shadow-md transition-shadow">' +
+          '<div class="flex items-center justify-between mb-2">' +
+          '<h3 class="font-semibold text-gray-900">' + (s.name || 'Review Scope') + '</h3>' +
+          '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + statusColor + '">' + (s.status || 'pending') + '</span>' +
+          '</div>' +
+          '<div class="flex items-center gap-4 text-xs text-gray-500">' +
+          '<span>Wave: ' + (s.wave_name || '-') + '</span>' +
+          '<span>Type: ' + (s.scope_type || '-') + '</span>' +
+          '<span>' + (s.decided_items || 0) + ' / ' + (s.total_items || 0) + ' decided (' + pct + '%)</span>' +
+          '</div>' +
+          '<div class="mt-2 h-1.5 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full" style="width:' + pct + '%"></div></div>' +
+          '</a>';
+      }
+      el.innerHTML = html;
+    })
+    .catch(function(e) {
+      document.getElementById('review-list').innerHTML = '<p class="text-red-500">Error loading reviews: ' + e.message + '</p>';
+    });
+})();
+</script>

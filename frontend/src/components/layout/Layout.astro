@@ -16,8 +16,8 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="ampliFi Cost & Profit Center Clean-Up" />
-    <title>{title} | ampliFi</title>
+    <meta name="description" content="ampliFi Center Management — Cost & Profit Center Rationalization" />
+    <title>{title} | ampliFi Center Management</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-gray-50 min-h-screen flex flex-col">
@@ -30,7 +30,7 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
           <div class="flex items-center space-x-6">
             <a href="/" class="flex items-center space-x-2 font-semibold text-lg">
               <img src="/ubs-logo.svg" alt="UBS" class="h-6" />
-              <span><span style="color:#E60000">a</span>mplif<span style="color:#E60000">i</span> Center Management</span>
+              <span><span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span> Center Management</span>
             </a>
             <div class="w-px h-8 bg-white/20"></div>
 
@@ -101,6 +101,55 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
         } catch(e) { window.location.href = '/login'; }
       </script>
     )}
+
+    <!-- Role-based redirect (data_manager = admin + data_manager + analyst) -->
+    {requiredRole === 'data_manager' && (
+      <script is:inline>
+        try {
+          var userData = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+          var r = userData.role || '';
+          if (r !== 'admin' && r !== 'data_manager' && r !== 'analyst') {
+            window.location.href = '/';
+          }
+        } catch(e) { window.location.href = '/login'; }
+      </script>
+    )}
+
+    <!-- Global authenticated fetch with auto-refresh -->
+    <script is:inline>
+      window.apiFetch = function(url, opts) {
+        opts = opts || {};
+        var token = localStorage.getItem('amplifi_token');
+        if (!opts.headers) opts.headers = {};
+        if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+        if (!opts.headers['Content-Type'] && !(opts.body instanceof FormData)) {
+          opts.headers['Content-Type'] = 'application/json';
+        }
+        return fetch(url, opts).then(function(res) {
+          if (res.status === 401) {
+            return fetch('/api/auth/refresh', {
+              method: 'POST', credentials: 'include'
+            }).then(function(rr) {
+              if (!rr.ok) throw new Error('refresh failed');
+              return rr.json();
+            }).then(function(d) {
+              if (d.access_token) {
+                localStorage.setItem('amplifi_token', d.access_token);
+                opts.headers['Authorization'] = 'Bearer ' + d.access_token;
+                return fetch(url, opts);
+              }
+              throw new Error('no token');
+            }).catch(function() {
+              localStorage.removeItem('amplifi_token');
+              localStorage.removeItem('amplifi_user');
+              window.location.href = '/login';
+              throw new Error('Session expired');
+            });
+          }
+          return res;
+        });
+      };
+    </script>
 
     <!-- Role-based nav visibility + active link highlighting -->
     <script is:inline>

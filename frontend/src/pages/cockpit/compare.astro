@@ -3,7 +3,7 @@ import Layout from '../../components/layout/Layout.astro';
 export const prerender = false;
 ---
 
-<Layout title="Run Comparison" requireAuth={true} adminOnly={true}>
+<Layout title="Run Comparison" requireAuth={true} requiredRole="data_manager">
   <div class="flex items-center justify-between mb-6">
     <h2 class="text-xl font-bold">Run Comparison</h2>
     <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back</a>

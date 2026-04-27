@@ -305,6 +305,57 @@ def create_wave_from_template(
     return {"id": wave.id, "code": wave.code, "status": wave.status}
 
 
+@router.get("/review-scopes")
+def my_review_scopes(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "reviewer")),
+) -> list[dict]:
+    """List review scopes assigned to the current user."""
+    scopes = (
+        db.execute(
+            select(ReviewScope)
+            .where(
+                (ReviewScope.reviewer_user_id == user.id)
+                | (ReviewScope.reviewer_email == user.email)
+            )
+            .order_by(ReviewScope.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+    result = []
+    for s in scopes:
+        total = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == s.id)
+            ).scalar()
+            or 0
+        )
+        decided = (
+            db.execute(
+                select(func.count(ReviewItem.id)).where(
+                    ReviewItem.scope_id == s.id,
+                    ReviewItem.decision != "PENDING",
+                )
+            ).scalar()
+            or 0
+        )
+        wave = s.wave
+        result.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "scope_type": s.scope_type,
+                "status": s.status,
+                "token": s.token,
+                "total_items": total,
+                "decided_items": decided,
+                "wave_name": wave.name if wave else None,
+            }
+        )
+    return result
+
+
 @router.get("/{wave_id}")
 def get_wave(wave_id: int, db: Session = Depends(get_db)) -> WaveOut:
     wave = db.get(Wave, wave_id)
@@ -796,6 +847,17 @@ def create_review_scope(
     token = secrets.token_urlsafe(32)
     expires = datetime.now(UTC) + timedelta(days=30)
 
+    # Resolve reviewer_user_id from email if possible
+    reviewer_user_id = None
+    if body.reviewer_email:
+        reviewer_user = (
+            db.execute(select(AppUser).where(AppUser.email == body.reviewer_email))
+            .scalars()
+            .first()
+        )
+        if reviewer_user:
+            reviewer_user_id = reviewer_user.id
+
     scope = ReviewScope(
         wave_id=wave_id,
         name=body.name,
@@ -805,6 +867,7 @@ def create_review_scope(
         token_expires_at=expires,
         reviewer_name=body.reviewer_name,
         reviewer_email=body.reviewer_email,
+        reviewer_user_id=reviewer_user_id,
         status="pending",
     )
     db.add(scope)
@@ -892,9 +955,54 @@ def list_review_scopes(
                 "total_items": total_items,
                 "decided_items": decided_items,
                 "token_hint": s.token[:8] + "..." if s.token else None,
+                "token": s.token,
             }
         )
     return {"wave_id": wave_id, "items": items}
+
+
+@router.post("/scopes/{scope_id}/invite")
+def invite_reviewer(
+    scope_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if not scope.reviewer_email:
+        raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    if scope.status in ("completed", "revoked", "expired"):
+        raise HTTPException(
+            status_code=409, detail=f"Cannot invite for scope in status {scope.status}"
+        )
+    wave = db.get(Wave, scope.wave_id)
+    _send_scope_invitation(scope, wave, db)
+    scope.status = "invited"
+    scope.invited_at = func.now()
+    db.commit()
+    return {"status": "invited", "scope_id": scope_id}
+
+
+@router.post("/scopes/{scope_id}/remind")
+def remind_reviewer(
+    scope_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if not scope.reviewer_email:
+        raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    if scope.status in ("completed", "revoked", "expired"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot send reminder for scope in status {scope.status}",
+        )
+    wave = db.get(Wave, scope.wave_id)
+    _send_scope_invitation(scope, wave, db)
+    return {"status": "reminder_sent", "scope_id": scope_id}
 
 
 @router.post("/{wave_id}/proposals/{proposal_id}/override")

@@ -1,9 +1,10 @@
 ---
 import Layout from '../../components/layout/Layout.astro';
 ---
-<Layout title="MDG Export" requireAuth={true} adminOnly={true}>
+<Layout title="MDG Export" requireAuth={true} requiredRole="data_manager">
   <div class="max-w-4xl mx-auto p-6">
-    <h1 class="text-2xl font-bold text-gray-800 mb-2">MDG Export</h1>
+    <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
+    <h1 class="text-2xl font-bold text-gray-800 mb-2 mt-2">MDG Export</h1>
     <p class="text-gray-600 mb-6">
       Generate Master Data Governance export files for signed-off waves.
       These files can be imported into SAP MDG for creating target cost centers.

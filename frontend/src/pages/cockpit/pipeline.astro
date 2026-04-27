@@ -1,8 +1,9 @@
 ---
 import Layout from '../../components/layout/Layout.astro';
 ---
-<Layout title="Pipeline Editor" requireAuth={true} adminOnly={true}>
+<Layout title="Pipeline Editor" requireAuth={true} requiredRole="data_manager">
   <div class="max-w-6xl mx-auto p-6">
+    <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold text-gray-800">Analysis Pipeline Editor</h1>
       <div class="flex gap-2">

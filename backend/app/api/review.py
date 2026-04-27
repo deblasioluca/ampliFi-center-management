@@ -63,6 +63,7 @@ def scope_items(
     db: Session = Depends(get_db),
     pag: PaginationParams = Depends(pagination),
     decision: str | None = None,
+    search: str | None = None,
 ) -> dict:
     scope = _get_scope(token, db)
     query = (
@@ -72,9 +73,49 @@ def scope_items(
     )
     if decision:
         query = query.where(ReviewItem.decision == decision)
+    if search:
+        from app.models.core import LegacyCostCenter
+
+        query = (
+            query.join(
+                CenterProposal,
+                ReviewItem.proposal_id == CenterProposal.id,
+                isouter=True,
+            )
+            .join(
+                LegacyCostCenter,
+                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+                isouter=True,
+            )
+            .where(
+                LegacyCostCenter.cctr.ilike(f"%{search}%")
+                | LegacyCostCenter.txtsh.ilike(f"%{search}%")
+                | LegacyCostCenter.ccode.ilike(f"%{search}%")
+            )
+        )
     total_q = select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
     if decision:
         total_q = total_q.where(ReviewItem.decision == decision)
+    if search:
+        from app.models.core import LegacyCostCenter
+
+        total_q = (
+            total_q.join(
+                CenterProposal,
+                ReviewItem.proposal_id == CenterProposal.id,
+                isouter=True,
+            )
+            .join(
+                LegacyCostCenter,
+                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+                isouter=True,
+            )
+            .where(
+                LegacyCostCenter.cctr.ilike(f"%{search}%")
+                | LegacyCostCenter.txtsh.ilike(f"%{search}%")
+                | LegacyCostCenter.ccode.ilike(f"%{search}%")
+            )
+        )
     total = db.execute(total_q).scalar() or 0
     result = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size))
     items = result.unique().scalars().all()
@@ -92,12 +133,45 @@ def scope_items(
             row["target_object"] = proposal.target_object
             row["confidence"] = str(proposal.confidence) if proposal.confidence else None
             row["rule_path"] = proposal.rule_path
+            row["merge_into_cctr"] = proposal.merge_into_cctr
+            row["entity_code"] = proposal.entity_code
             cc = proposal.legacy_cc
             if cc:
                 row["cctr"] = cc.cctr
                 row["txtsh"] = cc.txtsh
+                row["txtmi"] = cc.txtmi or cc.txtsh
                 row["ccode"] = cc.ccode
                 row["coarea"] = cc.coarea
+                row["pctr"] = cc.pctr
+                row["responsible"] = cc.responsible
+                row["cctrcgy"] = cc.cctrcgy
+                row["currency"] = cc.currency
+            else:
+                row["cctr"] = None
+                row["txtsh"] = None
+                row["txtmi"] = None
+                row["ccode"] = None
+                row["coarea"] = None
+                row["pctr"] = None
+                row["responsible"] = None
+                row["cctrcgy"] = None
+                row["currency"] = None
+        else:
+            row["cleansing_outcome"] = None
+            row["cctr"] = None
+            row["txtsh"] = None
+            row["txtmi"] = None
+            row["target_object"] = None
+            row["merge_into_cctr"] = None
+            row["entity_code"] = None
+            row["ccode"] = None
+            row["coarea"] = None
+            row["confidence"] = None
+            row["rule_path"] = None
+            row["pctr"] = None
+            row["responsible"] = None
+            row["cctrcgy"] = None
+            row["currency"] = None
         enriched.append(row)
     return {
         "total": total,
@@ -182,6 +256,53 @@ def request_changes(
     )
     db.commit()
     return {"status": "changes_requested"}
+
+
+class NewCenterRequest(BaseModel):
+    purpose: str
+    target_object: str = "CC"
+    responsible: str | None = None
+    bs_relevance: str | None = None
+
+
+@router.post("/{token}/items/request-new")
+def request_new_center(
+    token: str,
+    body: NewCenterRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Reviewer requests a new center that wasn't proposed by analysis."""
+    scope = _get_scope(token, db)
+    from datetime import datetime
+
+    comment_text = (
+        f"NEW CENTER REQUEST \u2014 Purpose: {body.purpose} | Target: {body.target_object}"
+    )
+    if body.responsible:
+        comment_text += f" | Responsible: {body.responsible}"
+    if body.bs_relevance:
+        comment_text += f" | B/S Relevance: {body.bs_relevance}"
+
+    item = ReviewItem(
+        scope_id=scope.id,
+        proposal_id=None,
+        decision="NEW_REQUEST",
+        comment=comment_text,
+        decided_at=datetime.now(UTC),
+    )
+    db.add(item)
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="review.request_new_center",
+        entity_type="review_scope",
+        entity_id=scope.id,
+        actor_email=scope.reviewer_email,
+        after={"purpose": body.purpose, "target_object": body.target_object},
+    )
+    db.commit()
+    return {"status": "created", "item_id": item.id}
 
 
 @router.post("/{token}/complete")

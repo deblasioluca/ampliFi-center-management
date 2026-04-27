@@ -3,6 +3,7 @@ import Layout from '../../components/layout/Layout.astro';
 ---
 
 <Layout title="LLM Settings" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-gray-900">LLM Configuration</h1>
     <p class="text-sm text-gray-500 mt-1">Configure Azure OpenAI or BTP GenAI Hub for analysis review</p>
