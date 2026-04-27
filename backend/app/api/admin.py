@@ -827,13 +827,13 @@ def lookup_hierarchies(
         raise HTTPException(status_code=502, detail=f"Cannot read hierarchies: {exc}") from exc
 
     result = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for row in rows:
         setname = row.get("SETNAME", "").strip()
-        if not setname or setname in seen:
-            continue
-        seen.add(setname)
         setclass = row.get("SETCLASS", "").strip()
+        if not setname or (setclass, setname) in seen:
+            continue
+        seen.add((setclass, setname))
         kind = (
             "cost_center"
             if setclass == "0101"
