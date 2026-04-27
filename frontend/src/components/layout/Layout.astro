@@ -5,9 +5,10 @@ interface Props {
   title: string;
   requireAuth?: boolean;
   adminOnly?: boolean;
+  requiredRole?: string;
 }
 
-const { title, requireAuth = false, adminOnly = false } = Astro.props;
+const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.props;
 ---
 
 <!doctype html>
@@ -20,30 +21,41 @@ const { title, requireAuth = false, adminOnly = false } = Astro.props;
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-gray-50 min-h-screen flex flex-col">
-    <!-- Skip to main content link for keyboard users -->
     <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:bg-white focus:text-amplifi-600 focus:px-4 focus:py-2 focus:rounded focus:shadow-lg">Skip to main content</a>
+
     <!-- Top Navigation Bar -->
     <nav class="bg-navy-900 text-white shadow-lg sticky top-0 z-50" aria-label="Main navigation">
       <div class="max-w-screen-2xl mx-auto px-4">
         <div class="flex items-center justify-between h-14">
           <div class="flex items-center space-x-6">
             <a href="/" class="flex items-center space-x-2 font-semibold text-lg">
-              <svg class="w-7 h-7 text-amplifi-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              <span>ampliFi</span>
+              <img src="/ubs-logo.svg" alt="UBS" class="h-6" />
+              <span><span style="color:#E60000">a</span>mplif<span style="color:#E60000">i</span> Center Management</span>
             </a>
             <div class="w-px h-8 bg-white/20"></div>
-            <!-- Main Nav Links -->
+
+            <!-- Navigation grouped by role -->
             <div class="hidden md:flex items-center space-x-1" id="main-nav">
+              <!-- Everyone -->
               <a href="/" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors">Dashboard</a>
               <a href="/tasks" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors">My Tasks</a>
-              <a href="/cockpit" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-cockpit">Cockpit</a>
+              <a href="/review" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-review">My Reviews</a>
+
+              <!-- Data Manager + Admin -->
+              <div class="w-px h-5 bg-white/20 mx-1" id="nav-sep-dm"></div>
               <a href="/data" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-data">Data</a>
+              <a href="/cockpit" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-cockpit">Waves & Analysis</a>
+
+              <!-- Admin only -->
+              <div class="w-px h-5 bg-white/20 mx-1" id="nav-sep-admin"></div>
+              <a href="/admin" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-admin">System</a>
+
+              <!-- Activity (everyone) -->
+              <div class="w-px h-5 bg-white/20 mx-1"></div>
               <a href="/activity" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors relative" id="nav-activity">Activity<span id="activity-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center"></span></a>
-              <a href="/admin" class="nav-link px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white hover:bg-white/10 transition-colors" id="nav-admin">Admin</a>
             </div>
           </div>
+
           <div class="flex items-center space-x-4">
             <div id="user-menu" class="text-sm text-gray-300"></div>
           </div>
@@ -69,7 +81,7 @@ const { title, requireAuth = false, adminOnly = false } = Astro.props;
       </div>
     </footer>
 
-    <!-- Auth redirect script -->
+    <!-- Auth redirect -->
     {requireAuth && (
       <script is:inline>
         if (!localStorage.getItem('amplifi_token')) {
@@ -93,16 +105,27 @@ const { title, requireAuth = false, adminOnly = false } = Astro.props;
     <!-- Role-based nav visibility + active link highlighting -->
     <script is:inline>
       (function() {
-        // User menu
         var token = localStorage.getItem('amplifi_token');
         var userMenu = document.getElementById('user-menu');
+        var role = 'viewer';
+        try {
+          var userData = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+          role = userData.role || 'viewer';
+        } catch(e) {}
+
+        // User menu
         if (token && userMenu) {
           try {
-            var userData = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
-            var name = userData.display_name || userData.email || 'User';
-            var role = userData.role || 'user';
+            var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
+            var name = ud.display_name || ud.username || 'User';
+            var roleLabel = {
+              'admin': 'System Admin',
+              'data_manager': 'Data Manager',
+              'reviewer': 'Reviewer',
+              'viewer': 'Viewer'
+            }[role] || role;
             userMenu.innerHTML = '<span class="text-gray-400">' + name + '</span>' +
-              ' <span class="text-xs bg-white/10 px-2 py-0.5 rounded ml-1">' + role + '</span>' +
+              ' <span class="text-xs bg-white/10 px-2 py-0.5 rounded ml-1">' + roleLabel + '</span>' +
               ' <button id="logout-btn" class="ml-3 text-gray-400 hover:text-white text-xs">Logout</button>';
             document.getElementById('logout-btn').addEventListener('click', function() {
               localStorage.removeItem('amplifi_token');
@@ -114,17 +137,33 @@ const { title, requireAuth = false, adminOnly = false } = Astro.props;
           userMenu.innerHTML = '<a href="/login" class="text-gray-300 hover:text-white text-sm">Login</a>';
         }
 
-        // Hide admin-only nav items for non-admin users
-        try {
-          var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
-          if (ud.role !== 'admin') {
-            var adminLinks = ['nav-cockpit', 'nav-data', 'nav-admin'];
-            adminLinks.forEach(function(id) {
-              var el = document.getElementById(id);
-              if (el) el.style.display = 'none';
-            });
-          }
-        } catch(e) {}
+        // Role-based nav visibility
+        // admin sees everything; data_manager sees Data + Cockpit; reviewer sees Reviews
+        var isAdmin = (role === 'admin');
+        var isDataMgr = (role === 'data_manager' || role === 'analyst' || isAdmin);
+        var isReviewer = (role === 'reviewer' || isDataMgr);
+
+        // Data Manager items
+        var dmItems = ['nav-data', 'nav-cockpit', 'nav-sep-dm'];
+        if (!isDataMgr) {
+          dmItems.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+          });
+        }
+        // Admin items
+        var adminItems = ['nav-admin', 'nav-sep-admin'];
+        if (!isAdmin) {
+          adminItems.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+          });
+        }
+        // Review link: show for reviewers and data managers
+        if (!isReviewer) {
+          var revEl = document.getElementById('nav-review');
+          if (revEl) revEl.style.display = 'none';
+        }
 
         // Active nav link highlighting
         var path = window.location.pathname;
@@ -139,6 +178,21 @@ const { title, requireAuth = false, adminOnly = false } = Astro.props;
             link.classList.remove('text-gray-300');
           }
         });
+
+        // Activity badge — check unread count
+        if (token) {
+          fetch('/api/activity/unread-count', {
+            headers: { Authorization: 'Bearer ' + token }
+          }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.count > 0) {
+              var badge = document.getElementById('activity-badge');
+              if (badge) {
+                badge.textContent = d.count > 9 ? '9+' : d.count;
+                badge.classList.remove('hidden');
+              }
+            }
+          }).catch(function() {});
+        }
       })();
     </script>
   </body>

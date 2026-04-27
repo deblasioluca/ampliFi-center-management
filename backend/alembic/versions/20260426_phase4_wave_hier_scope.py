@@ -5,8 +5,9 @@ Revises: phase3_llm_usage
 Create Date: 2026-04-26
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "phase4_wave_hier"
 down_revision = "phase3_001"

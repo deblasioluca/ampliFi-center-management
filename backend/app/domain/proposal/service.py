@@ -17,7 +17,10 @@ from app.domain.decision_tree.engine import CleansingOutcome, TargetObject
 from app.models.core import (
     AnalysisRun,
     CenterProposal,
+    Employee,
     LegacyCostCenter,
+    NamingAllocation,
+    NamingPool,
     TargetCostCenter,
     TargetProfitCenter,
     Wave,
@@ -82,8 +85,9 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     """Lock proposals and create target object drafts (§06.6).
 
     This is called when a wave transitions from 'proposed' to 'locked'.
-    For each KEEP proposal, a target CC and/or PC is created.
-    RETIRE, MERGE_MAP, and REDESIGN proposals are skipped (no target objects).
+    For each KEEP or REDESIGN proposal, a target CC and/or PC is created
+    (REDESIGN targets are created when the user overrides target to CC/PC).
+    RETIRE and MERGE_MAP proposals are skipped (no target objects).
     """
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -106,12 +110,15 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     for proposal in proposals:
         outcome, target = get_effective_outcome(proposal)
 
-        if outcome in ("RETIRE", "MERGE_MAP", "REDESIGN"):
-            continue  # No target object for retired/merged/redesigned centers
+        if outcome in ("RETIRE", "MERGE_MAP"):
+            continue
 
         legacy = db.get(LegacyCostCenter, proposal.legacy_cc_id)
         if not legacy:
             continue
+
+        # Resolve owner as "GPN Name" from Employee table
+        owner = resolve_owner_display(legacy.responsible, db)
 
         # Create target cost center if target includes CC
         if target in ("CC", "CC_AND_PC"):
@@ -128,7 +135,7 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
                     cctr=legacy.cctr,
                     txtsh=legacy.txtsh,
                     txtmi=legacy.txtmi,
-                    responsible=legacy.responsible,
+                    responsible=owner or legacy.responsible,
                     ccode=legacy.ccode,
                     cctrcgy=legacy.cctrcgy,
                     currency=legacy.currency,
@@ -155,7 +162,7 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
                     pctr=legacy.pctr or legacy.cctr,
                     txtsh=legacy.txtsh,
                     txtmi=legacy.txtmi,
-                    responsible=legacy.responsible,
+                    responsible=owner or legacy.responsible,
                     ccode=legacy.ccode,
                     currency=legacy.currency,
                     is_active=True,
@@ -181,3 +188,168 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
 
     logger.info("proposal.locked", **result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Owner resolution — format as "GPN Name" from Employee table
+# ---------------------------------------------------------------------------
+
+
+def resolve_owner_display(responsible: str | None, db: Session) -> str:
+    """Resolve a cost center owner to 'GPN Name' format.
+
+    Looks up the Employee table by GPN or user_id_pid.  Falls back to
+    the raw responsible string if no employee record is found.
+    """
+    if not responsible:
+        return ""
+
+    gpn = responsible.strip()
+    emp = (
+        db.execute(
+            select(Employee)
+            .where((Employee.gpn == gpn) | (Employee.user_id_pid == gpn))
+            .order_by(Employee.id.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+    if emp:
+        return emp.display_name
+    return gpn
+
+
+# ---------------------------------------------------------------------------
+# ID recycling — release allocated CC/PC IDs when proposals are deleted
+# ---------------------------------------------------------------------------
+
+
+def release_proposal_ids(proposal_id: int, db: Session) -> int:
+    """Release naming allocations for a deleted/reset proposal.
+
+    When a proposal is removed (e.g. before re-running analysis), any
+    CC/PC IDs allocated from the NamingPool should be freed so they
+    can be reused in subsequent runs.
+    """
+    allocations = (
+        db.execute(
+            select(NamingAllocation).where(
+                NamingAllocation.proposal_id == proposal_id,
+                NamingAllocation.is_released.is_(False),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    released = 0
+    for alloc in allocations:
+        alloc.is_released = True
+        alloc.proposal_id = None
+        released += 1
+
+    if released:
+        db.flush()
+        logger.info(
+            "proposal.ids_released",
+            proposal_id=proposal_id,
+            released=released,
+        )
+
+    return released
+
+
+def allocate_naming_id(wave_id: int, pool_type: str, proposal_id: int, db: Session) -> str | None:
+    """Allocate the next available ID from the naming pool.
+
+    Tries released IDs first (recycling), then increments next_value.
+    Returns the allocated ID string, or None if no pool is configured.
+    """
+    pool = db.execute(
+        select(NamingPool)
+        .where(
+            NamingPool.wave_id == wave_id,
+            NamingPool.pool_type == pool_type,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+
+    if not pool:
+        return None
+
+    # Try recycled IDs first
+    recycled = (
+        db.execute(
+            select(NamingAllocation).where(
+                NamingAllocation.pool_id == pool.id,
+                NamingAllocation.is_released.is_(True),
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if recycled:
+        recycled.is_released = False
+        recycled.proposal_id = proposal_id
+        db.flush()
+        return recycled.allocated_value
+
+    # Allocate next sequential ID
+    if pool.next_value > pool.range_end:
+        logger.warning(
+            "naming.pool_exhausted",
+            wave_id=wave_id,
+            pool_type=pool_type,
+        )
+        return None
+
+    value = str(pool.next_value)
+    alloc = NamingAllocation(
+        pool_id=pool.id,
+        proposal_id=proposal_id,
+        allocated_value=value,
+        is_released=False,
+    )
+    pool.next_value += 1
+    db.add(alloc)
+    db.flush()
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Attribute inheritance — copy owner, responsible, etc. from legacy to target
+# ---------------------------------------------------------------------------
+
+
+def inherit_attributes(legacy: LegacyCostCenter, target_cc: TargetCostCenter, db: Session) -> None:
+    """Copy inheritable attributes from legacy CC to target CC.
+
+    Transfers owner, responsible person, and other attributes that
+    should carry over to the new center.
+    """
+    target_cc.responsible = legacy.responsible
+    target_cc.txtsh = legacy.txtsh
+    target_cc.txtmi = legacy.txtmi
+    target_cc.currency = legacy.currency
+    target_cc.cctrcgy = legacy.cctrcgy
+
+    # Resolve owner for display
+    if legacy.responsible:
+        target_cc.responsible = resolve_owner_display(legacy.responsible, db)
+
+    # Copy JSONB attrs if both have them
+    if hasattr(legacy, "attrs") and legacy.attrs:
+        if not target_cc.attrs:
+            target_cc.attrs = {}
+        inherited_keys = [
+            "verak_user",
+            "func_area",
+            "bus_area",
+            "profit_ctr",
+            "company_code",
+        ]
+        for key in inherited_keys:
+            if key in legacy.attrs:
+                target_cc.attrs[key] = legacy.attrs[key]

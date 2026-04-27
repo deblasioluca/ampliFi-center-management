@@ -8,6 +8,43 @@ import Layout from '../components/layout/Layout.astro';
     <p class="text-sm text-gray-500 mt-1">ampliFi Center Management overview</p>
   </div>
 
+  <!-- Getting started guide (shown when no data) -->
+  <div id="getting-started" class="hidden bg-gradient-to-r from-amplifi-50 to-blue-50 border border-amplifi-200 rounded-lg p-5 mb-6">
+    <h2 class="text-base font-semibold text-amplifi-800 mb-2">Getting Started</h2>
+    <p class="text-xs text-gray-600 mb-3">Follow these steps to set up your cost center rationalization project:</p>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+      <div class="flex gap-2">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amplifi-600 text-white flex items-center justify-center text-[10px] font-bold">1</span>
+        <div>
+          <strong>Upload Data</strong>
+          <p class="text-gray-500 mt-0.5">Go to <a href="/data" class="text-amplifi-600 underline">Data</a> and upload your cost centers, profit centers, entities, and balances via CSV.</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amplifi-600 text-white flex items-center justify-center text-[10px] font-bold">2</span>
+        <div>
+          <strong>Create a Wave</strong>
+          <p class="text-gray-500 mt-0.5">Go to <a href="/cockpit" class="text-amplifi-600 underline">Waves</a>, create a wave, and define its scope (entities/hierarchies).</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amplifi-600 text-white flex items-center justify-center text-[10px] font-bold">3</span>
+        <div>
+          <strong>Run Analysis</strong>
+          <p class="text-gray-500 mt-0.5">Inside the wave, run the decision tree analysis. Review proposals (KEEP/RETIRE/MERGE/REDESIGN).</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amplifi-600 text-white flex items-center justify-center text-[10px] font-bold">4</span>
+        <div>
+          <strong>Assign Reviewers</strong>
+          <p class="text-gray-500 mt-0.5">Lock proposals, create review scopes, and invite reviewers to approve the proposed changes.</p>
+        </div>
+      </div>
+    </div>
+    <button onclick="this.parentElement.classList.add('hidden')" class="mt-3 text-xs text-gray-400 hover:text-gray-600">Dismiss</button>
+  </div>
+
   <!-- Row 1: Core KPI Cards -->
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
     <div class="card text-center">
@@ -132,6 +169,11 @@ import Layout from '../components/layout/Layout.astro';
     document.getElementById('kpi-pc').textContent = fmt(u.legacy_pc_total);
     document.getElementById('kpi-bal').textContent = fmt(u.balances_total);
     document.getElementById('kpi-waves').textContent = fmt(u.waves_total);
+    // Show getting-started guide when no data uploaded yet
+    if (!u.legacy_cc_total && !u.entities_total) {
+      var gs = document.getElementById('getting-started');
+      if (gs) gs.classList.remove('hidden');
+    }
   }).catch(function() {});
 
   // Readiness / system info

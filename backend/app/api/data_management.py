@@ -12,6 +12,7 @@ from app.infra.db.session import get_db
 from app.models.core import (
     AppUser,
     Balance,
+    Employee,
     Entity,
     Hierarchy,
     HierarchyLeaf,
@@ -227,6 +228,33 @@ def delete_all_hierarchies(
     return DeleteResult(table="hierarchy", deleted=result.rowcount)
 
 
+# ── Employees ───────────────────────────────────────────────────────────
+
+
+@router.delete("/employees")
+def delete_employees(
+    body: DeleteByIds | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    if not body or not body.ids:
+        raise HTTPException(status_code=400, detail="Provide ids in body")
+    stmt = delete(Employee).where(Employee.id.in_(body.ids))
+    result = db.execute(stmt)
+    db.commit()
+    return DeleteResult(table="employee", deleted=result.rowcount)
+
+
+@router.delete("/employees/all")
+def delete_all_employees(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    result = db.execute(delete(Employee))
+    db.commit()
+    return DeleteResult(table="employee", deleted=result.rowcount)
+
+
 # ── Upload batches ──────────────────────────────────────────────────────
 
 
@@ -281,6 +309,8 @@ def purge_all_data(
     counts["profit_centers"] = r.rowcount
     r = db.execute(delete(Entity))
     counts["entities"] = r.rowcount
+    r = db.execute(delete(Employee))
+    counts["employees"] = r.rowcount
     db.commit()
     return {"status": "purged", "counts": counts}
 
@@ -299,6 +329,7 @@ def data_counts(
         "profit_centers": db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0,
         "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
+        "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
 

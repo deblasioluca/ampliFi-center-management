@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import csv
 import io
 import logging
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.core import (
     Balance,
+    Employee,
     Entity,
     Hierarchy,
     HierarchyLeaf,
@@ -26,6 +28,34 @@ from app.models.core import (
 )
 
 log = logging.getLogger(__name__)
+
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%Y%m%d",
+)
+
+
+def _parse_date(raw: str) -> datetime | None:
+    """Try common date formats; return None if unparseable."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
+        except ValueError:
+            continue
+    return None
+
 
 # Column mappings: normalize header names to model fields
 CC_COLUMNS = {
@@ -92,6 +122,51 @@ ENTITY_COLUMNS = {
     "CURRENCY": "currency",
     "IS_ACTIVE": "is_active",
 }
+
+# Primary employee columns mapped to model fields; remaining go to attrs JSON
+EMPLOYEE_COLUMNS = {
+    "GPN": "gpn",
+    "BS_NAME": "bs_name",
+    "BS_FIRSTNAME": "bs_firstname",
+    "BS_LASTNAME": "bs_lastname",
+    "LEGAL_FAMILY_NAM": "legal_family_name",
+    "LEGAL_FIRST_NAME": "legal_first_name",
+    "EMAIL_ADDRESS": "email_address",
+    "EMP_STATUS": "emp_status",
+    "VALID_FROM": "valid_from",
+    "VALID_TO": "valid_to",
+    "GENDER_CODE": "gender_code",
+    "USER_ID_PID": "user_id_pid",
+    "USER_ID_TNUMBER": "user_id_tnumber",
+    "UUNAME": "uuname",
+    "OU_PK": "ou_pk",
+    "OU_CD": "ou_cd",
+    "OU_DESC": "ou_desc",
+    "WRK_IN_OU_PK": "wrk_in_ou_pk",
+    "WRK_IN_OU_CD": "wrk_in_ou_cd",
+    "WRK_IN_OU_DESC": "wrk_in_ou_desc",
+    "LOCAL_CC_CD": "local_cc_cd",
+    "LOCAL_CC_DESC": "local_cc_desc",
+    "GCRS_COMP_CD": "gcrs_comp_cd",
+    "GCRS_COMP_DESC": "gcrs_comp_desc",
+    "COST_PC_CD_E_OU": "cost_pc_cd_e_ou",
+    "COST_PC_CD_W_OU": "cost_pc_cd_w_ou",
+    "LM_GPN": "lm_gpn",
+    "LM_BS_FIRSTNAME": "lm_bs_firstname",
+    "LM_BS_LASTNAME": "lm_bs_lastname",
+    "SUPERVISOR_GPN": "supervisor_gpn",
+    "RANK_CD": "rank_cd",
+    "RANK_DESC": "rank_desc",
+    "JOB_DESC": "job_desc",
+    "EMPL_CLASS": "empl_class",
+    "FULL_TIME_EQ": "full_time_eq",
+    "HEAD_OF_OWN_OU": "head_of_own_ou",
+    "REG_REGION": "reg_region",
+    "LOCN_CITY_NAME_1": "locn_city_name_1",
+    "LOCN_CTRY_CD_1": "locn_ctry_cd_1",
+    "BUILDING_CD_1": "building_cd_1",
+}
+_EMPLOYEE_MODEL_FIELDS = set(EMPLOYEE_COLUMNS.values())
 
 
 def _read_file(path: str) -> list[dict[str, str]]:
@@ -168,6 +243,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "entities",
         "hierarchy",
         "hierarchies",
+        "employee",
+        "employees",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
@@ -200,6 +277,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "balances": BALANCE_COLUMNS,
         "entity": ENTITY_COLUMNS,
         "entities": ENTITY_COLUMNS,
+        "employee": EMPLOYEE_COLUMNS,
+        "employees": EMPLOYEE_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -216,6 +295,12 @@ def validate_upload(batch_id: int, db: Session) -> dict:
             if not row.get("coarea"):
                 errors.append(
                     {"row": i, "col": "COAREA", "code": "REQUIRED", "msg": "COAREA is required"},
+                )
+                error_rows.add(i)
+        elif batch.kind in ("employee", "employees"):
+            if not row.get("gpn"):
+                errors.append(
+                    {"row": i, "col": "GPN", "code": "REQUIRED", "msg": "GPN is required"},
                 )
                 error_rows.add(i)
         elif batch.kind in ("profit_center", "profit_centers"):
@@ -370,6 +455,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "balances": BALANCE_COLUMNS,
         "entity": ENTITY_COLUMNS,
         "entities": ENTITY_COLUMNS,
+        "employee": EMPLOYEE_COLUMNS,
+        "employees": EMPLOYEE_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -522,6 +609,53 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             loaded += 1
 
+    elif batch.kind in ("employee", "employees"):
+        for row in normalized:
+            gpn = row.get("gpn", "").strip()
+            if not gpn:
+                continue
+            existing = (
+                db.execute(
+                    select(Employee).where(
+                        Employee.gpn == gpn,
+                        Employee.refresh_batch == batch.id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            # Separate model fields from extra attrs
+            model_kwargs: dict = {}
+            extra_attrs: dict = {}
+            for k, v in row.items():
+                if k in _EMPLOYEE_MODEL_FIELDS:
+                    model_kwargs[k] = v if v else None
+                elif k and k != "_extras" and v:
+                    extra_attrs[k] = v
+            # Recover unmapped CSV columns from _extras (stored as repr by _normalize_headers)
+            extras_raw = row.get("_extras")
+            if extras_raw and isinstance(extras_raw, str):
+                try:
+                    parsed = ast.literal_eval(extras_raw)
+                    if isinstance(parsed, dict):
+                        extra_attrs.update(parsed)
+                except (ValueError, SyntaxError):
+                    pass
+            model_kwargs["attrs"] = extra_attrs if extra_attrs else None
+            # Parse datetime fields from various CSV date formats
+            for dt_field in ("valid_from", "valid_to"):
+                raw = model_kwargs.get(dt_field)
+                if raw and isinstance(raw, str):
+                    model_kwargs[dt_field] = _parse_date(raw)
+            model_kwargs["refresh_batch"] = batch.id
+            if existing:
+                for k, v in model_kwargs.items():
+                    if k != "refresh_batch" and v is not None:
+                        setattr(existing, k, v)
+            else:
+                db.add(Employee(**model_kwargs))
+            loaded += 1
+
     elif batch.kind in ("hierarchy", "hierarchies"):
         # Pass 1: create Hierarchy headers
         hier_map: dict[tuple[str, str], Hierarchy] = {}
@@ -648,6 +782,9 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
         deleted = r.rowcount
     elif batch.kind in ("entity", "entities"):
         raise ValueError("Entity uploads cannot be rolled back (no batch tracking on entities)")
+    elif batch.kind in ("employee", "employees"):
+        r = db.execute(sa_delete(Employee).where(Employee.refresh_batch == batch.id))
+        deleted = r.rowcount
     elif batch.kind in ("hierarchy", "hierarchies"):
         hier_ids = [
             h.id

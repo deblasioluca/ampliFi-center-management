@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
 from app.models.core import (
     Balance,
+    Employee,
     Entity,
     Hierarchy,
     HierarchyLeaf,
@@ -305,6 +306,176 @@ def list_hierarchy_leaves(
     }
 
 
+@router.get("/legacy/hierarchies/{hier_id}/tree")
+def hierarchy_tree(
+    hier_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Build a full tree structure for a hierarchy: root → nodes → leaves with CC details."""
+    hier = db.get(Hierarchy, hier_id)
+    if not hier:
+        raise HTTPException(status_code=404, detail="Hierarchy not found")
+
+    nodes = (
+        db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == hier_id))
+        .scalars()
+        .all()
+    )
+    leaves = (
+        db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hier_id))
+        .scalars()
+        .all()
+    )
+
+    # Build children map: parent_setname → list of child_setnames
+    children_map: dict[str, list[str]] = {}
+    all_children: set[str] = set()
+    for n in nodes:
+        children_map.setdefault(n.parent_setname, []).append(n.child_setname)
+        all_children.add(n.child_setname)
+
+    # Build leaves map: setname → list of cost center values
+    leaves_map: dict[str, list[str]] = {}
+    for lf in leaves:
+        leaves_map.setdefault(lf.setname, []).append(lf.value)
+
+    # Collect all CC values for lookup
+    all_cc_values = {lf.value for lf in leaves}
+    cc_lookup: dict[str, LegacyCostCenter] = {}
+    if all_cc_values:
+        ccs = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(all_cc_values)))
+            .scalars()
+            .all()
+        )
+        cc_lookup = {cc.cctr: cc for cc in ccs}
+
+    # Find root nodes (parents that are not children of anything, or the hierarchy setname itself)
+    all_parents = set(children_map.keys())
+    roots = all_parents - all_children
+    if not roots:
+        roots = {hier.setname}
+
+    def build_node(setname: str, depth: int = 0) -> dict:
+        node_children = children_map.get(setname, [])
+        node_leaves = leaves_map.get(setname, [])
+        cc_items = []
+        for val in node_leaves:
+            cc = cc_lookup.get(val)
+            cc_items.append(
+                {
+                    "cctr": val,
+                    "name": cc.txtsh if cc else None,
+                    "ccode": cc.ccode if cc else None,
+                    "responsible": cc.responsible if cc else None,
+                    "pctr": cc.pctr if cc else None,
+                }
+            )
+        return {
+            "setname": setname,
+            "type": "leaf" if (not node_children and node_leaves) else "node",
+            "children": [build_node(c, depth + 1) for c in sorted(node_children)],
+            "cost_centers": cc_items,
+            "depth": depth,
+        }
+
+    tree = [build_node(r) for r in sorted(roots)]
+
+    return {
+        "hierarchy_id": hier_id,
+        "setclass": hier.setclass,
+        "setname": hier.setname,
+        "description": hier.description,
+        "tree": tree,
+    }
+
+
+@router.get("/employees")
+def list_employees(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    search: str | None = None,
+    ou_cd: str | None = None,
+    cc_cd: str | None = None,
+) -> dict:
+    query = select(Employee)
+    count_q = select(func.count(Employee.id))
+    if search:
+        like = f"%{search}%"
+        flt = (
+            Employee.gpn.ilike(like)
+            | Employee.bs_name.ilike(like)
+            | Employee.email_address.ilike(like)
+        )
+        query = query.where(flt)
+        count_q = count_q.where(flt)
+    if ou_cd:
+        query = query.where(Employee.ou_cd == ou_cd)
+        count_q = count_q.where(Employee.ou_cd == ou_cd)
+    if cc_cd:
+        query = query.where(Employee.local_cc_cd == cc_cd)
+        count_q = count_q.where(Employee.local_cc_cd == cc_cd)
+    total = db.execute(count_q).scalar() or 0
+    emps = (
+        db.execute(query.order_by(Employee.gpn).offset((pag.page - 1) * pag.size).limit(pag.size))
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": e.id,
+                "gpn": e.gpn,
+                "display_name": e.display_name,
+                "bs_name": e.bs_name,
+                "bs_firstname": e.bs_firstname,
+                "bs_lastname": e.bs_lastname,
+                "email_address": e.email_address,
+                "emp_status": e.emp_status,
+                "ou_cd": e.ou_cd,
+                "ou_desc": e.ou_desc,
+                "local_cc_cd": e.local_cc_cd,
+                "local_cc_desc": e.local_cc_desc,
+                "gcrs_comp_cd": e.gcrs_comp_cd,
+                "rank_desc": e.rank_desc,
+                "job_desc": e.job_desc,
+                "reg_region": e.reg_region,
+                "locn_city_name_1": e.locn_city_name_1,
+                "lm_gpn": e.lm_gpn,
+                "lm_bs_firstname": e.lm_bs_firstname,
+                "lm_bs_lastname": e.lm_bs_lastname,
+            }
+            for e in emps
+        ],
+    }
+
+
+@router.get("/employees/{gpn}")
+def get_employee(gpn: str, db: Session = Depends(get_db)) -> dict:
+    """Lookup an employee by GPN — used for owner display (GPN + Name)."""
+    emp = db.execute(select(Employee).where(Employee.gpn == gpn)).scalars().first()
+    if not emp:
+        return {"found": False, "gpn": gpn}
+    return {
+        "found": True,
+        "gpn": emp.gpn,
+        "display_name": emp.display_name,
+        "bs_name": emp.bs_name,
+        "bs_firstname": emp.bs_firstname,
+        "bs_lastname": emp.bs_lastname,
+        "email_address": emp.email_address,
+        "emp_status": emp.emp_status,
+        "ou_cd": emp.ou_cd,
+        "ou_desc": emp.ou_desc,
+        "local_cc_cd": emp.local_cc_cd,
+        "job_desc": emp.job_desc,
+        "rank_desc": emp.rank_desc,
+    }
+
+
 @router.get("/data/counts")
 def data_counts(db: Session = Depends(get_db)) -> dict:
     """Aggregate counts for the data management dashboard."""
@@ -314,6 +485,7 @@ def data_counts(db: Session = Depends(get_db)) -> dict:
         "profit_centers": db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0,
         "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
+        "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
 

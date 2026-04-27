@@ -58,8 +58,8 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}") from None
 
 
-def authenticate_user(db: Session, email: str, password: str) -> AppUser:
-    stmt = select(AppUser).where(AppUser.email == email)
+def authenticate_user(db: Session, username: str, password: str) -> AppUser:
+    stmt = select(AppUser).where(AppUser.username == username)
     user = db.execute(stmt).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")

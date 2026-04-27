@@ -24,11 +24,10 @@ def cmd_seed(args: argparse.Namespace) -> None:
     db = SessionLocal()
 
     # ── Admin user ──────────────────────────────────────────────────────
-    existing = db.execute(
-        select(AppUser).where(AppUser.email == "admin@amplifi.dev")
-    ).scalar_one_or_none()
+    existing = db.execute(select(AppUser).where(AppUser.username == "admin")).scalar_one_or_none()
     if not existing:
         admin = AppUser(
+            username="admin",
             email="admin@amplifi.dev",
             display_name="Admin",
             password_hash=hash_password("admin"),
@@ -36,9 +35,9 @@ def cmd_seed(args: argparse.Namespace) -> None:
         )
         db.add(admin)
         db.commit()
-        logger.info("seed.user.created", email="admin@amplifi.dev")
+        logger.info("seed.user.created", username="admin")
     else:
-        logger.info("seed.user.exists", email="admin@amplifi.dev")
+        logger.info("seed.user.exists", username="admin")
 
     # ── Sample data (entities, CCs, PCs, balances, hierarchy) ────────
     counts = generate_sample_data(db)

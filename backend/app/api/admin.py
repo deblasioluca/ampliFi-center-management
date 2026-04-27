@@ -6,7 +6,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,8 @@ router = APIRouter()
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
+    email: str | None = None
     display_name: str
     password: str
     role: str = "analyst"
@@ -46,7 +47,8 @@ class UserUpdate(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    email: str
+    username: str
+    email: str | None = None
     display_name: str
     role: str
     is_active: bool
@@ -77,10 +79,13 @@ def create_user(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin")),
 ) -> UserOut:
-    existing = db.execute(select(AppUser).where(AppUser.email == body.email)).scalar_one_or_none()
+    existing = db.execute(
+        select(AppUser).where(AppUser.username == body.username)
+    ).scalar_one_or_none()
     if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Username already taken")
     user = AppUser(
+        username=body.username,
         email=body.email,
         display_name=body.display_name,
         password_hash=hash_password(body.password),
@@ -439,6 +444,149 @@ def test_sap_connection(
     db.add(probe)
     db.commit()
     return result
+
+
+@router.post("/sap/{conn_id}/trial")
+def run_sap_trial(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Full connection trial — tests ALL endpoints (ADT, OData, SOAP).
+
+    Adopted from sap-ai-consultant. Returns a result matrix with per-endpoint
+    probes, login check, and recommendations.
+    """
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+    from app.infra.sap.client import test_connection_full
+
+    result = test_connection_full(conn)
+
+    # Persist per-endpoint probe results
+    for probe_data in result.get("probes", []):
+        probe = SAPConnectionProbe(
+            connection_id=conn.id,
+            status="ok" if probe_data.get("success") else "error",
+            protocol=probe_data.get("endpoint", "unknown"),
+            latency_ms=probe_data.get("latency_ms"),
+            details=probe_data,
+            probed_by=_user.id,
+        )
+        db.add(probe)
+    db.commit()
+    return result
+
+
+@router.get("/sap/{conn_id}/discover/services")
+def discover_sap_services(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Discover available OData services on the SAP gateway."""
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+    from app.infra.sap.client import discover_odata_services
+
+    try:
+        services = discover_odata_services(conn)
+        return {"connection": conn.name, "services": services, "count": len(services)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# --- Object Bindings ---
+
+
+class ObjectBindingCreate(BaseModel):
+    object_type: str  # cost_center|profit_center|hierarchy|balance|gl_account|employee
+    entity_set: str | None = None
+    path: str | None = None
+    params: dict | None = None
+    schedule_cron: str | None = None
+    enabled: bool = True
+
+
+@router.get("/sap/{conn_id}/bindings")
+def list_object_bindings(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> list[dict]:
+    """List object bindings for a SAP connection."""
+    from app.models.core import SAPObjectBinding
+
+    bindings = (
+        db.execute(select(SAPObjectBinding).where(SAPObjectBinding.connection_id == conn_id))
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": b.id,
+            "object_type": b.object_type,
+            "entity_set": b.entity_set,
+            "path": b.path,
+            "params": b.params,
+            "schedule_cron": b.schedule_cron,
+            "enabled": b.enabled,
+        }
+        for b in bindings
+    ]
+
+
+@router.post("/sap/{conn_id}/bindings")
+def create_object_binding(
+    conn_id: int,
+    body: ObjectBindingCreate,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Create an object binding (what data to extract from this SAP system)."""
+    from app.models.core import SAPObjectBinding
+
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+
+    binding = SAPObjectBinding(
+        connection_id=conn_id,
+        object_type=body.object_type,
+        entity_set=body.entity_set,
+        path=body.path,
+        params=body.params,
+        schedule_cron=body.schedule_cron,
+        enabled=body.enabled,
+    )
+    db.add(binding)
+    db.commit()
+    db.refresh(binding)
+    return {
+        "id": binding.id,
+        "object_type": binding.object_type,
+        "entity_set": binding.entity_set,
+        "enabled": binding.enabled,
+    }
+
+
+@router.delete("/sap/{conn_id}/bindings/{binding_id}")
+def delete_object_binding(
+    conn_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.models.core import SAPObjectBinding
+
+    binding = db.get(SAPObjectBinding, binding_id)
+    if not binding or binding.connection_id != conn_id:
+        raise HTTPException(status_code=404, detail="Object binding not found")
+    db.delete(binding)
+    db.commit()
+    return {"status": "deleted"}
 
 
 # --- Uploads ---

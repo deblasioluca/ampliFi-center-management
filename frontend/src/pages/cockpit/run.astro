@@ -85,7 +85,7 @@ export const prerender = false;
 </Layout>
 
 <script>
-  var token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  var token = localStorage.getItem('amplifi_token');
   if (!token) { window.location.href = '/login'; }
   var authHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 

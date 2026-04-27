@@ -5,9 +5,10 @@ Revises: phase6_gl_ranges
 Create Date: 2026-04-26
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "phase7_wave_tpl"
 down_revision = "phase6_gl_ranges"
@@ -25,8 +26,16 @@ def upgrade() -> None:
         sa.Column("is_full_scope", sa.Boolean(), server_default="false"),
         sa.Column("exclude_prior", sa.Boolean(), server_default="true"),
         sa.Column("entity_ccodes", JSONB(), nullable=True),
-        sa.Column("created_by", sa.Integer(), sa.ForeignKey("cleanup.app_user.id", ondelete="SET NULL")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column(
+            "created_by",
+            sa.Integer(),
+            sa.ForeignKey("cleanup.app_user.id", ondelete="SET NULL"),
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+        ),
         sa.Column("updated_at", sa.DateTime(timezone=True)),
         schema="cleanup",
     )
