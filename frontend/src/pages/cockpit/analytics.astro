@@ -22,21 +22,22 @@ export const prerender = false;
     </div>
   </div>
 
-  <!-- Persistent KPI Strip (§20.8) -->
+  <!-- Persistent KPI Strip -->
   <div id="kpi-strip" class="bg-white border rounded-lg p-3 mb-6 flex flex-wrap gap-3"></div>
 
   <!-- Outcome Donut + Target Bar -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">Outcome Distribution</h3>
-      <div class="flex items-center justify-center">
-        <canvas id="chart-outcome-donut" width="280" height="280"></canvas>
+      <div id="chart-outcome-donut" class="flex items-center justify-center min-h-[200px]">
+        <span class="text-sm text-gray-400">Select a run to see outcome distribution</span>
       </div>
-      <div id="chart-outcome-legend" class="flex justify-center gap-4 mt-3 text-xs"></div>
     </div>
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">Target Object per Outcome</h3>
-      <canvas id="chart-target-bar" width="500" height="280"></canvas>
+      <div id="chart-target-bar" class="min-h-[200px]">
+        <span class="text-sm text-gray-400">Select a run to see target objects</span>
+      </div>
     </div>
   </div>
 
@@ -46,27 +47,31 @@ export const prerender = false;
     <div id="chart-entity-heatmap" class="overflow-x-auto"></div>
   </div>
 
-  <!-- Balance Bubble + Inactivity Heatmap -->
+  <!-- Balance vs Activity + ML Confidence -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
     <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Balance vs Activity (Bubble)</h3>
-      <canvas id="chart-balance-bubble" width="500" height="300"></canvas>
+      <h3 class="text-sm font-semibold mb-3">Balance vs Activity</h3>
+      <div id="chart-balance-activity" class="min-h-[200px]">
+        <span class="text-sm text-gray-400">Select a run to see balance data</span>
+      </div>
     </div>
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">ML Confidence Distribution</h3>
-      <canvas id="chart-ml-hist" width="500" height="300"></canvas>
+      <div id="chart-ml-hist" class="min-h-[200px]">
+        <span class="text-sm text-gray-400">Select a run to see confidence data</span>
+      </div>
     </div>
   </div>
 
   <!-- Sankey / Flow -->
   <div class="card mb-6">
-    <h3 class="text-sm font-semibold mb-3">Legacy → Target Flow (Sankey)</h3>
-    <div id="chart-sankey" class="h-64 flex items-center justify-center text-sm text-gray-400">
+    <h3 class="text-sm font-semibold mb-3">Legacy → Target Flow</h3>
+    <div id="chart-sankey" class="min-h-[100px] flex items-center justify-center text-sm text-gray-400">
       Select a completed run to see the flow diagram
     </div>
   </div>
 
-  <!-- Run Comparison (if two runs selected) -->
+  <!-- Run Comparison -->
   <div id="comparison-section" class="hidden mb-6">
     <h3 class="text-lg font-semibold mb-3">Run Comparison</h3>
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -85,7 +90,7 @@ export const prerender = false;
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">Housekeeping Flag Distribution</h3>
-      <canvas id="chart-hk-flags" width="280" height="200"></canvas>
+      <div id="chart-hk-flags" class="min-h-[120px]"></div>
     </div>
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">Owner Response Funnel</h3>
@@ -93,7 +98,7 @@ export const prerender = false;
     </div>
     <div class="card">
       <h3 class="text-sm font-semibold mb-3">Closure Trend</h3>
-      <canvas id="chart-hk-trend" width="300" height="200"></canvas>
+      <div id="chart-hk-trend" class="min-h-[120px]"></div>
     </div>
   </div>
 </Layout>
@@ -106,7 +111,7 @@ export const prerender = false;
   var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6', OTHER: '#9ca3af' };
   var TARGET_COLORS = { CC: '#6366f1', PC: '#8b5cf6', CC_AND_PC: '#a78bfa', PC_ONLY: '#c084fc', WBS_REAL: '#e879f9', WBS_STAT: '#f0abfc', NONE: '#d1d5db' };
 
-  function fmt(n) { return n != null ? Number(n).toLocaleString() : '--'; }
+  function fmt(n) { if (n == null) return '--'; if (typeof n === 'string') return n; return Number(n).toLocaleString(); }
 
   // Load waves
   fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -117,7 +122,6 @@ export const prerender = false;
       opt.textContent = w.name + ' (' + w.status + ')';
       sel.appendChild(opt);
     });
-    // Auto-select from URL params or first available
     var params = new URLSearchParams(window.location.search);
     if (params.get('wave')) sel.value = params.get('wave');
     else if (params.get('global') === '1') sel.value = '__global__';
@@ -129,11 +133,7 @@ export const prerender = false;
   });
 
   function handleWaveSelect(val) {
-    if (val === '__global__') {
-      loadGlobalRuns();
-    } else {
-      loadWaveRuns(val);
-    }
+    if (val === '__global__') { loadGlobalRuns(); } else { loadWaveRuns(val); }
   }
 
   function loadGlobalRuns() {
@@ -175,13 +175,15 @@ export const prerender = false;
       var k = run.kpis || {};
       var strip = document.getElementById('kpi-strip');
       var total = k.total_centers || 0;
+      var keepCount = k.keep || 0;
+      var reduction = total ? Math.round((1 - keepCount / total) * 100) + '%' : '--';
       var kpis = [
         { label: 'Total Centers', value: total, color: 'bg-gray-100' },
-        { label: 'KEEP', value: k.keep || 0, pct: total ? Math.round((k.keep || 0) / total * 100) : 0, color: 'bg-green-100 text-green-800' },
+        { label: 'KEEP', value: keepCount, pct: total ? Math.round(keepCount / total * 100) : 0, color: 'bg-green-100 text-green-800' },
         { label: 'RETIRE', value: k.retire || 0, pct: total ? Math.round((k.retire || 0) / total * 100) : 0, color: 'bg-red-100 text-red-800' },
         { label: 'MERGE_MAP', value: k.merge_map || 0, pct: total ? Math.round((k.merge_map || 0) / total * 100) : 0, color: 'bg-amber-100 text-amber-800' },
         { label: 'REDESIGN', value: k.redesign || 0, pct: total ? Math.round((k.redesign || 0) / total * 100) : 0, color: 'bg-blue-100 text-blue-800' },
-        { label: 'Reduction', value: total ? Math.round((1 - (k.keep || 0) / total) * 100) + '%' : '--', color: 'bg-purple-100 text-purple-800' }
+        { label: 'Reduction', value: reduction, color: 'bg-purple-100 text-purple-800' }
       ];
       strip.innerHTML = kpis.map(function(kpi) {
         return '<div class="rounded-lg px-4 py-2 ' + kpi.color + ' min-w-[120px]">' +
@@ -189,126 +191,138 @@ export const prerender = false;
           '<div class="text-lg font-bold">' + fmt(kpi.value) + '</div>' +
           (kpi.pct != null ? '<div class="text-xs opacity-60">' + kpi.pct + '% of total</div>' : '') + '</div>';
       }).join('');
-    });
+    }).catch(function(err) { console.error('KPI fetch error:', err); });
 
-    // Proposals for charts
-    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var items = d.items || [];
+    // Proposals for all charts
+    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var items = d.items || [];
+        if (!items.length) {
+          document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-gray-400">No proposals found for this run</span>';
+          return;
+        }
 
-      // -- Outcome Donut --
-      var outcomeCounts = {};
-      items.forEach(function(p) {
-        var o = p.cleansing_outcome || 'OTHER';
-        outcomeCounts[o] = (outcomeCounts[o] || 0) + 1;
+        // -- Outcome Distribution (CSS Donut + Legend) --
+        var outcomeCounts = {};
+        items.forEach(function(p) {
+          var o = p.cleansing_outcome || 'OTHER';
+          outcomeCounts[o] = (outcomeCounts[o] || 0) + 1;
+        });
+        drawDonutCSS('chart-outcome-donut', outcomeCounts, COLORS);
+
+        // -- Target Bar (HTML bars) --
+        var targetByOutcome = {};
+        items.forEach(function(p) {
+          var o = p.cleansing_outcome || 'OTHER';
+          var t = p.target_object || 'NONE';
+          if (!targetByOutcome[o]) targetByOutcome[o] = {};
+          targetByOutcome[o][t] = (targetByOutcome[o][t] || 0) + 1;
+        });
+        drawTargetBars('chart-target-bar', targetByOutcome, TARGET_COLORS);
+
+        // -- Entity Heatmap --
+        var entityOutcome = {};
+        items.forEach(function(p) {
+          var e = p.ccode || 'Unknown';
+          var o = p.cleansing_outcome || 'OTHER';
+          if (!entityOutcome[e]) entityOutcome[e] = {};
+          entityOutcome[e][o] = (entityOutcome[e][o] || 0) + 1;
+        });
+        drawHeatmap('chart-entity-heatmap', entityOutcome, ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']);
+
+        // -- Sankey (flow bars) --
+        var flows = {};
+        items.forEach(function(p) {
+          var src = p.cleansing_outcome || 'OTHER';
+          var tgt = p.target_object || 'NONE';
+          var key = src + ' → ' + tgt;
+          flows[key] = (flows[key] || 0) + 1;
+        });
+        drawSankey('chart-sankey', flows);
+
+        // -- Balance vs Activity --
+        drawBalanceActivity('chart-balance-activity', items);
+
+        // -- ML Confidence Distribution --
+        var confs = items.filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
+        drawConfidenceHist('chart-ml-hist', confs);
+      })
+      .catch(function(err) {
+        console.error('Proposals fetch error:', err);
+        document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-red-500">Error loading proposals: ' + err.message + '</span>';
       });
-      drawDonut('chart-outcome-donut', outcomeCounts, COLORS);
-      var legendEl = document.getElementById('chart-outcome-legend');
-      legendEl.innerHTML = Object.keys(outcomeCounts).map(function(k) {
-        return '<span class="flex items-center gap-1"><span class="w-3 h-3 rounded" style="background:' + (COLORS[k] || '#999') + '"></span>' + k + ': ' + outcomeCounts[k] + '</span>';
-      }).join('');
-
-      // -- Target Bar --
-      var targetByOutcome = {};
-      items.forEach(function(p) {
-        var o = p.cleansing_outcome || 'OTHER';
-        var t = p.target_object || 'NONE';
-        if (!targetByOutcome[o]) targetByOutcome[o] = {};
-        targetByOutcome[o][t] = (targetByOutcome[o][t] || 0) + 1;
-      });
-      drawStackedBar('chart-target-bar', targetByOutcome, TARGET_COLORS);
-
-      // -- Entity Heatmap --
-      var entityOutcome = {};
-      items.forEach(function(p) {
-        var e = p.ccode || 'Unknown';
-        var o = p.cleansing_outcome || 'OTHER';
-        if (!entityOutcome[e]) entityOutcome[e] = {};
-        entityOutcome[e][o] = (entityOutcome[e][o] || 0) + 1;
-      });
-      drawHeatmap('chart-entity-heatmap', entityOutcome, ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']);
-
-      // -- Sankey (simple flow) --
-      var flows = {};
-      items.forEach(function(p) {
-        var src = p.cleansing_outcome || 'OTHER';
-        var tgt = p.target_object || 'NONE';
-        var key = src + ' → ' + tgt;
-        flows[key] = (flows[key] || 0) + 1;
-      });
-      drawSankey('chart-sankey', flows);
-    });
-
-    // ML confidence histogram
-    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var confs = (d.items || []).filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
-      drawHistogram('chart-ml-hist', confs, 20, '#6366f1');
-    });
   }
 
-  // --- CHART DRAWING FUNCTIONS ---
+  // --- CHART DRAWING FUNCTIONS (Pure HTML/CSS — no canvas) ---
 
-  function drawDonut(canvasId, data, colors) {
-    var canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
+  function drawDonutCSS(divId, data, colors) {
+    var el = document.getElementById(divId);
+    if (!el) return;
     var total = Object.values(data).reduce(function(a, b) { return a + b; }, 0);
-    if (!total) return;
-    var cx = canvas.width / 2, cy = canvas.height / 2, r = Math.min(cx, cy) - 20, ri = r * 0.6;
-    var startAngle = -Math.PI / 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!total) { el.innerHTML = '<span class="text-sm text-gray-400">No data</span>'; return; }
+
+    var segments = [];
+    var cumPct = 0;
     Object.keys(data).forEach(function(key) {
-      var slice = data[key] / total * Math.PI * 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, startAngle, startAngle + slice);
-      ctx.arc(cx, cy, ri, startAngle + slice, startAngle, true);
-      ctx.closePath();
-      ctx.fillStyle = colors[key] || '#999';
-      ctx.fill();
-      startAngle += slice;
+      var pct = data[key] / total * 100;
+      segments.push((colors[key] || '#999') + ' ' + cumPct + '% ' + (cumPct + pct) + '%');
+      cumPct += pct;
     });
-    // Center text
-    ctx.fillStyle = '#374151';
-    ctx.font = 'bold 24px system-ui';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(total.toLocaleString(), cx, cy - 8);
-    ctx.font = '12px system-ui';
-    ctx.fillStyle = '#9ca3af';
-    ctx.fillText('Total Centers', cx, cy + 12);
+
+    var donutGradient = 'conic-gradient(' + segments.join(', ') + ')';
+    var html = '<div class="flex flex-col items-center gap-4">' +
+      '<div style="width:200px;height:200px;border-radius:50%;background:' + donutGradient + ';position:relative;">' +
+      '<div style="position:absolute;top:25%;left:25%;width:50%;height:50%;border-radius:50%;background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;">' +
+      '<div class="text-2xl font-bold text-gray-800">' + total.toLocaleString() + '</div>' +
+      '<div class="text-xs text-gray-400">Total</div></div></div>' +
+      '<div class="flex flex-wrap justify-center gap-3">';
+    Object.keys(data).forEach(function(key) {
+      var pct = Math.round(data[key] / total * 100);
+      html += '<span class="flex items-center gap-1 text-xs">' +
+        '<span class="w-3 h-3 rounded-sm" style="background:' + (colors[key] || '#999') + '"></span>' +
+        '<span class="font-medium">' + key + '</span>: ' + data[key] + ' (' + pct + '%)</span>';
+    });
+    html += '</div></div>';
+    el.innerHTML = html;
   }
 
-  function drawStackedBar(canvasId, data, colors) {
-    var canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function drawTargetBars(divId, data, colors) {
+    var el = document.getElementById(divId);
+    if (!el) return;
     var outcomes = Object.keys(data);
-    if (!outcomes.length) return;
-    var allTargets = {};
-    outcomes.forEach(function(o) { Object.keys(data[o]).forEach(function(t) { allTargets[t] = true; }); });
-    var targets = Object.keys(allTargets);
-    var barWidth = Math.min(60, (canvas.width - 60) / outcomes.length - 10);
+    if (!outcomes.length) { el.innerHTML = '<span class="text-sm text-gray-400">No data</span>'; return; }
+
     var maxVal = 0;
     outcomes.forEach(function(o) {
       var sum = Object.values(data[o]).reduce(function(a, b) { return a + b; }, 0);
       if (sum > maxVal) maxVal = sum;
     });
-    var chartH = canvas.height - 40;
-    outcomes.forEach(function(o, i) {
-      var x = 50 + i * (barWidth + 10);
-      var y = chartH;
-      targets.forEach(function(t) {
-        var count = data[o][t] || 0;
-        var h = maxVal ? count / maxVal * (chartH - 20) : 0;
-        ctx.fillStyle = colors[t] || '#ddd';
-        ctx.fillRect(x, y - h, barWidth, h);
-        y -= h;
+
+    var html = '<div class="space-y-3">';
+    outcomes.forEach(function(o) {
+      var parts = data[o];
+      var sum = Object.values(parts).reduce(function(a, b) { return a + b; }, 0);
+      var pct = maxVal ? Math.round(sum / maxVal * 100) : 0;
+      html += '<div>' +
+        '<div class="flex justify-between text-xs mb-1"><span class="font-medium" style="color:' + (COLORS[o] || '#666') + '">' + o + '</span><span class="text-gray-500">' + sum + '</span></div>' +
+        '<div class="flex h-6 rounded overflow-hidden bg-gray-100" style="width:' + pct + '%">';
+      Object.keys(parts).forEach(function(t) {
+        var tPct = sum ? Math.round(parts[t] / sum * 100) : 0;
+        html += '<div class="h-full flex items-center justify-center text-[10px] text-white font-medium" style="width:' + tPct + '%;background:' + (colors[t] || '#ddd') + '" title="' + t + ': ' + parts[t] + '">' +
+          (tPct > 15 ? t : '') + '</div>';
       });
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '10px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText(o, x + barWidth / 2, chartH + 15);
+      html += '</div></div>';
     });
+    // Legend
+    html += '<div class="flex flex-wrap gap-2 mt-3 pt-2 border-t">';
+    var allTargets = {};
+    outcomes.forEach(function(o) { Object.keys(data[o]).forEach(function(t) { allTargets[t] = true; }); });
+    Object.keys(allTargets).forEach(function(t) {
+      html += '<span class="flex items-center gap-1 text-[10px]"><span class="w-2 h-2 rounded-sm" style="background:' + (colors[t] || '#ddd') + '"></span>' + t + '</span>';
+    });
+    html += '</div></div>';
+    el.innerHTML = html;
   }
 
   function drawHeatmap(divId, data, cols) {
@@ -318,18 +332,21 @@ export const prerender = false;
     if (!rows.length) { el.textContent = 'No data available'; return; }
     var maxVal = 0;
     rows.forEach(function(r) { cols.forEach(function(c) { var v = (data[r] && data[r][c]) || 0; if (v > maxVal) maxVal = v; }); });
-    var html = '<table class="w-full text-xs"><thead><tr><th class="py-1 px-2">Entity</th>';
+    var html = '<table class="w-full text-xs"><thead><tr><th class="py-1 px-2 text-left">Entity</th>';
     cols.forEach(function(c) { html += '<th class="py-1 px-2 text-center">' + c + '</th>'; });
-    html += '</tr></thead><tbody>';
+    html += '<th class="py-1 px-2 text-center">Total</th></tr></thead><tbody>';
     rows.forEach(function(r) {
+      var rowTotal = 0;
       html += '<tr><td class="py-1 px-2 font-mono font-medium border-r">' + r + '</td>';
       cols.forEach(function(c) {
         var v = (data[r] && data[r][c]) || 0;
-        var intensity = maxVal ? Math.round(v / maxVal * 255) : 0;
-        var bg = 'rgba(' + (COLORS[c] ? hexToRgb(COLORS[c]) : '100,100,100') + ',' + (intensity / 255 * 0.8 + 0.05).toFixed(2) + ')';
-        html += '<td class="py-1 px-2 text-center" style="background:' + bg + '">' + (v || '') + '</td>';
+        rowTotal += v;
+        var intensity = maxVal ? (v / maxVal * 0.8 + 0.05) : 0.05;
+        var color = COLORS[c] || '#999';
+        var rgb = hexToRgb(color);
+        html += '<td class="py-1 px-2 text-center font-mono" style="background:rgba(' + rgb + ',' + intensity.toFixed(2) + ')">' + (v || '-') + '</td>';
       });
-      html += '</tr>';
+      html += '<td class="py-1 px-2 text-center font-mono font-bold border-l">' + rowTotal + '</td></tr>';
     });
     el.innerHTML = html + '</tbody></table>';
   }
@@ -341,12 +358,44 @@ export const prerender = false;
     return r + ',' + g + ',' + b;
   }
 
-  function drawHistogram(canvasId, values, bins, color) {
-    var canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!values.length) { ctx.fillStyle = '#9ca3af'; ctx.fillText('No ML confidence data', 10, 30); return; }
+  function drawBalanceActivity(divId, items) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    // Group by outcome, show count + avg postings
+    var groups = {};
+    items.forEach(function(p) {
+      var o = p.cleansing_outcome || 'OTHER';
+      if (!groups[o]) groups[o] = { count: 0, totalPostings: 0 };
+      groups[o].count++;
+      var trend = p.posting_trend || [];
+      var sum = trend.reduce(function(a, b) { return a + b; }, 0);
+      groups[o].totalPostings += sum;
+    });
+
+    var html = '<div class="space-y-2">';
+    var maxPostings = 0;
+    Object.keys(groups).forEach(function(o) {
+      var avg = groups[o].count ? Math.round(groups[o].totalPostings / groups[o].count) : 0;
+      if (avg > maxPostings) maxPostings = avg;
+    });
+    Object.keys(groups).forEach(function(o) {
+      var avg = groups[o].count ? Math.round(groups[o].totalPostings / groups[o].count) : 0;
+      var pct = maxPostings ? Math.round(avg / maxPostings * 100) : 0;
+      html += '<div class="flex items-center gap-2">' +
+        '<span class="w-24 text-xs font-medium text-right" style="color:' + (COLORS[o] || '#666') + '">' + o + ' (' + groups[o].count + ')</span>' +
+        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
+        '<div class="h-full rounded" style="width:' + pct + '%;background:' + (COLORS[o] || '#999') + ';opacity:0.6"></div>' +
+        '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">avg ' + avg + ' postings</span></div></div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function drawConfidenceHist(divId, values) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    if (!values.length) { el.innerHTML = '<span class="text-sm text-gray-400">No ML confidence data</span>'; return; }
+    var bins = 10;
     var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
     var step = (max - min) / bins || 0.1;
     var counts = new Array(bins).fill(0);
@@ -355,22 +404,18 @@ export const prerender = false;
       counts[idx]++;
     });
     var maxCount = Math.max.apply(null, counts);
-    var barW = (canvas.width - 60) / bins;
-    var chartH = canvas.height - 40;
+    var html = '<div class="flex items-end gap-1 h-[160px]">';
     counts.forEach(function(c, i) {
-      var h = maxCount ? c / maxCount * (chartH - 10) : 0;
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.7;
-      ctx.fillRect(50 + i * barW, chartH - h, barW - 1, h);
+      var hPct = maxCount ? Math.round(c / maxCount * 100) : 0;
+      var label = (min + i * step).toFixed(2);
+      html += '<div class="flex-1 flex flex-col items-center justify-end h-full">' +
+        '<div class="text-[9px] font-mono text-gray-500 mb-1">' + c + '</div>' +
+        '<div class="w-full rounded-t" style="height:' + hPct + '%;background:#6366f1;opacity:0.7;min-height:' + (c ? '2px' : '0') + '"></div>' +
+        '<div class="text-[8px] font-mono text-gray-400 mt-1 truncate w-full text-center">' + label + '</div></div>';
     });
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#6b7280';
-    ctx.font = '10px system-ui';
-    ctx.fillText(min.toFixed(2), 50, chartH + 15);
-    ctx.textAlign = 'right';
-    ctx.fillText(max.toFixed(2), canvas.width - 10, chartH + 15);
-    ctx.textAlign = 'center';
-    ctx.fillText('ML Confidence', canvas.width / 2, chartH + 30);
+    html += '</div>';
+    html += '<div class="text-center text-xs text-gray-500 mt-1">Confidence Score Range (' + values.length + ' proposals)</div>';
+    el.innerHTML = html;
   }
 
   function drawSankey(divId, flows) {
@@ -384,10 +429,10 @@ export const prerender = false;
       var parts = f[0].split(' → ');
       var color = COLORS[parts[0]] || '#999';
       html += '<div class="flex items-center gap-2 text-xs">' +
-        '<span class="w-20 text-right font-medium" style="color:' + color + '">' + parts[0] + '</span>' +
+        '<span class="w-24 text-right font-medium" style="color:' + color + '">' + parts[0] + '</span>' +
         '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
         '<div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.5"></div>' +
-        '<span class="absolute inset-0 flex items-center justify-center text-xs font-mono">' + f[1] + '</span></div>' +
+        '<span class="absolute inset-0 flex items-center justify-center text-xs font-mono">' + f[1] + ' (' + pct + '%)</span></div>' +
         '<span class="w-16 font-medium">' + parts[1] + '</span></div>';
     });
     el.innerHTML = html + '</div>';
@@ -408,7 +453,6 @@ export const prerender = false;
       btn.textContent = 'Run Global Analysis';
       btn.disabled = false;
       alert('Global analysis completed — Run #' + d.run_id + ' (' + (d.kpis ? d.kpis.total_centers : '?') + ' centers)');
-      // Switch to global view and reload
       document.getElementById('sel-wave').value = '__global__';
       loadGlobalRuns();
     }).catch(function(err) {

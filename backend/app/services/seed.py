@@ -370,6 +370,20 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
         "employees": 0,
     }
 
+    # Deduplicate legacy cost centers (remove older duplicates, keep newest)
+    from sqlalchemy import text
+
+    db.execute(
+        text("""
+        DELETE FROM cleanup.legacy_cost_center
+        WHERE id NOT IN (
+            SELECT MAX(id) FROM cleanup.legacy_cost_center
+            GROUP BY coarea, cctr
+        )
+        """)
+    )
+    db.flush()
+
     # Entities
     for ccode, name, country, region, currency in SAMPLE_ENTITIES:
         if not db.execute(select(Entity).where(Entity.ccode == ccode)).scalar_one_or_none():
@@ -400,13 +414,26 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
         }
         currency = currency_map.get(ccode, "EUR")
 
-        # Cost center
-        if not db.execute(
-            select(LegacyCostCenter).where(
-                LegacyCostCenter.coarea == COAREA,
-                LegacyCostCenter.cctr == cctr,
+        # Cost center — insert or update existing
+        existing_cc = (
+            db.execute(
+                select(LegacyCostCenter)
+                .where(LegacyCostCenter.coarea == COAREA, LegacyCostCenter.cctr == cctr)
+                .limit(1)
             )
-        ).scalar_one_or_none():
+            .scalars()
+            .first()
+        )
+        if existing_cc:
+            existing_cc.txtsh = name
+            existing_cc.txtmi = long_name
+            existing_cc.ccode = ccode
+            existing_cc.cctrcgy = cctrcgy
+            existing_cc.currency = currency
+            existing_cc.is_active = is_active
+            existing_cc.pctr = pctr
+            existing_cc.responsible = resp_gpn
+        else:
             db.add(
                 LegacyCostCenter(
                     coarea=COAREA,
