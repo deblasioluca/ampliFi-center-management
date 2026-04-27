@@ -64,8 +64,10 @@ stop: ## Stop backend + frontend
 		fi; \
 		rm -f $(BACKEND_PID); \
 	else \
-		echo "[ok] Backend not running"; \
+		echo "[ok] Backend PID file not found"; \
 	fi
+	@pkill -f "uvicorn app.main:app.*--port $(BACKEND_PORT)" 2>/dev/null && \
+		echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
 	@if [ -f $(FRONTEND_PID) ]; then \
 		PID=$$(cat $(FRONTEND_PID)); \
 		if kill -0 $$PID 2>/dev/null; then \

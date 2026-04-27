@@ -1280,3 +1280,153 @@ def llm_usage_summary(
         monthly_cap_usd=guardrail_config.get("monthly_cap_usd", 500.0),
     )
     return guardrail.get_usage_summary(db)
+
+
+# --- Datasphere Integration ---
+
+
+class DatasphereConfigUpdate(BaseModel):
+    ds_url: str | None = None
+    ds_schema: str = "ACM"
+    ds_user: str | None = None
+    ds_password: str | None = None
+    ds_use_ssl: bool = True
+    is_active: bool = False
+    domain_config: dict | None = None
+
+
+@router.get("/datasphere/config")
+def get_datasphere_config(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Get current Datasphere configuration."""
+    from app.models.core import DATASPHERE_DOMAINS, LOCAL_ONLY_DOMAINS, DatasphereConfig
+
+    config = db.query(DatasphereConfig).first()
+    if not config:
+        return {
+            "configured": False,
+            "ds_url": "",
+            "ds_schema": "ACM",
+            "ds_user": "",
+            "ds_use_ssl": True,
+            "is_active": False,
+            "domain_config": {},
+            "datasphere_domains": DATASPHERE_DOMAINS,
+            "local_only_domains": LOCAL_ONLY_DOMAINS,
+        }
+
+    return {
+        "configured": True,
+        "ds_url": config.ds_url or "",
+        "ds_schema": config.ds_schema,
+        "ds_user": config.ds_user or "",
+        "ds_use_ssl": config.ds_use_ssl,
+        "is_active": config.is_active,
+        "domain_config": config.domain_config or {},
+        "datasphere_domains": DATASPHERE_DOMAINS,
+        "local_only_domains": LOCAL_ONLY_DOMAINS,
+    }
+
+
+@router.put("/datasphere/config")
+def update_datasphere_config(
+    body: DatasphereConfigUpdate,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Create or update Datasphere configuration."""
+    from app.models.core import DatasphereConfig
+
+    config = db.query(DatasphereConfig).first()
+    if not config:
+        config = DatasphereConfig(ds_schema="ACM")
+        db.add(config)
+
+    config.ds_url = body.ds_url
+    config.ds_schema = body.ds_schema
+    config.ds_user = body.ds_user
+    config.ds_use_ssl = body.ds_use_ssl
+    config.is_active = body.is_active
+    config.updated_by = user.id
+
+    if body.ds_password:
+        from app.infra.crypto import encrypt_password
+
+        config.ds_password_encrypted = encrypt_password(body.ds_password)
+
+    if body.domain_config is not None:
+        config.domain_config = body.domain_config
+
+    db.commit()
+    return {"success": True, "message": "Datasphere configuration updated"}
+
+
+@router.post("/datasphere/test")
+def test_datasphere_connection(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Test the configured Datasphere connection."""
+    from app.infra.datasphere.storage import get_datasphere_client
+
+    client = get_datasphere_client(db)
+    if not client:
+        return {
+            "success": False,
+            "message": "Datasphere not configured",
+        }
+    return client.test_connection()
+
+
+@router.get("/datasphere/ddl")
+def get_datasphere_ddl(
+    schema: str = Query("ACM", description="Target HANA schema"),
+    domain: str | None = Query(None, description="Single domain, or all"),
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Generate HANA column-store DDL for Datasphere tables."""
+    from app.infra.datasphere.ddl import generate_all_ddl, generate_full_ddl
+
+    if domain:
+        tables = generate_all_ddl(schema)
+        if domain not in tables:
+            raise HTTPException(404, f"Unknown domain: {domain}")
+        return {"domain": domain, "ddl": tables[domain]}
+
+    return {"ddl": generate_full_ddl(schema)}
+
+
+@router.get("/datasphere/domains")
+def list_datasphere_domains(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """List all data domains with their storage mode (local vs datasphere)."""
+    from app.infra.datasphere.ddl import DEFAULT_TABLE_NAMES
+    from app.infra.datasphere.storage import get_storage_mode
+    from app.models.core import DATASPHERE_DOMAINS, LOCAL_ONLY_DOMAINS
+
+    domains = []
+    for d in DATASPHERE_DOMAINS:
+        mode = get_storage_mode(d, db)
+        domains.append(
+            {
+                "domain": d,
+                "mode": mode,
+                "movable": True,
+                "default_table": DEFAULT_TABLE_NAMES.get(d, d.upper()),
+            }
+        )
+    for d in LOCAL_ONLY_DOMAINS:
+        domains.append(
+            {
+                "domain": d,
+                "mode": "local",
+                "movable": False,
+                "default_table": None,
+            }
+        )
+    return {"domains": domains}
