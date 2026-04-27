@@ -62,6 +62,9 @@ def authenticate_user(db: Session, username: str, password: str) -> AppUser:
     stmt = select(AppUser).where(AppUser.username == username)
     user = db.execute(stmt).scalar_one_or_none()
     if user is None:
+        stmt = select(AppUser).where(AppUser.email == username)
+        user = db.execute(stmt).scalars().first()
+    if user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=401, detail="Account disabled")
