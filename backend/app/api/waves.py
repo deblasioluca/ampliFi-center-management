@@ -314,7 +314,10 @@ def my_review_scopes(
     scopes = (
         db.execute(
             select(ReviewScope)
-            .where(ReviewScope.reviewer_user_id == user.id)
+            .where(
+                (ReviewScope.reviewer_user_id == user.id)
+                | (ReviewScope.reviewer_email == user.email)
+            )
             .order_by(ReviewScope.id.desc())
         )
         .scalars()
@@ -844,6 +847,17 @@ def create_review_scope(
     token = secrets.token_urlsafe(32)
     expires = datetime.now(UTC) + timedelta(days=30)
 
+    # Resolve reviewer_user_id from email if possible
+    reviewer_user_id = None
+    if body.reviewer_email:
+        reviewer_user = (
+            db.execute(select(AppUser).where(AppUser.email == body.reviewer_email))
+            .scalars()
+            .first()
+        )
+        if reviewer_user:
+            reviewer_user_id = reviewer_user.id
+
     scope = ReviewScope(
         wave_id=wave_id,
         name=body.name,
@@ -853,6 +867,7 @@ def create_review_scope(
         token_expires_at=expires,
         reviewer_name=body.reviewer_name,
         reviewer_email=body.reviewer_email,
+        reviewer_user_id=reviewer_user_id,
         status="pending",
     )
     db.add(scope)
@@ -957,6 +972,10 @@ def invite_reviewer(
         raise HTTPException(status_code=404, detail="Scope not found")
     if not scope.reviewer_email:
         raise HTTPException(status_code=400, detail="No reviewer email set on this scope")
+    if scope.status in ("completed", "revoked", "expired"):
+        raise HTTPException(
+            status_code=409, detail=f"Cannot invite for scope in status {scope.status}"
+        )
     wave = db.get(Wave, scope.wave_id)
     _send_scope_invitation(scope, wave, db)
     scope.status = "invited"
