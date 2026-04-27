@@ -24,12 +24,14 @@ class DatasphereClient:
         user: str,
         password: str,
         use_ssl: bool = True,
+        validate_certificate: bool = False,
     ) -> None:
         self.url = url
         self.schema = schema
         self.user = user
         self.password = password
         self.use_ssl = use_ssl
+        self.validate_certificate = validate_certificate
         self._conn: Any = None
 
     def _parse_host_port(self) -> tuple[str, int]:
@@ -60,7 +62,7 @@ class DatasphereClient:
             user=self.user,
             password=self.password,
             encrypt=self.use_ssl,
-            sslValidateCertificate=False,
+            sslValidateCertificate=self.validate_certificate,
         )
         return self._conn
 
