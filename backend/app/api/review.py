@@ -150,6 +150,18 @@ def scope_items(
             row["cleansing_outcome"] = None
             row["cctr"] = None
             row["txtsh"] = None
+            row["txtmi"] = None
+            row["target_object"] = None
+            row["merge_into_cctr"] = None
+            row["entity_code"] = None
+            row["ccode"] = None
+            row["coarea"] = None
+            row["confidence"] = None
+            row["rule_path"] = None
+            row["pctr"] = None
+            row["responsible"] = None
+            row["cctrcgy"] = None
+            row["currency"] = None
         enriched.append(row)
     return {
         "total": total,

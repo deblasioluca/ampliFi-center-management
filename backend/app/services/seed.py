@@ -333,6 +333,9 @@ BALANCE_PATTERNS = [
     ("CC9200", False, Decimal("800")),
 ]
 
+# Lookup: cost center → entity company code (for balance generation)
+_CCTR_TO_CCODE = {f"CC{c[0]}": c[3] for c in SAMPLE_CENTERS}
+
 # Known sample identifiers — used for deletion
 SAMPLE_ENTITY_CCODES = [e[0] for e in SAMPLE_ENTITIES]
 SAMPLE_CC_CCTRS = [f"CC{c[0]}" for c in SAMPLE_CENTERS]
@@ -444,6 +447,7 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
     now = datetime.now(UTC)
     current_year = now.year
     for cctr, has_recent, avg_amt in BALANCE_PATTERNS:
+        cc_ccode = _CCTR_TO_CCODE.get(cctr, COAREA)
         if has_recent:
             # Current year: 12 monthly balances with varied amounts
             for period in range(1, 13):
@@ -462,7 +466,7 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
                         Balance(
                             coarea=COAREA,
                             cctr=cctr,
-                            ccode=COAREA,
+                            ccode=cc_ccode,
                             fiscal_year=current_year,
                             period=period,
                             account="600000",
@@ -490,7 +494,7 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
                         Balance(
                             coarea=COAREA,
                             cctr=cctr,
-                            ccode=COAREA,
+                            ccode=cc_ccode,
                             fiscal_year=current_year - 1,
                             period=period,
                             account="600000",
@@ -517,7 +521,7 @@ def generate_sample_data(db: Session | None = None) -> dict[str, int]:
                     Balance(
                         coarea=COAREA,
                         cctr=cctr,
-                        ccode=COAREA,
+                        ccode=cc_ccode,
                         fiscal_year=current_year - 3,
                         period=6,
                         account="600000",
