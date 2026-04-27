@@ -1244,6 +1244,7 @@ import Layout from '../../components/layout/Layout.astro';
     });
   }
 
+  window.renderDB = renderDB;
   function renderDB() {
     if (!dbData) return;
     var el = document.getElementById('db-content');
