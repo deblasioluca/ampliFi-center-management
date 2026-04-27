@@ -241,7 +241,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   async function updateDomainConfig(domain, enabled) {
     if (!config) return;
-    const dc = config.domain_config || {};
+    const dc = { ...(config.domain_config || {}) };
     dc[domain] = { enabled, table_name: dc[domain]?.table_name || null };
     try {
       const res = await fetch(`${API}/config`, {
@@ -253,6 +253,7 @@ import Layout from '../../components/layout/Layout.astro';
       config.domain_config = dc;
       renderDomains();
     } catch (e) {
+      renderDomains();
       alert('Error updating domain: ' + e.message);
     }
   }
