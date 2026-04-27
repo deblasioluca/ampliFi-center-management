@@ -54,7 +54,10 @@ export const prerender = false;
     <div id="tab-analysis" class="hidden">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-base font-semibold">Analysis Runs</h3>
-        <button id="btn-run-analysis" class="btn-amplifi text-sm">Run Analysis</button>
+        <div class="flex gap-2">
+          <a id="link-compare-runs" href="#" class="btn-secondary text-sm hidden">Compare Runs</a>
+          <button id="btn-run-analysis" class="btn-amplifi text-sm">Run Analysis</button>
+        </div>
       </div>
       <div id="analysis-runs" class="text-sm">Loading...</div>
     </div>
@@ -391,6 +394,14 @@ export const prerender = false;
         html += '</div>';
       });
       el.innerHTML = html + '</div>';
+      // Show compare link if 2+ runs
+      var compareLink = document.getElementById('link-compare-runs');
+      if (d.items.length >= 2) {
+        compareLink.href = '/cockpit/compare?wave=' + waveId;
+        compareLink.classList.remove('hidden');
+      } else {
+        compareLink.classList.add('hidden');
+      }
     });
   }
   loadRuns();

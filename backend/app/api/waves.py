@@ -308,7 +308,7 @@ def create_wave_from_template(
 @router.get("/review-scopes")
 def my_review_scopes(
     db: Session = Depends(get_db),
-    user: AppUser = Depends(get_current_user),
+    user: AppUser = Depends(require_role("admin", "analyst", "reviewer")),
 ) -> list[dict]:
     """List review scopes assigned to the current user."""
     scopes = (
