@@ -200,6 +200,11 @@ export const prerender = false;
         var items = d.items || [];
         if (!items.length) {
           document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-gray-400">No proposals found for this run</span>';
+          document.getElementById('chart-target-bar').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
+          document.getElementById('chart-entity-heatmap').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
+          document.getElementById('chart-sankey').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
+          document.getElementById('chart-balance-activity').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
+          document.getElementById('chart-ml-hist').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
           return;
         }
 
