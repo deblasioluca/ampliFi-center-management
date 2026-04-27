@@ -29,9 +29,13 @@ ENTITY_SETS = {
     "entity": "API_COMPANYCODE_SRV/A_CompanyCode",
     "entities": "API_COMPANYCODE_SRV/A_CompanyCode",
     "hierarchy": "API_COSTCENTER_SRV/A_CostCenterHierarchy",
+    "hierarchies": "API_COSTCENTER_SRV/A_CostCenterHierarchy",
     "balance": "YY1_GLACCOUNTBALANCE/A_GLAccountBalance",
+    "balances": "YY1_GLACCOUNTBALANCE/A_GLAccountBalance",
     "gl_account": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
+    "gl_accounts": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
     "employee": "API_BUSINESS_PARTNER/A_BusinessPartner",
+    "employees": "API_BUSINESS_PARTNER/A_BusinessPartner",
 }
 
 # Canonical kind names (singular) for available_kinds listing

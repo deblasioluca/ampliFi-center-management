@@ -622,9 +622,14 @@ def test_object_binding(
             result = fetch_odata(conn, path, params={"$top": "1"})
             row_count = len(result) if result else 0
         elif proto == "adt":
+            from urllib.parse import parse_qs, urlparse
+
             from app.infra.sap.client import fetch_adt_table
 
-            result = fetch_adt_table(conn, path, max_rows=1)
+            # Extract table name from ADT URL path like /sap/bc/adt/datapreview/ddic?table=CSKS
+            parsed = urlparse(path)
+            table_name = parse_qs(parsed.query).get("table", [path])[0]
+            result = fetch_adt_table(conn, table_name, max_rows=1)
             row_count = len(result) if result else 0
         elif proto == "rfc":
             # RFC/SOAP test — not yet implemented, report clearly
