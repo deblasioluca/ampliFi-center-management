@@ -1302,7 +1302,7 @@ import Layout from '../../components/layout/Layout.astro';
     sorted.forEach(function(it) {
       var balMap = {};
       (it.monthly_balances || []).forEach(function(b) {
-        balMap[b.fiscal_year + '/' + String(b.period).padStart(3, '0')] = b;
+        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
       });
       html += '<tr class="border-b hover:bg-gray-50">';
       html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
