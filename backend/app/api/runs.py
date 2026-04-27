@@ -279,6 +279,116 @@ def why_panel(run_id: int, proposal_id: int, db: Session = Depends(get_db)) -> d
     }
 
 
+@router.get("/{run_id}/data-browser")
+def data_browser(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Combined data browser: legacy centers + monthly balances + analysis results + CC→PC mapping."""
+    from app.models.core import Balance, Hierarchy, HierarchyLeaf, HierarchyNode, LegacyCostCenter
+
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    proposals = db.execute(
+        select(CenterProposal).where(CenterProposal.run_id == run_id)
+    ).scalars().all()
+
+    cc_ids = [p.legacy_cc_id for p in proposals]
+    cc_map: dict[int, LegacyCostCenter] = {}
+    if cc_ids:
+        ccs = db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))).scalars().all()
+        cc_map = {c.id: c for c in ccs}
+
+    # Monthly balances for all relevant cost centers
+    cctrs = list({cc_map[pid].cctr for pid in cc_ids if pid in cc_map})
+    balance_map: dict[str, list[dict]] = {}
+    if cctrs:
+        bal_rows = db.execute(
+            select(
+                Balance.cctr,
+                Balance.fiscal_year,
+                Balance.period,
+                func.coalesce(func.sum(Balance.tc_amt), 0).label("total_amt"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("total_postings"),
+            )
+            .where(Balance.cctr.in_(cctrs))
+            .group_by(Balance.cctr, Balance.fiscal_year, Balance.period)
+            .order_by(Balance.cctr, Balance.fiscal_year, Balance.period)
+        ).all()
+        for cctr, fy, per, amt, postings in bal_rows:
+            balance_map.setdefault(cctr, []).append({
+                "fiscal_year": fy,
+                "period": per,
+                "amount": float(amt),
+                "postings": int(postings),
+            })
+
+    # CC→PC mapping (current 1:1 from legacy CC pctr field)
+    # and proposed n:1 from merge_into_cctr
+    pc_target_groups: dict[str, list[str]] = {}
+    for p in proposals:
+        target = p.merge_into_cctr
+        if target and p.legacy_cc_id in cc_map:
+            pc_target_groups.setdefault(target, []).append(cc_map[p.legacy_cc_id].cctr)
+
+    # Hierarchy tree for hierarchical view
+    hierarchies = db.execute(select(Hierarchy).where(Hierarchy.is_active.is_(True))).scalars().all()
+    hier_trees = []
+    for h in hierarchies:
+        nodes = db.execute(
+            select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id)
+        ).scalars().all()
+        leaves = db.execute(
+            select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id)
+        ).scalars().all()
+        class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+        hier_trees.append({
+            "id": h.id,
+            "setname": h.setname,
+            "setclass": h.setclass,
+            "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}" + (f" — {h.description}" if h.description else ""),
+            "description": h.description,
+            "coarea": h.coarea,
+            "nodes": [{"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq} for n in nodes],
+            "leaves": [{"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves],
+        })
+
+    items = []
+    for p in proposals:
+        cc = cc_map.get(p.legacy_cc_id)
+        cctr = cc.cctr if cc else None
+        items.append({
+            "id": p.id,
+            "legacy_cc_id": p.legacy_cc_id,
+            "cctr": cctr,
+            "txtsh": cc.txtsh if cc else None,
+            "txtmi": cc.txtmi if cc else None,
+            "ccode": cc.ccode if cc else None,
+            "coarea": cc.coarea if cc else None,
+            "responsible": cc.responsible if cc else None,
+            "pctr": cc.pctr if cc else None,
+            "is_active": cc.is_active if cc else None,
+            "cleansing_outcome": p.cleansing_outcome,
+            "target_object": p.target_object,
+            "merge_into_cctr": p.merge_into_cctr,
+            "confidence": str(p.confidence) if p.confidence else None,
+            "override_outcome": p.override_outcome,
+            "override_target": p.override_target,
+            "monthly_balances": balance_map.get(cctr, []) if cctr else [],
+        })
+
+    return {
+        "run_id": run_id,
+        "total": len(items),
+        "items": items,
+        "pc_target_groups": pc_target_groups,
+        "hierarchies": hier_trees,
+    }
+
+
 @router.post("/{run_id}/proposals/{proposal_id}/override")
 def override_proposal(
     run_id: int,

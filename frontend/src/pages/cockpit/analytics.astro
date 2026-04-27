@@ -90,6 +90,22 @@ export const prerender = false;
     </div>
   </div>
 
+  <!-- Data Browser -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold">Data Browser</h3>
+      <div class="flex gap-2">
+        <button id="btn-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchBrowserView('tabular')">Tabular</button>
+        <button id="btn-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('hierarchy')">Hierarchical</button>
+        <button id="btn-view-mapping" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('mapping')">CC → PC Mapping</button>
+        <input id="browser-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
+      </div>
+    </div>
+    <div id="data-browser-content" class="overflow-x-auto text-xs">
+      <span class="text-sm text-gray-400">Select a run to browse data</span>
+    </div>
+  </div>
+
   <!-- Run Comparison -->
   <div id="comparison-section" class="hidden mb-6">
     <h3 class="text-lg font-semibold mb-3">Run Comparison</h3>
@@ -238,6 +254,9 @@ export const prerender = false;
           (kpi.pct != null ? '<div class="text-xs opacity-60">' + kpi.pct + '% of total</div>' : '') + '</div>';
       }).join('');
     }).catch(function(err) { console.error('KPI fetch error:', err); });
+
+    // Data Browser
+    loadDataBrowser(runId);
 
     // Proposals for all charts
     fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr })
@@ -618,5 +637,376 @@ export const prerender = false;
       btn.disabled = false;
       alert('Error: ' + err.message);
     });
+  });
+
+  // ========== DATA BROWSER ==========
+  var browserData = null;
+  var browserView = 'tabular';
+  var browserSort = { col: 'cctr', dir: 'asc' };
+  var OUTCOME_BADGES = {
+    KEEP: 'bg-green-100 text-green-800',
+    RETIRE: 'bg-red-100 text-red-800',
+    MERGE_MAP: 'bg-amber-100 text-amber-800',
+    REDESIGN: 'bg-blue-100 text-blue-800'
+  };
+
+  function loadDataBrowser(runId) {
+    var el = document.getElementById('data-browser-content');
+    el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
+    fetch('/api/runs/' + runId + '/data-browser', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        browserData = d;
+        renderBrowser();
+      })
+      .catch(function(err) {
+        el.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
+      });
+  }
+
+  window.switchBrowserView = function(view) {
+    browserView = view;
+    ['tabular', 'hierarchy', 'mapping'].forEach(function(v) {
+      var btn = document.getElementById('btn-view-' + v);
+      if (btn) {
+        btn.className = v === view
+          ? 'btn-sm bg-blue-600 text-white text-xs'
+          : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+      }
+    });
+    renderBrowser();
+  };
+
+  window.sortBrowser = function(col) {
+    if (browserSort.col === col) {
+      browserSort.dir = browserSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      browserSort.col = col;
+      browserSort.dir = 'asc';
+    }
+    renderBrowser();
+  };
+
+  function renderBrowser() {
+    if (!browserData) return;
+    var el = document.getElementById('data-browser-content');
+    var search = (document.getElementById('browser-search').value || '').toLowerCase();
+    var items = browserData.items || [];
+
+    // Filter
+    if (search) {
+      items = items.filter(function(it) {
+        return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.txtmi || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.ccode || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
+          (it.merge_into_cctr || '').toLowerCase().indexOf(search) >= 0;
+      });
+    }
+
+    if (browserView === 'tabular') {
+      renderTabular(el, items);
+    } else if (browserView === 'hierarchy') {
+      renderHierarchical(el, items);
+    } else if (browserView === 'mapping') {
+      renderMapping(el, items);
+    }
+  }
+
+  function sortArrow(col) {
+    if (browserSort.col !== col) return ' <span class="text-gray-300">↕</span>';
+    return browserSort.dir === 'asc' ? ' ↑' : ' ↓';
+  }
+
+  function sortItems(items) {
+    var col = browserSort.col;
+    var dir = browserSort.dir === 'asc' ? 1 : -1;
+    return items.slice().sort(function(a, b) {
+      var va = a[col], vb = b[col];
+      if (va == null) va = '';
+      if (vb == null) vb = '';
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  function renderTabular(el, items) {
+    if (!items.length) { el.innerHTML = '<span class="text-gray-400">No data to display</span>'; return; }
+    var sorted = sortItems(items);
+
+    // Determine balance period columns
+    var periodSet = {};
+    items.forEach(function(it) {
+      (it.monthly_balances || []).forEach(function(b) {
+        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+        periodSet[key] = true;
+      });
+    });
+    var periods = Object.keys(periodSet).sort();
+
+    var cols = [
+      { key: 'cctr', label: 'CC' },
+      { key: 'txtsh', label: 'Short Text' },
+      { key: 'ccode', label: 'Entity' },
+      { key: 'coarea', label: 'CO Area' },
+      { key: 'pctr', label: 'Profit Ctr (current)' },
+      { key: 'responsible', label: 'Responsible' },
+      { key: 'cleansing_outcome', label: 'Outcome' },
+      { key: 'target_object', label: 'Target Type' },
+      { key: 'merge_into_cctr', label: 'Proposed Target CC' },
+      { key: 'confidence', label: 'Confidence' }
+    ];
+
+    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
+    cols.forEach(function(c) {
+      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortBrowser(\'' + c.key + '\')">' +
+        esc(c.label) + sortArrow(c.key) + '</th>';
+    });
+    // Balance period headers
+    periods.forEach(function(p) {
+      html += '<th class="py-2 px-1 text-right whitespace-nowrap text-[10px] font-normal text-gray-500">' + esc(p) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    sorted.forEach(function(it) {
+      var outcomeClass = OUTCOME_BADGES[it.cleansing_outcome] || 'bg-gray-100 text-gray-700';
+      // Build balance lookup
+      var balByPeriod = {};
+      (it.monthly_balances || []).forEach(function(b) {
+        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+        balByPeriod[key] = b;
+      });
+
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium whitespace-nowrap">' + esc(it.cctr) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-[200px] truncate" title="' + escAttr(it.txtmi || it.txtsh || '') + '">' + esc(it.txtsh) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(it.ccode) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(it.coarea) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(it.pctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(it.responsible) + '</td>' +
+        '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' + outcomeClass + '">' + esc(it.cleansing_outcome) + '</span></td>' +
+        '<td class="py-1.5 px-2">' + esc(it.target_object || '-') + '</td>' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + (it.merge_into_cctr ? esc(it.merge_into_cctr) : '<span class="text-gray-300">-</span>') + '</td>' +
+        '<td class="py-1.5 px-2 text-right">' + (it.confidence ? Number(it.confidence).toFixed(2) : '-') + '</td>';
+      // Balance cells
+      periods.forEach(function(p) {
+        var b = balByPeriod[p];
+        if (b) {
+          var amt = b.amount;
+          var cls = amt > 0 ? 'text-green-700' : amt < 0 ? 'text-red-600' : 'text-gray-400';
+          html += '<td class="py-1.5 px-1 text-right font-mono ' + cls + '" title="' + b.postings + ' postings">' +
+            Number(amt).toLocaleString(undefined, {maximumFractionDigits: 0}) + '</td>';
+        } else {
+          html += '<td class="py-1.5 px-1 text-right text-gray-300">-</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div class="mt-2 text-xs text-gray-500">' + items.length + ' centers' +
+      (periods.length ? ' · ' + periods.length + ' periods' : '') + '</div>';
+    el.innerHTML = html;
+  }
+
+  function renderHierarchical(el, items) {
+    var hiers = browserData.hierarchies || [];
+    if (!hiers.length) {
+      el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchy data first.</span>';
+      return;
+    }
+
+    // Fetch hierarchy labels
+    var html = '<div class="flex items-center gap-3 mb-3">';
+    html += '<select id="browser-hier-select" class="input text-sm w-64" onchange="renderHierTree()">';
+    hiers.forEach(function(h, i) {
+      var label = h.label || (h.setclass === '0101' ? 'CC' : h.setclass === '0104' ? 'PC' : 'Entity') + ': ' + h.setname;
+      html += '<option value="' + i + '">' + esc(label) + '</option>';
+    });
+    html += '</select>';
+    html += '<button class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="expandAllBrowser(true)">Expand All</button>';
+    html += '<button class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="expandAllBrowser(false)">Collapse All</button>';
+    html += '</div>';
+    html += '<div id="browser-hier-tree" class="font-mono text-xs"></div>';
+    el.innerHTML = html;
+    window.renderHierTree();
+  }
+
+  window.renderHierTree = function() {
+    var sel = document.getElementById('browser-hier-select');
+    if (!sel) return;
+    var idx = parseInt(sel.value);
+    var hier = browserData.hierarchies[idx];
+    if (!hier) return;
+    var treeEl = document.getElementById('browser-hier-tree');
+
+    // Build lookup: node children and leaf values
+    var childNodes = {};
+    (hier.nodes || []).forEach(function(n) {
+      if (!childNodes[n.parent]) childNodes[n.parent] = [];
+      childNodes[n.parent].push(n.child);
+    });
+    var leafValues = {};
+    (hier.leaves || []).forEach(function(lf) {
+      if (!leafValues[lf.setname]) leafValues[lf.setname] = [];
+      leafValues[lf.setname].push(lf.value);
+    });
+
+    // Build item lookup by cctr
+    var itemByCctr = {};
+    (browserData.items || []).forEach(function(it) {
+      if (it.cctr) itemByCctr[it.cctr] = it;
+    });
+
+    function renderNode(name, depth) {
+      var indent = '  '.repeat(depth);
+      var html = '<div class="hier-node" data-depth="' + depth + '">';
+      var children = childNodes[name] || [];
+      var leaves = leafValues[name] || [];
+      var hasKids = children.length > 0 || leaves.length > 0;
+
+      html += '<div class="py-0.5 cursor-pointer hover:bg-blue-50 rounded px-1" onclick="toggleHierNode(this)">' +
+        indent + (hasKids ? '<span class="hier-toggle">▼ </span>' : '  ') +
+        '<span class="font-semibold text-blue-700">' + esc(name) + '</span></div>';
+
+      if (hasKids) {
+        html += '<div class="hier-children">';
+        children.forEach(function(child) { html += renderNode(child, depth + 1); });
+        leaves.forEach(function(val) {
+          var it = itemByCctr[val];
+          var outcomeHtml = '';
+          if (it) {
+            var cls = OUTCOME_BADGES[it.cleansing_outcome] || 'bg-gray-100';
+            outcomeHtml = ' <span class="px-1 py-0.5 rounded text-[9px] ' + cls + '">' + esc(it.cleansing_outcome) + '</span>';
+            if (it.merge_into_cctr) outcomeHtml += ' → <span class="font-semibold text-purple-700">' + esc(it.merge_into_cctr) + '</span>';
+          }
+          html += '<div class="py-0.5 px-1 hover:bg-gray-50">' + indent + '  ' +
+            '<span class="text-gray-600">' + esc(val) + '</span>' +
+            (it && it.txtsh ? ' <span class="text-gray-400">' + esc(it.txtsh) + '</span>' : '') +
+            outcomeHtml + '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    // Find root(s)
+    var allChildren = new Set();
+    (hier.nodes || []).forEach(function(n) { allChildren.add(n.child); });
+    var roots = [];
+    (hier.nodes || []).forEach(function(n) {
+      if (!allChildren.has(n.parent) && roots.indexOf(n.parent) < 0) roots.push(n.parent);
+    });
+    if (!roots.length) roots = [hier.setname];
+
+    var treeHtml = '';
+    roots.forEach(function(r) { treeHtml += renderNode(r, 0); });
+    treeEl.innerHTML = treeHtml || '<span class="text-gray-400">No tree structure available</span>';
+  };
+
+  window.toggleHierNode = function(el) {
+    var children = el.nextElementSibling;
+    if (!children || !children.classList.contains('hier-children')) return;
+    var toggle = el.querySelector('.hier-toggle');
+    if (children.style.display === 'none') {
+      children.style.display = '';
+      if (toggle) toggle.textContent = '▼ ';
+    } else {
+      children.style.display = 'none';
+      if (toggle) toggle.textContent = '▶ ';
+    }
+  };
+
+  window.expandAllBrowser = function(expand) {
+    document.querySelectorAll('.hier-children').forEach(function(el) {
+      el.style.display = expand ? '' : 'none';
+    });
+    document.querySelectorAll('.hier-toggle').forEach(function(el) {
+      el.textContent = expand ? '▼ ' : '▶ ';
+    });
+  };
+
+  function renderMapping(el, items) {
+    if (!items.length) { el.innerHTML = '<span class="text-gray-400">No data to display</span>'; return; }
+
+    // Group by current PC (1:1 legacy mapping)
+    var currentMap = {};
+    items.forEach(function(it) {
+      var pc = it.pctr || '(none)';
+      if (!currentMap[pc]) currentMap[pc] = [];
+      currentMap[pc].push(it);
+    });
+
+    // Group by proposed target (n:1 from merge_into_cctr)
+    var proposedMap = {};
+    items.forEach(function(it) {
+      var target = it.merge_into_cctr || (it.cleansing_outcome === 'KEEP' ? it.cctr : '(no target)');
+      if (!proposedMap[target]) proposedMap[target] = [];
+      proposedMap[target].push(it);
+    });
+
+    var html = '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">';
+
+    // Current 1:1 mapping
+    html += '<div><h4 class="text-sm font-semibold mb-2 text-gray-700">Current CC → PC Mapping (1:1)</h4>';
+    html += '<div class="space-y-2 max-h-[500px] overflow-y-auto">';
+    var sortedPCs = Object.keys(currentMap).sort();
+    sortedPCs.forEach(function(pc) {
+      var ccs = currentMap[pc];
+      html += '<div class="border rounded p-2">';
+      html += '<div class="flex items-center gap-2 mb-1"><span class="font-mono font-semibold text-purple-700">' +
+        esc(pc) + '</span><span class="text-[10px] text-gray-400">' + ccs.length + ' CC' + (ccs.length > 1 ? 's' : '') + '</span></div>';
+      ccs.forEach(function(cc) {
+        var cls = OUTCOME_BADGES[cc.cleansing_outcome] || 'bg-gray-100';
+        html += '<div class="flex items-center gap-2 ml-4 py-0.5">' +
+          '<span class="font-mono text-[11px]">' + esc(cc.cctr) + '</span>' +
+          '<span class="text-[10px] text-gray-400 truncate max-w-[120px]">' + esc(cc.txtsh || '') + '</span>' +
+          '<span class="px-1 py-0.5 rounded text-[9px] ' + cls + '">' + esc(cc.cleansing_outcome) + '</span></div>';
+      });
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    // Proposed n:1 mapping
+    html += '<div><h4 class="text-sm font-semibold mb-2 text-gray-700">Proposed Mapping (n:1 consolidation)</h4>';
+    html += '<div class="space-y-2 max-h-[500px] overflow-y-auto">';
+    var sortedTargets = Object.keys(proposedMap).sort();
+    sortedTargets.forEach(function(target) {
+      var ccs = proposedMap[target];
+      var isConsolidation = ccs.length > 1;
+      html += '<div class="border rounded p-2 ' + (isConsolidation ? 'border-amber-300 bg-amber-50' : '') + '">';
+      html += '<div class="flex items-center gap-2 mb-1"><span class="font-mono font-semibold ' +
+        (isConsolidation ? 'text-amber-700' : 'text-green-700') + '">' +
+        esc(target) + '</span>' +
+        '<span class="text-[10px] text-gray-500">' + ccs.length + ' CC' + (ccs.length > 1 ? 's' : '') +
+        (isConsolidation ? ' → consolidated' : '') + '</span></div>';
+      ccs.forEach(function(cc) {
+        var cls = OUTCOME_BADGES[cc.cleansing_outcome] || 'bg-gray-100';
+        html += '<div class="flex items-center gap-2 ml-4 py-0.5">' +
+          '<span class="font-mono text-[11px]">' + esc(cc.cctr) + '</span>' +
+          '<span class="text-[10px] text-gray-400 truncate max-w-[120px]">' + esc(cc.txtsh || '') + '</span>' +
+          '<span class="px-1 py-0.5 rounded text-[9px] ' + cls + '">' + esc(cc.cleansing_outcome) + '</span></div>';
+      });
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    html += '</div>';
+    html += '<div class="mt-3 text-xs text-gray-500">' +
+      'Current: ' + sortedPCs.length + ' profit centers · Proposed: ' + sortedTargets.length + ' targets · ' +
+      'Consolidation ratio: ' + items.length + ':' + sortedTargets.length + '</div>';
+    el.innerHTML = html;
+  }
+
+  // Wire search filter
+  document.getElementById('browser-search').addEventListener('input', function() {
+    clearTimeout(this._t);
+    var self = this;
+    this._t = setTimeout(function() { renderBrowser(); }, 300);
   });
 </script>

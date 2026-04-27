@@ -748,6 +748,161 @@ def extract_via_binding(
         ) from e
 
 
+# --- SAP Value Lookups (dynamic selectors) ---
+
+
+@router.get("/sap/{conn_id}/lookup/co-areas")
+def lookup_co_areas(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> list[dict]:
+    """Fetch available controlling areas from SAP (table TKA01)."""
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+
+    from app.infra.sap.client import fetch_adt_table
+
+    try:
+        rows = fetch_adt_table(conn, "TKA01", max_rows=500)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot read CO areas: {exc}") from exc
+
+    # Try to get descriptions from text table TKA02
+    desc_map: dict[str, str] = {}
+    try:
+        text_rows = fetch_adt_table(conn, "TKA02", max_rows=500, where="SPRAS = 'E'")
+        for tr in text_rows:
+            k = tr.get("KOKRS", "").strip()
+            d = tr.get("BEZEI", "").strip()
+            if k and d:
+                desc_map[k] = d
+    except Exception:
+        pass
+
+    result = []
+    seen: set[str] = set()
+    for row in rows:
+        kokrs = row.get("KOKRS", "").strip()
+        if not kokrs or kokrs in seen:
+            continue
+        seen.add(kokrs)
+        result.append({
+            "co_area": kokrs,
+            "description": desc_map.get(kokrs, ""),
+        })
+    result.sort(key=lambda x: x["co_area"])
+    return result
+
+
+@router.get("/sap/{conn_id}/lookup/hierarchies")
+def lookup_hierarchies(
+    conn_id: int,
+    co_area: str | None = None,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> list[dict]:
+    """Fetch available hierarchies from SAP (table SETHEADER)."""
+    conn = db.get(SAPConnection, conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="SAP connection not found")
+
+    from app.infra.sap.client import fetch_adt_table
+
+    # SETCLASS 0101 = cost center hierarchies, 0104 = profit center hierarchies
+    where = "SETCLASS = '0101' OR SETCLASS = '0104'"
+    if co_area:
+        import re
+        if not re.match(r"^[A-Za-z0-9_\-./]+$", co_area):
+            raise HTTPException(status_code=400, detail="Invalid CO area value")
+        where = f"(SETCLASS = '0101' OR SETCLASS = '0104') AND SUBCLASS = '{co_area}'"
+
+    try:
+        rows = fetch_adt_table(conn, "SETHEADER", max_rows=1000, where=where)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot read hierarchies: {exc}") from exc
+
+    result = []
+    seen: set[str] = set()
+    for row in rows:
+        setname = row.get("SETNAME", "").strip()
+        if not setname or setname in seen:
+            continue
+        seen.add(setname)
+        setclass = row.get("SETCLASS", "").strip()
+        kind = "cost_center" if setclass == "0101" else "profit_center" if setclass == "0104" else setclass
+        result.append({
+            "set_name": setname,
+            "description": row.get("DESSION", "").strip(),
+            "set_class": setclass,
+            "kind": kind,
+            "co_area": row.get("SUBCLASS", "").strip(),
+        })
+    result.sort(key=lambda x: (x["kind"], x["set_name"]))
+    return result
+
+
+# --- Hierarchy Management ---
+
+
+@router.get("/hierarchies")
+def list_hierarchies(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> list[dict]:
+    """List all hierarchies with their labels."""
+    from app.models.core import Hierarchy
+
+    rows = db.execute(select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)).scalars().all()
+    class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+    return [
+        {
+            "id": h.id,
+            "setclass": h.setclass,
+            "setname": h.setname,
+            "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}" + (f" — {h.description}" if h.description else ""),
+            "description": h.description,
+            "coarea": h.coarea,
+            "is_active": h.is_active,
+            "type_label": class_labels.get(h.setclass, h.setclass),
+        }
+        for h in rows
+    ]
+
+
+@router.patch("/hierarchies/{hier_id}")
+def update_hierarchy(
+    hier_id: int,
+    label: str | None = None,
+    is_active: bool | None = None,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Update hierarchy label or active status."""
+    from app.models.core import Hierarchy
+
+    h = db.get(Hierarchy, hier_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="Hierarchy not found")
+    if label is not None:
+        h.label = label
+    if is_active is not None:
+        h.is_active = is_active
+    db.commit()
+    db.refresh(h)
+    class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+    return {
+        "id": h.id,
+        "setclass": h.setclass,
+        "setname": h.setname,
+        "label": h.label or f"{class_labels.get(h.setclass, h.setclass)}: {h.setname}",
+        "description": h.description,
+        "coarea": h.coarea,
+        "is_active": h.is_active,
+    }
+
+
 # --- Uploads ---
 
 
