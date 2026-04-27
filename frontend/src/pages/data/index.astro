@@ -1188,6 +1188,7 @@ import Layout from '../../components/layout/Layout.astro';
   var dbData = null;
   var dbView = 'tabular';
   var dbSort = { col: 'cctr', dir: 'asc' };
+  var dbColFilters = {};
 
   function loadDataBrowser() {
     var el = document.getElementById('db-content');
@@ -1244,6 +1245,11 @@ import Layout from '../../components/layout/Layout.astro';
     });
   }
 
+  window.setDbFilter = function(col, val) {
+    if (val === '') { delete dbColFilters[col]; } else { dbColFilters[col] = val; }
+    renderDB();
+  };
+
   window.renderDB = renderDB;
   function renderDB() {
     if (!dbData) return;
@@ -1261,6 +1267,15 @@ import Layout from '../../components/layout/Layout.astro';
           (it.pctr || '').toLowerCase().indexOf(search) >= 0;
       });
     }
+    // Apply per-column filters
+    Object.keys(dbColFilters).forEach(function(col) {
+      var fv = dbColFilters[col];
+      if (!fv) return;
+      items = items.filter(function(it) {
+        if (col === 'is_active') return String(it.is_active) === fv;
+        return String(it[col] || '') === fv;
+      });
+    });
     if (dbView === 'tabular') {
       renderDBTabular(el, items);
     } else {
@@ -1269,11 +1284,12 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   function renderDBTabular(el, items) {
-    if (!items.length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
+    if (!items.length && !Object.keys(dbColFilters).length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
+    var allItems = dbData.items || [];
     var sorted = dbSortItems(items);
-    // Collect all balance periods
+    // Collect all balance periods from ALL items (not filtered)
     var periods = {};
-    items.forEach(function(it) {
+    allItems.forEach(function(it) {
       (it.monthly_balances || []).forEach(function(b) {
         var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
         periods[key] = 1;
@@ -1281,7 +1297,6 @@ import Layout from '../../components/layout/Layout.astro';
     });
     var pKeys = Object.keys(periods).sort();
 
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
     var cols = [
       { key: 'cctr', label: 'CC' },
       { key: 'txtsh', label: 'Short Text' },
@@ -1292,13 +1307,52 @@ import Layout from '../../components/layout/Layout.astro';
       { key: 'responsible', label: 'Responsible' },
       { key: 'is_active', label: 'Active' }
     ];
+
+    // Collect unique values per column from ALL items for filter dropdowns
+    var colVals = {};
+    cols.forEach(function(c) { colVals[c.key] = {}; });
+    allItems.forEach(function(it) {
+      cols.forEach(function(c) {
+        var v = c.key === 'is_active' ? String(it.is_active) : String(it[c.key] || '');
+        if (v) colVals[c.key][v] = 1;
+      });
+    });
+
+    var html = '<table class="w-full text-xs border-collapse"><thead>';
+    // Header row
+    html += '<tr class="border-b bg-gray-50">';
     cols.forEach(function(c) {
       html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
     });
     pKeys.forEach(function(pk) {
       html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(pk) + '</th>';
     });
-    html += '</tr></thead><tbody>';
+    html += '</tr>';
+    // Filter row
+    html += '<tr class="bg-gray-100 border-b">';
+    cols.forEach(function(c) {
+      var vals = Object.keys(colVals[c.key]).sort();
+      var cur = dbColFilters[c.key] || '';
+      html += '<td class="px-1 py-1"><select class="w-full text-[10px] border rounded px-1 py-0.5 bg-white" onchange="setDbFilter(\'' + c.key + '\',this.value)">';
+      html += '<option value="">All</option>';
+      if (c.key === 'is_active') {
+        html += '<option value="true"' + (cur === 'true' ? ' selected' : '') + '>Yes</option>';
+        html += '<option value="false"' + (cur === 'false' ? ' selected' : '') + '>No</option>';
+      } else {
+        vals.forEach(function(v) {
+          var lbl = v.length > 20 ? v.substring(0, 20) + '...' : v;
+          html += '<option value="' + escAttr(v) + '"' + (cur === v ? ' selected' : '') + '>' + esc(lbl) + '</option>';
+        });
+      }
+      html += '</select></td>';
+    });
+    pKeys.forEach(function() { html += '<td></td>'; });
+    html += '</tr>';
+    html += '</thead><tbody>';
+
+    if (!items.length) {
+      html += '<tr><td colspan="' + (cols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">No matching records.</td></tr>';
+    }
 
     sorted.forEach(function(it) {
       var balMap = {};
@@ -1390,16 +1444,31 @@ import Layout from '../../components/layout/Layout.astro';
         } else {
           var cc = ccMap[c.value];
           var bal = balTotals[c.value];
-          out += '<div style="padding-left:' + ((depth + 1) * 20) + 'px" class="py-0.5 flex items-center gap-3 hover:bg-gray-50">';
-          out += '<span class="font-mono text-xs">' + esc(c.value) + '</span>';
+          var leafPad = (depth + 1) * 20;
+          out += '<div style="padding-left:' + leafPad + 'px" class="py-1 hover:bg-gray-50 border-b border-gray-100">';
+          out += '<div class="flex items-center gap-2 flex-wrap">';
+          out += '<span class="font-mono text-xs font-medium">' + esc(c.value) + '</span>';
           if (cc) {
-            out += ' <span class="text-gray-600">' + esc(cc.txtsh || '') + '</span>';
-            out += ' <span class="text-gray-400 text-[10px]">' + esc(cc.ccode || '') + '</span>';
-            if (cc.pctr) out += ' <span class="text-purple-600 text-[10px]">PC: ' + esc(cc.pctr) + '</span>';
+            out += '<span class="text-gray-700">' + esc(cc.txtsh || '') + '</span>';
+            out += '<span class="text-gray-400 text-[10px]">' + esc(cc.ccode || '') + '</span>';
+            if (cc.coarea) out += '<span class="text-gray-400 text-[10px]">CO: ' + esc(cc.coarea) + '</span>';
+            if (cc.pctr) out += '<span class="text-purple-600 text-[10px]">PC: ' + esc(cc.pctr) + (cc.pc_txtsh ? ' ' + esc(cc.pc_txtsh) : '') + '</span>';
+            if (cc.responsible) out += '<span class="text-orange-600 text-[10px]">' + esc(cc.responsible) + '</span>';
           }
           if (bal != null) {
             var balStr = bal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-            out += ' <span class="font-mono text-[10px]' + (bal < 0 ? ' text-red-600' : ' text-green-700') + '">' + balStr + '</span>';
+            out += '<span class="font-mono text-[10px] font-semibold' + (bal < 0 ? ' text-red-600' : ' text-green-700') + '">Total: ' + balStr + '</span>';
+          }
+          out += '</div>';
+          // Monthly balance breakdown
+          if (cc && cc.monthly_balances && cc.monthly_balances.length) {
+            out += '<div class="flex flex-wrap gap-x-3 gap-y-0 mt-0.5 ml-4">';
+            cc.monthly_balances.forEach(function(b) {
+              var pKey = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+              var bAmt = b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+              out += '<span class="text-[9px] font-mono' + (b.amount < 0 ? ' text-red-500' : ' text-gray-500') + '">' + pKey + ': ' + bAmt + '</span>';
+            });
+            out += '</div>';
           }
           out += '</div>';
         }
