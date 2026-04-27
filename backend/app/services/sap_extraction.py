@@ -519,7 +519,38 @@ def extract_from_sap(
         rows=len(rows),
         batch_id=batch.id,
     )
-    return {"rows_extracted": len(rows), "batch_id": batch.id}
+
+    # Auto-validate and auto-load into the target tables
+    from app.services.upload_processor import load_upload, validate_upload
+
+    try:
+        validate_upload(batch.id, db)
+        load_result = load_upload(batch.id, db)
+        logger.info(
+            "sap.extract.auto_loaded",
+            batch_id=batch.id,
+            rows_loaded=load_result.get("rows_loaded", 0),
+        )
+    except Exception as exc:
+        db.rollback()
+        # Reset stuck "loading"/"validating" status so the batch can be retried
+        batch = db.get(UploadBatch, batch.id)
+        if batch and batch.status in ("loading", "validating"):
+            batch.status = "uploaded"
+            db.commit()
+        logger.warning(
+            "sap.extract.auto_load_failed",
+            batch_id=batch.id if batch else "?",
+            error=str(exc),
+        )
+
+    if batch:
+        db.refresh(batch)
+    return {
+        "rows_extracted": len(rows),
+        "batch_id": batch.id if batch else None,
+        "status": batch.status if batch else "failed",
+    }
 
 
 def list_available_extractions(db: Session) -> list[dict]:
