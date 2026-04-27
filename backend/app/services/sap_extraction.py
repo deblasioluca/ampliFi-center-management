@@ -533,9 +533,14 @@ def extract_from_sap(
         )
     except Exception as exc:
         db.rollback()
+        # Reset stuck "loading"/"validating" status so the batch can be retried
+        batch = db.get(UploadBatch, batch.id)
+        if batch and batch.status in ("loading", "validating"):
+            batch.status = "uploaded"
+            db.commit()
         logger.warning(
             "sap.extract.auto_load_failed",
-            batch_id=batch.id,
+            batch_id=batch.id if batch else "?",
             error=str(exc),
         )
 
