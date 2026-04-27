@@ -277,7 +277,9 @@ class Wave(TimestampMixin, Base):
 
     entities: Mapped[list[WaveEntity]] = relationship(back_populates="wave")
     hierarchy_scopes: Mapped[list[WaveHierarchyScope]] = relationship(back_populates="wave")
-    runs: Mapped[list[AnalysisRun]] = relationship(back_populates="wave")
+    runs: Mapped[list[AnalysisRun]] = relationship(
+        back_populates="wave", foreign_keys="[AnalysisRun.wave_id]"
+    )
     scopes: Mapped[list[ReviewScope]] = relationship(back_populates="wave")
 
 
@@ -383,7 +385,7 @@ class AnalysisRun(TimestampMixin, Base):
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
 
-    wave: Mapped[Wave] = relationship(back_populates="runs")
+    wave: Mapped[Wave | None] = relationship(back_populates="runs", foreign_keys=[wave_id])
     config: Mapped[AnalysisConfig] = relationship()
     outputs: Mapped[list[RoutineOutput]] = relationship(back_populates="run")
     proposals: Mapped[list[CenterProposal]] = relationship(back_populates="run")
