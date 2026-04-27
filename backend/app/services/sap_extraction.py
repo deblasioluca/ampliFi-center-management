@@ -201,7 +201,7 @@ def extract_from_sap(
     # Create upload batch
     batch = UploadBatch(
         filename=filename,
-        kind=kind.rstrip("s"),
+        kind=normalized,
         file_path=str(file_path),
         status="uploaded",
         rows_total=len(rows),
