@@ -206,6 +206,7 @@ def explore_balances(
     db: Session = Depends(get_db),
     coarea: str | None = None,
     cctr: str | None = None,
+    max_rows: int = Query(50000, ge=1, le=200000),
 ) -> dict:
     query = (
         select(
@@ -224,7 +225,7 @@ def explore_balances(
         query = query.where(Balance.coarea == coarea)
     if cctr:
         query = query.where(Balance.cctr == cctr)
-    rows = db.execute(query).all()
+    rows = db.execute(query.limit(max_rows)).all()
     items: dict[str, list[dict]] = {}
     for ca, cc, fy, per, amt, post, curr in rows:
         key = f"{ca}:{cc}"
@@ -346,7 +347,7 @@ def explore_mapping(
 
     If run_id is not given, picks the most recent completed run.
     """
-    if run_id:
+    if run_id is not None:
         run = db.execute(select(AnalysisRun).where(AnalysisRun.id == run_id)).scalars().first()
     else:
         run = (
