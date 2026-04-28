@@ -392,6 +392,29 @@ Git typically does not need the corporate proxy (GitHub is accessed directly). I
 git config --global http.proxy http://proxy-host:port
 ```
 
+### Vite / frontend "Blocked request — host not allowed"
+
+If you see an error like:
+
+```
+Blocked request. This host ("your-hostname.corp.net") is not allowed.
+To allow this host, add "your-hostname" to `server.allowedHosts` in vite.config.js.
+```
+
+This is Vite's host security check. The `astro.config.mjs` already sets `allowedHosts: 'all'` to permit any hostname. If you're running an older version that doesn't have this setting, update with `make update` or manually add to `frontend/astro.config.mjs`:
+
+```js
+server: {
+  host: '0.0.0.0',
+  allowedHosts: 'all',
+},
+vite: {
+  server: {
+    allowedHosts: 'all',
+  },
+},
+```
+
 ### PostgreSQL connection refused
 
 ```bash
