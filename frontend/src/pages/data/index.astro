@@ -74,7 +74,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
         </div>
       </div>
-      <div id="db-content" class="text-xs overflow-x-auto">
+      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">
         <span class="text-sm text-gray-400">Loading data browser...</span>
       </div>
     </div>
@@ -89,7 +89,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -104,7 +104,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -119,7 +119,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -134,7 +134,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -152,7 +152,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
       <!-- List view -->
       <div id="hier-list-view">
-        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 380px)">Loading...</div>
       </div>
       <!-- Tree view -->
       <div id="hier-tree-view" class="hidden">
@@ -164,7 +164,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
           <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
         </div>
-        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto">Select a hierarchy to view its tree structure.</div>
+        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 420px)">Select a hierarchy to view its tree structure.</div>
       </div>
     </div>
 
@@ -179,7 +179,7 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
       </div>
       <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
-      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 360px)">Loading...</div>
       <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -252,6 +252,23 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 </Layout>
+
+<style>
+  /* Sticky table headers inside scrollable containers */
+  #db-content thead th,
+  #db-hier-detail thead th,
+  #entities-table thead th,
+  #cc-table thead th,
+  #pc-table thead th,
+  #bal-table thead th,
+  #hier-table thead th,
+  #emp-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f9fafb;
+  }
+</style>
 
 <script is:inline>
 (function() {
@@ -1660,10 +1677,10 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</select></div>';
 
     // Split panel: tree left, detail right
-    html += '<div class="flex gap-3" style="min-height:400px">';
+    html += '<div class="flex gap-3" style="height:calc(100vh - 380px);min-height:300px">';
 
     // Left panel — compact tree
-    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto" style="max-height:calc(100vh - 280px)">';
+    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto">';
 
     var childMap = {};
     (hier.nodes || []).forEach(function(n) {
@@ -1726,7 +1743,7 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</div>';
 
     // Right panel — detail table
-    html += '<div class="flex-1 border rounded bg-white overflow-hidden" id="db-hier-detail">';
+    html += '<div class="flex-1 border rounded bg-white overflow-auto" id="db-hier-detail">';
     html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
     html += '</div>';
 
