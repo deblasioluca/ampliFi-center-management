@@ -4,31 +4,40 @@ export const prerender = false;
 ---
 
 <Layout title="Analytics Dashboard" requireAuth={true} requiredRole="data_manager">
-  <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h2 class="text-xl font-bold">Analytics Dashboard</h2>
-      <p class="text-sm text-gray-500">Comprehensive visualizations of analysis results</p>
-    </div>
-    <div class="flex gap-2 items-center flex-wrap">
-      <select id="sel-wave" class="input text-sm w-48">
+  <!-- Header -->
+  <div class="mb-4">
+    <a href="/cockpit" class="text-xs text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
+    <h2 class="text-xl font-bold mt-1">Analytics Dashboard</h2>
+  </div>
+
+  <!-- Selectors — single row -->
+  <div class="bg-white border rounded-lg px-4 py-2 mb-4 flex items-center gap-3 flex-wrap">
+    <div class="flex items-center gap-1">
+      <label class="text-xs text-gray-500 whitespace-nowrap">Scope:</label>
+      <select id="sel-wave" class="input text-xs py-1 w-40">
         <option value="">Select Wave...</option>
-        <option value="__global__">— Global (all data) —</option>
+        <option value="__global__">Global (all data)</option>
       </select>
-      <select id="sel-config" class="input text-sm w-52" title="Analysis configuration to use">
+    </div>
+    <div class="flex items-center gap-1">
+      <label class="text-xs text-gray-500 whitespace-nowrap">Config:</label>
+      <select id="sel-config" class="input text-xs py-1 w-40" title="Analysis configuration">
         <option value="">Default Config</option>
       </select>
-      <select id="sel-run" class="input text-sm w-48">
+    </div>
+    <div class="flex items-center gap-1">
+      <label class="text-xs text-gray-500 whitespace-nowrap">Run:</label>
+      <select id="sel-run" class="input text-xs py-1 w-48">
         <option value="">Select Run...</option>
       </select>
-      <button id="btn-run-global" class="btn-amplifi text-sm whitespace-nowrap">Run Global Analysis</button>
-      <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-sm whitespace-nowrap hidden" title="Delete selected run">Delete Run</button>
-      <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm whitespace-nowrap" title="Manage analysis configurations">Configs</button>
     </div>
+    <button id="btn-run-global" class="btn-amplifi text-xs py-1 px-3 whitespace-nowrap">Run Global Analysis</button>
+    <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-xs hidden" title="Delete selected run">Delete Run</button>
+    <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs" title="Manage configurations">Configs</button>
   </div>
 
   <!-- Config Manager Panel (hidden by default) -->
-  <div id="config-panel" class="hidden bg-white border rounded-lg p-4 mb-6">
+  <div id="config-panel" class="hidden bg-white border rounded-lg p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold">Analysis Configurations</h3>
       <div class="flex gap-2">
@@ -36,107 +45,138 @@ export const prerender = false;
         <button onclick="document.getElementById('config-panel').classList.add('hidden')" class="btn-sm bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs">Close</button>
       </div>
     </div>
-    <p class="text-xs text-gray-500 mb-3">Each configuration defines which analysis routines to run and their parameters. Create different configs for different analysis scenarios.</p>
+    <p class="text-xs text-gray-500 mb-3">Each configuration defines which analysis routines to run and their parameters.</p>
     <div id="config-list" class="space-y-2"></div>
     <div id="config-editor" class="hidden mt-4 border-t pt-4"></div>
   </div>
 
-  <!-- Persistent KPI Strip -->
-  <div id="kpi-strip" class="bg-white border rounded-lg p-3 mb-6 flex flex-wrap gap-3"></div>
+  <!-- KPI Strip -->
+  <div id="kpi-strip" class="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-3"></div>
 
-  <!-- Outcome Donut + Target Bar -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Outcome Distribution</h3>
-      <div id="chart-outcome-donut" class="flex items-center justify-center min-h-[200px]">
-        <span class="text-sm text-gray-400">Select a run to see outcome distribution</span>
+  <!-- Tab Bar -->
+  <div class="flex gap-1 border-b mb-4">
+    <button id="tab-visuals" class="px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700" onclick="switchAnalyticsTab('visuals')">Visuals</button>
+    <button id="tab-browser" class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchAnalyticsTab('browser')">Data Browser</button>
+  </div>
+
+  <!-- ===== VISUALS TAB ===== -->
+  <div id="panel-visuals">
+    <!-- Row 1: Outcome Donut + Target Bar (equal size) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <div class="card" style="min-height:280px">
+        <h3 class="text-sm font-semibold mb-3">Outcome Distribution</h3>
+        <div id="chart-outcome-donut" class="flex items-center justify-center" style="min-height:220px">
+          <span class="text-sm text-gray-400">Select a run to see outcome distribution</span>
+        </div>
+      </div>
+      <div class="card" style="min-height:280px">
+        <h3 class="text-sm font-semibold mb-3">Target Object per Outcome</h3>
+        <div id="chart-target-bar" style="min-height:220px">
+          <span class="text-sm text-gray-400">Select a run to see target objects</span>
+        </div>
       </div>
     </div>
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Target Object per Outcome</h3>
-      <div id="chart-target-bar" class="min-h-[200px]">
-        <span class="text-sm text-gray-400">Select a run to see target objects</span>
+
+    <!-- Row 2: Balance vs Activity + ML Confidence (equal size) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <div class="card" style="min-height:240px">
+        <h3 class="text-sm font-semibold mb-3">Balance vs Activity</h3>
+        <div id="chart-balance-activity" style="min-height:180px">
+          <span class="text-sm text-gray-400">Select a run to see balance data</span>
+        </div>
+      </div>
+      <div class="card" style="min-height:240px">
+        <h3 class="text-sm font-semibold mb-3">ML Confidence Distribution</h3>
+        <div id="chart-ml-hist" style="min-height:180px">
+          <span class="text-sm text-gray-400">Select a run to see confidence data</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3: Entity Heatmap -->
+    <div class="card mb-4">
+      <h3 class="text-sm font-semibold mb-3">Outcome by Entity (Heatmap)</h3>
+      <div id="chart-entity-heatmap" class="overflow-x-auto"></div>
+    </div>
+
+    <!-- Row 4: Legacy → Target Flow -->
+    <div class="card mb-4">
+      <h3 class="text-sm font-semibold mb-3">Legacy → Target Flow</h3>
+      <div id="chart-sankey" class="flex items-center justify-center text-sm text-gray-400" style="min-height:120px">
+        Select a completed run to see the flow diagram
+      </div>
+    </div>
+
+    <!-- Row 5: Housekeeping Charts (3-col) -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      <div class="card" style="min-height:200px">
+        <h3 class="text-sm font-semibold mb-3">Housekeeping Flag Distribution</h3>
+        <div id="chart-hk-flags" class="min-h-[120px]"></div>
+      </div>
+      <div class="card" style="min-height:200px">
+        <h3 class="text-sm font-semibold mb-3">Owner Response Funnel</h3>
+        <div id="chart-hk-funnel" class="space-y-2 text-sm"></div>
+      </div>
+      <div class="card" style="min-height:200px">
+        <h3 class="text-sm font-semibold mb-3">Closure Trend</h3>
+        <div id="chart-hk-trend" class="min-h-[120px]"></div>
+      </div>
+    </div>
+
+    <!-- Run Comparison -->
+    <div id="comparison-section" class="hidden mb-4">
+      <h3 class="text-sm font-semibold mb-3">Run Comparison</h3>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card">
+          <h4 class="text-sm font-semibold mb-3">Outcome Transition Matrix</h4>
+          <div id="chart-outcome-diff"></div>
+        </div>
+        <div class="card">
+          <h4 class="text-sm font-semibold mb-3">Target Transition Matrix</h4>
+          <div id="chart-target-diff"></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Entity × Outcome Heatmap -->
-  <div class="card mb-6">
-    <h3 class="text-sm font-semibold mb-3">Outcome by Entity (Heatmap)</h3>
-    <div id="chart-entity-heatmap" class="overflow-x-auto"></div>
-  </div>
-
-  <!-- Balance vs Activity + ML Confidence -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Balance vs Activity</h3>
-      <div id="chart-balance-activity" class="min-h-[200px]">
-        <span class="text-sm text-gray-400">Select a run to see balance data</span>
+  <!-- ===== DATA BROWSER TAB ===== -->
+  <div id="panel-browser" class="hidden">
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold">Results Browser</h3>
+        <div class="flex gap-2">
+          <button id="btn-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchBrowserView('tabular')">Tabular</button>
+          <button id="btn-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('hierarchy')">Hierarchical</button>
+          <button id="btn-view-mapping" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('mapping')">CC → PC Mapping</button>
+          <input id="browser-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">ML Confidence Distribution</h3>
-      <div id="chart-ml-hist" class="min-h-[200px]">
-        <span class="text-sm text-gray-400">Select a run to see confidence data</span>
+      <div id="data-browser-content" class="overflow-x-auto overflow-y-auto text-xs" style="max-height:calc(100vh - 320px)">
+        <span class="text-sm text-gray-400">Select a run to browse data</span>
       </div>
     </div>
   </div>
 
-  <!-- Sankey / Flow -->
-  <div class="card mb-6">
-    <h3 class="text-sm font-semibold mb-3">Legacy → Target Flow</h3>
-    <div id="chart-sankey" class="min-h-[100px] flex items-center justify-center text-sm text-gray-400">
-      Select a completed run to see the flow diagram
-    </div>
-  </div>
-
-  <!-- Data Browser -->
-  <div class="card mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold">Data Browser</h3>
-      <div class="flex gap-2">
-        <button id="btn-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchBrowserView('tabular')">Tabular</button>
-        <button id="btn-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('hierarchy')">Hierarchical</button>
-        <button id="btn-view-mapping" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('mapping')">CC → PC Mapping</button>
-        <input id="browser-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
+  <!-- Decision Reasoning Side Panel (hidden by default) -->
+  <div id="why-panel" class="fixed top-0 right-0 w-96 h-full bg-white shadow-xl border-l transform translate-x-full transition-transform z-50 overflow-y-auto">
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-bold">Decision Reasoning</h3>
+        <button onclick="closeWhyPanel()" class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
       </div>
-    </div>
-    <div id="data-browser-content" class="overflow-x-auto text-xs">
-      <span class="text-sm text-gray-400">Select a run to browse data</span>
-    </div>
-  </div>
-
-  <!-- Run Comparison -->
-  <div id="comparison-section" class="hidden mb-6">
-    <h3 class="text-lg font-semibold mb-3">Run Comparison</h3>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="card">
-        <h4 class="text-sm font-semibold mb-3">Outcome Transition Matrix</h4>
-        <div id="chart-outcome-diff"></div>
-      </div>
-      <div class="card">
-        <h4 class="text-sm font-semibold mb-3">Target Transition Matrix</h4>
-        <div id="chart-target-diff"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Housekeeping Charts -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Housekeeping Flag Distribution</h3>
-      <div id="chart-hk-flags" class="min-h-[120px]"></div>
-    </div>
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Owner Response Funnel</h3>
-      <div id="chart-hk-funnel" class="space-y-2 text-sm"></div>
-    </div>
-    <div class="card">
-      <h3 class="text-sm font-semibold mb-3">Closure Trend</h3>
-      <div id="chart-hk-trend" class="min-h-[120px]"></div>
+      <div id="why-panel-content" class="text-xs space-y-3"></div>
     </div>
   </div>
 </Layout>
+
+<style>
+  #data-browser-content thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f9fafb;
+  }
+</style>
 
 <script>
   var token = localStorage.getItem('amplifi_token');
@@ -149,6 +189,112 @@ export const prerender = false;
   function fmt(n) { if (n == null) return '--'; if (typeof n === 'string') return n; return Number(n).toLocaleString(); }
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
   function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+  // Tab switching
+  window.switchAnalyticsTab = function(tab) {
+    var visuals = document.getElementById('panel-visuals');
+    var browser = document.getElementById('panel-browser');
+    var tabV = document.getElementById('tab-visuals');
+    var tabB = document.getElementById('tab-browser');
+    if (tab === 'visuals') {
+      visuals.classList.remove('hidden');
+      browser.classList.add('hidden');
+      tabV.className = 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700';
+      tabB.className = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+    } else {
+      visuals.classList.add('hidden');
+      browser.classList.remove('hidden');
+      tabV.className = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+      tabB.className = 'px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700';
+    }
+  };
+
+  // Why panel (decision reasoning)
+  var _currentRunId = null;
+  window.showWhyPanel = function(proposalId) {
+    if (!_currentRunId) return;
+    var panel = document.getElementById('why-panel');
+    var content = document.getElementById('why-panel-content');
+    content.innerHTML = '<span class="text-gray-400">Loading...</span>';
+    panel.style.transform = 'translateX(0)';
+
+    fetch('/api/runs/' + _currentRunId + '/proposals/' + proposalId + '/why', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var html = '';
+        // Outcome badge
+        var oc = d.cleansing_outcome || 'UNKNOWN';
+        var color = COLORS[oc] || '#999';
+        html += '<div class="flex items-center gap-2 mb-2"><span class="px-2 py-0.5 rounded text-white text-[10px] font-bold" style="background:' + color + '">' + esc(oc) + '</span>';
+        if (d.target_object) html += '<span class="text-gray-500">→ ' + esc(d.target_object) + '</span>';
+        html += '</div>';
+
+        // Rule path
+        html += '<div class="border rounded p-2 bg-gray-50"><h4 class="font-semibold text-gray-700 mb-1">Rule Path</h4>';
+        var rp = d.rule_path;
+        if (rp && rp.steps && rp.steps.length) {
+          html += '<ol class="list-decimal list-inside space-y-1">';
+          rp.steps.forEach(function(step) {
+            var code = step.routine || step.code || '';
+            var verdict = step.verdict || step.result || '';
+            var conf = step.confidence != null ? ' (' + (step.confidence * 100).toFixed(0) + '%)' : '';
+            html += '<li><span class="font-mono text-blue-700">' + esc(code) + '</span> → <span class="font-medium">' + esc(verdict) + '</span>' + conf + '</li>';
+          });
+          html += '</ol>';
+        } else if (rp && typeof rp === 'object') {
+          html += '<pre class="text-[10px] whitespace-pre-wrap">' + esc(JSON.stringify(rp, null, 2)) + '</pre>';
+        } else {
+          html += '<span class="text-gray-400">No rule path recorded</span>';
+        }
+        html += '</div>';
+
+        // ML Scores
+        if (d.ml_scores && Object.keys(d.ml_scores).length) {
+          html += '<div class="border rounded p-2 bg-gray-50"><h4 class="font-semibold text-gray-700 mb-1">ML Scores</h4>';
+          html += '<div class="space-y-1">';
+          Object.keys(d.ml_scores).forEach(function(k) {
+            if (k.charAt(0) === '_') return;
+            var v = d.ml_scores[k];
+            var pct = typeof v === 'number' ? Math.round(v * 100) : v;
+            html += '<div class="flex justify-between"><span>' + esc(k) + '</span><span class="font-mono font-medium">' + pct + (typeof v === 'number' ? '%' : '') + '</span></div>';
+          });
+          html += '</div></div>';
+        }
+
+        // LLM Commentary
+        html += '<div class="border rounded p-2 bg-blue-50"><h4 class="font-semibold text-gray-700 mb-1">LLM Assessment</h4>';
+        var llm = d.llm_commentary;
+        if (llm && llm.error) {
+          html += '<span class="text-red-500">' + esc(llm.error) + '</span>';
+        } else if (llm && (llm.commentary || llm.assessment || llm.text)) {
+          html += '<p class="whitespace-pre-wrap">' + esc(llm.commentary || llm.assessment || llm.text) + '</p>';
+          if (llm.recommendation) html += '<p class="mt-1 font-medium text-blue-700">Recommendation: ' + esc(llm.recommendation) + '</p>';
+          if (llm.suggested_outcome) html += '<p class="mt-1">LLM suggested: <span class="font-mono font-bold">' + esc(llm.suggested_outcome) + '</span></p>';
+        } else if (llm && typeof llm === 'object') {
+          html += '<pre class="text-[10px] whitespace-pre-wrap">' + esc(JSON.stringify(llm, null, 2)) + '</pre>';
+        } else {
+          html += '<span class="text-gray-400">No LLM review performed</span>';
+        }
+        html += '</div>';
+
+        // Override
+        if (d.override && (d.override.outcome || d.override.target)) {
+          html += '<div class="border rounded p-2 bg-amber-50"><h4 class="font-semibold text-gray-700 mb-1">Manual Override</h4>';
+          if (d.override.outcome) html += '<div>Outcome: <span class="font-bold">' + esc(d.override.outcome) + '</span></div>';
+          if (d.override.target) html += '<div>Target: <span class="font-bold">' + esc(d.override.target) + '</span></div>';
+          if (d.override.reason) html += '<div class="text-gray-600 mt-1">' + esc(d.override.reason) + '</div>';
+          html += '</div>';
+        }
+
+        content.innerHTML = html;
+      })
+      .catch(function(err) {
+        content.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
+      });
+  };
+  window.closeWhyPanel = function() {
+    document.getElementById('why-panel').style.transform = 'translateX(100%)';
+  };
 
   // Load waves
   fetch('/api/waves?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -232,6 +378,7 @@ export const prerender = false;
   });
 
   function loadRunVisuals(runId, waveId) {
+    _currentRunId = runId;
     // KPI Strip
     fetch('/api/runs/' + runId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(run) {
       var k = run.kpis || {};
@@ -491,22 +638,183 @@ export const prerender = false;
   function drawSankey(divId, flows) {
     var el = document.getElementById(divId);
     if (!el || !Object.keys(flows).length) return;
-    var sorted = Object.entries(flows).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
-    var total = sorted.reduce(function(s, f) { return s + f[1]; }, 0);
-    var html = '<div class="space-y-1">';
-    sorted.forEach(function(f) {
-      var pct = Math.round(f[1] / total * 100);
-      var parts = f[0].split(' → ');
-      var color = COLORS[parts[0]] || '#999';
-      html += '<div class="flex items-center gap-2 text-xs">' +
-        '<span class="w-24 text-right font-medium" style="color:' + color + '">' + parts[0] + '</span>' +
-        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
-        '<div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.5"></div>' +
-        '<span class="absolute inset-0 flex items-center justify-center text-xs font-mono">' + f[1] + ' (' + pct + '%)</span></div>' +
-        '<span class="w-16 font-medium">' + parts[1] + '</span></div>';
+
+    var sources = {}, targets = {};
+    Object.keys(flows).forEach(function(k) {
+      var parts = k.split(' → ');
+      sources[parts[0]] = (sources[parts[0]] || 0) + flows[k];
+      targets[parts[1]] = (targets[parts[1]] || 0) + flows[k];
     });
-    el.innerHTML = html + '</div>';
+
+    var srcKeys = Object.keys(sources).sort(function(a, b) { return sources[b] - sources[a]; });
+    var tgtKeys = Object.keys(targets).sort(function(a, b) { return targets[b] - targets[a]; });
+    var totalAll = srcKeys.reduce(function(s, k) { return s + sources[k]; }, 0);
+    if (!totalAll) return;
+
+    var MIN_H = 22, GAP = 4;
+
+    // Single pass: compute positions shared by labels AND SVG
+    function computePositions(keys, vals) {
+      var pos = {}, y = 0;
+      keys.forEach(function(k, i) {
+        var h = Math.max(MIN_H, Math.round(vals[k] / totalAll * 250));
+        pos[k] = { y: y, h: h };
+        y += h + GAP;
+      });
+      return { positions: pos, totalH: y - GAP };
+    }
+    var srcLayout = computePositions(srcKeys, sources);
+    var tgtLayout = computePositions(tgtKeys, targets);
+    var svgH = Math.max(srcLayout.totalH, tgtLayout.totalH);
+
+    var html = '<div class="flex items-start" style="height:' + svgH + 'px">';
+
+    // Left labels (absolute positioned to match SVG exactly)
+    html += '<div class="w-28 flex-shrink-0 text-right pr-2 relative" style="height:' + svgH + 'px">';
+    srcKeys.forEach(function(s) {
+      var p = srcLayout.positions[s];
+      html += '<div style="position:absolute;top:' + p.y + 'px;height:' + p.h + 'px;right:8px;display:flex;align-items:center;justify-content:flex-end">';
+      html += '<span class="text-xs font-medium" style="color:' + (COLORS[s] || '#666') + '">' + esc(s) + ' <span class="text-gray-400">(' + sources[s] + ')</span></span>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // SVG flow area
+    html += '<div class="flex-1 relative" style="min-width:200px;height:' + svgH + 'px">';
+    html += '<svg width="100%" height="' + svgH + '" viewBox="0 0 200 ' + svgH + '" preserveAspectRatio="none">';
+
+    var srcOffset = {}, tgtOffset = {};
+    srcKeys.forEach(function(s) { srcOffset[s] = 0; });
+    tgtKeys.forEach(function(t) { tgtOffset[t] = 0; });
+
+    Object.entries(flows).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(f) {
+      var parts = f[0].split(' → ');
+      var src = parts[0], tgt = parts[1], cnt = f[1];
+      var sInfo = srcLayout.positions[src], tInfo = tgtLayout.positions[tgt];
+      var bandH = Math.max(2, Math.round(cnt / totalAll * 250));
+      var sYStart = sInfo.y + srcOffset[src];
+      var tYStart = tInfo.y + tgtOffset[tgt];
+      srcOffset[src] += bandH;
+      tgtOffset[tgt] += bandH;
+      var color = COLORS[src] || '#999';
+      html += '<path d="M0,' + sYStart + ' C80,' + sYStart + ' 120,' + tYStart + ' 200,' + tYStart + ' L200,' + (tYStart + bandH) + ' C120,' + (tYStart + bandH) + ' 80,' + (sYStart + bandH) + ' 0,' + (sYStart + bandH) + ' Z" fill="' + color + '" opacity="0.3"><title>' + esc(src + ' → ' + tgt + ': ' + cnt) + '</title></path>';
+    });
+    html += '</svg></div>';
+
+    // Right labels (absolute positioned to match SVG exactly)
+    html += '<div class="w-28 flex-shrink-0 text-left pl-2 relative" style="height:' + svgH + 'px">';
+    tgtKeys.forEach(function(t) {
+      var p = tgtLayout.positions[t];
+      html += '<div style="position:absolute;top:' + p.y + 'px;height:' + p.h + 'px;left:8px;display:flex;align-items:center">';
+      html += '<span class="text-xs font-medium" style="color:' + (TARGET_COLORS[t] || '#666') + '">' + esc(t) + ' <span class="text-gray-400">(' + targets[t] + ')</span></span>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '</div>';
+    el.innerHTML = html;
   }
+
+  // --- Housekeeping Charts ---
+  function loadHousekeepingCharts() {
+    fetch('/api/stats/housekeeping-summary', { headers: authHdr })
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(d) {
+        drawHKFlags(d.flag_distribution);
+        drawHKFunnel(d.funnel);
+        drawHKTrend(d.trend);
+      })
+      .catch(function(err) {
+        var msg = '<span class="text-xs text-gray-400">No housekeeping data yet</span>';
+        var f = document.getElementById('chart-hk-flags');
+        var fn = document.getElementById('chart-hk-funnel');
+        var t = document.getElementById('chart-hk-trend');
+        if (f) f.innerHTML = msg;
+        if (fn) fn.innerHTML = msg;
+        if (t) t.innerHTML = msg;
+      });
+  }
+
+  function drawHKFlags(data) {
+    var el = document.getElementById('chart-hk-flags');
+    if (!el) return;
+    var keys = Object.keys(data);
+    if (!keys.length) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping flags recorded yet</span>'; return; }
+    var total = keys.reduce(function(s, k) { return s + data[k]; }, 0);
+    var FLAG_COLORS = { UNUSED: '#ef4444', LOW_VOLUME: '#f59e0b', NO_OWNER: '#8b5cf6', ANOMALY: '#3b82f6' };
+    var html = '<div class="space-y-2">';
+    keys.sort(function(a, b) { return data[b] - data[a]; });
+    keys.forEach(function(k) {
+      var pct = total ? Math.round(data[k] / total * 100) : 0;
+      var color = FLAG_COLORS[k] || '#9ca3af';
+      html += '<div><div class="flex justify-between text-xs mb-0.5"><span class="font-medium">' + esc(k) + '</span><span class="text-gray-500">' + data[k] + ' (' + pct + '%)</span></div>';
+      html += '<div class="w-full bg-gray-100 rounded h-4"><div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.7"></div></div></div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function drawHKFunnel(data) {
+    var el = document.getElementById('chart-hk-funnel');
+    if (!el) return;
+    if (!data.total) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping items yet</span>'; return; }
+    var stages = [
+      { label: 'Total Flagged', value: data.total, color: '#6366f1' },
+      { label: 'Notified', value: data.notified, color: '#3b82f6' },
+      { label: 'Responded', value: data.responded, color: '#22c55e' }
+    ];
+    var maxVal = data.total;
+    var html = '<div class="space-y-2">';
+    stages.forEach(function(s) {
+      var pct = maxVal ? Math.round(s.value / maxVal * 100) : 0;
+      html += '<div class="flex items-center gap-2">';
+      html += '<span class="w-24 text-xs text-right font-medium">' + s.label + '</span>';
+      html += '<div class="flex-1 bg-gray-100 rounded h-6 relative">';
+      html += '<div class="h-full rounded" style="width:' + pct + '%;background:' + s.color + ';opacity:0.6"></div>';
+      html += '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">' + s.value + ' (' + pct + '%)</span>';
+      html += '</div></div>';
+    });
+    // Decision breakdown
+    var decisions = data.decisions || {};
+    var dKeys = Object.keys(decisions);
+    if (dKeys.length) {
+      html += '<div class="mt-2 pt-2 border-t"><div class="text-[10px] text-gray-500 mb-1">Decisions:</div><div class="flex gap-3">';
+      var DEC_COLORS = { KEEP: '#22c55e', CLOSE: '#ef4444', DEFER: '#f59e0b' };
+      dKeys.forEach(function(dk) {
+        html += '<span class="flex items-center gap-1 text-xs"><span class="w-2.5 h-2.5 rounded" style="background:' + (DEC_COLORS[dk] || '#999') + '"></span>' + dk + ': ' + decisions[dk] + '</span>';
+      });
+      html += '</div></div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function drawHKTrend(data) {
+    var el = document.getElementById('chart-hk-trend');
+    if (!el) return;
+    if (!data || !data.length) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping cycles yet</span>'; return; }
+    var maxItems = Math.max.apply(null, data.map(function(d) { return d.total_items; }));
+    if (!maxItems) maxItems = 1;
+    var html = '<div class="flex items-end gap-1" style="height:120px">';
+    data.forEach(function(d) {
+      var totalH = Math.round(d.total_items / maxItems * 100);
+      var closedH = d.total_items ? Math.round(d.closed / d.total_items * totalH) : 0;
+      var openH = totalH - closedH;
+      html += '<div class="flex-1 flex flex-col items-center justify-end h-full">';
+      html += '<div class="text-[9px] text-gray-500 mb-1">' + d.total_items + '</div>';
+      html += '<div class="w-full flex flex-col">';
+      if (openH > 0) html += '<div class="w-full rounded-t bg-blue-400" style="height:' + openH + 'px;opacity:0.5"></div>';
+      if (closedH > 0) html += '<div class="w-full ' + (openH > 0 ? '' : 'rounded-t ') + 'bg-green-500" style="height:' + closedH + 'px;opacity:0.7"></div>';
+      html += '</div>';
+      html += '<div class="text-[8px] text-gray-400 mt-1 truncate w-full text-center">' + esc(d.period) + '</div></div>';
+    });
+    html += '</div>';
+    html += '<div class="flex gap-3 mt-2 text-[10px] text-gray-500"><span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-blue-400 opacity-50"></span>Open</span><span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-green-500 opacity-70"></span>Closed</span></div>';
+    el.innerHTML = html;
+  }
+
+  // Load housekeeping charts on page load
+  loadHousekeepingCharts();
 
   // --- Config management ---
   var jsonHdr = Object.assign({ 'Content-Type': 'application/json' }, authHdr);
@@ -774,6 +1082,7 @@ export const prerender = false;
       html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortBrowser(\'' + c.key + '\')">' +
         esc(c.label) + sortArrow(c.key) + '</th>';
     });
+    html += '<th class="py-2 px-2 text-center whitespace-nowrap">Why?</th>';
     // Balance period headers
     periods.forEach(function(p) {
       html += '<th class="py-2 px-1 text-right whitespace-nowrap text-[10px] font-normal text-gray-500">' + esc(p) + '</th>';
@@ -799,7 +1108,10 @@ export const prerender = false;
         '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' + outcomeClass + '">' + esc(it.cleansing_outcome) + '</span></td>' +
         '<td class="py-1.5 px-2">' + esc(it.target_object || '-') + '</td>' +
         '<td class="py-1.5 px-2 font-mono font-medium">' + (it.merge_into_cctr ? esc(it.merge_into_cctr) : '<span class="text-gray-300">-</span>') + '</td>' +
-        '<td class="py-1.5 px-2 text-right">' + (it.confidence ? Number(it.confidence).toFixed(2) : '-') + '</td>';
+        '<td class="py-1.5 px-2 text-right">' + (it.confidence ? Number(it.confidence).toFixed(2) : '-') + '</td>' +
+        '<td class="py-1.5 px-2 text-center"><button class="text-blue-600 hover:text-blue-800 underline text-[10px]" onclick="showWhyPanel(' + it.id + ')">Why?</button>' +
+        (it.rule_path && it.rule_path.steps && it.rule_path.steps.length ? '<div class="text-[9px] text-gray-400 mt-0.5">' + it.rule_path.steps.map(function(s) { return (s.routine || s.code || '?'); }).join(' → ') + '</div>' : '') +
+        '</td>';
       // Balance cells
       periods.forEach(function(p) {
         var b = balByPeriod[p];

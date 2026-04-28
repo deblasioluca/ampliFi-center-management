@@ -74,7 +74,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
         </div>
       </div>
-      <div id="db-content" class="text-xs overflow-x-auto">
+      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">
         <span class="text-sm text-gray-400">Loading data browser...</span>
       </div>
     </div>
@@ -89,7 +89,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -104,7 +104,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -119,7 +119,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -134,7 +134,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
       <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -152,7 +152,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
       <!-- List view -->
       <div id="hier-list-view">
-        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 380px)">Loading...</div>
       </div>
       <!-- Tree view -->
       <div id="hier-tree-view" class="hidden">
@@ -164,7 +164,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
           <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
         </div>
-        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto">Select a hierarchy to view its tree structure.</div>
+        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 420px)">Select a hierarchy to view its tree structure.</div>
       </div>
     </div>
 
@@ -179,7 +179,7 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
       </div>
       <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
-      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 360px)">Loading...</div>
       <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -252,6 +252,23 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 </Layout>
+
+<style>
+  /* Sticky table headers inside scrollable containers */
+  #db-content thead th,
+  #db-hier-detail thead th,
+  #entities-table thead th,
+  #cc-table thead th,
+  #pc-table thead th,
+  #bal-table thead th,
+  #hier-table thead th,
+  #emp-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f9fafb;
+  }
+</style>
 
 <script is:inline>
 (function() {
@@ -1202,6 +1219,7 @@ import Layout from '../../components/layout/Layout.astro';
         dbData = d;
         dbColFilters = {};
         dbHierSelectedNode = null;
+        _cachedHierMap = null;
         renderDB();
       })
       .catch(function(err) {
@@ -1239,8 +1257,16 @@ import Layout from '../../components/layout/Layout.astro';
 
   function dbSortItems(items) {
     var col = dbSort.col, dir = dbSort.dir === 'asc' ? 1 : -1;
+    var isHierCol = col && col.indexOf('hier_') === 0;
+    var hierMap = isHierCol ? getCachedHierMap().map : null;
     return items.slice().sort(function(a, b) {
-      var va = a[col], vb = b[col];
+      var va, vb;
+      if (isHierCol) {
+        va = (hierMap[a.cctr] || {})[col] || '';
+        vb = (hierMap[b.cctr] || {})[col] || '';
+      } else {
+        va = a[col]; vb = b[col];
+      }
       if (va == null) va = '';
       if (vb == null) vb = '';
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
@@ -1256,9 +1282,16 @@ import Layout from '../../components/layout/Layout.astro';
     renderDB();
   };
 
+  var _cachedHierMap = null;
+  function getCachedHierMap() {
+    if (!_cachedHierMap) _cachedHierMap = buildHierLevelMap();
+    return _cachedHierMap;
+  }
+
   function getFilteredItems() {
     var search = (document.getElementById('db-search').value || '').toLowerCase();
     var items = (dbData && dbData.items) || [];
+    var hierMap = getCachedHierMap().map;
     if (search) {
       items = items.filter(function(it) {
         return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
@@ -1275,6 +1308,10 @@ import Layout from '../../components/layout/Layout.astro';
       if (!fv) return;
       items = items.filter(function(it) {
         if (col === 'is_active') return String(it.is_active) === fv;
+        if (col.indexOf('hier_') === 0) {
+          var hm = hierMap[it.cctr] || {};
+          return String(hm[col] || '') === fv;
+        }
         return String(it[col] || '') === fv;
       });
     });
@@ -1293,16 +1330,84 @@ import Layout from '../../components/layout/Layout.astro';
     }
   }
 
+  function buildHierLevelMap() {
+    var hiers = (dbData && dbData.hierarchies) || [];
+    // Use the first CC hierarchy (setclass 0101) or the first available
+    var hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+    if (!hier) return { levels: [], map: {} };
+
+    var childMap = {};
+    (hier.nodes || []).forEach(function(n) {
+      if (!childMap[n.parent]) childMap[n.parent] = [];
+      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
+    });
+    (hier.leaves || []).forEach(function(lf) {
+      if (!childMap[lf.setname]) childMap[lf.setname] = [];
+      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
+    });
+
+    // Find roots
+    var allChildren = {};
+    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
+    var roots = [];
+    (hier.nodes || []).forEach(function(n) {
+      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
+    });
+    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
+
+    // DFS to build paths: CC value -> [level0, level1, level2, ...]
+    var ccPaths = {};
+    var maxDepth = 0;
+    function dfs(nodeName, path) {
+      var children = childMap[nodeName] || [];
+      children.forEach(function(c) {
+        if (c.type === 'leaf') {
+          ccPaths[c.value] = path.slice();
+          if (path.length > maxDepth) maxDepth = path.length;
+        } else {
+          dfs(c.name, path.concat([c.name]));
+        }
+      });
+    }
+    roots.forEach(function(r) { dfs(r, [r]); });
+
+    var levelCols = [];
+    for (var i = 0; i < maxDepth; i++) {
+      levelCols.push('L' + (i + 1));
+    }
+
+    // Build map: cctr -> { L1: 'X', L2: 'Y', ... }
+    var ccLevelMap = {};
+    Object.keys(ccPaths).forEach(function(cctr) {
+      var p = ccPaths[cctr];
+      var obj = {};
+      for (var i = 0; i < maxDepth; i++) {
+        obj['hier_L' + (i + 1)] = p[i] || '';
+      }
+      ccLevelMap[cctr] = obj;
+    });
+
+    return { levels: levelCols, map: ccLevelMap, hierLabel: hier.label || hier.setname || 'Hierarchy' };
+  }
+
   function renderDBTabular(el, items) {
     if (!items.length && !Object.keys(dbColFilters).length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
     var allItems = dbData.items || [];
     var sorted = dbSortItems(items);
+
+    // Build hierarchy level data
+    var hierInfo = buildHierLevelMap();
+    var hierLevels = hierInfo.levels;
+    var hierMap = hierInfo.map;
+
     // Collect all balance periods from ALL items (not filtered)
     var periods = {};
+    var currencyForPeriod = {};
     allItems.forEach(function(it) {
       (it.monthly_balances || []).forEach(function(b) {
         var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
         periods[key] = 1;
+        if (b.currency) currencyForPeriod[key] = b.currency;
       });
     });
     var pKeys = Object.keys(periods).sort();
@@ -1318,12 +1423,26 @@ import Layout from '../../components/layout/Layout.astro';
       { key: 'is_active', label: 'Active' }
     ];
 
+    // Add hierarchy level columns
+    var hierCols = [];
+    hierLevels.forEach(function(lvl, i) {
+      var colKey = 'hier_L' + (i + 1);
+      hierCols.push({ key: colKey, label: lvl });
+    });
+
+    var allCols = cols.concat(hierCols);
+
     // Collect unique values per column from ALL items for filter dropdowns
     var colVals = {};
-    cols.forEach(function(c) { colVals[c.key] = {}; });
+    allCols.forEach(function(c) { colVals[c.key] = {}; });
     allItems.forEach(function(it) {
       cols.forEach(function(c) {
         var v = c.key === 'is_active' ? String(it.is_active) : String(it[c.key] || '');
+        if (v) colVals[c.key][v] = 1;
+      });
+      var hm = hierMap[it.cctr] || {};
+      hierCols.forEach(function(c) {
+        var v = hm[c.key] || '';
         if (v) colVals[c.key][v] = 1;
       });
     });
@@ -1331,16 +1450,18 @@ import Layout from '../../components/layout/Layout.astro';
     var html = '<table class="w-full text-xs border-collapse"><thead>';
     // Header row
     html += '<tr class="border-b bg-gray-50">';
-    cols.forEach(function(c) {
+    allCols.forEach(function(c) {
       html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
     });
     pKeys.forEach(function(pk) {
-      html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(pk) + '</th>';
+      var curr = currencyForPeriod[pk];
+      var label = curr ? pk + ' (' + curr + ')' : pk;
+      html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(label) + '</th>';
     });
     html += '</tr>';
     // Filter row
     html += '<tr class="bg-gray-100 border-b">';
-    cols.forEach(function(c) {
+    allCols.forEach(function(c) {
       var vals = Object.keys(colVals[c.key]).sort();
       var cur = dbColFilters[c.key] || '';
       html += '<td class="px-1 py-1"><select class="w-full text-[10px] border rounded px-1 py-0.5 bg-white" onchange="setDbFilter(\'' + c.key + '\',this.value)">';
@@ -1361,7 +1482,7 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</thead><tbody>';
 
     if (!items.length) {
-      html += '<tr><td colspan="' + (cols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">No matching records.</td></tr>';
+      html += '<tr><td colspan="' + (allCols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">No matching records.</td></tr>';
     }
 
     sorted.forEach(function(it) {
@@ -1369,6 +1490,7 @@ import Layout from '../../components/layout/Layout.astro';
       (it.monthly_balances || []).forEach(function(b) {
         balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
       });
+      var hm = hierMap[it.cctr] || {};
       html += '<tr class="border-b hover:bg-gray-50">';
       html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
       html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
@@ -1378,11 +1500,15 @@ import Layout from '../../components/layout/Layout.astro';
       html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
       html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
       html += '<td class="py-1 px-2 text-center">' + (it.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      hierCols.forEach(function(c) {
+        html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm[c.key] || '') + '</td>';
+      });
       pKeys.forEach(function(pk) {
         var b = balMap[pk];
         if (b) {
           var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + '</td>';
+          var curr = b.currency ? ' <span class="text-gray-400 text-[9px]">' + esc(b.currency) + '</span>' : '';
+          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + curr + '</td>';
         } else {
           html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
         }
@@ -1551,10 +1677,10 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</select></div>';
 
     // Split panel: tree left, detail right
-    html += '<div class="flex gap-3" style="min-height:400px">';
+    html += '<div class="flex gap-3" style="height:calc(100vh - 380px);min-height:300px">';
 
     // Left panel — compact tree
-    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto" style="max-height:calc(100vh - 280px)">';
+    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto">';
 
     var childMap = {};
     (hier.nodes || []).forEach(function(n) {
@@ -1617,7 +1743,7 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</div>';
 
     // Right panel — detail table
-    html += '<div class="flex-1 border rounded bg-white overflow-hidden" id="db-hier-detail">';
+    html += '<div class="flex-1 border rounded bg-white overflow-auto" id="db-hier-detail">';
     html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
     html += '</div>';
 

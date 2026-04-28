@@ -389,18 +389,20 @@ def data_browser(
             Balance.period,
             func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
             func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
+            func.max(Balance.currency_tc).label("currency"),
         )
         .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
         .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
     ).all()
     balance_map: dict[tuple[str, str], list[dict]] = {}
-    for coarea, cctr, fy, per, amt, post in bal_rows:
+    for coarea, cctr, fy, per, amt, post, curr in bal_rows:
         balance_map.setdefault((coarea, cctr), []).append(
             {
                 "fiscal_year": fy,
                 "period": per,
                 "amount": float(amt),
                 "postings": int(post),
+                "currency": curr or "",
             }
         )
 

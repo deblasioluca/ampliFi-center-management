@@ -259,6 +259,8 @@ def list_proposals(
                 "override_outcome": p.override_outcome,
                 "override_target": p.override_target,
                 "override_reason": p.override_reason,
+                "rule_path": p.rule_path,
+                "llm_commentary": p.llm_commentary,
                 "posting_trend": trend_map.get(
                     cc_map[p.legacy_cc_id].cctr if p.legacy_cc_id in cc_map else "", []
                 ),
@@ -411,6 +413,8 @@ def data_browser(
                 "confidence": str(p.confidence) if p.confidence else None,
                 "override_outcome": p.override_outcome,
                 "override_target": p.override_target,
+                "rule_path": p.rule_path,
+                "llm_commentary": p.llm_commentary,
                 "monthly_balances": balance_map.get(cctr, []) if cctr else [],
             }
         )
