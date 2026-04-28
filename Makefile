@@ -105,8 +105,9 @@ status: ## Show whether backend + frontend are running
 		echo "Frontend: not running"; \
 	fi
 
-setup: ## Initial setup: create venv, install deps, create DB tables, seed data
+setup: ## Initial setup: venv, deps, build frontend, DB init, seed, start
 	@echo "=== ampliFi Setup ==="
+	@echo "==> Creating virtual environment..."
 	@cd $(BACKEND_DIR) && \
 		python3 -m venv $(VENV) && \
 		source $(VENV)/bin/activate && \
@@ -114,6 +115,7 @@ setup: ## Initial setup: create venv, install deps, create DB tables, seed data
 		pip install $(PIP_TRUST) --upgrade pip > /dev/null 2>&1 && \
 		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -5 && \
 		echo "[ok] Backend dependencies installed"
+	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
 		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
@@ -121,6 +123,7 @@ setup: ## Initial setup: create venv, install deps, create DB tables, seed data
 		npm run build 2>&1 | tail -3 && \
 		echo "[ok] Frontend built"; \
 	fi
+	@echo "==> Initializing database..."
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
 		python -c "\
@@ -135,7 +138,13 @@ Base.metadata.create_all(engine); \
 print('[ok] Database tables created')" && \
 		python -m app.cli seed && \
 		echo "[ok] Sample data loaded"
-	@echo "=== Setup complete ==="
+	@echo "==> Starting application..."
+	@$(MAKE) start
+	@echo ""
+	@echo "=== Setup complete! ==="
+	@echo "  Backend:  http://0.0.0.0:$(BACKEND_PORT)"
+	@echo "  Frontend: http://0.0.0.0:$(FRONTEND_PORT)"
+	@echo "  Tip: run 'make git-setup' to store GitHub credentials for git pull."
 
 update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="

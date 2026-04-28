@@ -11,7 +11,7 @@ This guide covers a fresh installation on RHEL 8 or 9 (also works on CentOS Stre
 | RHEL / CentOS Stream | 8.x or 9.x | `cat /etc/redhat-release` to check |
 | Python | 3.11+ | RHEL 9 ships 3.9 — you may need AppStream |
 | Node.js | 18+ | For the Astro frontend |
-| PostgreSQL | 14+ | Backend database |
+| PostgreSQL | 14+ | Backend database (assumes already installed) |
 | Git | 2.x | For cloning and pulling updates |
 | Make | 3.x | Pre-installed on RHEL |
 
@@ -70,14 +70,11 @@ node --version   # Should show v18.x or higher
 npm --version
 ```
 
-### PostgreSQL
+### PostgreSQL (database setup only — assumes PostgreSQL is already installed)
+
+Create the database and user for ampliFi:
 
 ```bash
-# RHEL 9
-sudo dnf install -y postgresql-server postgresql-devel
-sudo postgresql-setup --initdb
-sudo systemctl enable --now postgresql
-
 # Create database and user
 sudo -u postgres psql -c "CREATE USER amplifi WITH PASSWORD 'amplifi';"
 sudo -u postgres psql -c "CREATE DATABASE amplifi_cleanup OWNER amplifi;"
@@ -85,7 +82,7 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE amplifi_cleanup TO am
 sudo -u postgres psql -d amplifi_cleanup -c "CREATE SCHEMA IF NOT EXISTS cleanup AUTHORIZATION amplifi;"
 ```
 
-Edit `pg_hba.conf` to allow local password auth:
+If local password auth is not enabled, edit `pg_hba.conf`:
 ```bash
 sudo vi /var/lib/pgsql/data/pg_hba.conf
 # Change: local all all peer
@@ -148,7 +145,8 @@ vi .env
 **Key settings to update:**
 
 ```env
-# Database — match the PostgreSQL user/db you created above
+# Database — point to your existing PostgreSQL instance
+# Adjust host/port/user/password to match your environment
 DATABASE_URL=postgresql+psycopg2://amplifi:amplifi@localhost:5432/amplifi_cleanup
 DATABASE_ASYNC_URL=postgresql+asyncpg://amplifi:amplifi@localhost:5432/amplifi_cleanup
 POSTGRES_PORT=5432
@@ -183,6 +181,7 @@ This will:
 2. Install all Python dependencies (with proxy and `--trusted-host` if configured)
 3. Install Node.js dependencies and build the Astro frontend
 4. Create database tables and seed default data
+5. Start the application
 
 If Python 3.11 is not the default `python3`, run setup manually:
 
