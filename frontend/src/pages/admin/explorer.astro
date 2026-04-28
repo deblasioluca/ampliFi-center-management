@@ -1,0 +1,253 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Data Explorer Config" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Data Explorer Configuration</h1>
+      <p class="text-xs text-gray-500 mt-1">Manage what objects appear on the public Data Explorer and where the data comes from</p>
+    </div>
+    <button id="add-src-btn" class="btn-amplifi text-xs" onclick="showAddForm()">+ Add Source</button>
+  </div>
+
+  <!-- Add / Edit form (modal overlay) -->
+  <div id="src-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl w-[560px] max-h-[80vh] overflow-auto p-5">
+      <h3 id="modal-title" class="text-lg font-semibold mb-4">Add Data Source</h3>
+      <form id="src-form" class="space-y-3" onsubmit="return false;">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Object Type</label>
+            <input id="f-object-type" type="text" class="input text-sm" placeholder="cost_centers" required />
+            <p class="text-[10px] text-gray-400 mt-0.5">e.g. cost_centers, profit_centers, mapping</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Area</label>
+            <select id="f-area" class="input text-sm">
+              <option value="legacy">Legacy</option>
+              <option value="amplifi">ampliFi</option>
+            </select>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-700 mb-1">Display Label</label>
+            <input id="f-label" type="text" class="input text-sm" placeholder="Cost Centers" required />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Source System</label>
+            <select id="f-source-system" class="input text-sm">
+              <option value="local_db">Local Database</option>
+              <option value="sap_s4">SAP S/4HANA</option>
+              <option value="sap_mdg">SAP MDG</option>
+              <option value="datasphere">SAP Datasphere</option>
+              <option value="custom_api">Custom API</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Protocol</label>
+            <select id="f-protocol" class="input text-sm">
+              <option value="db_query">DB Query</option>
+              <option value="odata">OData</option>
+              <option value="rfc">RFC</option>
+              <option value="rest">REST API</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Mode</label>
+            <select id="f-mode" class="input text-sm">
+              <option value="replicated">Replicated (cached locally)</option>
+              <option value="in_place">In-Place (live query)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Display Order</label>
+            <input id="f-display-order" type="number" class="input text-sm" value="0" min="0" />
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-700 mb-1">Connection Reference</label>
+            <input id="f-connection-ref" type="text" class="input text-sm" placeholder="SAP connection name, Datasphere URL, API base URL..." />
+            <p class="text-[10px] text-gray-400 mt-0.5">Reference to a configured connection (SAP system, DSP instance, etc.)</p>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-700 mb-1">Endpoint / Table</label>
+            <input id="f-endpoint" type="text" class="input text-sm" placeholder="OData entity set, RFC function, REST path, or DB table" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Replication Schedule</label>
+            <input id="f-replication-cron" type="text" class="input text-sm" placeholder="0 2 * * * (daily at 2am)" />
+            <p class="text-[10px] text-gray-400 mt-0.5">Cron expression (only for replicated mode)</p>
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input id="f-enabled" type="checkbox" checked class="rounded border-gray-300" />
+              <span class="text-sm text-gray-700">Enabled</span>
+            </label>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-3 border-t">
+          <button type="button" class="btn-secondary text-xs" onclick="hideModal()">Cancel</button>
+          <button type="button" id="modal-save" class="btn-amplifi text-xs" onclick="saveSource()">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Source configs table -->
+  <div class="card p-0">
+    <div class="flex gap-1 border-b px-3 py-2">
+      <button id="tab-all" class="px-3 py-1 text-xs font-medium rounded bg-amplifi-50 text-amplifi-700" onclick="filterArea('all')">All</button>
+      <button id="tab-legacy" class="px-3 py-1 text-xs font-medium rounded text-gray-500 hover:bg-gray-50" onclick="filterArea('legacy')">Legacy</button>
+      <button id="tab-amplifi" class="px-3 py-1 text-xs font-medium rounded text-gray-500 hover:bg-gray-50" onclick="filterArea('amplifi')">ampliFi</button>
+    </div>
+    <div id="src-table" class="overflow-auto" style="max-height:calc(100vh - 300px)">
+      <table class="w-full text-xs border-collapse">
+        <thead><tr class="border-b bg-gray-50 sticky top-0 z-10">
+          <th class="py-2 px-3 text-left">Object Type</th>
+          <th class="py-2 px-3 text-left">Area</th>
+          <th class="py-2 px-3 text-left">Label</th>
+          <th class="py-2 px-3 text-left">Source</th>
+          <th class="py-2 px-3 text-left">Protocol</th>
+          <th class="py-2 px-3 text-left">Mode</th>
+          <th class="py-2 px-3 text-left">Connection</th>
+          <th class="py-2 px-3 text-center">Enabled</th>
+          <th class="py-2 px-3 text-center">Actions</th>
+        </tr></thead>
+        <tbody id="src-body">
+          <tr><td colspan="9" class="py-8 text-center text-gray-400">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</Layout>
+
+<script>
+(function() {
+  var _items = [];
+  var _editId = null;
+  var _filter = 'all';
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+  var SOURCE_LABELS = { local_db: 'Local DB', sap_s4: 'SAP S/4', sap_mdg: 'SAP MDG', datasphere: 'Datasphere', custom_api: 'Custom API' };
+  var SOURCE_COLORS = { local_db: 'bg-green-100 text-green-700', sap_s4: 'bg-blue-100 text-blue-700', sap_mdg: 'bg-purple-100 text-purple-700', datasphere: 'bg-orange-100 text-orange-700', custom_api: 'bg-gray-100 text-gray-600' };
+  var MODE_LABELS = { replicated: 'Replicated', in_place: 'In-Place' };
+  var PROTOCOL_LABELS = { db_query: 'DB', odata: 'OData', rfc: 'RFC', rest: 'REST' };
+
+  function load() {
+    apiFetch('/api/admin/explorer-sources').then(function(r) { return r.json(); }).then(function(d) {
+      _items = d.items || [];
+      render();
+    });
+  }
+
+  function render() {
+    var body = document.getElementById('src-body');
+    var filtered = _filter === 'all' ? _items : _items.filter(function(it) { return it.area === _filter; });
+    if (!filtered.length) {
+      body.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-gray-400">No source configs found</td></tr>';
+      return;
+    }
+    var html = '';
+    filtered.forEach(function(it) {
+      var srcCls = SOURCE_COLORS[it.source_system] || 'bg-gray-100 text-gray-600';
+      html += '<tr class="border-b hover:bg-gray-50">';
+      html += '<td class="py-2 px-3 font-mono font-medium">' + esc(it.object_type) + '</td>';
+      html += '<td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ' + (it.area === 'amplifi' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700') + '">' + esc(it.area) + '</span></td>';
+      html += '<td class="py-2 px-3">' + esc(it.label) + '</td>';
+      html += '<td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded text-[10px] ' + srcCls + '">' + esc(SOURCE_LABELS[it.source_system] || it.source_system) + '</span></td>';
+      html += '<td class="py-2 px-3"><span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">' + esc(PROTOCOL_LABELS[it.protocol] || it.protocol) + '</span></td>';
+      html += '<td class="py-2 px-3 text-[10px]">' + esc(MODE_LABELS[it.mode] || it.mode) + '</td>';
+      html += '<td class="py-2 px-3 text-[10px] text-gray-500 max-w-[150px] truncate" title="' + esc(it.connection_ref || '') + '">' + esc(it.connection_ref || '-') + '</td>';
+      html += '<td class="py-2 px-3 text-center">' + (it.enabled ? '<span class="text-green-600 font-bold">On</span>' : '<span class="text-red-500">Off</span>') + '</td>';
+      html += '<td class="py-2 px-3 text-center"><button class="text-amplifi-600 hover:underline text-[10px] mr-2" onclick="editSource(' + it.id + ')">Edit</button>';
+      html += '<button class="text-red-500 hover:underline text-[10px]" onclick="deleteSource(' + it.id + ')">Delete</button></td>';
+      html += '</tr>';
+    });
+    body.innerHTML = html;
+  }
+
+  window.filterArea = function(area) {
+    _filter = area;
+    ['all', 'legacy', 'amplifi'].forEach(function(t) {
+      var btn = document.getElementById('tab-' + t);
+      btn.className = t === area ? 'px-3 py-1 text-xs font-medium rounded bg-amplifi-50 text-amplifi-700' : 'px-3 py-1 text-xs font-medium rounded text-gray-500 hover:bg-gray-50';
+    });
+    render();
+  };
+
+  window.showAddForm = function() {
+    _editId = null;
+    document.getElementById('modal-title').textContent = 'Add Data Source';
+    ['f-object-type', 'f-label', 'f-connection-ref', 'f-endpoint', 'f-replication-cron'].forEach(function(id) { document.getElementById(id).value = ''; });
+    document.getElementById('f-area').value = 'legacy';
+    document.getElementById('f-source-system').value = 'local_db';
+    document.getElementById('f-protocol').value = 'db_query';
+    document.getElementById('f-mode').value = 'replicated';
+    document.getElementById('f-display-order').value = '0';
+    document.getElementById('f-enabled').checked = true;
+    document.getElementById('f-object-type').disabled = false;
+    document.getElementById('f-area').disabled = false;
+    document.getElementById('src-modal').classList.remove('hidden');
+  };
+
+  window.editSource = function(id) {
+    var it = _items.find(function(x) { return x.id === id; });
+    if (!it) return;
+    _editId = id;
+    document.getElementById('modal-title').textContent = 'Edit Data Source';
+    document.getElementById('f-object-type').value = it.object_type;
+    document.getElementById('f-object-type').disabled = true;
+    document.getElementById('f-area').value = it.area;
+    document.getElementById('f-area').disabled = true;
+    document.getElementById('f-label').value = it.label;
+    document.getElementById('f-source-system').value = it.source_system;
+    document.getElementById('f-protocol').value = it.protocol;
+    document.getElementById('f-mode').value = it.mode;
+    document.getElementById('f-connection-ref').value = it.connection_ref || '';
+    document.getElementById('f-endpoint').value = it.endpoint || '';
+    document.getElementById('f-replication-cron').value = it.replication_cron || '';
+    document.getElementById('f-display-order').value = it.display_order;
+    document.getElementById('f-enabled').checked = it.enabled;
+    document.getElementById('src-modal').classList.remove('hidden');
+  };
+
+  window.hideModal = function() {
+    document.getElementById('src-modal').classList.add('hidden');
+  };
+
+  window.saveSource = function() {
+    var payload = {
+      object_type: document.getElementById('f-object-type').value.trim(),
+      area: document.getElementById('f-area').value,
+      label: document.getElementById('f-label').value.trim(),
+      source_system: document.getElementById('f-source-system').value,
+      protocol: document.getElementById('f-protocol').value,
+      mode: document.getElementById('f-mode').value,
+      connection_ref: document.getElementById('f-connection-ref').value.trim() || null,
+      endpoint: document.getElementById('f-endpoint').value.trim() || null,
+      replication_cron: document.getElementById('f-replication-cron').value.trim() || null,
+      display_order: parseInt(document.getElementById('f-display-order').value) || 0,
+      enabled: document.getElementById('f-enabled').checked,
+    };
+    if (!payload.object_type || !payload.label) { alert('Object type and label are required'); return; }
+    var url = _editId ? '/api/admin/explorer-sources/' + _editId : '/api/admin/explorer-sources';
+    var method = _editId ? 'PUT' : 'POST';
+    apiFetch(url, { method: method, body: JSON.stringify(payload) }).then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Error'); });
+      hideModal();
+      load();
+    }).catch(function(e) { alert('Error: ' + e.message); });
+  };
+
+  window.deleteSource = function(id) {
+    if (!confirm('Delete this source config?')) return;
+    apiFetch('/api/admin/explorer-sources/' + id, { method: 'DELETE' }).then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Error'); });
+      load();
+    }).catch(function(e) { alert('Error: ' + e.message); });
+  };
+
+  load();
+})();
+</script>
