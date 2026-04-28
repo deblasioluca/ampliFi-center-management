@@ -188,7 +188,7 @@ export const prerender = false;
       }
     });
     var hierBtn = document.getElementById('view-hierarchical');
-    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'hierarchies') {
+    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'entities' || obj === 'hierarchies') {
       hierBtn.classList.remove('hidden');
     } else {
       hierBtn.classList.add('hidden');
@@ -226,12 +226,63 @@ export const prerender = false;
     var search = (document.getElementById('explore-search').value || '').toLowerCase();
     var cid = 'explore-count';
     if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView, cid);
-    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search, cid);
-    else if (_legacyObj === 'entities') renderEntities(el, d, search, cid);
+    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search, _legacyView, cid);
+    else if (_legacyObj === 'entities') renderEntities(el, d, search, _legacyView, cid);
     else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search, cid);
     else if (_legacyObj === 'balances') renderBalances(el, d, search, cid);
     else if (_legacyObj === 'employees') renderEmployees(el, d, search, cid);
     else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
+  }
+
+  // ── Hierarchy level map builder ───────────────────────────────────────
+  function buildHierLevelMap(keyField) {
+    var hierData = _legacyData['hierarchies'];
+    if (!hierData) return { levels: [], map: {} };
+    var hiers = hierData.hierarchies || [];
+    // Pick the first matching hierarchy by key type
+    var setclass = keyField === 'cctr' ? '0101' : (keyField === 'pctr' ? '0104' : '0106');
+    var hier = hiers.filter(function(h) { return h.setclass === setclass; })[0] || hiers[0];
+    if (!hier) return { levels: [], map: {} };
+    var childMap = {};
+    (hier.nodes || []).forEach(function(n) {
+      if (!childMap[n.parent]) childMap[n.parent] = [];
+      childMap[n.parent].push({ type: 'node', name: n.child });
+    });
+    (hier.leaves || []).forEach(function(lf) {
+      if (!childMap[lf.setname]) childMap[lf.setname] = [];
+      childMap[lf.setname].push({ type: 'leaf', value: lf.value });
+    });
+    var allChildren = {};
+    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
+    var roots = [];
+    (hier.nodes || []).forEach(function(n) {
+      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
+    });
+    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
+    var valPaths = {};
+    var maxDepth = 0;
+    function dfs(nodeName, path) {
+      var children = childMap[nodeName] || [];
+      children.forEach(function(c) {
+        if (c.type === 'leaf') {
+          valPaths[c.value] = path.slice();
+          if (path.length > maxDepth) maxDepth = path.length;
+        } else {
+          dfs(c.name, path.concat([c.name]));
+        }
+      });
+    }
+    roots.forEach(function(r) { dfs(r, [r]); });
+    var levelCols = [];
+    for (var i = 0; i < maxDepth; i++) levelCols.push('L' + (i + 1));
+    var levelMap = {};
+    Object.keys(valPaths).forEach(function(val) {
+      var p = valPaths[val];
+      var obj = {};
+      for (var i = 0; i < maxDepth; i++) obj['hier_L' + (i + 1)] = p[i] || '';
+      levelMap[val] = obj;
+    });
+    return { levels: levelCols, map: levelMap };
   }
 
   // ── Cost Centers ──────────────────────────────────────────────────────
@@ -242,12 +293,17 @@ export const prerender = false;
              (c.ccode||'').toLowerCase().indexOf(search)>=0 || (c.responsible||'').toLowerCase().indexOf(search)>=0;
     });
     if (view === 'hierarchical') { renderHierTree(el, items, 'cctr'); return; }
+    var hierInfo = buildHierLevelMap('cctr');
+    var hierLevels = hierInfo.levels;
+    var hierMap = hierInfo.map;
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
     html += '<th class="py-1.5 px-2 text-left">CC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
     html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Profit Ctr</th><th class="py-1.5 px-2 text-left">Responsible</th>';
     html += '<th class="py-1.5 px-2 text-left">Category</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
+    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
     html += '</tr></thead><tbody>';
     items.forEach(function(c) {
+      var hm = hierMap[c.cctr] || {};
       html += '<tr class="border-b hover:bg-gray-50">';
       html += '<td class="py-1 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>';
       html += '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>';
@@ -258,6 +314,7 @@ export const prerender = false;
       html += '<td class="py-1 px-2">' + esc(c.cctrcgy) + '</td>';
       html += '<td class="py-1 px-2 font-mono">' + esc(c.currency) + '</td>';
       html += '<td class="py-1 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -265,18 +322,24 @@ export const prerender = false;
   }
 
   // ── Profit Centers ────────────────────────────────────────────────────
-  function renderProfitCenters(el, d, search, countElId) {
+  function renderProfitCenters(el, d, search, view, countElId) {
     var items = (d.items || []).filter(function(p) {
       if (!search) return true;
       return (p.pctr||'').toLowerCase().indexOf(search)>=0 || (p.txtsh||'').toLowerCase().indexOf(search)>=0 ||
              (p.ccode||'').toLowerCase().indexOf(search)>=0;
     });
+    if (view === 'hierarchical') { renderHierTree(el, items, 'pctr'); return; }
+    var hierInfo = buildHierLevelMap('pctr');
+    var hierLevels = hierInfo.levels;
+    var hierMap = hierInfo.map;
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
     html += '<th class="py-1.5 px-2 text-left">PC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
     html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Responsible</th><th class="py-1.5 px-2 text-left">Department</th>';
     html += '<th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
+    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
     html += '</tr></thead><tbody>';
     items.forEach(function(p) {
+      var hm = hierMap[p.pctr] || {};
       html += '<tr class="border-b hover:bg-gray-50">';
       html += '<td class="py-1 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>';
       html += '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>';
@@ -286,6 +349,7 @@ export const prerender = false;
       html += '<td class="py-1 px-2">' + esc(p.department) + '</td>';
       html += '<td class="py-1 px-2 font-mono">' + esc(p.currency) + '</td>';
       html += '<td class="py-1 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -293,16 +357,22 @@ export const prerender = false;
   }
 
   // ── Entities ──────────────────────────────────────────────────────────
-  function renderEntities(el, d, search, countElId) {
+  function renderEntities(el, d, search, view, countElId) {
     var items = (d.items || []).filter(function(e) {
       if (!search) return true;
       return (e.ccode||'').toLowerCase().indexOf(search)>=0 || (e.name||'').toLowerCase().indexOf(search)>=0;
     });
+    if (view === 'hierarchical') { renderHierTree(el, items, 'ccode'); return; }
+    var hierInfo = buildHierLevelMap('ccode');
+    var hierLevels = hierInfo.levels;
+    var hierMap = hierInfo.map;
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
     html += '<th class="py-1.5 px-2 text-left">Code</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">Country</th>';
     html += '<th class="py-1.5 px-2 text-left">Region</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
+    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
     html += '</tr></thead><tbody>';
     items.forEach(function(e) {
+      var hm = hierMap[e.ccode] || {};
       html += '<tr class="border-b hover:bg-gray-50">';
       html += '<td class="py-1 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>';
       html += '<td class="py-1 px-2">' + esc(e.name) + '</td>';
@@ -310,6 +380,7 @@ export const prerender = false;
       html += '<td class="py-1 px-2">' + esc(e.region) + '</td>';
       html += '<td class="py-1 px-2 font-mono">' + esc(e.currency) + '</td>';
       html += '<td class="py-1 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -469,7 +540,7 @@ export const prerender = false;
         var it = itemMap[v];
         r += '<div style="padding-left:' + ((depth+1)*16) + 'px" class="py-0.5 text-[11px] border-b border-gray-50">';
         r += '<span class="font-mono">' + esc(v) + '</span>';
-        if (it) r += ' <span class="text-gray-500">' + esc(it.txtsh || it.txtmi || '') + '</span>';
+        if (it) r += ' <span class="text-gray-500">' + esc(it.txtsh || it.txtmi || it.name || '') + '</span>';
         r += '</div>';
       });
       children.forEach(function(c) { r += buildNode(c, depth+1); });
@@ -496,7 +567,7 @@ export const prerender = false;
     });
     // Show/hide hierarchical button for amplifi
     var hierBtn = document.getElementById('av-hierarchical');
-    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'hierarchies') {
+    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'entities' || obj === 'hierarchies') {
       hierBtn.classList.remove('hidden');
     } else {
       hierBtn.classList.add('hidden');
@@ -546,8 +617,8 @@ export const prerender = false;
     var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
     var cid = 'amplifi-count';
     if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView, cid);
-    else if (obj === 'profit-centers') renderProfitCenters(el, d, search, cid);
-    else if (obj === 'entities') renderEntities(el, d, search, cid);
+    else if (obj === 'profit-centers') renderProfitCenters(el, d, search, _amplifiView, cid);
+    else if (obj === 'entities') renderEntities(el, d, search, _amplifiView, cid);
     else if (obj === 'hierarchies') renderHierarchies(el, d, search, cid);
     else if (obj === 'balances') renderBalances(el, d, search, cid);
     else if (obj === 'employees') renderEmployees(el, d, search, cid);
@@ -619,13 +690,13 @@ export const prerender = false;
     document.getElementById('explore-status').textContent = parts.join(' | ') || 'No data loaded';
   });
 
-  // Load hierarchies in background for tree views
-  fetch(BASE + '/legacy/hierarchies').then(function(r) { return r.json(); }).then(function(d) {
+  // Pre-fetch hierarchies so hierarchy level columns are available for CC/PC/entity tables
+  var hierReady = fetch(BASE + '/legacy/hierarchies').then(function(r) { return r.json(); }).then(function(d) {
     _legacyData['hierarchies'] = d;
-  });
+  }).catch(function() {});
 
-  // Load source config then initial view
-  loadSourceConfig().then(function() {
+  // Load source config then initial view (wait for hierarchies too)
+  Promise.all([loadSourceConfig(), hierReady]).then(function() {
     loadLegacyObj(_legacyObj);
   });
 
