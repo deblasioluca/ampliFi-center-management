@@ -72,8 +72,8 @@ stop: ## Stop backend + frontend
 	else \
 		echo "[ok] Backend PID file not found"; \
 	fi
-	@pkill -f "[u]vicorn app.main:app.*--port $(BACKEND_PORT)" 2>/dev/null && \
-		echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
+	@ps aux 2>/dev/null | grep "[u]vicorn app.main:app.*--port $(BACKEND_PORT)" | awk '{print $$2}' | \
+		xargs -r kill 2>/dev/null && echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
 	@if [ -f $(FRONTEND_PID) ]; then \
 		PID=$$(cat $(FRONTEND_PID)); \
 		if kill -0 $$PID 2>/dev/null; then \
