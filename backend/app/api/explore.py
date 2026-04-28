@@ -497,9 +497,11 @@ def explore_source_config(db: Session = Depends(get_db)) -> dict:
     """Public endpoint: returns enabled explorer source configs per area."""
     from app.models.core import ExplorerSourceConfig
 
-    stmt = select(ExplorerSourceConfig).where(
-        ExplorerSourceConfig.enabled.is_(True)
-    ).order_by(ExplorerSourceConfig.area, ExplorerSourceConfig.display_order)
+    stmt = (
+        select(ExplorerSourceConfig)
+        .where(ExplorerSourceConfig.enabled.is_(True))
+        .order_by(ExplorerSourceConfig.area, ExplorerSourceConfig.display_order)
+    )
     rows = db.execute(stmt).scalars().all()
     legacy = []
     amplifi = []
