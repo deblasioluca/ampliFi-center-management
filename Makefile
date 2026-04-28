@@ -72,7 +72,7 @@ stop: ## Stop backend + frontend
 	else \
 		echo "[ok] Backend PID file not found"; \
 	fi
-	@pkill -f "uvicorn app.main:app.*--port $(BACKEND_PORT)" 2>/dev/null && \
+	@pkill -f "[u]vicorn app.main:app.*--port $(BACKEND_PORT)" 2>/dev/null && \
 		echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
 	@if [ -f $(FRONTEND_PID) ]; then \
 		PID=$$(cat $(FRONTEND_PID)); \
@@ -117,7 +117,6 @@ setup: ## Initial setup: venv, deps, build frontend, DB init, seed, start
 		echo "[ok] Backend dependencies installed"
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
 		npm install 2>&1 | tail -3 && \
 		npm run build 2>&1 | tail -3 && \
@@ -136,6 +135,8 @@ conn.execute(text('CREATE SCHEMA IF NOT EXISTS cleanup')); \
 conn.commit(); \
 Base.metadata.create_all(engine); \
 print('[ok] Database tables created')" && \
+		python -m alembic stamp head && \
+		echo "[ok] Alembic stamped at head" && \
 		python -m app.cli seed && \
 		echo "[ok] Sample data loaded"
 	@echo "==> Starting application..."
@@ -150,7 +151,6 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="
 	git pull
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
 		npm install 2>&1 | tail -3 && \
 		npm run build 2>&1 | tail -3 && \

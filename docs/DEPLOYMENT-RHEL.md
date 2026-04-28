@@ -105,14 +105,7 @@ export HTTPS_PROXY=http://proxy-host:port
 export NO_PROXY=localhost,127.0.0.1,your-sap-host
 ```
 
-### npm proxy
-
-```bash
-npm config set proxy http://proxy-host:port
-npm config set https-proxy http://proxy-host:port
-```
-
-> **Note:** Once the `.env` file is created (step 4), the Makefile automatically reads `HTTPS_PROXY` / `HTTP_PROXY` from it and applies them to `pip install` and `npm install`. You only need the system-wide settings above for the initial install (before `.env` exists). Git does not use the proxy.
+> **Note:** Once the `.env` file is created (step 4), the Makefile automatically reads `HTTPS_PROXY` / `HTTP_PROXY` from it and applies them to `pip install` (with `--trusted-host` flags). npm and git use the system-wide proxy if set.
 
 ---
 
