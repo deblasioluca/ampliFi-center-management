@@ -1778,7 +1778,7 @@ def update_explorer_source(
     row = db.get(ExplorerSourceConfig, src_id)
     if not row:
         raise HTTPException(404, "Source config not found")
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
     row.updated_by = user.id
     db.commit()

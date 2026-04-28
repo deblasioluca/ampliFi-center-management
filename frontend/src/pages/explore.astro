@@ -224,17 +224,18 @@ export const prerender = false;
     var d = _legacyData[_legacyObj];
     if (!d) return;
     var search = (document.getElementById('explore-search').value || '').toLowerCase();
-    if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView);
-    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search);
-    else if (_legacyObj === 'entities') renderEntities(el, d, search);
-    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search);
-    else if (_legacyObj === 'balances') renderBalances(el, d, search);
-    else if (_legacyObj === 'employees') renderEmployees(el, d, search);
-    else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search);
+    var cid = 'explore-count';
+    if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView, cid);
+    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search, cid);
+    else if (_legacyObj === 'entities') renderEntities(el, d, search, cid);
+    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search, cid);
+    else if (_legacyObj === 'balances') renderBalances(el, d, search, cid);
+    else if (_legacyObj === 'employees') renderEmployees(el, d, search, cid);
+    else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
   }
 
   // ── Cost Centers ──────────────────────────────────────────────────────
-  function renderCostCenters(el, d, search, view) {
+  function renderCostCenters(el, d, search, view, countElId) {
     var items = (d.items || []).filter(function(c) {
       if (!search) return true;
       return (c.cctr||'').toLowerCase().indexOf(search)>=0 || (c.txtsh||'').toLowerCase().indexOf(search)>=0 ||
@@ -260,11 +261,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = items.length + ' records';
+    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
   }
 
   // ── Profit Centers ────────────────────────────────────────────────────
-  function renderProfitCenters(el, d, search) {
+  function renderProfitCenters(el, d, search, countElId) {
     var items = (d.items || []).filter(function(p) {
       if (!search) return true;
       return (p.pctr||'').toLowerCase().indexOf(search)>=0 || (p.txtsh||'').toLowerCase().indexOf(search)>=0 ||
@@ -288,11 +289,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = items.length + ' records';
+    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
   }
 
   // ── Entities ──────────────────────────────────────────────────────────
-  function renderEntities(el, d, search) {
+  function renderEntities(el, d, search, countElId) {
     var items = (d.items || []).filter(function(e) {
       if (!search) return true;
       return (e.ccode||'').toLowerCase().indexOf(search)>=0 || (e.name||'').toLowerCase().indexOf(search)>=0;
@@ -312,11 +313,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = items.length + ' records';
+    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
   }
 
   // ── GL Accounts ───────────────────────────────────────────────────────
-  function renderGLAccounts(el, d, search) {
+  function renderGLAccounts(el, d, search, countElId) {
     var items = (d.items || []).filter(function(r) {
       if (!search) return true;
       return (r.class_code||'').toLowerCase().indexOf(search)>=0 || (r.class_label||'').toLowerCase().indexOf(search)>=0;
@@ -335,11 +336,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = items.length + ' records';
+    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
   }
 
   // ── Balances ──────────────────────────────────────────────────────────
-  function renderBalances(el, d, search) {
+  function renderBalances(el, d, search, countElId) {
     var bals = d.balances || {};
     var keys = Object.keys(bals).filter(function(k) { return !search || k.toLowerCase().indexOf(search)>=0; }).sort();
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
@@ -358,11 +359,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = keys.length + ' cost center keys';
+    document.getElementById(countElId || 'explore-count').textContent = keys.length + ' cost center keys';
   }
 
   // ── Employees ─────────────────────────────────────────────────────────
-  function renderEmployees(el, d, search) {
+  function renderEmployees(el, d, search, countElId) {
     var items = (d.items || []).filter(function(e) {
       if (!search) return true;
       return (e.gpn||'').toLowerCase().indexOf(search)>=0 || (e.bs_name||'').toLowerCase().indexOf(search)>=0 ||
@@ -387,11 +388,11 @@ export const prerender = false;
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
-    document.getElementById('explore-count').textContent = items.length + ' of ' + (d.total || items.length) + ' records';
+    document.getElementById(countElId || 'explore-count').textContent = items.length + ' of ' + (d.total || items.length) + ' records';
   }
 
   // ── Hierarchies (list) ────────────────────────────────────────────────
-  function renderHierarchies(el, d, search) {
+  function renderHierarchies(el, d, search, countElId) {
     var hiers = d.hierarchies || [];
     if (!hiers.length) { el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded</span>'; return; }
     var html = '<div class="p-2">';
@@ -407,7 +408,7 @@ export const prerender = false;
     });
     html += '</div>';
     el.innerHTML = html;
-    document.getElementById('explore-count').textContent = hiers.length + ' hierarchies';
+    document.getElementById(countElId || 'explore-count').textContent = hiers.length + ' hierarchies';
   }
 
   window.toggleHierTree = function(idx) {
@@ -543,10 +544,11 @@ export const prerender = false;
     var d = _amplifiData[obj];
     if (!d) return;
     var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
-    if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView);
-    else if (obj === 'profit-centers') renderProfitCenters(el, d, search);
-    else if (obj === 'entities') renderEntities(el, d, search);
-    else if (obj === 'hierarchies') renderHierarchies(el, d, search);
+    var cid = 'amplifi-count';
+    if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView, cid);
+    else if (obj === 'profit-centers') renderProfitCenters(el, d, search, cid);
+    else if (obj === 'entities') renderEntities(el, d, search, cid);
+    else if (obj === 'hierarchies') renderHierarchies(el, d, search, cid);
   }
 
   function renderMapping(el) {
