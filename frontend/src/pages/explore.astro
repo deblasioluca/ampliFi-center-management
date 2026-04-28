@@ -194,6 +194,7 @@ export const prerender = false;
   }
 
   window.applySearch = function() { renderLegacy(); };
+  window.reloadHierView = function() { renderLegacy(); };
 
   // ── Cost Centers ──────────────────────────────────────────────────────
   function renderCostCenters(el, d, search) {
@@ -417,11 +418,13 @@ export const prerender = false;
     }
     var hiers = hierData.hierarchies;
     var html = '<div class="p-3"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
+    var prevSelEl = document.getElementById('explore-hier-sel');
+    var selIdx = prevSelEl ? (parseInt(prevSelEl.value) || 0) : 0;
     html += '<select id="explore-hier-sel" class="input text-xs w-64" onchange="reloadHierView()">';
-    hiers.forEach(function(h, i) { html += '<option value="' + i + '">' + esc(h.label) + '</option>'; });
+    hiers.forEach(function(h, i) { html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>'; });
     html += '</select></div>';
 
-    var h = hiers[0];
+    var h = hiers[selIdx] || hiers[0];
     var itemMap = {};
     items.forEach(function(it) { if (it[keyField]) itemMap[it[keyField]] = it; });
     var leafMap = {};
