@@ -31,7 +31,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <!-- Global Stats -->
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
     <div class="card">
       <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Entities</h4>
       <p id="stat-entities" class="text-2xl font-bold text-gray-900 mt-1">--</p>
@@ -52,6 +52,12 @@ import Layout from '../../components/layout/Layout.astro';
       <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Balances</h4>
       <p id="stat-balances" class="text-2xl font-bold text-gray-900 mt-1">--</p>
     </div>
+  </div>
+
+  <!-- Scope Coverage -->
+  <div class="card mb-8">
+    <h3 class="text-sm font-semibold text-gray-700 mb-3">Scope Coverage</h3>
+    <div id="coverage-content" class="text-sm text-gray-400">Loading coverage data...</div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -253,9 +259,10 @@ import Layout from '../../components/layout/Layout.astro';
             return 0;
           }
           data.items.forEach(function(w) {
+            var wrapper = document.createElement('div');
+            wrapper.className = 'flex items-center gap-1 border-b';
             var link = document.createElement('a');
-            link.href = '#';
-            link.className = 'block p-3 rounded hover:bg-amplifi-50 transition-colors border-b';
+            link.className = 'block flex-1 p-3 rounded hover:bg-amplifi-50 transition-colors';
             link.setAttribute('data-id', w.id);
             var cs = stepForStatus(w.status, w.entity_count || 0);
             var dots = '';
@@ -268,10 +275,28 @@ import Layout from '../../components/layout/Layout.astro';
               '<span class="text-xs text-gray-400">' + escapeHtml(w.status.replace('_',' ')) + '</span></div>' +
               '<div class="flex gap-1 mt-1">' + dots + '</div>';
             link.href = '/cockpit/wave?id=' + w.id;
-            link.addEventListener('click', function(e) {
-              // Navigate to wave detail page
-            });
-            el.appendChild(link);
+            wrapper.appendChild(link);
+            // Delete button (not for in_review or signed_off)
+            if (w.status !== 'in_review' && w.status !== 'signed_off') {
+              var delBtn = document.createElement('button');
+              delBtn.className = 'text-gray-300 hover:text-red-500 p-1 transition-colors flex-shrink-0';
+              delBtn.title = 'Delete wave';
+              delBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
+              delBtn.setAttribute('data-wave-id', w.id);
+              delBtn.setAttribute('data-wave-code', w.code);
+              delBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var wid = this.getAttribute('data-wave-id');
+                var wcode = this.getAttribute('data-wave-code');
+                if (!confirm('Delete wave "' + wcode + '"? This will permanently remove the wave and all its proposals, runs, and scopes.')) return;
+                fetch('/api/waves/' + wid, { method: 'DELETE', headers: headers })
+                  .then(function(r) { if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); }); loadWaves(); loadCoverage(); })
+                  .catch(function(err) { alert('Error: ' + err.message); });
+              });
+              wrapper.appendChild(delBtn);
+            }
+            el.appendChild(wrapper);
           });
         })
         .catch(function() {
@@ -279,6 +304,43 @@ import Layout from '../../components/layout/Layout.astro';
         });
     }
     loadWaves();
+
+    function loadCoverage() {
+      fetch('/api/stats/coverage', { headers: headers })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var el = document.getElementById('coverage-content');
+          var ePct = d.entity_pct || 0;
+          var cPct = d.cc_pct || 0;
+          var html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">';
+          // Entity coverage bar
+          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Entities</span><span class="text-gray-500">' + d.covered_entities + ' / ' + d.total_entities + ' (' + ePct + '%)</span></div>';
+          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (ePct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(ePct, 100) + '%"></div></div></div>';
+          // CC coverage bar
+          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Cost Centers (analysed)</span><span class="text-gray-500">' + d.covered_cc + ' / ' + d.total_cc + ' (' + cPct + '%)</span></div>';
+          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (cPct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(cPct, 100) + '%"></div></div></div>';
+          html += '</div>';
+          // Per-wave breakdown table
+          if (d.waves && d.waves.length) {
+            html += '<table class="w-full text-xs"><thead><tr class="border-b text-gray-500"><th class="py-1 text-left">Wave</th><th class="py-1 text-center">Status</th><th class="py-1 text-center">Entities</th><th class="py-1 text-center">CCs Analysed</th><th class="py-1 text-center">Scope</th></tr></thead><tbody>';
+            d.waves.forEach(function(w) {
+              html += '<tr class="border-b hover:bg-gray-50">';
+              html += '<td class="py-1 font-medium"><a href="/cockpit/wave?id=' + w.id + '" class="text-blue-600 hover:underline">' + escapeHtml(w.code) + '</a></td>';
+              html += '<td class="py-1 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] bg-gray-100">' + escapeHtml(w.status) + '</span></td>';
+              html += '<td class="py-1 text-center">' + w.entities_covered + '</td>';
+              html += '<td class="py-1 text-center">' + w.cc_covered + '</td>';
+              html += '<td class="py-1 text-center">' + (w.is_full_scope ? '<span class="text-green-600">Full</span>' : 'Scoped') + '</td>';
+              html += '</tr>';
+            });
+            html += '</tbody></table>';
+          }
+          el.innerHTML = html;
+        })
+        .catch(function() {
+          document.getElementById('coverage-content').textContent = 'Unable to load coverage data';
+        });
+    }
+    loadCoverage();
 
     function loadWaveDetail(waveId, waveData) {
       var detail = document.getElementById('wave-detail');

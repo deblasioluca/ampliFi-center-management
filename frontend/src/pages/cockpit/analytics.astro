@@ -491,22 +491,187 @@ export const prerender = false;
   function drawSankey(divId, flows) {
     var el = document.getElementById(divId);
     if (!el || !Object.keys(flows).length) return;
-    var sorted = Object.entries(flows).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
-    var total = sorted.reduce(function(s, f) { return s + f[1]; }, 0);
-    var html = '<div class="space-y-1">';
-    sorted.forEach(function(f) {
-      var pct = Math.round(f[1] / total * 100);
-      var parts = f[0].split(' → ');
-      var color = COLORS[parts[0]] || '#999';
-      html += '<div class="flex items-center gap-2 text-xs">' +
-        '<span class="w-24 text-right font-medium" style="color:' + color + '">' + parts[0] + '</span>' +
-        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
-        '<div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.5"></div>' +
-        '<span class="absolute inset-0 flex items-center justify-center text-xs font-mono">' + f[1] + ' (' + pct + '%)</span></div>' +
-        '<span class="w-16 font-medium">' + parts[1] + '</span></div>';
+
+    // Collect unique sources and targets
+    var sources = {}, targets = {};
+    Object.keys(flows).forEach(function(k) {
+      var parts = k.split(' → ');
+      sources[parts[0]] = (sources[parts[0]] || 0) + flows[k];
+      targets[parts[1]] = (targets[parts[1]] || 0) + flows[k];
     });
-    el.innerHTML = html + '</div>';
+
+    var srcKeys = Object.keys(sources).sort(function(a, b) { return sources[b] - sources[a]; });
+    var tgtKeys = Object.keys(targets).sort(function(a, b) { return targets[b] - targets[a]; });
+    var totalAll = srcKeys.reduce(function(s, k) { return s + sources[k]; }, 0);
+
+    // Left column (outcome), flow bands, right column (target)
+    var html = '<div class="flex items-start gap-0" style="min-height:' + Math.max(srcKeys.length, tgtKeys.length) * 40 + 'px">';
+
+    // Left labels
+    html += '<div class="flex flex-col gap-1 w-28 flex-shrink-0 text-right pr-2">';
+    srcKeys.forEach(function(s) {
+      var pct = totalAll ? Math.round(sources[s] / totalAll * 100) : 0;
+      var h = Math.max(24, Math.round(sources[s] / totalAll * 200));
+      html += '<div style="height:' + h + 'px" class="flex items-center justify-end">';
+      html += '<span class="text-xs font-medium" style="color:' + (COLORS[s] || '#666') + '">' + s + ' <span class="text-gray-400">(' + sources[s] + ')</span></span>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // Flow area (SVG)
+    var svgH = Math.max(srcKeys.length, tgtKeys.length) * 40 + 20;
+    html += '<div class="flex-1 relative" style="min-width:200px">';
+    html += '<svg width="100%" height="' + svgH + '" viewBox="0 0 200 ' + svgH + '" preserveAspectRatio="none">';
+
+    // Compute Y positions for sources and targets
+    var srcY = {}, tgtY = {};
+    var sy = 4;
+    srcKeys.forEach(function(s) {
+      var h = Math.max(16, Math.round(sources[s] / totalAll * (svgH - 8)));
+      srcY[s] = { y: sy, h: h };
+      sy += h + 3;
+    });
+    var ty = 4;
+    tgtKeys.forEach(function(t) {
+      var h = Math.max(16, Math.round(targets[t] / totalAll * (svgH - 8)));
+      tgtY[t] = { y: ty, h: h };
+      ty += h + 3;
+    });
+
+    // Draw flow bands
+    var srcOffset = {}, tgtOffset = {};
+    srcKeys.forEach(function(s) { srcOffset[s] = 0; });
+    tgtKeys.forEach(function(t) { tgtOffset[t] = 0; });
+
+    var sorted = Object.entries(flows).sort(function(a, b) { return b[1] - a[1]; });
+    sorted.forEach(function(f) {
+      var parts = f[0].split(' → ');
+      var src = parts[0], tgt = parts[1], cnt = f[1];
+      var sInfo = srcY[src], tInfo = tgtY[tgt];
+      var bandH = Math.max(2, Math.round(cnt / totalAll * (svgH - 8)));
+      var sYStart = sInfo.y + srcOffset[src];
+      var tYStart = tInfo.y + tgtOffset[tgt];
+      srcOffset[src] += bandH;
+      tgtOffset[tgt] += bandH;
+      var color = COLORS[src] || '#999';
+      html += '<path d="M0,' + sYStart + ' C80,' + sYStart + ' 120,' + tYStart + ' 200,' + tYStart + ' L200,' + (tYStart + bandH) + ' C120,' + (tYStart + bandH) + ' 80,' + (sYStart + bandH) + ' 0,' + (sYStart + bandH) + ' Z" fill="' + color + '" opacity="0.3"><title>' + esc(src + ' → ' + tgt + ': ' + cnt) + '</title></path>';
+    });
+    html += '</svg></div>';
+
+    // Right labels
+    html += '<div class="flex flex-col gap-1 w-28 flex-shrink-0 text-left pl-2">';
+    tgtKeys.forEach(function(t) {
+      var h = Math.max(24, Math.round(targets[t] / totalAll * 200));
+      html += '<div style="height:' + h + 'px" class="flex items-center">';
+      html += '<span class="text-xs font-medium" style="color:' + (TARGET_COLORS[t] || '#666') + '">' + t + ' <span class="text-gray-400">(' + targets[t] + ')</span></span>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '</div>';
+    el.innerHTML = html;
   }
+
+  // --- Housekeeping Charts ---
+  function loadHousekeepingCharts() {
+    fetch('/api/stats/housekeeping-summary', { headers: authHdr })
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(d) {
+        drawHKFlags(d.flag_distribution);
+        drawHKFunnel(d.funnel);
+        drawHKTrend(d.trend);
+      })
+      .catch(function(err) {
+        var msg = '<span class="text-xs text-gray-400">No housekeeping data yet</span>';
+        var f = document.getElementById('chart-hk-flags');
+        var fn = document.getElementById('chart-hk-funnel');
+        var t = document.getElementById('chart-hk-trend');
+        if (f) f.innerHTML = msg;
+        if (fn) fn.innerHTML = msg;
+        if (t) t.innerHTML = msg;
+      });
+  }
+
+  function drawHKFlags(data) {
+    var el = document.getElementById('chart-hk-flags');
+    if (!el) return;
+    var keys = Object.keys(data);
+    if (!keys.length) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping flags recorded yet</span>'; return; }
+    var total = keys.reduce(function(s, k) { return s + data[k]; }, 0);
+    var FLAG_COLORS = { UNUSED: '#ef4444', LOW_VOLUME: '#f59e0b', NO_OWNER: '#8b5cf6', ANOMALY: '#3b82f6' };
+    var html = '<div class="space-y-2">';
+    keys.sort(function(a, b) { return data[b] - data[a]; });
+    keys.forEach(function(k) {
+      var pct = total ? Math.round(data[k] / total * 100) : 0;
+      var color = FLAG_COLORS[k] || '#9ca3af';
+      html += '<div><div class="flex justify-between text-xs mb-0.5"><span class="font-medium">' + esc(k) + '</span><span class="text-gray-500">' + data[k] + ' (' + pct + '%)</span></div>';
+      html += '<div class="w-full bg-gray-100 rounded h-4"><div class="h-full rounded" style="width:' + pct + '%;background:' + color + ';opacity:0.7"></div></div></div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function drawHKFunnel(data) {
+    var el = document.getElementById('chart-hk-funnel');
+    if (!el) return;
+    if (!data.total) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping items yet</span>'; return; }
+    var stages = [
+      { label: 'Total Flagged', value: data.total, color: '#6366f1' },
+      { label: 'Notified', value: data.notified, color: '#3b82f6' },
+      { label: 'Responded', value: data.responded, color: '#22c55e' }
+    ];
+    var maxVal = data.total;
+    var html = '<div class="space-y-2">';
+    stages.forEach(function(s) {
+      var pct = maxVal ? Math.round(s.value / maxVal * 100) : 0;
+      html += '<div class="flex items-center gap-2">';
+      html += '<span class="w-24 text-xs text-right font-medium">' + s.label + '</span>';
+      html += '<div class="flex-1 bg-gray-100 rounded h-6 relative">';
+      html += '<div class="h-full rounded" style="width:' + pct + '%;background:' + s.color + ';opacity:0.6"></div>';
+      html += '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">' + s.value + ' (' + pct + '%)</span>';
+      html += '</div></div>';
+    });
+    // Decision breakdown
+    var decisions = data.decisions || {};
+    var dKeys = Object.keys(decisions);
+    if (dKeys.length) {
+      html += '<div class="mt-2 pt-2 border-t"><div class="text-[10px] text-gray-500 mb-1">Decisions:</div><div class="flex gap-3">';
+      var DEC_COLORS = { KEEP: '#22c55e', CLOSE: '#ef4444', DEFER: '#f59e0b' };
+      dKeys.forEach(function(dk) {
+        html += '<span class="flex items-center gap-1 text-xs"><span class="w-2.5 h-2.5 rounded" style="background:' + (DEC_COLORS[dk] || '#999') + '"></span>' + dk + ': ' + decisions[dk] + '</span>';
+      });
+      html += '</div></div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function drawHKTrend(data) {
+    var el = document.getElementById('chart-hk-trend');
+    if (!el) return;
+    if (!data || !data.length) { el.innerHTML = '<span class="text-xs text-gray-400">No housekeeping cycles yet</span>'; return; }
+    var maxItems = Math.max.apply(null, data.map(function(d) { return d.total_items; }));
+    if (!maxItems) maxItems = 1;
+    var html = '<div class="flex items-end gap-1" style="height:120px">';
+    data.forEach(function(d) {
+      var totalH = Math.round(d.total_items / maxItems * 100);
+      var closedH = d.total_items ? Math.round(d.closed / d.total_items * totalH) : 0;
+      var openH = totalH - closedH;
+      html += '<div class="flex-1 flex flex-col items-center justify-end h-full">';
+      html += '<div class="text-[9px] text-gray-500 mb-1">' + d.total_items + '</div>';
+      html += '<div class="w-full flex flex-col">';
+      if (openH > 0) html += '<div class="w-full rounded-t bg-blue-400" style="height:' + openH + 'px;opacity:0.5"></div>';
+      if (closedH > 0) html += '<div class="w-full ' + (openH > 0 ? '' : 'rounded-t ') + 'bg-green-500" style="height:' + closedH + 'px;opacity:0.7"></div>';
+      html += '</div>';
+      html += '<div class="text-[8px] text-gray-400 mt-1 truncate w-full text-center">' + esc(d.period) + '</div></div>';
+    });
+    html += '</div>';
+    html += '<div class="flex gap-3 mt-2 text-[10px] text-gray-500"><span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-blue-400 opacity-50"></span>Open</span><span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-green-500 opacity-70"></span>Closed</span></div>';
+    el.innerHTML = html;
+  }
+
+  // Load housekeeping charts on page load
+  loadHousekeepingCharts();
 
   // --- Config management ---
   var jsonHdr = Object.assign({ 'Content-Type': 'application/json' }, authHdr);
