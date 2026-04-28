@@ -12,5 +12,11 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.FRONTEND_PORT || '4321'),
     host: '0.0.0.0',
+    allowedHosts: 'all',
+  },
+  vite: {
+    server: {
+      allowedHosts: 'all',
+    },
   },
 });

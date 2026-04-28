@@ -105,20 +105,7 @@ export HTTPS_PROXY=http://proxy-host:port
 export NO_PROXY=localhost,127.0.0.1,your-sap-host
 ```
 
-### Git proxy
-
-```bash
-git config --global http.proxy http://proxy-host:port
-```
-
-### npm proxy
-
-```bash
-npm config set proxy http://proxy-host:port
-npm config set https-proxy http://proxy-host:port
-```
-
-> **Note:** Once the `.env` file is created (step 4), the Makefile automatically reads `HTTPS_PROXY` / `HTTP_PROXY` from it and applies them to `pip install`, `npm install`, and `git pull`. You only need the system-wide settings above for the initial install (before `.env` exists).
+> **Note:** Once the `.env` file is created (step 4), the Makefile automatically reads `HTTPS_PROXY` / `HTTP_PROXY` from it and applies them to `pip install` (with `--trusted-host` flags). npm and git use the system-wide proxy if set.
 
 ---
 
@@ -399,9 +386,33 @@ npm config set strict-ssl false   # only if proxy does SSL interception
 
 ### `git pull` fails behind proxy
 
+Git typically does not need the corporate proxy (GitHub is accessed directly). If it does in your network:
+
 ```bash
 git config --global http.proxy http://proxy-host:port
-# Or run: make git-setup  (auto-configures proxy from .env)
+```
+
+### Vite / frontend "Blocked request — host not allowed"
+
+If you see an error like:
+
+```
+Blocked request. This host ("your-hostname.corp.net") is not allowed.
+To allow this host, add "your-hostname" to `server.allowedHosts` in vite.config.js.
+```
+
+This is Vite's host security check. The `astro.config.mjs` already sets `allowedHosts: 'all'` to permit any hostname. If you're running an older version that doesn't have this setting, update with `make update` or manually add to `frontend/astro.config.mjs`:
+
+```js
+server: {
+  host: '0.0.0.0',
+  allowedHosts: 'all',
+},
+vite: {
+  server: {
+    allowedHosts: 'all',
+  },
+},
 ```
 
 ### PostgreSQL connection refused
