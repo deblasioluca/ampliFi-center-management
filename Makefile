@@ -1,8 +1,16 @@
 # ============================================================
 # ampliFi Center Management — Makefile
-# Run from the project root directory.
-# All ports and config are read from .env.
 # ============================================================
+# Run from the project root:  cd /path/to/ampliFi-center-management && make <target>
+#
+# Proxy handling:
+#   HTTPS_PROXY / HTTP_PROXY in .env are ONLY used for pip and npm installs.
+#   git pull does NOT use the proxy.
+#   (Same pattern as sap-ai-consultant Makefile.)
+# ============================================================
+
+.PHONY: help start stop restart status setup update load-sample delete-sample \
+        seed logs git-setup
 
 SHELL := /bin/bash
 ROOT_DIR := $(shell pwd)
@@ -13,22 +21,17 @@ BACKEND_PID := $(ROOT_DIR)/.amplifi-backend.pid
 FRONTEND_PID := $(ROOT_DIR)/.amplifi-frontend.pid
 PIP_TRUST := --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
-# Load .env if present
-ifneq (,$(wildcard $(ROOT_DIR)/.env))
-  include $(ROOT_DIR)/.env
-  export
-endif
-
-BACKEND_PORT ?= 8180
-FRONTEND_PORT ?= 4321
-
-# Helper: export proxy env vars from .env for subshell commands
-define PROXY_ENV
-export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null;
-endef
+# Read ports from .env (without exporting everything)
+BACKEND_PORT := $(shell grep -E '^BACKEND_PORT=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-)
+FRONTEND_PORT := $(shell grep -E '^FRONTEND_PORT=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-)
+BACKEND_PORT := $(if $(BACKEND_PORT),$(BACKEND_PORT),8180)
+FRONTEND_PORT := $(if $(FRONTEND_PORT),$(FRONTEND_PORT),4321)
 
 .DEFAULT_GOAL := help
-.PHONY: help start stop restart status setup update load-sample delete-sample seed logs git-setup
+
+# ---------------------------------------------------------------------------
+# Core lifecycle
+# ---------------------------------------------------------------------------
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -72,8 +75,8 @@ stop: ## Stop backend + frontend
 	else \
 		echo "[ok] Backend PID file not found"; \
 	fi
-	@pkill -f "[u]vicorn app.main:app.*--port $(BACKEND_PORT)" 2>/dev/null && \
-		echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
+	@ps aux 2>/dev/null | grep "[u]vicorn app.main:app.*--port $(BACKEND_PORT)" | awk '{print $$2}' | \
+		xargs -r kill 2>/dev/null && echo "[ok] Killed orphan backend on port $(BACKEND_PORT)" || true
 	@if [ -f $(FRONTEND_PID) ]; then \
 		PID=$$(cat $(FRONTEND_PID)); \
 		if kill -0 $$PID 2>/dev/null; then \
@@ -105,23 +108,28 @@ status: ## Show whether backend + frontend are running
 		echo "Frontend: not running"; \
 	fi
 
+# ---------------------------------------------------------------------------
+# Setup & update
+# ---------------------------------------------------------------------------
+
 setup: ## Initial setup: venv, deps, build frontend, DB init, seed, start
 	@echo "=== ampliFi Setup ==="
 	@echo "==> Creating virtual environment..."
-	@cd $(BACKEND_DIR) && \
-		python3 -m venv $(VENV) && \
-		source $(VENV)/bin/activate && \
-		$(PROXY_ENV) \
-		pip install $(PIP_TRUST) --upgrade pip > /dev/null 2>&1 && \
-		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -5 && \
-		echo "[ok] Backend dependencies installed"
+	@cd $(BACKEND_DIR) && python3 -m venv $(VENV)
+	@echo "==> Installing Python dependencies..."
+	@export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
+	 pip install $(PIP_TRUST) --upgrade pip > /dev/null 2>&1 && \
+	 pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -5
+	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@echo "[ok] Backend dependencies installed"
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		cd $(FRONTEND_DIR) && \
-		npm install 2>&1 | tail -3 && \
-		npm run build 2>&1 | tail -3 && \
-		echo "[ok] Frontend built"; \
+		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3; \
 	fi
+	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@echo "[ok] Frontend built"
 	@echo "==> Initializing database..."
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
@@ -149,18 +157,22 @@ print('[ok] Database tables created')" && \
 
 update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="
+	@git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true
+	@echo "==> Pulling latest code..."
 	git pull
+	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		cd $(FRONTEND_DIR) && \
-		npm install 2>&1 | tail -3 && \
-		npm run build 2>&1 | tail -3 && \
-		echo "[ok] Frontend rebuilt"; \
+		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3; \
 	fi
-	@cd $(BACKEND_DIR) && \
-		source $(VENV)/bin/activate && \
-		$(PROXY_ENV) \
-		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -3 && \
-		echo "[ok] Backend dependencies updated"
+	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@echo "[ok] Frontend rebuilt"
+	@echo "==> Installing Python dependencies..."
+	@export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
+	 pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -3
+	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@echo "[ok] Backend dependencies updated"
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
 		python -m alembic upgrade head 2>&1 | tail -5 && \
@@ -171,6 +183,10 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 		echo "[ok] Admin user + sample data seeded"
 	@$(MAKE) restart
 	@echo "=== Update complete ==="
+
+# ---------------------------------------------------------------------------
+# Data management
+# ---------------------------------------------------------------------------
 
 load-sample: ## Generate sample data (entities, cost centers, balances, etc.)
 	@cd $(BACKEND_DIR) && \
@@ -192,14 +208,24 @@ seed: ## Run full seed (admin user + sample data + routines)
 logs: ## Tail the backend log
 	@tail -f $(ROOT_DIR)/amplifi-backend.log
 
-git-setup: ## Configure Git credentials (run once — prompts for GitHub username + PAT)
-	@echo "=== Git Credential Setup ==="
-	@echo "This stores your GitHub credentials so git pull works without prompting."
-	@echo "Create a PAT at: https://github.com/settings/tokens/new (select 'repo' scope)"
+# ---------------------------------------------------------------------------
+# Git credentials
+# ---------------------------------------------------------------------------
+
+git-setup: ## Store GitHub credentials so git pull works without prompting
+	@git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true
+	@echo "This will store your GitHub credentials on disk so 'git pull' and"
+	@echo "'make update' work without prompting for username/password each time."
 	@echo ""
-	@read -p "GitHub username: " GH_USER && \
-		read -sp "GitHub PAT: " GH_PAT && echo "" && \
-		git config --global credential.helper store && \
-		echo "https://$$GH_USER:$$GH_PAT@github.com" > ~/.git-credentials && \
-		chmod 600 ~/.git-credentials && \
-		echo "[ok] Git credentials stored. git pull will now work without prompting."
+	@echo "You need a GitHub Personal Access Token (PAT)."
+	@echo "Create one at: https://github.com/settings/tokens"
+	@echo "  -> Fine-grained token -> Repository access -> select this repo"
+	@echo "  -> Permissions: Contents (read)"
+	@echo ""
+	git config --global credential.helper store
+	@echo "Credential helper set to 'store'. Next time you run 'git pull',"
+	@echo "enter your GitHub username and PAT as password — it will be saved"
+	@echo "and reused automatically for all future pulls."
+	@echo ""
+	@echo "Running 'git pull' now to trigger credential prompt..."
+	git pull
