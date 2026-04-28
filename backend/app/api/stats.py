@@ -77,17 +77,13 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
     total_entities = db.execute(select(func.count(Entity.id))).scalar() or 0
     total_cc = (
         db.execute(
-            select(func.count(LegacyCostCenter.id)).where(
-                LegacyCostCenter.is_active.is_(True)
-            )
+            select(func.count(LegacyCostCenter.id)).where(LegacyCostCenter.is_active.is_(True))
         ).scalar()
         or 0
     )
 
     # Entities covered: distinct entity_ids across all wave_entity rows
-    covered_entities = (
-        db.execute(select(func.count(distinct(WaveEntity.entity_id)))).scalar() or 0
-    )
+    covered_entities = db.execute(select(func.count(distinct(WaveEntity.entity_id)))).scalar() or 0
 
     # CCs covered: distinct legacy_cc_ids that appear in any completed run's proposals
     covered_cc = (
@@ -100,15 +96,11 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
     )
 
     # Per-wave breakdown
-    waves = db.execute(
-        select(Wave).order_by(Wave.created_at.desc())
-    ).scalars().all()
+    waves = db.execute(select(Wave).order_by(Wave.created_at.desc())).scalars().all()
     wave_details = []
     for w in waves:
         w_entity_count = (
-            db.execute(
-                select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == w.id)
-            ).scalar()
+            db.execute(select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == w.id)).scalar()
             or 0
         )
         w_cc_count = (
@@ -122,14 +114,16 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
             ).scalar()
             or 0
         )
-        wave_details.append({
-            "id": w.id,
-            "code": w.code,
-            "status": w.status,
-            "entities_covered": w_entity_count,
-            "cc_covered": w_cc_count,
-            "is_full_scope": w.is_full_scope,
-        })
+        wave_details.append(
+            {
+                "id": w.id,
+                "code": w.code,
+                "status": w.status,
+                "entities_covered": w_entity_count,
+                "cc_covered": w_cc_count,
+                "is_full_scope": w.is_full_scope,
+            }
+        )
 
     return {
         "total_entities": total_entities,
@@ -148,25 +142,26 @@ def housekeeping_summary(db: Session = Depends(get_db)) -> dict:
     # Flag distribution across all cycles
     flag_counts = dict(
         db.execute(
-            select(HousekeepingItem.flag, func.count(HousekeepingItem.id))
-            .group_by(HousekeepingItem.flag)
+            select(HousekeepingItem.flag, func.count(HousekeepingItem.id)).group_by(
+                HousekeepingItem.flag
+            )
         ).all()
     )
 
     # Owner response funnel
-    total_items = db.execute(
-        select(func.count(HousekeepingItem.id))
-    ).scalar() or 0
-    notified = db.execute(
-        select(func.count(HousekeepingItem.id)).where(
-            HousekeepingItem.notified_at.isnot(None)
-        )
-    ).scalar() or 0
-    responded = db.execute(
-        select(func.count(HousekeepingItem.id)).where(
-            HousekeepingItem.decision.isnot(None)
-        )
-    ).scalar() or 0
+    total_items = db.execute(select(func.count(HousekeepingItem.id))).scalar() or 0
+    notified = (
+        db.execute(
+            select(func.count(HousekeepingItem.id)).where(HousekeepingItem.notified_at.isnot(None))
+        ).scalar()
+        or 0
+    )
+    responded = (
+        db.execute(
+            select(func.count(HousekeepingItem.id)).where(HousekeepingItem.decision.isnot(None))
+        ).scalar()
+        or 0
+    )
     decision_counts = dict(
         db.execute(
             select(HousekeepingItem.decision, func.count(HousekeepingItem.id))
@@ -177,31 +172,33 @@ def housekeeping_summary(db: Session = Depends(get_db)) -> dict:
 
     # Closure trend per cycle
     cycles = (
-        db.execute(
-            select(HousekeepingCycle).order_by(HousekeepingCycle.period)
-        )
-        .scalars()
-        .all()
+        db.execute(select(HousekeepingCycle).order_by(HousekeepingCycle.period)).scalars().all()
     )
     trend = []
     for c in cycles:
-        items_in_cycle = db.execute(
-            select(func.count(HousekeepingItem.id)).where(
-                HousekeepingItem.cycle_id == c.id
-            )
-        ).scalar() or 0
-        closed_in_cycle = db.execute(
-            select(func.count(HousekeepingItem.id)).where(
-                HousekeepingItem.cycle_id == c.id,
-                HousekeepingItem.decision == "CLOSE",
-            )
-        ).scalar() or 0
-        trend.append({
-            "period": c.period,
-            "status": c.status,
-            "total_items": items_in_cycle,
-            "closed": closed_in_cycle,
-        })
+        items_in_cycle = (
+            db.execute(
+                select(func.count(HousekeepingItem.id)).where(HousekeepingItem.cycle_id == c.id)
+            ).scalar()
+            or 0
+        )
+        closed_in_cycle = (
+            db.execute(
+                select(func.count(HousekeepingItem.id)).where(
+                    HousekeepingItem.cycle_id == c.id,
+                    HousekeepingItem.decision == "CLOSE",
+                )
+            ).scalar()
+            or 0
+        )
+        trend.append(
+            {
+                "period": c.period,
+                "status": c.status,
+                "total_items": items_in_cycle,
+                "closed": closed_in_cycle,
+            }
+        )
 
     return {
         "flag_distribution": flag_counts,
