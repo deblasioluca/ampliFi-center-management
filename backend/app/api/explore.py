@@ -490,3 +490,29 @@ def list_data_sources(db: Session = Depends(get_db)) -> dict:
             },
         ]
     }
+
+
+@router.get("/source-config")
+def explore_source_config(db: Session = Depends(get_db)) -> dict:
+    """Public endpoint: returns enabled explorer source configs per area."""
+    from app.models.core import ExplorerSourceConfig
+
+    stmt = select(ExplorerSourceConfig).where(
+        ExplorerSourceConfig.enabled.is_(True)
+    ).order_by(ExplorerSourceConfig.area, ExplorerSourceConfig.display_order)
+    rows = db.execute(stmt).scalars().all()
+    legacy = []
+    amplifi = []
+    for r in rows:
+        item = {
+            "object_type": r.object_type,
+            "label": r.label,
+            "source_system": r.source_system,
+            "protocol": r.protocol,
+            "mode": r.mode,
+        }
+        if r.area == "amplifi":
+            amplifi.append(item)
+        else:
+            legacy.append(item)
+    return {"legacy": legacy, "amplifi": amplifi}

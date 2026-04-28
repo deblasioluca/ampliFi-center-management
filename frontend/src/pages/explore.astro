@@ -1,42 +1,41 @@
 ---
-import Layout from '../components/layout/Layout.astro';
+import '../styles/global.css';
 export const prerender = false;
 ---
 
-<Layout title="Explore Data" requireAuth={false}>
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-2">
-    <div>
-      <h1 class="text-xl font-bold text-gray-900">Explore Data</h1>
-      <p class="text-xs text-gray-500">Browse legacy and target data — cost centers, profit centers, hierarchies, entities, and more</p>
-    </div>
-    <div class="flex items-center gap-2 text-xs">
-      <span id="explore-status" class="text-gray-400">Loading...</span>
-    </div>
-  </div>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ampliFi Data Explorer — public data visualization" />
+  <title>Data Explorer | ampliFi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
 
-  <!-- Top-level tabs: Legacy | ampliFi -->
-  <div class="flex gap-1 border-b mb-2">
-    <button id="main-tab-legacy" class="px-5 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" onclick="switchMainTab('legacy')">Legacy</button>
-    <button id="main-tab-amplifi" class="px-5 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchMainTab('amplifi')">ampliFi</button>
-    <button id="main-tab-sources" class="px-5 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchMainTab('sources')">Data Sources</button>
+  <!-- Slim standalone header (no app navigation) -->
+  <header class="bg-navy-900 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-2">
+      <img src="/ubs-logo.svg" alt="UBS" class="h-5" />
+      <span class="font-semibold text-sm"><span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span> Data Explorer</span>
+    </div>
+    <span id="explore-status" class="text-xs text-gray-400">Loading...</span>
+  </header>
+
+  <!-- Main tabs: Legacy | ampliFi -->
+  <div class="flex gap-1 border-b bg-white px-4 flex-shrink-0">
+    <button id="main-tab-legacy" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" onclick="switchMainTab('legacy')">Legacy</button>
+    <button id="main-tab-amplifi" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchMainTab('amplifi')">ampliFi</button>
   </div>
 
   <!-- ===== LEGACY PANEL ===== -->
-  <div id="panel-legacy">
+  <div id="panel-legacy" class="flex-1 flex flex-col min-h-0 px-4 pt-1">
     <!-- Object sub-tabs -->
-    <div class="bg-white border rounded-t-lg px-2 py-1 flex items-center gap-0 overflow-x-auto">
-      <button class="explore-sub active px-3 py-1.5 text-xs font-medium rounded-t border-b-2 border-blue-600 text-blue-700" data-obj="cost-centers" onclick="switchLegacyObj('cost-centers')">Cost Centers</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="profit-centers" onclick="switchLegacyObj('profit-centers')">Profit Centers</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="entities" onclick="switchLegacyObj('entities')">Entities</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="hierarchies" onclick="switchLegacyObj('hierarchies')">Hierarchies</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="balances" onclick="switchLegacyObj('balances')">Balances</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="employees" onclick="switchLegacyObj('employees')">Employees</button>
-      <button class="explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="gl-accounts" onclick="switchLegacyObj('gl-accounts')">GL Accounts</button>
-    </div>
+    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="legacy-tabs"></div>
 
     <!-- Toolbar -->
-    <div class="bg-white border-x border-b rounded-b-lg px-3 py-2 flex items-center justify-between gap-2 mb-2">
+    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
       <div class="flex items-center gap-2">
         <button id="view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchView('tabular')">Tabular</button>
         <button id="view-hierarchical" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="switchView('hierarchical')">Hierarchical</button>
@@ -48,50 +47,42 @@ export const prerender = false;
       </div>
     </div>
 
-    <!-- Content area (scrollable within viewport) -->
-    <div id="legacy-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg" style="max-height:calc(100vh - 300px)">
+    <!-- Content (scrollable) -->
+    <div id="legacy-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
       <span class="p-4 text-sm text-gray-400 block">Loading data...</span>
     </div>
   </div>
 
   <!-- ===== AMPLIFI PANEL ===== -->
-  <div id="panel-amplifi" class="hidden">
-    <!-- Sub-tabs -->
-    <div class="bg-white border rounded-t-lg px-2 py-1 flex items-center gap-0 overflow-x-auto">
-      <button class="amplifi-sub active px-3 py-1.5 text-xs font-medium rounded-t border-b-2 border-indigo-600 text-indigo-700" data-obj="mapping" onclick="switchAmplifiObj('mapping')">Legacy → Target Mapping</button>
-      <button class="amplifi-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="summary" onclick="switchAmplifiObj('summary')">Summary</button>
-      <button class="amplifi-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700" data-obj="cc-pc-map" onclick="switchAmplifiObj('cc-pc-map')">CC → PC (n:1)</button>
-    </div>
+  <div id="panel-amplifi" class="hidden flex-1 flex flex-col min-h-0 px-4 pt-1">
+    <!-- Object sub-tabs -->
+    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="amplifi-tabs"></div>
 
     <!-- Toolbar -->
-    <div class="bg-white border-x border-b rounded-b-lg px-3 py-2 flex items-center justify-between gap-2 mb-2">
+    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
       <div class="flex items-center gap-2">
-        <label class="text-xs text-gray-500">Run:</label>
-        <select id="amplifi-run-sel" class="input text-xs py-1 w-56" onchange="loadAmplifiData()">
-          <option value="">Latest completed run</option>
-        </select>
+        <button id="av-tabular" class="btn-sm bg-indigo-600 text-white text-xs" onclick="switchAmplifiView('tabular')">Tabular</button>
+        <button id="av-hierarchical" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="switchAmplifiView('hierarchical')">Hierarchical</button>
         <input id="amplifi-search" type="text" placeholder="Search..." class="border rounded px-2 py-1 text-xs w-48" oninput="applyAmplifiSearch()" />
       </div>
-      <span id="amplifi-count" class="text-xs text-gray-500"></span>
-    </div>
-
-    <!-- Content area -->
-    <div id="amplifi-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg" style="max-height:calc(100vh - 300px)">
-      <span class="p-4 text-sm text-gray-400 block">Loading analysis results...</span>
-    </div>
-  </div>
-
-  <!-- ===== DATA SOURCES PANEL ===== -->
-  <div id="panel-sources" class="hidden">
-    <div class="bg-white border rounded-lg p-4">
-      <h3 class="text-sm font-semibold mb-3">Data Source Configuration</h3>
-      <p class="text-xs text-gray-500 mb-4">Shows where each data object is sourced from and current record counts.</p>
-      <div id="sources-content" class="overflow-x-auto">
-        <span class="text-sm text-gray-400">Loading...</span>
+      <div class="flex items-center gap-2">
+        <span id="amplifi-count" class="text-xs text-gray-500"></span>
+        <button onclick="exportAmplifiCSV()" class="btn-secondary text-xs">CSV</button>
       </div>
     </div>
+
+    <!-- Content (scrollable) -->
+    <div id="amplifi-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
+      <span class="p-4 text-sm text-gray-400 block">Loading analysis data...</span>
+    </div>
   </div>
-</Layout>
+
+  <footer class="bg-white border-t px-4 py-1 flex-shrink-0">
+    <div class="flex items-center justify-between text-[10px] text-gray-400">
+      <span>ampliFi Data Explorer</span>
+      <span>&copy; 2026</span>
+    </div>
+  </footer>
 
 <style>
   #legacy-content thead th,
@@ -103,68 +94,118 @@ export const prerender = false;
   }
 </style>
 
-<script>
+<script is:inline>
 (function() {
   var BASE = '/api/explore';
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
-  var _currentLegacyObj = 'cost-centers';
-  var _currentView = 'tabular';
+  // ── State ──────────────────────────────────────────────────────────────
+  var _legacyObj = 'cost-centers';
+  var _legacyView = 'tabular';
   var _legacyData = {};
-  var _amplifiData = null;
-  var _amplifiObj = 'mapping';
+  var _amplifiObj = 'cost-centers';
+  var _amplifiView = 'tabular';
+  var _amplifiData = {};
+  var _sourceConfig = { legacy: [], amplifi: [] };
+
+  // ── Source config driven tabs ──────────────────────────────────────────
+  function loadSourceConfig() {
+    return fetch(BASE + '/source-config').then(function(r) { return r.json(); }).then(function(d) {
+      _sourceConfig = d;
+      buildTabs('legacy', d.legacy || []);
+      buildTabs('amplifi', d.amplifi || []);
+    }).catch(function() {
+      // Fallback defaults if config endpoint not available
+      var defLegacy = [
+        { object_type: 'cost-centers', label: 'Cost Centers' },
+        { object_type: 'profit-centers', label: 'Profit Centers' },
+        { object_type: 'entities', label: 'Entities' },
+        { object_type: 'hierarchies', label: 'Hierarchies' },
+        { object_type: 'balances', label: 'Balances' },
+        { object_type: 'employees', label: 'Employees' },
+        { object_type: 'gl-accounts', label: 'GL Accounts' },
+      ];
+      var defAmplifi = [
+        { object_type: 'cost-centers', label: 'Cost Centers (Target)' },
+        { object_type: 'profit-centers', label: 'Profit Centers (Target)' },
+        { object_type: 'entities', label: 'Entities (Target)' },
+        { object_type: 'hierarchies', label: 'Hierarchies (Target)' },
+        { object_type: 'mapping', label: 'Legacy → Target Mapping' },
+      ];
+      _sourceConfig = { legacy: defLegacy, amplifi: defAmplifi };
+      buildTabs('legacy', defLegacy);
+      buildTabs('amplifi', defAmplifi);
+    });
+  }
+
+  function buildTabs(area, items) {
+    var container = document.getElementById(area + '-tabs');
+    if (!container || !items.length) return;
+    var html = '';
+    var cls = area === 'amplifi' ? 'amplifi-sub' : 'explore-sub';
+    var activeColor = area === 'amplifi' ? 'border-indigo-600 text-indigo-700' : 'border-blue-600 text-blue-700';
+    items.forEach(function(it, idx) {
+      var objKey = normalizeKey(it.object_type);
+      var isActive = idx === 0;
+      html += '<button class="' + cls + (isActive ? ' active' : '') + ' px-3 py-1 text-xs font-medium' + (isActive ? ' rounded-t border-b-2 ' + activeColor : ' text-gray-500 hover:text-gray-700') + '" data-obj="' + esc(objKey) + '" onclick="switch' + (area === 'amplifi' ? 'AmplifiObj' : 'LegacyObj') + '(\'' + esc(objKey) + '\')">' + esc(it.label) + '</button>';
+    });
+    container.innerHTML = html;
+    // Set initial object
+    if (area === 'legacy' && items.length) { _legacyObj = normalizeKey(items[0].object_type); }
+    if (area === 'amplifi' && items.length) { _amplifiObj = normalizeKey(items[0].object_type); }
+  }
+
+  function normalizeKey(k) {
+    return (k || '').replace(/_/g, '-');
+  }
 
   // ── Main tab switching ────────────────────────────────────────────────
   window.switchMainTab = function(tab) {
-    ['legacy', 'amplifi', 'sources'].forEach(function(t) {
+    ['legacy', 'amplifi'].forEach(function(t) {
       var panel = document.getElementById('panel-' + t);
       var btn = document.getElementById('main-tab-' + t);
       if (t === tab) {
         panel.classList.remove('hidden');
-        btn.className = 'px-5 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-700';
+        panel.classList.add('flex');
+        btn.className = 'px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700';
       } else {
         panel.classList.add('hidden');
-        btn.className = 'px-5 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+        panel.classList.remove('flex');
+        btn.className = 'px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700';
       }
     });
-    if (tab === 'amplifi' && !_amplifiData) loadAmplifiData();
-    if (tab === 'sources') loadSources();
+    if (tab === 'amplifi') loadAmplifiObj(_amplifiObj);
   };
 
   // ── Legacy object switching ───────────────────────────────────────────
   window.switchLegacyObj = function(obj) {
-    _currentLegacyObj = obj;
+    _legacyObj = obj;
     document.querySelectorAll('.explore-sub').forEach(function(b) {
       if (b.getAttribute('data-obj') === obj) {
-        b.className = 'explore-sub active px-3 py-1.5 text-xs font-medium rounded-t border-b-2 border-blue-600 text-blue-700';
+        b.className = 'explore-sub active px-3 py-1 text-xs font-medium rounded-t border-b-2 border-blue-600 text-blue-700';
       } else {
-        b.className = 'explore-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700';
+        b.className = 'explore-sub px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700';
       }
     });
-    // Show/hide hierarchical button
     var hierBtn = document.getElementById('view-hierarchical');
     if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'hierarchies') {
       hierBtn.classList.remove('hidden');
     } else {
       hierBtn.classList.add('hidden');
-      _currentView = 'tabular';
+      _legacyView = 'tabular';
     }
     loadLegacyObj(obj);
   };
 
   window.switchView = function(view) {
-    _currentView = view;
-    var tabBtn = document.getElementById('view-tabular');
-    var hierBtn = document.getElementById('view-hierarchical');
-    if (view === 'tabular') {
-      tabBtn.className = 'btn-sm bg-blue-600 text-white text-xs';
-      hierBtn.className = 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    } else {
-      tabBtn.className = 'btn-sm bg-gray-200 text-gray-700 text-xs';
-      hierBtn.className = 'btn-sm bg-blue-600 text-white text-xs';
-    }
+    _legacyView = view;
+    document.getElementById('view-tabular').className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    document.getElementById('view-hierarchical').className = view === 'hierarchical' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
     renderLegacy();
   };
+
+  window.applySearch = function() { renderLegacy(); };
+  window.reloadHierView = function() { renderLegacy(); };
 
   // ── Load legacy data ──────────────────────────────────────────────────
   function loadLegacyObj(obj) {
@@ -180,46 +221,42 @@ export const prerender = false;
 
   function renderLegacy() {
     var el = document.getElementById('legacy-content');
-    var d = _legacyData[_currentLegacyObj];
+    var d = _legacyData[_legacyObj];
     if (!d) return;
     var search = (document.getElementById('explore-search').value || '').toLowerCase();
-
-    if (_currentLegacyObj === 'cost-centers') renderCostCenters(el, d, search);
-    else if (_currentLegacyObj === 'profit-centers') renderProfitCenters(el, d, search);
-    else if (_currentLegacyObj === 'entities') renderEntities(el, d, search);
-    else if (_currentLegacyObj === 'hierarchies') renderHierarchies(el, d, search);
-    else if (_currentLegacyObj === 'balances') renderBalances(el, d, search);
-    else if (_currentLegacyObj === 'employees') renderEmployees(el, d, search);
-    else if (_currentLegacyObj === 'gl-accounts') renderGLAccounts(el, d, search);
+    if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView);
+    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search);
+    else if (_legacyObj === 'entities') renderEntities(el, d, search);
+    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search);
+    else if (_legacyObj === 'balances') renderBalances(el, d, search);
+    else if (_legacyObj === 'employees') renderEmployees(el, d, search);
+    else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search);
   }
 
-  window.applySearch = function() { renderLegacy(); };
-  window.reloadHierView = function() { renderLegacy(); };
-
   // ── Cost Centers ──────────────────────────────────────────────────────
-  function renderCostCenters(el, d, search) {
+  function renderCostCenters(el, d, search, view) {
     var items = (d.items || []).filter(function(c) {
       if (!search) return true;
-      return (c.cctr || '').toLowerCase().indexOf(search) >= 0 || (c.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-             (c.ccode || '').toLowerCase().indexOf(search) >= 0 || (c.responsible || '').toLowerCase().indexOf(search) >= 0;
+      return (c.cctr||'').toLowerCase().indexOf(search)>=0 || (c.txtsh||'').toLowerCase().indexOf(search)>=0 ||
+             (c.ccode||'').toLowerCase().indexOf(search)>=0 || (c.responsible||'').toLowerCase().indexOf(search)>=0;
     });
-    if (_currentView === 'hierarchical') { renderHierTree(el, items, 'cctr'); return; }
+    if (view === 'hierarchical') { renderHierTree(el, items, 'cctr'); return; }
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Short Text</th><th class="py-2 px-2 text-left">Entity</th>';
-    html += '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Profit Ctr</th><th class="py-2 px-2 text-left">Responsible</th>';
-    html += '<th class="py-2 px-2 text-left">Category</th><th class="py-2 px-2 text-left">Currency</th><th class="py-2 px-2 text-center">Active</th>';
+    html += '<th class="py-1.5 px-2 text-left">CC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
+    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Profit Ctr</th><th class="py-1.5 px-2 text-left">Responsible</th>';
+    html += '<th class="py-1.5 px-2 text-left">Category</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(c) {
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(c.currency) + '</td>';
-      html += '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(c.ccode) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(c.coarea) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(c.pctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(c.responsible) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(c.cctrcgy) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(c.currency) + '</td>';
+      html += '<td class="py-1 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -230,24 +267,24 @@ export const prerender = false;
   function renderProfitCenters(el, d, search) {
     var items = (d.items || []).filter(function(p) {
       if (!search) return true;
-      return (p.pctr || '').toLowerCase().indexOf(search) >= 0 || (p.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-             (p.ccode || '').toLowerCase().indexOf(search) >= 0;
+      return (p.pctr||'').toLowerCase().indexOf(search)>=0 || (p.txtsh||'').toLowerCase().indexOf(search)>=0 ||
+             (p.ccode||'').toLowerCase().indexOf(search)>=0;
     });
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">PC</th><th class="py-2 px-2 text-left">Short Text</th><th class="py-2 px-2 text-left">Entity</th>';
-    html += '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Responsible</th><th class="py-2 px-2 text-left">Department</th>';
-    html += '<th class="py-2 px-2 text-left">Currency</th><th class="py-2 px-2 text-center">Active</th>';
+    html += '<th class="py-1.5 px-2 text-left">PC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
+    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Responsible</th><th class="py-1.5 px-2 text-left">Department</th>';
+    html += '<th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(p) {
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(p.department) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(p.currency) + '</td>';
-      html += '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(p.ccode) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(p.coarea) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(p.responsible) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(p.department) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(p.currency) + '</td>';
+      html += '<td class="py-1 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -258,20 +295,20 @@ export const prerender = false;
   function renderEntities(el, d, search) {
     var items = (d.items || []).filter(function(e) {
       if (!search) return true;
-      return (e.ccode || '').toLowerCase().indexOf(search) >= 0 || (e.name || '').toLowerCase().indexOf(search) >= 0;
+      return (e.ccode||'').toLowerCase().indexOf(search)>=0 || (e.name||'').toLowerCase().indexOf(search)>=0;
     });
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">Code</th><th class="py-2 px-2 text-left">Name</th><th class="py-2 px-2 text-left">Country</th>';
-    html += '<th class="py-2 px-2 text-left">Region</th><th class="py-2 px-2 text-left">Currency</th><th class="py-2 px-2 text-center">Active</th>';
+    html += '<th class="py-1.5 px-2 text-left">Code</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">Country</th>';
+    html += '<th class="py-1.5 px-2 text-left">Region</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(e) {
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.name) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.country) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.region) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(e.currency) + '</td>';
-      html += '<td class="py-1.5 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.name) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.country) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.region) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(e.currency) + '</td>';
+      html += '<td class="py-1 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -282,19 +319,19 @@ export const prerender = false;
   function renderGLAccounts(el, d, search) {
     var items = (d.items || []).filter(function(r) {
       if (!search) return true;
-      return (r.class_code || '').toLowerCase().indexOf(search) >= 0 || (r.class_label || '').toLowerCase().indexOf(search) >= 0;
+      return (r.class_code||'').toLowerCase().indexOf(search)>=0 || (r.class_label||'').toLowerCase().indexOf(search)>=0;
     });
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">Class Code</th><th class="py-2 px-2 text-left">Label</th>';
-    html += '<th class="py-2 px-2 text-left">From Account</th><th class="py-2 px-2 text-left">To Account</th><th class="py-2 px-2 text-left">Category</th>';
+    html += '<th class="py-1.5 px-2 text-left">Class Code</th><th class="py-1.5 px-2 text-left">Label</th>';
+    html += '<th class="py-1.5 px-2 text-left">From Account</th><th class="py-1.5 px-2 text-left">To Account</th><th class="py-1.5 px-2 text-left">Category</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(r) {
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(r.class_code) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(r.class_label) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(r.from_account) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(r.to_account) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(r.category) + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(r.class_code) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(r.class_label) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(r.from_account) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(r.to_account) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(r.category) + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -304,20 +341,20 @@ export const prerender = false;
   // ── Balances ──────────────────────────────────────────────────────────
   function renderBalances(el, d, search) {
     var bals = d.balances || {};
-    var keys = Object.keys(bals).filter(function(k) { return !search || k.toLowerCase().indexOf(search) >= 0; }).sort();
+    var keys = Object.keys(bals).filter(function(k) { return !search || k.toLowerCase().indexOf(search)>=0; }).sort();
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">CO Area : CC</th><th class="py-2 px-2 text-right">Periods</th><th class="py-2 px-2 text-right">Total Amount</th><th class="py-2 px-2 text-right">Total Postings</th><th class="py-2 px-2 text-left">Currency</th>';
+    html += '<th class="py-1.5 px-2 text-left">CO Area : CC</th><th class="py-1.5 px-2 text-right">Periods</th><th class="py-1.5 px-2 text-right">Total Amount</th><th class="py-1.5 px-2 text-right">Total Postings</th><th class="py-1.5 px-2 text-left">Currency</th>';
     html += '</tr></thead><tbody>';
     keys.forEach(function(k) {
       var periods = bals[k];
       var totalAmt = 0, totalPost = 0, curr = '';
       periods.forEach(function(p) { totalAmt += p.amount; totalPost += p.postings; curr = p.currency || curr; });
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(k) + '</td>';
-      html += '<td class="py-1.5 px-2 text-right">' + periods.length + '</td>';
-      html += '<td class="py-1.5 px-2 text-right font-mono' + (totalAmt < 0 ? ' text-red-600' : '') + '">' + totalAmt.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + '</td>';
-      html += '<td class="py-1.5 px-2 text-right font-mono">' + totalPost.toLocaleString() + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(curr) + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(k) + '</td>';
+      html += '<td class="py-1 px-2 text-right">' + periods.length + '</td>';
+      html += '<td class="py-1 px-2 text-right font-mono' + (totalAmt<0 ? ' text-red-600' : '') + '">' + totalAmt.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}) + '</td>';
+      html += '<td class="py-1 px-2 text-right font-mono">' + totalPost.toLocaleString() + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(curr) + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
@@ -328,44 +365,44 @@ export const prerender = false;
   function renderEmployees(el, d, search) {
     var items = (d.items || []).filter(function(e) {
       if (!search) return true;
-      return (e.gpn || '').toLowerCase().indexOf(search) >= 0 || (e.bs_name || '').toLowerCase().indexOf(search) >= 0 ||
-             (e.email_address || '').toLowerCase().indexOf(search) >= 0;
+      return (e.gpn||'').toLowerCase().indexOf(search)>=0 || (e.bs_name||'').toLowerCase().indexOf(search)>=0 ||
+             (e.email_address||'').toLowerCase().indexOf(search)>=0;
     });
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">GPN</th><th class="py-2 px-2 text-left">Name</th><th class="py-2 px-2 text-left">First</th><th class="py-2 px-2 text-left">Last</th>';
-    html += '<th class="py-2 px-2 text-left">OU Code</th><th class="py-2 px-2 text-left">OU Desc</th><th class="py-2 px-2 text-left">Local CC</th>';
-    html += '<th class="py-2 px-2 text-left">Job</th><th class="py-2 px-2 text-left">Email</th>';
+    html += '<th class="py-1.5 px-2 text-left">GPN</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">First</th><th class="py-1.5 px-2 text-left">Last</th>';
+    html += '<th class="py-1.5 px-2 text-left">OU Code</th><th class="py-1.5 px-2 text-left">OU Desc</th><th class="py-1.5 px-2 text-left">Local CC</th>';
+    html += '<th class="py-1.5 px-2 text-left">Job</th><th class="py-1.5 px-2 text-left">Email</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(e) {
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.gpn) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.bs_name) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.bs_firstname) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.bs_lastname) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(e.ou_cd) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.ou_desc) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(e.local_cc_cd) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.job_desc) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(e.email_address) + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(e.gpn) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.bs_name) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.bs_firstname) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.bs_lastname) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(e.ou_cd) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.ou_desc) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(e.local_cc_cd) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.job_desc) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(e.email_address) + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
     document.getElementById('explore-count').textContent = items.length + ' of ' + (d.total || items.length) + ' records';
   }
 
-  // ── Hierarchies (tree view) ───────────────────────────────────────────
+  // ── Hierarchies (list) ────────────────────────────────────────────────
   function renderHierarchies(el, d, search) {
     var hiers = d.hierarchies || [];
     if (!hiers.length) { el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded</span>'; return; }
-    var html = '<div class="p-3">';
+    var html = '<div class="p-2">';
     hiers.forEach(function(h, idx) {
-      html += '<div class="mb-4 border rounded-lg overflow-hidden">';
-      html += '<div class="bg-gray-50 px-3 py-2 flex items-center gap-2 cursor-pointer" onclick="toggleHierTree(' + idx + ')">';
+      html += '<div class="mb-2 border rounded-lg overflow-hidden">';
+      html += '<div class="bg-gray-50 px-3 py-1.5 flex items-center gap-2 cursor-pointer" onclick="toggleHierTree(' + idx + ')">';
       html += '<span class="text-xs font-semibold text-gray-700">' + esc(h.label) + '</span>';
       html += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">' + esc(h.type_label) + '</span>';
-      html += '<span class="text-[10px] text-gray-400">' + (h.leaves || []).length + ' leaves, ' + (h.nodes || []).length + ' nodes</span>';
+      html += '<span class="text-[10px] text-gray-400">' + (h.leaves||[]).length + ' leaves, ' + (h.nodes||[]).length + ' nodes</span>';
       html += '</div>';
-      html += '<div id="hier-tree-' + idx + '" class="hidden p-2 text-xs font-mono max-h-64 overflow-auto"></div>';
+      html += '<div id="hier-tree-' + idx + '" class="hidden p-2 text-xs font-mono max-h-48 overflow-auto"></div>';
       html += '</div>';
     });
     html += '</div>';
@@ -383,27 +420,16 @@ export const prerender = false;
     var h = (d.hierarchies || [])[idx];
     if (!h) return;
     var childMap = {};
-    (h.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push(n.child);
-    });
+    (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push(n.child); });
     var leafMap = {};
-    (h.leaves || []).forEach(function(lf) {
-      if (!leafMap[lf.setname]) leafMap[lf.setname] = [];
-      leafMap[lf.setname].push(lf.value);
-    });
+    (h.leaves || []).forEach(function(lf) { if (!leafMap[lf.setname]) leafMap[lf.setname] = []; leafMap[lf.setname].push(lf.value); });
     function buildTree(node, depth) {
-      var indent = '';
-      for (var i = 0; i < depth; i++) indent += '  ';
-      var html = '<div style="padding-left:' + (depth * 16) + 'px" class="py-0.5">';
-      html += '<span class="text-blue-700 font-semibold">' + esc(node) + '</span>';
+      var html = '<div style="padding-left:' + (depth*16) + 'px" class="py-0.5"><span class="text-blue-700 font-semibold">' + esc(node) + '</span>';
       var leaves = leafMap[node] || [];
-      if (leaves.length) html += ' <span class="text-gray-400">(' + leaves.length + ' items)</span>';
+      if (leaves.length) html += ' <span class="text-gray-400">(' + leaves.length + ')</span>';
       html += '</div>';
-      leaves.forEach(function(v) {
-        html += '<div style="padding-left:' + ((depth + 1) * 16) + 'px" class="py-0.5 text-gray-600">' + esc(v) + '</div>';
-      });
-      (childMap[node] || []).forEach(function(child) { html += buildTree(child, depth + 1); });
+      leaves.forEach(function(v) { html += '<div style="padding-left:' + ((depth+1)*16) + 'px" class="py-0.5 text-gray-600">' + esc(v) + '</div>'; });
+      (childMap[node] || []).forEach(function(child) { html += buildTree(child, depth+1); });
       return html;
     }
     el.innerHTML = buildTree(h.setname, 0);
@@ -412,48 +438,40 @@ export const prerender = false;
   // ── Hierarchical tree view for CC/PC ──────────────────────────────────
   function renderHierTree(el, items, keyField) {
     var hierData = _legacyData['hierarchies'];
-    if (!hierData || !(hierData.hierarchies || []).length) {
+    if (!hierData || !(hierData.hierarchies||[]).length) {
       el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded. Load hierarchies first to use hierarchical view.</span>';
       return;
     }
     var hiers = hierData.hierarchies;
-    var html = '<div class="p-3"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
+    var html = '<div class="p-2"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
     var prevSelEl = document.getElementById('explore-hier-sel');
     var selIdx = prevSelEl ? (parseInt(prevSelEl.value) || 0) : 0;
     html += '<select id="explore-hier-sel" class="input text-xs w-64" onchange="reloadHierView()">';
     hiers.forEach(function(h, i) { html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>'; });
     html += '</select></div>';
-
     var h = hiers[selIdx] || hiers[0];
     var itemMap = {};
     items.forEach(function(it) { if (it[keyField]) itemMap[it[keyField]] = it; });
     var leafMap = {};
-    (h.leaves || []).forEach(function(lf) {
-      if (!leafMap[lf.setname]) leafMap[lf.setname] = [];
-      leafMap[lf.setname].push(lf.value);
-    });
+    (h.leaves || []).forEach(function(lf) { if (!leafMap[lf.setname]) leafMap[lf.setname] = []; leafMap[lf.setname].push(lf.value); });
     var childMap = {};
-    (h.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push(n.child);
-    });
-
+    (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push(n.child); });
     function buildNode(node, depth) {
       var leaves = leafMap[node] || [];
       var children = childMap[node] || [];
       var count = leaves.length;
       children.forEach(function(c) { count += countLeaves(c); });
-      var r = '<div style="padding-left:' + (depth * 16) + 'px" class="py-1 border-b border-gray-100">';
+      var r = '<div style="padding-left:' + (depth*16) + 'px" class="py-0.5 border-b border-gray-100">';
       r += '<span class="font-semibold text-blue-800 text-xs">' + esc(node) + '</span>';
       r += '<span class="text-[10px] text-gray-400 ml-1">(' + count + ')</span></div>';
       leaves.forEach(function(v) {
         var it = itemMap[v];
-        r += '<div style="padding-left:' + ((depth + 1) * 16) + 'px" class="py-0.5 text-[11px] border-b border-gray-50">';
+        r += '<div style="padding-left:' + ((depth+1)*16) + 'px" class="py-0.5 text-[11px] border-b border-gray-50">';
         r += '<span class="font-mono">' + esc(v) + '</span>';
         if (it) r += ' <span class="text-gray-500">' + esc(it.txtsh || it.txtmi || '') + '</span>';
         r += '</div>';
       });
-      children.forEach(function(c) { r += buildNode(c, depth + 1); });
+      children.forEach(function(c) { r += buildNode(c, depth+1); });
       return r;
     }
     function countLeaves(node) {
@@ -470,179 +488,121 @@ export const prerender = false;
     _amplifiObj = obj;
     document.querySelectorAll('.amplifi-sub').forEach(function(b) {
       if (b.getAttribute('data-obj') === obj) {
-        b.className = 'amplifi-sub active px-3 py-1.5 text-xs font-medium rounded-t border-b-2 border-indigo-600 text-indigo-700';
+        b.className = 'amplifi-sub active px-3 py-1 text-xs font-medium rounded-t border-b-2 border-indigo-600 text-indigo-700';
       } else {
-        b.className = 'amplifi-sub px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700';
+        b.className = 'amplifi-sub px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700';
       }
     });
-    renderAmplifi();
+    // Show/hide hierarchical button for amplifi
+    var hierBtn = document.getElementById('av-hierarchical');
+    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'hierarchies') {
+      hierBtn.classList.remove('hidden');
+    } else {
+      hierBtn.classList.add('hidden');
+      _amplifiView = 'tabular';
+    }
+    loadAmplifiObj(obj);
   };
 
-  window.loadAmplifiData = function() {
-    var el = document.getElementById('amplifi-content');
-    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
-    var runId = document.getElementById('amplifi-run-sel').value;
-    var url = BASE + '/amplifi/mapping' + (runId ? '?run_id=' + runId : '');
-    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-      _amplifiData = d;
-      document.getElementById('amplifi-count').textContent = (d.total || 0) + ' proposals';
-      renderAmplifi();
-    }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
-
-    // Load run list
-    fetch(BASE + '/amplifi/runs').then(function(r) { return r.json(); }).then(function(d) {
-      var sel = document.getElementById('amplifi-run-sel');
-      var val = sel.value;
-      sel.innerHTML = '<option value="">Latest completed run</option>';
-      (d.runs || []).forEach(function(r) {
-        var opt = document.createElement('option');
-        opt.value = r.id;
-        opt.textContent = (r.label || 'Run #' + r.id) + (r.finished_at ? ' (' + r.finished_at.split('T')[0] + ')' : '');
-        sel.appendChild(opt);
-      });
-      if (val) sel.value = val;
-    });
+  window.switchAmplifiView = function(view) {
+    _amplifiView = view;
+    document.getElementById('av-tabular').className = view === 'tabular' ? 'btn-sm bg-indigo-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    document.getElementById('av-hierarchical').className = view === 'hierarchical' ? 'btn-sm bg-indigo-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    renderAmplifi();
   };
 
   window.applyAmplifiSearch = function() { renderAmplifi(); };
 
+  function loadAmplifiObj(obj) {
+    var el = document.getElementById('amplifi-content');
+    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
+
+    if (obj === 'mapping') {
+      // Load mapping from dedicated endpoint
+      fetch(BASE + '/amplifi/mapping').then(function(r) { return r.json(); }).then(function(d) {
+        _amplifiData['mapping'] = d;
+        document.getElementById('amplifi-count').textContent = (d.total || 0) + ' proposals';
+        renderAmplifi();
+      }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
+    } else {
+      // For ampliFi object views, use the same legacy endpoints for now
+      // (will be swapped to amplifi-specific endpoints when those are configured)
+      var url = BASE + '/legacy/' + obj + '?size=2000';
+      fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+        _amplifiData[obj] = d;
+        document.getElementById('amplifi-count').textContent = (d.total || (d.items || []).length) + ' records';
+        renderAmplifi();
+      }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
+    }
+  }
+
   function renderAmplifi() {
     var el = document.getElementById('amplifi-content');
-    if (!_amplifiData) { el.innerHTML = '<span class="p-4 text-gray-400 block">No analysis data available. Run an analysis first.</span>'; return; }
-    if (_amplifiObj === 'mapping') renderMapping(el);
-    else if (_amplifiObj === 'summary') renderSummary(el);
-    else if (_amplifiObj === 'cc-pc-map') renderCCPCMap(el);
+    var obj = _amplifiObj;
+    if (obj === 'mapping') { renderMapping(el); return; }
+    var d = _amplifiData[obj];
+    if (!d) return;
+    var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
+    if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView);
+    else if (obj === 'profit-centers') renderProfitCenters(el, d, search);
+    else if (obj === 'entities') renderEntities(el, d, search);
+    else if (obj === 'hierarchies') renderHierarchies(el, d, search);
   }
 
   function renderMapping(el) {
+    var d = _amplifiData['mapping'];
+    if (!d) { el.innerHTML = '<span class="p-4 text-gray-400 block">No analysis data available. Run an analysis first.</span>'; return; }
     var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
-    var items = (_amplifiData.items || []).filter(function(it) {
+    var items = (d.items || []).filter(function(it) {
       if (!search) return true;
-      return (it.legacy_cctr || '').toLowerCase().indexOf(search) >= 0 || (it.legacy_txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-             (it.outcome || '').toLowerCase().indexOf(search) >= 0 || (it.merge_into_cctr || '').toLowerCase().indexOf(search) >= 0;
+      return (it.legacy_cctr||'').toLowerCase().indexOf(search)>=0 || (it.legacy_txtsh||'').toLowerCase().indexOf(search)>=0 ||
+             (it.outcome||'').toLowerCase().indexOf(search)>=0 || (it.merge_into_cctr||'').toLowerCase().indexOf(search)>=0;
     });
     var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6' };
     var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-2 px-2 text-left">Legacy CC</th><th class="py-2 px-2 text-left">Name</th><th class="py-2 px-2 text-left">Entity</th>';
-    html += '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Legacy PC</th>';
-    html += '<th class="py-2 px-2 text-center">Outcome</th><th class="py-2 px-2 text-left">Target Object</th><th class="py-2 px-2 text-left">Target CC</th>';
-    html += '<th class="py-2 px-2 text-center">Confidence</th>';
+    html += '<th class="py-1.5 px-2 text-left">Legacy CC</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">Entity</th>';
+    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Legacy PC</th>';
+    html += '<th class="py-1.5 px-2 text-center">Outcome</th><th class="py-1.5 px-2 text-left">Target Object</th><th class="py-1.5 px-2 text-left">Target CC</th>';
+    html += '<th class="py-1.5 px-2 text-center">Confidence</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function(it) {
       var color = COLORS[it.outcome] || '#9ca3af';
       html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1.5 px-2 font-mono font-medium">' + esc(it.legacy_cctr) + '</td>';
-      html += '<td class="py-1.5 px-2">' + esc(it.legacy_txtsh) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(it.legacy_ccode) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(it.legacy_coarea) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(it.legacy_pctr) + '</td>';
-      html += '<td class="py-1.5 px-2 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style="background:' + color + '">' + esc(it.outcome) + '</span></td>';
-      html += '<td class="py-1.5 px-2">' + esc(it.target_object) + '</td>';
-      html += '<td class="py-1.5 px-2 font-mono">' + esc(it.merge_into_cctr) + '</td>';
-      html += '<td class="py-1.5 px-2 text-center font-mono">' + (it.confidence ? parseFloat(it.confidence).toFixed(2) : '-') + '</td>';
+      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.legacy_cctr) + '</td>';
+      html += '<td class="py-1 px-2">' + esc(it.legacy_txtsh) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_ccode) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_coarea) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_pctr) + '</td>';
+      html += '<td class="py-1 px-2 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style="background:' + color + '">' + esc(it.outcome) + '</span></td>';
+      html += '<td class="py-1 px-2">' + esc(it.target_object) + '</td>';
+      html += '<td class="py-1 px-2 font-mono">' + esc(it.merge_into_cctr) + '</td>';
+      html += '<td class="py-1 px-2 text-center font-mono">' + (it.confidence ? parseFloat(it.confidence).toFixed(2) : '-') + '</td>';
       html += '</tr>';
     });
     el.innerHTML = html + '</tbody></table>';
     document.getElementById('amplifi-count').textContent = items.length + ' proposals';
   }
 
-  function renderSummary(el) {
-    var d = _amplifiData;
-    var s = d.summary || {};
-    var total = d.total || 0;
-    var html = '<div class="p-4 space-y-4">';
-    html += '<div class="text-sm"><strong>Run:</strong> ' + esc(d.run_label || 'Run #' + d.run_id) + ' (' + esc(d.run_status) + ')</div>';
-    html += '<div class="text-sm"><strong>Total Proposals:</strong> ' + total + '</div>';
-    html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">';
-    var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6' };
-    ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN'].forEach(function(o) {
-      var cnt = s[o] || 0;
-      var pct = total ? Math.round(cnt / total * 100) : 0;
-      html += '<div class="border rounded-lg p-3 text-center">';
-      html += '<div class="text-lg font-bold" style="color:' + (COLORS[o] || '#666') + '">' + cnt + '</div>';
-      html += '<div class="text-xs text-gray-500">' + o + ' (' + pct + '%)</div></div>';
-    });
-    html += '</div>';
-    // Reduction
-    var kept = (s.KEEP || 0);
-    var reduced = total - kept;
-    var reductionPct = total ? Math.round(reduced / total * 100) : 0;
-    html += '<div class="bg-blue-50 border border-blue-200 rounded-lg p-3">';
-    html += '<div class="text-sm font-semibold text-blue-800">Reduction: ' + reductionPct + '% (' + reduced + ' of ' + total + ' centers)</div>';
-    html += '</div></div>';
-    el.innerHTML = html;
-  }
-
-  function renderCCPCMap(el) {
-    var items = _amplifiData.items || [];
-    var pcGroups = {};
-    items.forEach(function(it) {
-      if (it.outcome === 'MERGE_MAP' || it.outcome === 'REDESIGN') {
-        var tgt = it.merge_into_cctr || it.legacy_pctr || 'Unassigned';
-        if (!pcGroups[tgt]) pcGroups[tgt] = [];
-        pcGroups[tgt].push(it);
-      }
-    });
-    var keys = Object.keys(pcGroups).sort(function(a, b) { return pcGroups[b].length - pcGroups[a].length; });
-    var html = '<div class="p-3 space-y-3">';
-    html += '<div class="text-xs text-gray-500 mb-2">' + keys.length + ' target groups from ' + items.filter(function(it) { return it.outcome === 'MERGE_MAP' || it.outcome === 'REDESIGN'; }).length + ' proposals (MERGE_MAP + REDESIGN only)</div>';
-    keys.forEach(function(k) {
-      var group = pcGroups[k];
-      html += '<div class="border rounded-lg overflow-hidden">';
-      html += '<div class="bg-indigo-50 px-3 py-1.5 flex items-center justify-between">';
-      html += '<span class="text-xs font-semibold text-indigo-800">Target: ' + esc(k) + '</span>';
-      html += '<span class="text-[10px] bg-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded">' + group.length + ' CC' + (group.length > 1 ? 's' : '') + '</span>';
-      html += '</div>';
-      html += '<div class="px-3 py-1">';
-      group.forEach(function(it) {
-        html += '<div class="text-[11px] py-0.5 border-b border-gray-50">';
-        html += '<span class="font-mono">' + esc(it.legacy_cctr) + '</span> <span class="text-gray-500">' + esc(it.legacy_txtsh) + '</span>';
-        html += ' <span class="text-gray-300">(' + esc(it.legacy_ccode) + ')</span>';
-        html += '</div>';
-      });
-      html += '</div></div>';
-    });
-    if (!keys.length) html += '<span class="text-gray-400">No MERGE_MAP or REDESIGN proposals found</span>';
-    html += '</div>';
-    el.innerHTML = html;
-  }
-
-  // ── Data Sources ──────────────────────────────────────────────────────
-  function loadSources() {
-    var el = document.getElementById('sources-content');
-    fetch(BASE + '/data-sources').then(function(r) { return r.json(); }).then(function(d) {
-      var items = d.sources || [];
-      var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-      html += '<th class="py-2 px-3 text-left">Object</th><th class="py-2 px-3 text-left">Source</th><th class="py-2 px-3 text-right">Records</th>';
-      html += '</tr></thead><tbody>';
-      items.forEach(function(s) {
-        html += '<tr class="border-b hover:bg-gray-50">';
-        html += '<td class="py-2 px-3 font-medium">' + esc(s.label) + '</td>';
-        html += '<td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px]">' + esc(s.source) + '</span></td>';
-        html += '<td class="py-2 px-3 text-right font-mono font-bold">' + (s.count || 0).toLocaleString() + '</td>';
-        html += '</tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-    });
-  }
-
   // ── CSV Export ─────────────────────────────────────────────────────────
-  window.exportCSV = function() {
-    var el = document.getElementById('legacy-content');
+  window.exportCSV = function() { doExportCSV('legacy-content', _legacyObj); };
+  window.exportAmplifiCSV = function() { doExportCSV('amplifi-content', 'amplifi-' + _amplifiObj); };
+
+  function doExportCSV(containerId, filename) {
+    var el = document.getElementById(containerId);
     var table = el.querySelector('table');
     if (!table) return;
     var rows = [];
     table.querySelectorAll('tr').forEach(function(tr) {
       var cols = [];
-      tr.querySelectorAll('th, td').forEach(function(td) { cols.push('"' + (td.textContent || '').replace(/"/g, '""') + '"'); });
+      tr.querySelectorAll('th, td').forEach(function(td) { cols.push('"' + (td.textContent||'').replace(/"/g, '""') + '"'); });
       rows.push(cols.join(','));
     });
     var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = _currentLegacyObj + '.csv';
+    a.download = filename + '.csv';
     a.click();
-  };
+  }
 
   // ── Init ──────────────────────────────────────────────────────────────
   fetch(BASE + '/counts').then(function(r) { return r.json(); }).then(function(d) {
@@ -659,8 +619,13 @@ export const prerender = false;
     _legacyData['hierarchies'] = d;
   });
 
-  // Load initial view
-  loadLegacyObj('cost-centers');
+  // Load source config then initial view
+  loadSourceConfig().then(function() {
+    loadLegacyObj(_legacyObj);
+  });
 
 })();
 </script>
+
+</body>
+</html>

@@ -981,6 +981,50 @@ class NamingAllocation(Base):
     pool: Mapped[NamingPool] = relationship(back_populates="allocations")
 
 
+# ---------- data explorer source config ----------
+
+
+class ExplorerSourceConfig(TimestampMixin, Base):
+    """Per-object-type data source configuration for the public Data Explorer."""
+
+    __tablename__ = "explorer_source_config"
+    __table_args__ = (
+        UniqueConstraint("object_type", "area"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    object_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    area: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="legacy"
+    )  # legacy | amplifi
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_system: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="local_db"
+    )  # local_db | sap_s4 | sap_mdg | datasphere | custom_api
+    protocol: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="db_query"
+    )  # db_query | odata | rfc | rest
+    mode: Mapped[str] = mapped_column(
+        String(15), nullable=False, default="replicated"
+    )  # in_place | replicated
+    connection_ref: Mapped[str | None] = mapped_column(
+        String(200)
+    )  # SAP connection name, DSP URL, API base URL, etc.
+    endpoint: Mapped[str | None] = mapped_column(
+        String(500)
+    )  # OData entity set, RFC function, REST path, table name
+    replication_cron: Mapped[str | None] = mapped_column(
+        String(50)
+    )  # cron expression if mode=replicated
+    extra_config: Mapped[dict | None] = mapped_column(JSONB)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+
+
 # ---------- datasphere integration ----------
 
 # Data domains that can be routed to Datasphere

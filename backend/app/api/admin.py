@@ -1682,3 +1682,122 @@ def list_datasphere_domains(
             }
         )
     return {"domains": domains}
+
+
+# ── Explorer Source Config ────────────────────────────────────────────────
+
+
+class ExplorerSourceIn(BaseModel):
+    object_type: str
+    area: str = "legacy"
+    label: str
+    source_system: str = "local_db"
+    protocol: str = "db_query"
+    mode: str = "replicated"
+    connection_ref: str | None = None
+    endpoint: str | None = None
+    replication_cron: str | None = None
+    extra_config: dict | None = None
+    enabled: bool = True
+    display_order: int = 0
+
+
+class ExplorerSourceOut(BaseModel):
+    id: int
+    object_type: str
+    area: str
+    label: str
+    source_system: str
+    protocol: str
+    mode: str
+    connection_ref: str | None = None
+    endpoint: str | None = None
+    replication_cron: str | None = None
+    extra_config: dict | None = None
+    enabled: bool
+    display_order: int
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/explorer-sources")
+def list_explorer_sources(
+    area: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """List all data source configs for the Data Explorer."""
+    from app.models.core import ExplorerSourceConfig
+
+    stmt = select(ExplorerSourceConfig).order_by(
+        ExplorerSourceConfig.area, ExplorerSourceConfig.display_order
+    )
+    if area:
+        stmt = stmt.where(ExplorerSourceConfig.area == area)
+    rows = db.execute(stmt).scalars().all()
+    return {"items": [ExplorerSourceOut.model_validate(r).model_dump() for r in rows]}
+
+
+@router.post("/explorer-sources")
+def create_explorer_source(
+    body: ExplorerSourceIn,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Create a new explorer data source config."""
+    from app.models.core import ExplorerSourceConfig
+
+    existing = db.execute(
+        select(ExplorerSourceConfig).where(
+            ExplorerSourceConfig.object_type == body.object_type,
+            ExplorerSourceConfig.area == body.area,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(409, f"Source config for {body.area}/{body.object_type} already exists")
+    row = ExplorerSourceConfig(
+        **body.model_dump(),
+        updated_by=user.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return ExplorerSourceOut.model_validate(row).model_dump()
+
+
+@router.put("/explorer-sources/{src_id}")
+def update_explorer_source(
+    src_id: int,
+    body: ExplorerSourceIn,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Update an explorer data source config."""
+    from app.models.core import ExplorerSourceConfig
+
+    row = db.get(ExplorerSourceConfig, src_id)
+    if not row:
+        raise HTTPException(404, "Source config not found")
+    for k, v in body.model_dump().items():
+        setattr(row, k, v)
+    row.updated_by = user.id
+    db.commit()
+    db.refresh(row)
+    return ExplorerSourceOut.model_validate(row).model_dump()
+
+
+@router.delete("/explorer-sources/{src_id}")
+def delete_explorer_source(
+    src_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Delete an explorer data source config."""
+    from app.models.core import ExplorerSourceConfig
+
+    row = db.get(ExplorerSourceConfig, src_id)
+    if not row:
+        raise HTTPException(404, "Source config not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
