@@ -130,9 +130,11 @@ app.include_router(data_mgmt_router.router, prefix="/api/data", tags=["data-mana
 
 from app.api import activity as activity_router  # noqa: E402
 from app.api import docs_help as docs_help_router  # noqa: E402
+from app.api import explore as explore_router  # noqa: E402
 
 app.include_router(activity_router.router, prefix="/api/activity", tags=["activity"])
 app.include_router(docs_help_router.router, prefix="/api", tags=["help"])
+app.include_router(explore_router.router, prefix="/api/explore", tags=["explore"])
 
 
 # --- Prometheus metrics ---

@@ -5,13 +5,15 @@ export const prerender = false;
 
 <Layout title="Analytics Dashboard" requireAuth={true} requiredRole="data_manager">
   <!-- Header -->
-  <div class="mb-4">
-    <a href="/cockpit" class="text-xs text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
-    <h2 class="text-xl font-bold mt-1">Analytics Dashboard</h2>
+  <div class="flex items-center justify-between mb-2">
+    <div class="flex items-center gap-3">
+      <a href="/cockpit" class="text-xs text-amplifi-600 hover:underline">&larr; Cockpit</a>
+      <h2 class="text-xl font-bold">Analytics Dashboard</h2>
+    </div>
   </div>
 
   <!-- Selectors — single row -->
-  <div class="bg-white border rounded-lg px-4 py-2 mb-4 flex items-center gap-3 flex-wrap">
+  <div class="bg-white border rounded-lg px-4 py-2 mb-2 flex items-center gap-3 flex-wrap">
     <div class="flex items-center gap-1">
       <label class="text-xs text-gray-500 whitespace-nowrap">Scope:</label>
       <select id="sel-wave" class="input text-xs py-1 w-40">
@@ -51,16 +53,16 @@ export const prerender = false;
   </div>
 
   <!-- KPI Strip -->
-  <div id="kpi-strip" class="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-3"></div>
+  <div id="kpi-strip" class="bg-white border rounded-lg p-2 mb-2 flex flex-wrap gap-3"></div>
 
   <!-- Tab Bar -->
-  <div class="flex gap-1 border-b mb-4">
+  <div class="flex gap-1 border-b mb-2">
     <button id="tab-visuals" class="px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700" onclick="switchAnalyticsTab('visuals')">Visuals</button>
     <button id="tab-browser" class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchAnalyticsTab('browser')">Data Browser</button>
   </div>
 
   <!-- ===== VISUALS TAB ===== -->
-  <div id="panel-visuals">
+  <div id="panel-visuals" class="overflow-y-auto" style="max-height:calc(100vh - 280px)">
     <!-- Row 1: Outcome Donut + Target Bar (equal size) -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
       <div class="card" style="min-height:280px">
@@ -190,6 +192,12 @@ export const prerender = false;
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
   function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
+  // Entity name lookup
+  var _entityNames = {};
+  fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    (d.items || []).forEach(function(e) { _entityNames[e.ccode] = e.name; });
+  }).catch(function() {});
+
   // Tab switching
   window.switchAnalyticsTab = function(tab) {
     var visuals = document.getElementById('panel-visuals');
@@ -307,7 +315,7 @@ export const prerender = false;
     });
     var params = new URLSearchParams(window.location.search);
     if (params.get('wave')) sel.value = params.get('wave');
-    else if (params.get('global') === '1') sel.value = '__global__';
+    else sel.value = '__global__';
     if (sel.value) handleWaveSelect(sel.value);
   });
 
@@ -554,7 +562,8 @@ export const prerender = false;
     html += '<th class="py-1 px-2 text-center">Total</th></tr></thead><tbody>';
     rows.forEach(function(r) {
       var rowTotal = 0;
-      html += '<tr><td class="py-1 px-2 font-mono font-medium border-r">' + r + '</td>';
+      var entityLabel = r + (_entityNames[r] ? ' — ' + _entityNames[r] : '');
+      html += '<tr><td class="py-1 px-2 font-medium border-r whitespace-nowrap"><span class="font-mono">' + esc(r) + '</span>' + (_entityNames[r] ? ' <span class="text-gray-500 font-normal">' + esc(_entityNames[r]) + '</span>' : '') + '</td>';
       cols.forEach(function(c) {
         var v = (data[r] && data[r][c]) || 0;
         rowTotal += v;
