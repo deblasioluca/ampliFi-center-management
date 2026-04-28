@@ -401,18 +401,22 @@ Blocked request. This host ("your-hostname.corp.net") is not allowed.
 To allow this host, add "your-hostname" to `server.allowedHosts` in vite.config.js.
 ```
 
-This is Vite's host security check. The `astro.config.mjs` already sets `allowedHosts: 'all'` to permit any hostname. If you're running an older version that doesn't have this setting, update with `make update` or manually add to `frontend/astro.config.mjs`:
+This is Vite's host security check. The `astro.config.mjs` already sets `allowedHosts: true` in the `vite.server` block to permit any hostname. If you're running an older version that doesn't have this setting, update with `make update` or manually add to `frontend/astro.config.mjs`:
 
 ```js
-server: {
-  host: '0.0.0.0',
-  allowedHosts: 'all',
-},
 vite: {
   server: {
-    allowedHosts: 'all',
+    allowedHosts: true,
   },
 },
+```
+
+After changing the config, kill old node processes and restart:
+
+```bash
+ps aux | grep node | grep -v grep    # find PIDs
+kill <PID>                            # kill each one
+make start
 ```
 
 ### PostgreSQL connection refused
