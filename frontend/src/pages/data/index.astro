@@ -3,46 +3,42 @@ import Layout from '../../components/layout/Layout.astro';
 ---
 
 <Layout title="Data Management" requireAuth={true} requiredRole="data_manager">
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Data Management</h1>
-    <p class="text-sm text-gray-500 mt-1">Upload, browse, and manage cost centers, profit centers, balances, hierarchies, and employees</p>
-  </div>
-
-  <!-- Upload guide -->
-  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-    <p class="text-xs font-semibold text-amber-800 mb-1">Data Upload Order</p>
-    <p class="text-[11px] text-amber-700">Upload in this sequence for best results: <strong>1. Entities</strong> (company codes) &rarr; <strong>2. Cost Centers</strong> &rarr; <strong>3. Profit Centers</strong> &rarr; <strong>4. Balances</strong> (posting data for inactivity detection) &rarr; <strong>5. Hierarchies</strong> (for scope selection in waves) &rarr; <strong>6. Employees</strong> (for owner resolution GPN &rarr; Name). Use CSV or extract directly from SAP.</p>
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Data Management</h1>
+      <p class="text-xs text-gray-500">Upload, browse, and manage cost centers, profit centers, balances, hierarchies, and employees</p>
+    </div>
   </div>
 
   <!-- Data Counts -->
-  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Entities</h4>
-      <p id="cnt-entities" class="text-xl font-bold text-gray-900 mt-1">--</p>
+  <div class="grid grid-cols-4 lg:grid-cols-7 gap-3 mb-3">
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Entities</span>
+      <p id="cnt-entities" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Cost Centers</h4>
-      <p id="cnt-cc" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Cost Centers</span>
+      <p id="cnt-cc" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Profit Centers</h4>
-      <p id="cnt-pc" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Profit Centers</span>
+      <p id="cnt-pc" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Balances</h4>
-      <p id="cnt-balances" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Balances</span>
+      <p id="cnt-balances" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Hierarchies</h4>
-      <p id="cnt-hierarchies" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Hierarchies</span>
+      <p id="cnt-hierarchies" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Employees</h4>
-      <p id="cnt-employees" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Employees</span>
+      <p id="cnt-employees" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="card text-center">
-      <h4 class="text-xs font-medium text-gray-500 uppercase">Uploads</h4>
-      <p id="cnt-uploads" class="text-xl font-bold text-gray-900 mt-1">--</p>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Uploads</span>
+      <p id="cnt-uploads" class="text-lg font-bold text-gray-900">--</p>
     </div>
   </div>
 
@@ -74,7 +70,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
         </div>
       </div>
-      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">
+      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">
         <span class="text-sm text-gray-400">Loading data browser...</span>
       </div>
     </div>
@@ -89,7 +85,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
+      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
       <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -104,7 +100,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
+      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
       <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -119,7 +115,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
+      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
       <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -134,7 +130,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 340px)">Loading...</div>
+      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
       <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -152,7 +148,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
       <!-- List view -->
       <div id="hier-list-view">
-        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 380px)">Loading...</div>
+        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
       </div>
       <!-- Tree view -->
       <div id="hier-tree-view" class="hidden">
@@ -164,7 +160,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
           <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
         </div>
-        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 420px)">Select a hierarchy to view its tree structure.</div>
+        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 540px)">Select a hierarchy to view its tree structure.</div>
       </div>
     </div>
 
@@ -179,7 +175,7 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
       </div>
       <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
-      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 360px)">Loading...</div>
+      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
       <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -1606,7 +1602,7 @@ import Layout from '../../components/layout/Layout.astro';
     var label = dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode;
     var html = '<div class="mb-2 flex items-center gap-2"><span class="font-semibold text-sm text-blue-800">' + esc(label) + '</span>';
     html += '<span class="text-xs text-gray-500">(' + leafCCs.length + ' cost center' + (leafCCs.length !== 1 ? 's' : '') + ')</span></div>';
-    html += '<div class="overflow-auto" style="max-height:calc(100vh - 320px)"><table class="w-full text-xs border-collapse"><thead>';
+    html += '<div class="overflow-auto" style="max-height:calc(100vh - 480px)"><table class="w-full text-xs border-collapse"><thead>';
     html += '<tr class="border-b bg-gray-50 sticky top-0">';
     var cols = [
       { key: 'cctr', label: 'CC' },
@@ -1677,7 +1673,7 @@ import Layout from '../../components/layout/Layout.astro';
     html += '</select></div>';
 
     // Split panel: tree left, detail right
-    html += '<div class="flex gap-3" style="height:calc(100vh - 380px);min-height:300px">';
+    html += '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
 
     // Left panel — compact tree
     html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto">';
