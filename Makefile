@@ -148,7 +148,7 @@ print('[ok] Database tables created')" && \
 
 update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="
-	@$(PROXY_ENV) git pull
+	git pull
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
 		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
@@ -194,14 +194,6 @@ logs: ## Tail the backend log
 
 git-setup: ## Configure Git credentials (run once — prompts for GitHub username + PAT)
 	@echo "=== Git Credential Setup ==="
-	@if grep -qE '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null; then \
-	  PROXY=$$(grep -E '^HTTPS_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-); \
-	  [ -z "$$PROXY" ] && PROXY=$$(grep -E '^HTTP_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-); \
-	  if [ -n "$$PROXY" ]; then \
-	    git config --global http.proxy "$$PROXY"; \
-	    echo "[ok] Git proxy set to $$PROXY (from .env)"; \
-	  fi; \
-	fi
 	@echo "This stores your GitHub credentials so git pull works without prompting."
 	@echo "Create a PAT at: https://github.com/settings/tokens/new (select 'repo' scope)"
 	@echo ""
