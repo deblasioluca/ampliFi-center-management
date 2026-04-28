@@ -11,6 +11,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend
 VENV := $(BACKEND_DIR)/.venv
 BACKEND_PID := $(ROOT_DIR)/.amplifi-backend.pid
 FRONTEND_PID := $(ROOT_DIR)/.amplifi-frontend.pid
+PIP_TRUST := --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 # Load .env if present
 ifneq (,$(wildcard $(ROOT_DIR)/.env))
@@ -20,6 +21,11 @@ endif
 
 BACKEND_PORT ?= 8180
 FRONTEND_PORT ?= 4321
+
+# Helper: export proxy env vars from .env for subshell commands
+define PROXY_ENV
+export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null;
+endef
 
 .DEFAULT_GOAL := help
 .PHONY: help start stop restart status setup update load-sample delete-sample seed logs git-setup
@@ -104,10 +110,12 @@ setup: ## Initial setup: create venv, install deps, create DB tables, seed data
 	@cd $(BACKEND_DIR) && \
 		python3 -m venv $(VENV) && \
 		source $(VENV)/bin/activate && \
-		pip install --upgrade pip > /dev/null 2>&1 && \
-		pip install -e ".[dev]" 2>&1 | tail -5 && \
+		$(PROXY_ENV) \
+		pip install $(PIP_TRUST) --upgrade pip > /dev/null 2>&1 && \
+		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -5 && \
 		echo "[ok] Backend dependencies installed"
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
+		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
 		npm install 2>&1 | tail -3 && \
 		npm run build 2>&1 | tail -3 && \
@@ -131,8 +139,9 @@ print('[ok] Database tables created')" && \
 
 update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="
-	git pull
+	@$(PROXY_ENV) git pull
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
+		$(PROXY_ENV) \
 		cd $(FRONTEND_DIR) && \
 		npm install 2>&1 | tail -3 && \
 		npm run build 2>&1 | tail -3 && \
@@ -140,7 +149,8 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	fi
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
-		pip install -e ".[dev]" 2>&1 | tail -3 && \
+		$(PROXY_ENV) \
+		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -3 && \
 		echo "[ok] Backend dependencies updated"
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
@@ -175,6 +185,14 @@ logs: ## Tail the backend log
 
 git-setup: ## Configure Git credentials (run once — prompts for GitHub username + PAT)
 	@echo "=== Git Credential Setup ==="
+	@if grep -qE '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null; then \
+	  PROXY=$$(grep -E '^HTTPS_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-); \
+	  [ -z "$$PROXY" ] && PROXY=$$(grep -E '^HTTP_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | head -1 | cut -d= -f2-); \
+	  if [ -n "$$PROXY" ]; then \
+	    git config --global http.proxy "$$PROXY"; \
+	    echo "[ok] Git proxy set to $$PROXY (from .env)"; \
+	  fi; \
+	fi
 	@echo "This stores your GitHub credentials so git pull works without prompting."
 	@echo "Create a PAT at: https://github.com/settings/tokens/new (select 'repo' scope)"
 	@echo ""

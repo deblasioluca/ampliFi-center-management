@@ -79,6 +79,10 @@ make seed           # Full seed: admin user + sample data + built-in routines
 | `make logs`      | Tail the backend log                                                |
 | `make git-setup` | Configure Git credentials (run once, prompts for PAT)               |
 
+## Deployment Guides
+
+- **[RHEL / CentOS / Rocky Linux](docs/DEPLOYMENT-RHEL.md)** — Full guide for Red Hat Enterprise Linux 8/9 including proxy configuration, PostgreSQL setup, systemd services, firewall, and nginx reverse proxy.
+
 ## Default Credentials
 
 | What       | Value                                |
