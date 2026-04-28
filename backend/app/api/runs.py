@@ -413,6 +413,8 @@ def data_browser(
                 "confidence": str(p.confidence) if p.confidence else None,
                 "override_outcome": p.override_outcome,
                 "override_target": p.override_target,
+                "rule_path": p.rule_path,
+                "llm_commentary": p.llm_commentary,
                 "monthly_balances": balance_map.get(cctr, []) if cctr else [],
             }
         )
