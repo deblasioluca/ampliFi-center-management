@@ -494,7 +494,7 @@ export const prerender = false;
       (d.runs || []).forEach(function(r) {
         var opt = document.createElement('option');
         opt.value = r.id;
-        opt.textContent = 'Run #' + r.id + ' — ' + r.name + (r.finished_at ? ' (' + r.finished_at.split('T')[0] + ')' : '');
+        opt.textContent = (r.label || 'Run #' + r.id) + (r.finished_at ? ' (' + r.finished_at.split('T')[0] + ')' : '');
         sel.appendChild(opt);
       });
       if (val) sel.value = val;
@@ -548,7 +548,7 @@ export const prerender = false;
     var s = d.summary || {};
     var total = d.total || 0;
     var html = '<div class="p-4 space-y-4">';
-    html += '<div class="text-sm"><strong>Run:</strong> #' + (d.run_id || '?') + ' — ' + esc(d.run_name) + ' (' + esc(d.run_status) + ')</div>';
+    html += '<div class="text-sm"><strong>Run:</strong> ' + esc(d.run_label || 'Run #' + d.run_id) + ' (' + esc(d.run_status) + ')</div>';
     html += '<div class="text-sm"><strong>Total Proposals:</strong> ' + total + '</div>';
     html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">';
     var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6' };

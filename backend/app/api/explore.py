@@ -400,7 +400,7 @@ def explore_mapping(
 
     return {
         "run_id": run.id,
-        "run_name": run.name,
+        "run_label": f"Run #{run.id}" + (f" (Wave {run.wave_id})" if run.wave_id else " (Global)"),
         "run_status": run.status,
         "total": len(items),
         "summary": summary,
@@ -427,7 +427,7 @@ def explore_runs(db: Session = Depends(get_db)) -> dict:
         "runs": [
             {
                 "id": r.id,
-                "name": r.name,
+                "label": f"Run #{r.id}" + (f" (Wave {r.wave_id})" if r.wave_id else " (Global)"),
                 "status": r.status,
                 "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             }
