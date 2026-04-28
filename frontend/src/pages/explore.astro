@@ -234,7 +234,7 @@ export const prerender = false;
     if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView, cid, 'legacy');
     else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search, _legacyView, cid, 'legacy');
     else if (_legacyObj === 'entities') renderEntities(el, d, search, _legacyView, cid, 'legacy');
-    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search, cid, 'legacy');
+    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search, _legacyView, cid, 'legacy');
     else if (_legacyObj === 'balances') renderBalances(el, d, search, cid);
     else if (_legacyObj === 'employees') renderEmployees(el, d, search, cid);
     else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
@@ -469,14 +469,70 @@ export const prerender = false;
   }
 
   // ── Hierarchies (list) ────────────────────────────────────────────────
-  function renderHierarchies(el, d, search, countElId, panel) {
+  function renderHierarchies(el, d, search, view, countElId, panel) {
     var pfx = panel || 'legacy';
     var hiers = d.hierarchies || [];
     if (!hiers.length) { el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded</span>'; return; }
+
+    if (view === 'tabular') {
+      // Tabular: hierarchy selector + table with level columns
+      var selId = 'hier-tab-sel-' + pfx;
+      var prevSelEl = document.getElementById(selId);
+      var selIdx = prevSelEl ? (parseInt(prevSelEl.value) || 0) : 0;
+      var html = '<div class="p-2"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
+      html += '<select id="' + selId + '" class="input text-xs w-64" onchange="reloadHierView(\'' + pfx + '\')">';
+      hiers.forEach(function(h, i) { html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>'; });
+      html += '</select></div>';
+      var h = hiers[selIdx] || hiers[0];
+      if (!h) { el.innerHTML = html + '<span class="text-gray-400">No hierarchy selected</span></div>'; return; }
+      var childMap = {};
+      (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push({ type: 'node', name: n.child }); });
+      (h.leaves || []).forEach(function(lf) { if (!childMap[lf.setname]) childMap[lf.setname] = []; childMap[lf.setname].push({ type: 'leaf', value: lf.value }); });
+      var allChildren = {};
+      (h.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
+      var roots = [];
+      (h.nodes || []).forEach(function(n) { if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent); });
+      if (!roots.length && h.nodes && h.nodes.length) roots.push(h.nodes[0].parent);
+      var leafPaths = {};
+      var maxDepth = 0;
+      function dfs(nodeName, path) {
+        var children = childMap[nodeName] || [];
+        children.forEach(function(c) {
+          if (c.type === 'leaf') {
+            leafPaths[c.value] = path.slice();
+            if (path.length > maxDepth) maxDepth = path.length;
+          } else {
+            dfs(c.name, path.concat([c.name]));
+          }
+        });
+      }
+      roots.forEach(function(r) { dfs(r, [r]); });
+      html += '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
+      html += '<th class="py-1.5 px-2 text-left">Leaf Value</th>';
+      for (var i = 0; i < maxDepth; i++) html += '<th class="py-1.5 px-2 text-left text-indigo-600">L' + (i+1) + '</th>';
+      html += '</tr></thead><tbody>';
+      var leafKeys = Object.keys(leafPaths);
+      if (search) { leafKeys = leafKeys.filter(function(k) { return k.toLowerCase().indexOf(search) >= 0 || (leafPaths[k] || []).join(' ').toLowerCase().indexOf(search) >= 0; }); }
+      leafKeys.sort();
+      leafKeys.forEach(function(val) {
+        var path = leafPaths[val];
+        html += '<tr class="border-b hover:bg-gray-50">';
+        html += '<td class="py-1 px-2 font-mono font-medium">' + esc(val) + '</td>';
+        for (var i = 0; i < maxDepth; i++) html += '<td class="py-1 px-2 text-gray-600">' + esc(path[i] || '') + '</td>';
+        html += '</tr>';
+      });
+      if (!leafKeys.length) html += '<tr><td colspan="' + (maxDepth+1) + '" class="py-4 text-center text-gray-400">No matching leaves.</td></tr>';
+      html += '</tbody></table></div>';
+      el.innerHTML = html;
+      document.getElementById(countElId || 'explore-count').textContent = leafKeys.length + ' leaves';
+      return;
+    }
+
+    // Hierarchical: expandable tree cards
     var html = '<div class="p-2">';
     hiers.forEach(function(h, idx) {
       html += '<div class="mb-2 border rounded-lg overflow-hidden">';
-      html += '<div class="bg-gray-50 px-3 py-1.5 flex items-center gap-2 cursor-pointer" onclick="toggleHierTree(' + idx + ',\'' + pfx + '\')">'; 
+      html += '<div class="bg-gray-50 px-3 py-1.5 flex items-center gap-2 cursor-pointer" onclick="toggleHierTree(' + idx + ',\'' + pfx + '\')">';
       html += '<span class="text-xs font-semibold text-gray-700">' + esc(h.label) + '</span>';
       html += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">' + esc(h.type_label) + '</span>';
       html += '<span class="text-[10px] text-gray-400">' + (h.leaves||[]).length + ' leaves, ' + (h.nodes||[]).length + ' nodes</span>';
@@ -629,7 +685,7 @@ export const prerender = false;
     if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView, cid, 'amplifi');
     else if (obj === 'profit-centers') renderProfitCenters(el, d, search, _amplifiView, cid, 'amplifi');
     else if (obj === 'entities') renderEntities(el, d, search, _amplifiView, cid, 'amplifi');
-    else if (obj === 'hierarchies') renderHierarchies(el, d, search, cid, 'amplifi');
+    else if (obj === 'hierarchies') renderHierarchies(el, d, search, _amplifiView, cid, 'amplifi');
     else if (obj === 'balances') renderBalances(el, d, search, cid);
     else if (obj === 'employees') renderEmployees(el, d, search, cid);
     else if (obj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
