@@ -918,7 +918,7 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('download-template-btn').addEventListener('click', async function() {
     var kind = document.getElementById('upload-type').value;
     try {
-      var res = await fetch('/api/admin/upload-templates/' + encodeURIComponent(kind), { headers: authHdr });
+      var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
       if (!res.ok) { alert('Failed to fetch template'); return; }
       var d = await res.json();
       var blob = new Blob([d.content], { type: 'text/csv' });

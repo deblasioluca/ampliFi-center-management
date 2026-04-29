@@ -588,3 +588,53 @@ def ml_predict(
         )
 
     return {"total": len(results), "items": results}
+
+
+# ---------------------------------------------------------------------------
+# Upload templates (public — static CSV column definitions, no user data)
+# ---------------------------------------------------------------------------
+
+from app.api.admin import UPLOAD_TEMPLATES  # noqa: E402
+
+
+@router.get("/data/upload-templates")
+def list_upload_templates_public() -> dict:
+    """List available upload templates (public, no auth)."""
+    return {
+        "templates": [
+            {"kind": k, "filename": v["filename"], "description": v["description"]}
+            for k, v in UPLOAD_TEMPLATES.items()
+        ]
+    }
+
+
+@router.get("/data/upload-templates/{kind}")
+def download_upload_template_public(kind: str) -> dict:
+    """Get CSV content for an upload template (public, no auth)."""
+    tmpl = UPLOAD_TEMPLATES.get(kind)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"No template for kind: {kind}")
+
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(tmpl["columns"])
+
+    if kind == "hierarchies":
+        if "sample_row_header" in tmpl:
+            writer.writerow(tmpl["sample_row_header"])
+        if "sample_row_node" in tmpl:
+            writer.writerow(tmpl["sample_row_node"])
+        if "sample_row_leaf" in tmpl:
+            writer.writerow(tmpl["sample_row_leaf"])
+    elif "sample_row" in tmpl:
+        writer.writerow(tmpl["sample_row"])
+
+    return {
+        "kind": kind,
+        "filename": tmpl["filename"],
+        "content": output.getvalue(),
+        "content_type": "text/csv",
+    }
