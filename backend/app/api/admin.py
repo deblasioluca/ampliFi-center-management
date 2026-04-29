@@ -1452,7 +1452,9 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
 
 
 @router.get("/upload-templates")
-def list_upload_templates() -> dict:
+def list_upload_templates(
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
     """List available upload templates."""
     return {
         "templates": [
@@ -1465,6 +1467,7 @@ def list_upload_templates() -> dict:
 @router.get("/upload-templates/{kind}")
 def download_upload_template(
     kind: str,
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     """Get CSV content for an upload template."""
     tmpl = UPLOAD_TEMPLATES.get(kind)
