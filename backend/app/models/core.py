@@ -26,15 +26,27 @@ from app.models.base import Base, TimestampMixin
 
 
 class Entity(TimestampMixin, Base):
+    """Company code / entity master — aligned with SAP T001."""
+
     __tablename__ = "entity"
     __table_args__ = {"schema": "cleanup"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ccode: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    country: Mapped[str | None] = mapped_column(String(3))
+    # --- key fields (T001) ---
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    ccode: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # BUKRS
+    # --- T001 master fields ---
+    name: Mapped[str] = mapped_column(String(200), nullable=False)  # BUTXT
+    country: Mapped[str | None] = mapped_column(String(3))  # LAND1
     region: Mapped[str | None] = mapped_column(String(50))
-    currency: Mapped[str | None] = mapped_column(String(3))
+    currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
+    city: Mapped[str | None] = mapped_column(String(25))  # ORT01
+    language: Mapped[str | None] = mapped_column(String(2))  # SPRAS
+    chart_of_accounts: Mapped[str | None] = mapped_column(String(4))  # KTOPL
+    fiscal_year_variant: Mapped[str | None] = mapped_column(String(2))  # PERIV
+    company: Mapped[str | None] = mapped_column(String(6))  # RCOMP (consolidation company)
+    credit_control_area: Mapped[str | None] = mapped_column(String(4))  # KKBER
+    fm_area: Mapped[str | None] = mapped_column(String(4))  # FMHRP (funds management area)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     attrs: Mapped[dict | None] = mapped_column(JSONB)
 
@@ -111,6 +123,8 @@ class Employee(TimestampMixin, Base):
 
 
 class LegacyCostCenter(TimestampMixin, Base):
+    """Cost center master — aligned with SAP CSKS/CSKT."""
+
     __tablename__ = "legacy_cost_center"
     __table_args__ = (
         UniqueConstraint("coarea", "cctr", "refresh_batch"),
@@ -120,18 +134,36 @@ class LegacyCostCenter(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    coarea: Mapped[str] = mapped_column(String(10), nullable=False)
-    cctr: Mapped[str] = mapped_column(String(20), nullable=False)
-    txtsh: Mapped[str | None] = mapped_column(String(40))
-    txtmi: Mapped[str | None] = mapped_column(String(200))
-    responsible: Mapped[str | None] = mapped_column(String(100))
-    ccode: Mapped[str | None] = mapped_column(String(10))
-    cctrcgy: Mapped[str | None] = mapped_column(String(4))
-    currency: Mapped[str | None] = mapped_column(String(3))
-    pctr: Mapped[str | None] = mapped_column(String(20))
+    # --- key fields (CSKS) ---
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
+    cctr: Mapped[str] = mapped_column(String(20), nullable=False)  # KOSTL
+    # --- descriptive (CSKT) ---
+    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT (short text)
+    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT (medium text)
+    # --- CSKS master fields ---
+    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
+    verak_user: Mapped[str | None] = mapped_column(String(24))  # VERAK_USER
+    ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
+    cctrcgy: Mapped[str | None] = mapped_column(String(4))  # KOSAR
+    currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
+    pctr: Mapped[str | None] = mapped_column(String(20))  # PRCTR
+    gsber: Mapped[str | None] = mapped_column(String(4))  # business area
+    werks: Mapped[str | None] = mapped_column(String(4))  # plant
+    abtei: Mapped[str | None] = mapped_column(String(12))  # department
+    func_area: Mapped[str | None] = mapped_column(String(16))  # FUNC_AREA
+    land1: Mapped[str | None] = mapped_column(String(3))  # country
+    nkost: Mapped[str | None] = mapped_column(String(20))  # successor cost center
+    # --- lock indicators ---
+    bkzkp: Mapped[str | None] = mapped_column(String(1))  # lock actual primary
+    bkzks: Mapped[str | None] = mapped_column(String(1))  # lock actual secondary
+    pkzkp: Mapped[str | None] = mapped_column(String(1))  # lock plan primary
+    pkzks: Mapped[str | None] = mapped_column(String(1))  # lock plan secondary
+    # --- validity ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATAB
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATBI
+    # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
@@ -139,6 +171,8 @@ class LegacyCostCenter(TimestampMixin, Base):
 
 
 class LegacyProfitCenter(TimestampMixin, Base):
+    """Profit center master — aligned with SAP CEPC/CEPCT."""
+
     __tablename__ = "legacy_profit_center"
     __table_args__ = (
         UniqueConstraint("coarea", "pctr", "refresh_batch"),
@@ -147,17 +181,31 @@ class LegacyProfitCenter(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    coarea: Mapped[str] = mapped_column(String(10), nullable=False)
-    pctr: Mapped[str] = mapped_column(String(20), nullable=False)
-    txtsh: Mapped[str | None] = mapped_column(String(40))
-    txtmi: Mapped[str | None] = mapped_column(String(200))
-    responsible: Mapped[str | None] = mapped_column(String(100))
-    ccode: Mapped[str | None] = mapped_column(String(10))
-    department: Mapped[str | None] = mapped_column(String(20))
-    currency: Mapped[str | None] = mapped_column(String(3))
+    # --- key fields (CEPC) ---
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
+    pctr: Mapped[str] = mapped_column(String(20), nullable=False)  # PRCTR
+    # --- descriptive (CEPCT) ---
+    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
+    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    # --- CEPC master fields ---
+    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
+    verak_user: Mapped[str | None] = mapped_column(String(24))  # VERAK_USER
+    ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
+    department: Mapped[str | None] = mapped_column(String(20))  # ABTEI
+    currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
+    segment: Mapped[str | None] = mapped_column(String(10))  # SEGMENT
+    land1: Mapped[str | None] = mapped_column(String(3))  # country
+    name1: Mapped[str | None] = mapped_column(String(40))  # NAME1
+    name2: Mapped[str | None] = mapped_column(String(40))  # NAME2
+    language: Mapped[str | None] = mapped_column(String(2))  # SPRAS
+    nprctr: Mapped[str | None] = mapped_column(String(10))  # successor profit center
+    lock_ind: Mapped[str | None] = mapped_column(String(1))  # LOCK_IND
+    # --- validity ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATAB
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATBI
+    # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
