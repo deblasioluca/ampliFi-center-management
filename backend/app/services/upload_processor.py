@@ -115,6 +115,8 @@ PC_COLUMNS = {
     "SPRAS": "language",
     "NPRCTR": "nprctr",
     "LOCK_IND": "lock_ind",
+    "PRCTR": "pctr",
+    "ABTEI": "department",
     "DATAB": "valid_from",
     "DATBI": "valid_to",
     # Legacy aliases
@@ -554,8 +556,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 "bkzks": row.get("bkzks"),
                 "pkzkp": row.get("pkzkp"),
                 "pkzks": row.get("pkzks"),
-                "is_active": is_act,
             }
+            if row.get("is_active"):
+                cc_kwargs["is_active"] = is_act
             # Parse date fields
             for dt_field in ("valid_from", "valid_to"):
                 raw = row.get(dt_field)
@@ -599,8 +602,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 "language": row.get("language"),
                 "nprctr": row.get("nprctr"),
                 "lock_ind": row.get("lock_ind"),
-                "is_active": is_act,
             }
+            if row.get("is_active"):
+                pc_kwargs["is_active"] = is_act
             for dt_field in ("valid_from", "valid_to"):
                 raw = row.get(dt_field)
                 if raw and isinstance(raw, str):
