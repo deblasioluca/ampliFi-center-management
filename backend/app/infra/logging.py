@@ -77,3 +77,7 @@ def setup_logging() -> None:
     for name in ("uvicorn", "uvicorn.access", "sqlalchemy.engine"):
         logging.getLogger(name).handlers.clear()
         logging.getLogger(name).propagate = True
+
+    # Silence verbose multipart parser debug output
+    logging.getLogger("multipart").setLevel(logging.WARNING)
+    logging.getLogger("python_multipart").setLevel(logging.WARNING)
