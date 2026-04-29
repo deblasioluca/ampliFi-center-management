@@ -117,21 +117,21 @@ setup: ## Initial setup: venv, deps, build frontend, DB init, seed, start
 	@echo "==> Creating virtual environment..."
 	@cd $(BACKEND_DIR) && python3 -m venv $(VENV)
 	@echo "==> Installing Python dependencies..."
-	@export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+	@export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 	 pip install $(PIP_TRUST) --upgrade pip > /dev/null 2>&1 && \
 	 pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -5
-	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
 	@echo "[ok] Backend dependencies installed"
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && \
 		echo "[ok] Frontend built"; \
 	else \
 		echo "[skip] No frontend directory"; \
 	fi
-	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
 	@echo "==> Initializing database..."
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
@@ -165,18 +165,18 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	git pull
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && \
 		echo "[ok] Frontend rebuilt"; \
 	else \
 		echo "[skip] No frontend directory"; \
 	fi
-	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
 	@echo "==> Installing Python dependencies..."
-	@export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+	@export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 	 pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -3
-	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
+	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
 	@echo "[ok] Backend dependencies updated"
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
