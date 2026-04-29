@@ -102,7 +102,7 @@ If your RHEL server goes through a corporate proxy for outbound internet access,
 |----------------|------------------------|------------------------------------------------------|
 | `pip install`  | **Yes**                | Makefile reads `HTTPS_PROXY`/`HTTP_PROXY` from `.env` and adds `--trusted-host` flags |
 | `npm install`  | **Yes**                | Makefile reads `HTTPS_PROXY`/`HTTP_PROXY` from `.env` for npm |
-| `git pull`     | **No**                 | Git does NOT use proxy env vars. SSL verification is disabled (`http.sslVerify false`) to handle corporate proxy SSL interception |
+| `git pull`     | **No**                 | Git does NOT use proxy env vars. SSL verification is disabled locally for this repo (`git config http.sslVerify false`) to handle corporate proxy SSL interception |
 | `dnf`, `curl`  | System-wide only       | Uses `/etc/environment` or shell profile settings    |
 
 > **Important:** The Makefile does **not** globally export `.env` variables. Proxy is only applied to `pip install` and `npm install` commands via inline `export` in each recipe. This is the same pattern as `sap-ai-consultant`.
