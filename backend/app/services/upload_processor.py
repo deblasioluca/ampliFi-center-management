@@ -96,6 +96,7 @@ CC_COLUMNS = {
     "CURRCCTR": "currency",
     "CURRENCY": "currency",
     "PCTRCCTR": "pctr",
+    "PCTR": "pctr",
     "IS_ACTIVE": "is_active",
 }
 PC_COLUMNS = {
@@ -538,14 +539,14 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 "mandt": row.get("mandt"),
                 "coarea": row["coarea"],
                 "cctr": row["cctr"],
-                "txtsh": row.get("txtsh", ""),
-                "txtmi": row.get("txtmi", ""),
-                "responsible": row.get("responsible", ""),
+                "txtsh": row.get("txtsh"),
+                "txtmi": row.get("txtmi"),
+                "responsible": row.get("responsible"),
                 "verak_user": row.get("verak_user"),
-                "cctrcgy": row.get("cctrcgy", ""),
-                "ccode": row.get("ccode", ""),
-                "currency": row.get("currency", ""),
-                "pctr": row.get("pctr", ""),
+                "cctrcgy": row.get("cctrcgy"),
+                "ccode": row.get("ccode"),
+                "currency": row.get("currency"),
+                "pctr": row.get("pctr"),
                 "gsber": row.get("gsber"),
                 "werks": row.get("werks"),
                 "abtei": row.get("abtei"),
@@ -569,6 +570,14 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if v is not None:
                         setattr(existing, k, v)
             else:
+                _cc_defaults = (
+                    "txtsh", "txtmi", "responsible", "cctrcgy",
+                    "ccode", "currency", "pctr",
+                )
+                for fld in _cc_defaults:
+                    if cc_kwargs.get(fld) is None:
+                        cc_kwargs[fld] = ""
+                cc_kwargs.setdefault("is_active", True)
                 cc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
@@ -586,15 +595,15 @@ def load_upload(batch_id: int, db: Session) -> dict:
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             pc_kwargs = {
                 "mandt": row.get("mandt"),
-                "coarea": row.get("coarea", ""),
+                "coarea": row.get("coarea") or "",
                 "pctr": row["pctr"],
-                "txtsh": row.get("txtsh", ""),
-                "txtmi": row.get("txtmi", ""),
-                "responsible": row.get("responsible", ""),
+                "txtsh": row.get("txtsh"),
+                "txtmi": row.get("txtmi"),
+                "responsible": row.get("responsible"),
                 "verak_user": row.get("verak_user"),
-                "ccode": row.get("ccode", ""),
-                "department": row.get("department", ""),
-                "currency": row.get("currency", ""),
+                "ccode": row.get("ccode"),
+                "department": row.get("department"),
+                "currency": row.get("currency"),
                 "segment": row.get("segment"),
                 "land1": row.get("land1"),
                 "name1": row.get("name1"),
@@ -614,6 +623,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if v is not None:
                         setattr(existing, k, v)
             else:
+                for fld in ("txtsh", "txtmi", "responsible", "ccode", "department", "currency"):
+                    if pc_kwargs.get(fld) is None:
+                        pc_kwargs[fld] = ""
+                pc_kwargs.setdefault("is_active", True)
                 pc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
@@ -682,7 +695,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             ent_kwargs = {
                 "mandt": row.get("mandt"),
                 "ccode": row["ccode"],
-                "name": row.get("name", row["ccode"]),
+                "name": row.get("name"),
                 "country": row.get("country"),
                 "region": row.get("region"),
                 "currency": row.get("currency"),
@@ -699,6 +712,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if k != "ccode" and v is not None:
                         setattr(existing, k, v)
             else:
+                if ent_kwargs.get("name") is None:
+                    ent_kwargs["name"] = row["ccode"]
                 db.add(Entity(**ent_kwargs))
             loaded += 1
 
