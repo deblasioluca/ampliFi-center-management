@@ -571,8 +571,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         setattr(existing, k, v)
             else:
                 _cc_defaults = (
-                    "txtsh", "txtmi", "responsible", "cctrcgy",
-                    "ccode", "currency", "pctr",
+                    "txtsh",
+                    "txtmi",
+                    "responsible",
+                    "cctrcgy",
+                    "ccode",
+                    "currency",
+                    "pctr",
                 )
                 for fld in _cc_defaults:
                     if cc_kwargs.get(fld) is None:
