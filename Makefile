@@ -126,10 +126,12 @@ setup: ## Initial setup: venv, deps, build frontend, DB init, seed, start
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
 		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
-		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3; \
+		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && \
+		echo "[ok] Frontend built"; \
+	else \
+		echo "[skip] No frontend directory"; \
 	fi
 	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
-	@echo "[ok] Frontend built"
 	@echo "==> Initializing database..."
 	@cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
@@ -158,15 +160,18 @@ print('[ok] Database tables created')" && \
 update: ## Pull latest code, rebuild frontend, reinstall backend, restart
 	@echo "=== ampliFi Update ==="
 	@git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true
+	@git config --global http.sslVerify false 2>/dev/null || true
 	@echo "==> Pulling latest code..."
 	git pull
 	@echo "==> Building frontend..."
 	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
 		export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
-		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3; \
+		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && \
+		echo "[ok] Frontend rebuilt"; \
+	else \
+		echo "[skip] No frontend directory"; \
 	fi
 	@unset HTTP_PROXY HTTPS_PROXY 2>/dev/null || true
-	@echo "[ok] Frontend rebuilt"
 	@echo "==> Installing Python dependencies..."
 	@export $$(grep -E '^HTTPS?_PROXY=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
@@ -214,6 +219,7 @@ logs: ## Tail the backend log
 
 git-setup: ## Store GitHub credentials so git pull works without prompting
 	@git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true
+	@git config --global http.sslVerify false 2>/dev/null || true
 	@echo "This will store your GitHub credentials on disk so 'git pull' and"
 	@echo "'make update' work without prompting for username/password each time."
 	@echo ""
