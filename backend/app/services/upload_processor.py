@@ -59,6 +59,31 @@ def _parse_date(raw: str) -> datetime | None:
 
 # Column mappings: normalize header names to model fields
 CC_COLUMNS = {
+    # SAP technical names (CSKS/CSKT)
+    "MANDT": "mandt",
+    "KOKRS": "coarea",
+    "KOSTL": "cctr",
+    "KTEXT": "txtsh",
+    "LTEXT": "txtmi",
+    "VERAK": "responsible",
+    "VERAK_USER": "verak_user",
+    "BUKRS": "ccode",
+    "KOSAR": "cctrcgy",
+    "WAERS": "currency",
+    "PRCTR": "pctr",
+    "GSBER": "gsber",
+    "WERKS": "werks",
+    "ABTEI": "abtei",
+    "FUNC_AREA": "func_area",
+    "LAND1": "land1",
+    "NKOST": "nkost",
+    "BKZKP": "bkzkp",
+    "BKZKS": "bkzks",
+    "PKZKP": "pkzkp",
+    "PKZKS": "pkzks",
+    "DATAB": "valid_from",
+    "DATBI": "valid_to",
+    # Legacy aliases
     "COAREA": "coarea",
     "CCTR": "cctr",
     "TXTSH": "txtsh",
@@ -75,6 +100,27 @@ CC_COLUMNS = {
     "IS_ACTIVE": "is_active",
 }
 PC_COLUMNS = {
+    # SAP technical names (CEPC/CEPCT)
+    "MANDT": "mandt",
+    "KOKRS": "coarea",
+    "KTEXT": "txtsh",
+    "LTEXT": "txtmi",
+    "VERAK": "responsible",
+    "VERAK_USER": "verak_user",
+    "BUKRS": "ccode",
+    "WAERS": "currency",
+    "SEGMENT": "segment",
+    "LAND1": "land1",
+    "NAME1": "name1",
+    "NAME2": "name2",
+    "SPRAS": "language",
+    "NPRCTR": "nprctr",
+    "LOCK_IND": "lock_ind",
+    "PRCTR": "pctr",
+    "ABTEI": "department",
+    "DATAB": "valid_from",
+    "DATBI": "valid_to",
+    # Legacy aliases
     "COAREA": "coarea",
     "PCTR": "pctr",
     "TXTMI": "txtmi",
@@ -114,6 +160,20 @@ BALANCE_COLUMNS = {
     "ACCOUNT_CLASS": "account_class",
 }
 ENTITY_COLUMNS = {
+    # SAP technical names (T001)
+    "MANDT": "mandt",
+    "BUKRS": "ccode",
+    "BUTXT": "name",
+    "LAND1": "country",
+    "WAERS": "currency",
+    "ORT01": "city",
+    "SPRAS": "language",
+    "KTOPL": "chart_of_accounts",
+    "PERIV": "fiscal_year_variant",
+    "RCOMP": "company",
+    "KKBER": "credit_control_area",
+    "FMHRP": "fm_area",
+    # Legacy aliases
     "COMPANY_CODE": "ccode",
     "CCODE": "ccode",
     "NAME": "name",
@@ -121,6 +181,8 @@ ENTITY_COLUMNS = {
     "REGION": "region",
     "CURRENCY": "currency",
     "IS_ACTIVE": "is_active",
+    "CITY": "city",
+    "LANGUAGE": "language",
 }
 
 # Primary employee columns mapped to model fields; remaining go to attrs JSON
@@ -504,28 +566,56 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             ).scalar_one_or_none()
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
+            cc_kwargs = {
+                "mandt": row.get("mandt"),
+                "coarea": row["coarea"],
+                "cctr": row["cctr"],
+                "txtsh": row.get("txtsh"),
+                "txtmi": row.get("txtmi"),
+                "responsible": row.get("responsible"),
+                "verak_user": row.get("verak_user"),
+                "cctrcgy": row.get("cctrcgy"),
+                "ccode": row.get("ccode"),
+                "currency": row.get("currency"),
+                "pctr": row.get("pctr"),
+                "gsber": row.get("gsber"),
+                "werks": row.get("werks"),
+                "abtei": row.get("abtei"),
+                "func_area": row.get("func_area"),
+                "land1": row.get("land1"),
+                "nkost": row.get("nkost"),
+                "bkzkp": row.get("bkzkp"),
+                "bkzks": row.get("bkzks"),
+                "pkzkp": row.get("pkzkp"),
+                "pkzks": row.get("pkzks"),
+            }
+            if row.get("is_active"):
+                cc_kwargs["is_active"] = is_act
+            # Parse date fields
+            for dt_field in ("valid_from", "valid_to"):
+                raw = row.get(dt_field)
+                if raw and isinstance(raw, str):
+                    cc_kwargs[dt_field] = _parse_date(raw)
             if existing:
-                existing.txtsh = row.get("txtsh", existing.txtsh)
-                existing.txtmi = row.get("txtmi", existing.txtmi)
-                existing.responsible = row.get("responsible", existing.responsible)
-                if row.get("is_active"):
-                    existing.is_active = is_act
+                for k, v in cc_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
             else:
-                db.add(
-                    LegacyCostCenter(
-                        coarea=row["coarea"],
-                        cctr=row["cctr"],
-                        txtsh=row.get("txtsh", ""),
-                        txtmi=row.get("txtmi", ""),
-                        responsible=row.get("responsible", ""),
-                        cctrcgy=row.get("cctrcgy", ""),
-                        ccode=row.get("ccode", ""),
-                        currency=row.get("currency", ""),
-                        pctr=row.get("pctr", ""),
-                        is_active=is_act,
-                        refresh_batch=batch.id,
-                    )
+                _cc_defaults = (
+                    "txtsh",
+                    "txtmi",
+                    "responsible",
+                    "cctrcgy",
+                    "ccode",
+                    "currency",
+                    "pctr",
                 )
+                for fld in _cc_defaults:
+                    if cc_kwargs.get(fld) is None:
+                        cc_kwargs[fld] = ""
+                cc_kwargs.setdefault("is_active", True)
+                cc_kwargs["refresh_batch"] = batch.id
+                db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
 
     elif batch.kind in ("profit_center", "profit_centers"):
@@ -539,27 +629,42 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             ).scalar_one_or_none()
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
+            pc_kwargs = {
+                "mandt": row.get("mandt"),
+                "coarea": row.get("coarea") or "",
+                "pctr": row["pctr"],
+                "txtsh": row.get("txtsh"),
+                "txtmi": row.get("txtmi"),
+                "responsible": row.get("responsible"),
+                "verak_user": row.get("verak_user"),
+                "ccode": row.get("ccode"),
+                "department": row.get("department"),
+                "currency": row.get("currency"),
+                "segment": row.get("segment"),
+                "land1": row.get("land1"),
+                "name1": row.get("name1"),
+                "name2": row.get("name2"),
+                "language": row.get("language"),
+                "nprctr": row.get("nprctr"),
+                "lock_ind": row.get("lock_ind"),
+            }
+            if row.get("is_active"):
+                pc_kwargs["is_active"] = is_act
+            for dt_field in ("valid_from", "valid_to"):
+                raw = row.get(dt_field)
+                if raw and isinstance(raw, str):
+                    pc_kwargs[dt_field] = _parse_date(raw)
             if existing:
-                existing.txtsh = row.get("txtsh", existing.txtsh)
-                existing.txtmi = row.get("txtmi", existing.txtmi)
-                existing.responsible = row.get("responsible", existing.responsible)
-                if row.get("is_active"):
-                    existing.is_active = is_act
+                for k, v in pc_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
             else:
-                db.add(
-                    LegacyProfitCenter(
-                        coarea=row.get("coarea", ""),
-                        pctr=row["pctr"],
-                        txtsh=row.get("txtsh", ""),
-                        txtmi=row.get("txtmi", ""),
-                        responsible=row.get("responsible", ""),
-                        ccode=row.get("ccode", ""),
-                        department=row.get("department", ""),
-                        currency=row.get("currency", ""),
-                        is_active=is_act,
-                        refresh_batch=batch.id,
-                    )
-                )
+                for fld in ("txtsh", "txtmi", "responsible", "ccode", "department", "currency"):
+                    if pc_kwargs.get(fld) is None:
+                        pc_kwargs[fld] = ""
+                pc_kwargs.setdefault("is_active", True)
+                pc_kwargs["refresh_batch"] = batch.id
+                db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
 
     elif batch.kind in ("balance", "balances"):
@@ -623,21 +728,29 @@ def load_upload(batch_id: int, db: Session) -> dict:
             existing = db.execute(
                 select(Entity).where(Entity.ccode == row["ccode"])
             ).scalar_one_or_none()
+            ent_kwargs = {
+                "mandt": row.get("mandt"),
+                "ccode": row["ccode"],
+                "name": row.get("name"),
+                "country": row.get("country"),
+                "region": row.get("region"),
+                "currency": row.get("currency"),
+                "city": row.get("city"),
+                "language": row.get("language"),
+                "chart_of_accounts": row.get("chart_of_accounts"),
+                "fiscal_year_variant": row.get("fiscal_year_variant"),
+                "company": row.get("company"),
+                "credit_control_area": row.get("credit_control_area"),
+                "fm_area": row.get("fm_area"),
+            }
             if existing:
-                existing.name = row.get("name", existing.name)
-                existing.country = row.get("country", existing.country)
-                existing.region = row.get("region", existing.region)
-                existing.currency = row.get("currency", existing.currency)
+                for k, v in ent_kwargs.items():
+                    if k != "ccode" and v is not None:
+                        setattr(existing, k, v)
             else:
-                db.add(
-                    Entity(
-                        ccode=row["ccode"],
-                        name=row.get("name", row["ccode"]),
-                        country=row.get("country"),
-                        region=row.get("region"),
-                        currency=row.get("currency"),
-                    )
-                )
+                if ent_kwargs.get("name") is None:
+                    ent_kwargs["name"] = row["ccode"]
+                db.add(Entity(**ent_kwargs))
             loaded += 1
 
     elif batch.kind in ("employee", "employees"):

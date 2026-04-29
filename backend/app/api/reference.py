@@ -48,11 +48,17 @@ def list_entities(
         "items": [
             {
                 "id": e.id,
+                "mandt": e.mandt,
                 "ccode": e.ccode,
                 "name": e.name,
                 "country": e.country,
                 "region": e.region,
                 "currency": e.currency,
+                "city": e.city,
+                "language": e.language,
+                "chart_of_accounts": e.chart_of_accounts,
+                "fiscal_year_variant": e.fiscal_year_variant,
+                "company": e.company,
                 "is_active": e.is_active,
             }
             for e in entities
@@ -101,15 +107,23 @@ def list_legacy_ccs(
         "items": [
             {
                 "id": c.id,
+                "mandt": c.mandt,
                 "coarea": c.coarea,
                 "cctr": c.cctr,
                 "txtsh": c.txtsh,
                 "txtmi": c.txtmi,
                 "responsible": c.responsible,
+                "verak_user": c.verak_user,
                 "cctrcgy": c.cctrcgy,
                 "ccode": c.ccode,
                 "currency": c.currency,
                 "pctr": c.pctr,
+                "gsber": c.gsber,
+                "werks": c.werks,
+                "abtei": c.abtei,
+                "func_area": c.func_area,
+                "land1": c.land1,
+                "nkost": c.nkost,
                 "is_active": c.is_active,
             }
             for c in ccs
@@ -154,14 +168,20 @@ def list_legacy_pcs(
         "items": [
             {
                 "id": p.id,
+                "mandt": p.mandt,
                 "coarea": p.coarea,
                 "pctr": p.pctr,
                 "txtsh": p.txtsh,
                 "txtmi": p.txtmi,
                 "responsible": p.responsible,
+                "verak_user": p.verak_user,
                 "department": p.department,
                 "ccode": p.ccode,
                 "currency": p.currency,
+                "segment": p.segment,
+                "land1": p.land1,
+                "name1": p.name1,
+                "name2": p.name2,
                 "is_active": p.is_active,
             }
             for p in pcs
