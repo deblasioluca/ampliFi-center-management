@@ -824,10 +824,12 @@ import Layout from '../../components/layout/Layout.astro';
     formData.append('file', fileInput.files[0]);
     document.getElementById('upload-btn').disabled = true;
     document.getElementById('upload-btn').textContent = 'Uploading...';
+    if (!token) { alert('Please log in first to upload data.'); document.getElementById('upload-btn').disabled = false; document.getElementById('upload-btn').textContent = 'Upload'; return; }
     try {
       var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
         method: 'POST', headers: authHdr, body: formData
       });
+      if (res.status === 401 || res.status === 403) throw new Error('Session expired — please log in again.');
       var data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Upload failed');
       resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
@@ -883,21 +885,30 @@ import Layout from '../../components/layout/Layout.astro';
   loadUploadHistory();
 
   window.validateUpload = async function(id) {
+    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/validate', { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
+    if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
     alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : ''));
     loadUploadHistory();
   };
   window.loadUpload = async function(id) {
+    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/load', { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
+    if (!res.ok) { alert('Load error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
     alert('Load: ' + d.status + (d.rows_loaded ? ' (' + d.rows_loaded + ' rows)' : ''));
     loadUploadHistory(); refreshAllData();
   };
   window.rollbackUpload = async function(id) {
     if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
+    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/rollback', { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
+    if (!res.ok) { alert('Rollback error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
     alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
     loadUploadHistory(); refreshAllData();
   };

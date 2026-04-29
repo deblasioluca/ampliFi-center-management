@@ -944,7 +944,7 @@ def create_upload(
     kind: str = Query(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     import pathlib
 
@@ -976,7 +976,7 @@ def create_upload(
 @router.get("/uploads")
 def list_uploads(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
     pag: PaginationParams = Depends(pagination),
 ) -> dict:
     total = db.execute(select(func.count(UploadBatch.id))).scalar() or 0
@@ -1012,7 +1012,7 @@ def list_uploads(
 def get_upload(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
@@ -1037,7 +1037,7 @@ def get_upload(
 def validate_upload_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     from app.services.upload_processor import validate_upload
 
@@ -1051,7 +1051,7 @@ def validate_upload_batch(
 def load_upload_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     from app.services.upload_processor import load_upload
 
@@ -1065,7 +1065,7 @@ def load_upload_batch(
 def rollback_upload_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
     from app.services.upload_processor import rollback_upload
 
@@ -1079,7 +1079,7 @@ def rollback_upload_batch(
 def list_upload_errors(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin")),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
     pag: PaginationParams = Depends(pagination),
 ) -> dict:
     total = (
