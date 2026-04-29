@@ -54,7 +54,7 @@ start: ## Start backend + frontend
 			echo "Frontend already running (PID $$(cat $(FRONTEND_PID)))"; \
 		else \
 			cd $(FRONTEND_DIR) && \
-			nohup npm run dev > $(ROOT_DIR)/amplifi-frontend.log 2>&1 & \
+			FRONTEND_PORT=$(FRONTEND_PORT) nohup npm run dev > $(ROOT_DIR)/amplifi-frontend.log 2>&1 & \
 			echo $$! > $(FRONTEND_PID) && \
 			echo "[ok] Frontend started on port $(FRONTEND_PORT) (PID $$!)"; \
 		fi; \
