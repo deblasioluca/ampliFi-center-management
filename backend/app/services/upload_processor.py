@@ -168,6 +168,18 @@ EMPLOYEE_COLUMNS = {
 }
 _EMPLOYEE_MODEL_FIELDS = set(EMPLOYEE_COLUMNS.values())
 
+HIERARCHY_FLAT_COLUMNS = {
+    "MANDT": "mandt",
+    "PERIOD": "period",
+    "NODEID": "nodeid",
+    "NODETYPE": "nodetype",
+    "NODENAME": "nodename",
+    "PARENTID": "parentid",
+    "CHILDID": "childid",
+    "NEXTID": "nextid",
+    "NODETEXT": "nodetext",
+}
+
 
 def _read_file(path: str) -> list[dict[str, str]]:
     """Read CSV or Excel file and return list of row dicts."""
@@ -243,6 +255,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "entities",
         "hierarchy",
         "hierarchies",
+        "hierarchies_flat",
         "employee",
         "employees",
     )
@@ -279,6 +292,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "entities": ENTITY_COLUMNS,
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
+        "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -400,6 +414,22 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     }
                 )
                 error_rows.add(i)
+        elif batch.kind == "hierarchies_flat":
+            if not row.get("nodeid"):
+                errors.append(
+                    {"row": i, "col": "NODEID", "code": "REQUIRED", "msg": "NODEID is required"}
+                )
+                error_rows.add(i)
+            if not row.get("nodename"):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "NODENAME",
+                        "code": "REQUIRED",
+                        "msg": "NODENAME is required",
+                    }
+                )
+                error_rows.add(i)
 
     # Store errors
     for err in errors[:5000]:
@@ -457,6 +487,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "entities": ENTITY_COLUMNS,
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
+        "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -750,6 +781,98 @@ def load_upload(batch_id: int, db: Session) -> dict:
             )
             loaded += 1
 
+    elif batch.kind == "hierarchies_flat":
+        # Build hierarchy from flat SAP node export (NODEID/PARENTID/CHILDID).
+        # Identify root nodes (no PARENTID) — each becomes a Hierarchy header.
+        # Nodes with children become HierarchyNodes; leaf-level rows become HierarchyLeaves.
+        node_lookup: dict[str, dict] = {}
+        children_of: dict[str, list[str]] = {}
+        for row in normalized:
+            nid = row.get("nodeid", "").strip()
+            if not nid:
+                continue
+            node_lookup[nid] = row
+            pid = row.get("parentid", "").strip()
+            if pid:
+                children_of.setdefault(pid, []).append(nid)
+
+        # Find root nodes (no parent)
+        roots = [
+            row for row in normalized if row.get("nodeid") and not row.get("parentid", "").strip()
+        ]
+        if not roots:
+            # Fallback: treat all nodes whose parentid is not in the dataset as roots
+            all_ids = set(node_lookup.keys())
+            roots = [
+                row
+                for row in normalized
+                if row.get("nodeid") and row.get("parentid", "").strip() not in all_ids
+            ]
+
+        hier_map_flat: dict[str, Hierarchy] = {}
+        for root_row in roots:
+            root_id = root_row.get("nodeid", "").strip()
+            setname = root_row.get("nodename", root_id)
+            description = root_row.get("nodetext", "")
+            h = Hierarchy(
+                setclass="FLAT",
+                setname=setname,
+                description=description,
+                coarea="",
+                refresh_batch=batch.id,
+            )
+            db.add(h)
+            db.flush()
+            hier_map_flat[root_id] = h
+            loaded += 1
+
+        # BFS to create nodes and leaves
+        from collections import deque
+
+        queue: deque[tuple[str, Hierarchy]] = deque()
+        for root_row in roots:
+            rid = root_row.get("nodeid", "").strip()
+            if rid in hier_map_flat:
+                queue.append((rid, hier_map_flat[rid]))
+
+        visited: set[str] = set()
+        seq_counter: dict[int, int] = {}
+        while queue:
+            parent_nid, hier = queue.popleft()
+            if parent_nid in visited:
+                continue
+            visited.add(parent_nid)
+            parent_row = node_lookup.get(parent_nid, {})
+            parent_name = parent_row.get("nodename", parent_nid)
+            child_ids = children_of.get(parent_nid, [])
+            for child_nid in child_ids:
+                child_row = node_lookup.get(child_nid, {})
+                child_name = child_row.get("nodename", child_nid)
+                hid = hier.id
+                seq_counter.setdefault(hid, 0)
+                seq_counter[hid] += 1
+                has_children = child_nid in children_of
+                if has_children:
+                    db.add(
+                        HierarchyNode(
+                            hierarchy_id=hid,
+                            parent_setname=parent_name,
+                            child_setname=child_name,
+                            seq=seq_counter[hid],
+                        )
+                    )
+                    queue.append((child_nid, hier))
+                else:
+                    db.add(
+                        HierarchyLeaf(
+                            hierarchy_id=hid,
+                            setname=parent_name,
+                            value=child_name,
+                            seq=seq_counter[hid],
+                        )
+                    )
+                loaded += 1
+
     batch.rows_loaded = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
@@ -785,7 +908,7 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind in ("employee", "employees"):
         r = db.execute(sa_delete(Employee).where(Employee.refresh_batch == batch.id))
         deleted = r.rowcount
-    elif batch.kind in ("hierarchy", "hierarchies"):
+    elif batch.kind in ("hierarchy", "hierarchies", "hierarchies_flat"):
         hier_ids = [
             h.id
             for h in db.execute(select(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
