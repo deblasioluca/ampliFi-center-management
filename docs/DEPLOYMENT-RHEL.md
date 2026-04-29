@@ -96,7 +96,18 @@ sudo systemctl restart postgresql
 
 If your RHEL server goes through a corporate proxy for outbound internet access, configure it **before** running any install commands.
 
-### System-wide proxy (for dnf, curl, wget)
+### What uses proxy and what does NOT
+
+| Command        | Uses proxy from `.env`? | Notes                                               |
+|----------------|------------------------|------------------------------------------------------|
+| `pip install`  | **Yes**                | Makefile reads `HTTPS_PROXY`/`HTTP_PROXY` from `.env` and adds `--trusted-host` flags |
+| `npm install`  | **Yes**                | Makefile reads `HTTPS_PROXY`/`HTTP_PROXY` from `.env` for npm |
+| `git pull`     | **No**                 | Git does NOT use proxy env vars. SSL verification is disabled locally for this repo (`git config http.sslVerify false`) to handle corporate proxy SSL interception |
+| `dnf`, `curl`  | System-wide only       | Uses `/etc/environment` or shell profile settings    |
+
+> **Important:** The Makefile does **not** globally export `.env` variables. Proxy is only applied to `pip install` and `npm install` commands via inline `export` in each recipe. This is the same pattern as `sap-ai-consultant`.
+
+### System-wide proxy (for dnf, curl, wget — before `.env` exists)
 
 ```bash
 # Add to /etc/environment or your shell profile
@@ -104,8 +115,6 @@ export HTTP_PROXY=http://proxy-host:port
 export HTTPS_PROXY=http://proxy-host:port
 export NO_PROXY=localhost,127.0.0.1,your-sap-host
 ```
-
-> **Note:** Once the `.env` file is created (step 4), the Makefile automatically reads `HTTPS_PROXY` / `HTTP_PROXY` from it and applies them to `pip install` (with `--trusted-host` flags). npm and git use the system-wide proxy if set.
 
 ---
 
