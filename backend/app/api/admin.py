@@ -1914,3 +1914,20 @@ def delete_explorer_source(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+# --- Application Logs ---
+
+
+@router.get("/logs")
+def get_application_logs(
+    limit: int = Query(200, ge=1, le=5000),
+    level: str | None = Query(None),
+    since: str | None = Query(None),
+    search: str | None = Query(None),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.infra.logging import get_recent_logs
+
+    entries = get_recent_logs(limit=limit, level=level, since=since, search=search)
+    return {"total": len(entries), "items": entries}
