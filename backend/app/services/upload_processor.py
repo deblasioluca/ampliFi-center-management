@@ -892,6 +892,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             cc_kwargs: dict = {}
             for field_name in _CC_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
                 val = row.get(field_name)
                 if val is not None:
                     cc_kwargs[field_name] = val if val else None
@@ -939,6 +941,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             pc_kwargs: dict = {}
             for field_name in _PC_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
                 val = row.get(field_name)
                 if val is not None:
                     pc_kwargs[field_name] = val if val else None
@@ -1027,10 +1031,19 @@ def load_upload(batch_id: int, db: Session) -> dict:
             ).scalar_one_or_none()
             ent_kwargs: dict = {}
             for field_name in _ENTITY_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
                 val = row.get(field_name)
                 if val is not None:
                     ent_kwargs[field_name] = val if val else None
             ent_kwargs["ccode"] = row["ccode"]
+            if row.get("is_active"):
+                ent_kwargs["is_active"] = row["is_active"].upper() not in (
+                    "FALSE",
+                    "0",
+                    "NO",
+                    "N",
+                )
             if existing:
                 for k, v in ent_kwargs.items():
                     if k != "ccode" and v is not None:
