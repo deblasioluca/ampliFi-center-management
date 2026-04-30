@@ -269,7 +269,7 @@ def _read_file(path: str) -> list[dict[str, str]]:
             raise ValueError("openpyxl not installed") from exc
     else:
         # Try UTF-8 first, fall back to cp1252 (European Excel default)
-        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        for enc in ("utf-8-sig", "cp1252"):
             try:
                 content = p.read_text(encoding=enc)
                 break

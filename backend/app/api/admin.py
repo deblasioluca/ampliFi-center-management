@@ -1053,6 +1053,7 @@ def validate_upload_batch(
     except Exception as exc:
         _log.exception("Validate batch %s failed unexpectedly", batch_id)
         try:
+            db.rollback()
             batch = db.get(UploadBatch, batch_id)
             if batch:
                 batch.status = "failed"
