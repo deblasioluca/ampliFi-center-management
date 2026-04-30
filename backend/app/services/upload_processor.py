@@ -899,11 +899,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
             cc_kwargs["cctr"] = row["cctr"]
             if row.get("is_active"):
                 cc_kwargs["is_active"] = is_act
-            # Parse date fields
-            for dt_field in ("valid_from", "valid_to"):
-                raw = row.get(dt_field)
+            # Populate legacy valid_from/valid_to from SAP DATS or legacy keys
+            for sap_key, legacy_key in (("datab", "valid_from"), ("datbi", "valid_to")):
+                raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
-                    cc_kwargs[dt_field] = _parse_date(raw)
+                    cc_kwargs[legacy_key] = _parse_date(raw)
             if existing:
                 for k, v in cc_kwargs.items():
                     if v is not None:
@@ -946,10 +946,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
             pc_kwargs["pctr"] = row["pctr"]
             if row.get("is_active"):
                 pc_kwargs["is_active"] = is_act
-            for dt_field in ("valid_from", "valid_to"):
-                raw = row.get(dt_field)
+            # Populate legacy valid_from/valid_to from SAP DATS or legacy keys
+            for sap_key, legacy_key in (("datab", "valid_from"), ("datbi", "valid_to")):
+                raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
-                    pc_kwargs[dt_field] = _parse_date(raw)
+                    pc_kwargs[legacy_key] = _parse_date(raw)
             if existing:
                 for k, v in pc_kwargs.items():
                     if v is not None:
