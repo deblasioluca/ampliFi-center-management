@@ -64,6 +64,8 @@ def get_recent_logs(
         since_normalized = since.replace("Z", "+00:00") if since.endswith("Z") else since
         try:
             since_dt = datetime.fromisoformat(since_normalized)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
         except ValueError:
             since_dt = None
         if since_dt:
