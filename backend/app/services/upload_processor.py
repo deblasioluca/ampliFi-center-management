@@ -278,10 +278,13 @@ BALANCE_COLUMNS = {
     "CURRENCY_GC2": "currency_gc2",
     "SUM_TC": "tc_amt",
     "TC_AMT": "tc_amt",
+    "SUM(P.GCR_POSTING_AMT_TC)": "tc_amt",
     "GC_AMT": "gc_amt",
     "SUM_GC2": "gc2_amt",
     "GC2_AMT": "gc2_amt",
+    "SUM(P.GCR_POSTING_AMT_GC2)": "gc2_amt",
     "COUNT": "posting_count",
+    "COUNT(*)": "posting_count",
     "POSTING_COUNT": "posting_count",
     "ACCOUNT_CLASS": "account_class",
 }
@@ -658,6 +661,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "profit_centers",
         "balance",
         "balances",
+        "balances_gcr",
         "entity",
         "entities",
         "hierarchy",
@@ -701,6 +705,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "profit_centers": PC_COLUMNS,
         "balance": BALANCE_COLUMNS,
         "balances": BALANCE_COLUMNS,
+        "balances_gcr": BALANCE_COLUMNS,
         "entity": ENTITY_COLUMNS,
         "entities": ENTITY_COLUMNS,
         "employee": EMPLOYEE_COLUMNS,
@@ -736,7 +741,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     {"row": i, "col": "PCTR", "code": "REQUIRED", "msg": "PCTR is required"},
                 )
                 error_rows.add(i)
-        elif batch.kind in ("balance", "balances"):
+        elif batch.kind in ("balance", "balances", "balances_gcr"):
             if not row.get("cctr"):
                 errors.append(
                     {
@@ -896,6 +901,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "profit_centers": PC_COLUMNS,
         "balance": BALANCE_COLUMNS,
         "balances": BALANCE_COLUMNS,
+        "balances_gcr": BALANCE_COLUMNS,
         "entity": ENTITY_COLUMNS,
         "entities": ENTITY_COLUMNS,
         "employee": EMPLOYEE_COLUMNS,
@@ -995,7 +1001,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
 
-    elif batch.kind in ("balance", "balances"):
+    elif batch.kind in ("balance", "balances", "balances_gcr"):
         for row in normalized:
             if not row.get("cctr"):
                 continue
@@ -1341,7 +1347,7 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
             sa_delete(LegacyProfitCenter).where(LegacyProfitCenter.refresh_batch == batch.id)
         )
         deleted = r.rowcount
-    elif batch.kind in ("balance", "balances"):
+    elif batch.kind in ("balance", "balances", "balances_gcr"):
         r = db.execute(sa_delete(Balance).where(Balance.refresh_batch == batch.id))
         deleted = r.rowcount
     elif batch.kind in ("entity", "entities"):

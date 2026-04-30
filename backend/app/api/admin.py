@@ -1494,6 +1494,19 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
             "42",
         ],
     },
+    "balances_gcr": {
+        "filename": "template_balances_gcr.csv",
+        "description": "Balance upload — GCR aggregated format (company code + center + amounts)",
+        "columns": [
+            "COMPANY_CODE",
+            "SAP_MANAGEMENT_CENTER",
+            "CURR_CODE_ISO_TC",
+            "SUM(P.GCR_POSTING_AMT_TC)",
+            "SUM(P.GCR_POSTING_AMT_GC2)",
+            "COUNT(*)",
+        ],
+        "sample_row": [],
+    },
     "entities": {
         "filename": "template_entities.csv",
         "description": "Entity (company code) upload — SAP T001 full structure",
