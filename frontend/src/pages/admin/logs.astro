@@ -1,0 +1,114 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+export const prerender = false;
+---
+
+<Layout title="Application Logs" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-bold">Application Logs</h2>
+    <div class="flex gap-2 items-center">
+      <select id="filter-level" class="input text-sm w-32">
+        <option value="">All Levels</option>
+        <option value="DEBUG">DEBUG</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+        <option value="CRITICAL">CRITICAL</option>
+      </select>
+      <input type="text" id="filter-search" class="input text-sm w-48" placeholder="Search logs..." />
+      <input type="datetime-local" id="filter-since" class="input text-sm" />
+      <select id="filter-limit" class="input text-sm w-24">
+        <option value="100">100</option>
+        <option value="200" selected>200</option>
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+        <option value="5000">5000</option>
+      </select>
+      <button id="btn-refresh" class="btn-amplifi text-sm">Refresh</button>
+      <label class="flex items-center gap-1 text-xs text-gray-500">
+        <input type="checkbox" id="auto-refresh" />
+        Auto (10s)
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="log-count" class="text-xs text-gray-400 mb-2"></div>
+    <div id="log-table" class="text-sm font-mono overflow-x-auto" style="max-height: 70vh; overflow-y: auto;">Loading...</div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('amplifi_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+  var autoInterval = null;
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v || ''; return d.innerHTML; }
+
+  function levelClass(lvl) {
+    if (lvl === 'ERROR' || lvl === 'CRITICAL') return 'text-red-600 font-bold';
+    if (lvl === 'WARNING') return 'text-amber-600 font-semibold';
+    if (lvl === 'DEBUG') return 'text-gray-400';
+    return 'text-gray-700';
+  }
+
+  function levelBg(lvl) {
+    if (lvl === 'ERROR' || lvl === 'CRITICAL') return 'bg-red-50';
+    if (lvl === 'WARNING') return 'bg-amber-50';
+    return '';
+  }
+
+  function loadLogs() {
+    var level = document.getElementById('filter-level').value;
+    var search = document.getElementById('filter-search').value;
+    var since = document.getElementById('filter-since').value;
+    var limit = document.getElementById('filter-limit').value;
+    var url = '/api/admin/logs?limit=' + limit;
+    if (level) url += '&level=' + encodeURIComponent(level);
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (since) url += '&since=' + encodeURIComponent(new Date(since).toISOString());
+
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('log-table');
+      var items = d.items || [];
+      document.getElementById('log-count').textContent = items.length + ' entries' + (d.total > items.length ? ' (of ' + d.total + ')' : '');
+      if (!items.length) { el.textContent = 'No log entries found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50 sticky top-0">' +
+        '<th class="py-2 px-2 text-left w-48">Timestamp</th>' +
+        '<th class="py-2 px-2 text-left w-20">Level</th>' +
+        '<th class="py-2 px-2 text-left w-40">Logger</th>' +
+        '<th class="py-2 px-2 text-left">Message</th></tr></thead><tbody>';
+      items.forEach(function(e) {
+        var ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '--';
+        html += '<tr class="border-b hover:bg-gray-50 ' + levelBg(e.level) + '">' +
+          '<td class="py-1 px-2 whitespace-nowrap text-gray-500">' + esc(ts) + '</td>' +
+          '<td class="py-1 px-2 ' + levelClass(e.level) + '">' + esc(e.level) + '</td>' +
+          '<td class="py-1 px-2 text-gray-500 truncate" style="max-width:200px" title="' + esc(e.logger) + '">' + esc(e.logger) + '</td>' +
+          '<td class="py-1 px-2 whitespace-pre-wrap break-all">' + esc(e.message) + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+    }).catch(function(e) { document.getElementById('log-table').textContent = 'Error: ' + e.message; });
+  }
+
+  loadLogs();
+
+  document.getElementById('btn-refresh').addEventListener('click', loadLogs);
+  document.getElementById('filter-level').addEventListener('change', loadLogs);
+  document.getElementById('filter-search').addEventListener('input', function() {
+    clearTimeout(this._debounce);
+    this._debounce = setTimeout(loadLogs, 400);
+  });
+  document.getElementById('filter-since').addEventListener('change', loadLogs);
+  document.getElementById('filter-limit').addEventListener('change', loadLogs);
+
+  document.getElementById('auto-refresh').addEventListener('change', function() {
+    if (this.checked) {
+      autoInterval = setInterval(loadLogs, 10000);
+    } else {
+      clearInterval(autoInterval);
+      autoInterval = null;
+    }
+  });
+</script>

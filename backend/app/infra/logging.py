@@ -4,10 +4,90 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
+from collections import deque
+from datetime import UTC, datetime
 
 import structlog
 
 from app.config import settings
+
+MAX_LOG_ENTRIES = 5000
+
+
+class _LogEntry:
+    __slots__ = ("timestamp", "level", "logger_name", "message")
+
+    def __init__(self, timestamp: str, level: str, logger_name: str, message: str):
+        self.timestamp = timestamp
+        self.level = level
+        self.logger_name = logger_name
+        self.message = message
+
+
+_log_buffer: deque[_LogEntry] = deque(maxlen=MAX_LOG_ENTRIES)
+_lock = threading.Lock()
+
+
+class RingBufferHandler(logging.Handler):
+    """Captures log records into an in-memory ring buffer for the admin UI."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        ts = datetime.fromtimestamp(record.created, tz=UTC).isoformat()
+        if ts.endswith("+00:00"):
+            ts = ts[:-6] + "Z"
+        entry = _LogEntry(
+            timestamp=ts,
+            level=record.levelname,
+            logger_name=record.name,
+            message=self.format(record),
+        )
+        with _lock:
+            _log_buffer.append(entry)
+
+
+def get_recent_logs(
+    limit: int = 200,
+    level: str | None = None,
+    since: str | None = None,
+    search: str | None = None,
+) -> list[dict]:
+    """Return recent log entries, newest first."""
+    with _lock:
+        entries = list(_log_buffer)
+    entries.reverse()
+
+    if level:
+        level_upper = level.upper()
+        entries = [e for e in entries if e.level == level_upper]
+    if since:
+        since_normalized = since.replace("Z", "+00:00") if since.endswith("Z") else since
+        try:
+            since_dt = datetime.fromisoformat(since_normalized)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
+        except ValueError:
+            since_dt = None
+        if since_dt:
+            entries = [
+                e
+                for e in entries
+                if datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")) >= since_dt
+            ]
+    if search:
+        search_lower = search.lower()
+        entries = [e for e in entries if search_lower in e.message.lower()]
+
+    return [
+        {
+            "timestamp": e.timestamp,
+            "level": e.level,
+            "logger": e.logger_name,
+            "message": e.message,
+        }
+        for e in entries[:limit]
+    ]
+
 
 SENSITIVE_KEYS = frozenset(
     {
@@ -69,9 +149,13 @@ def setup_logging() -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
+    ring_handler = RingBufferHandler()
+    ring_handler.setFormatter(formatter)
+
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
+    root.addHandler(ring_handler)
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
     for name in ("uvicorn", "uvicorn.access", "sqlalchemy.engine"):
