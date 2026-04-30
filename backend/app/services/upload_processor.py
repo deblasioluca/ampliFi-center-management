@@ -5,11 +5,11 @@ from __future__ import annotations
 import ast
 import csv
 import io
-import logging
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+import structlog
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.models.core import (
     UploadError,
 )
 
-log = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _DATE_FORMATS = (
     "%Y-%m-%d",
@@ -274,9 +274,15 @@ def _read_file(path: str) -> list[dict[str, str]]:
         clean_lines = [ln for ln in lines if not ln.startswith("*")]
         if not clean_lines or not clean_lines[0].strip():
             return []
-        reader = csv.DictReader(
-            io.StringIO("\n".join(clean_lines)), delimiter="," if "," in clean_lines[0] else "\t"
-        )
+        # Detect delimiter: comma, semicolon, or tab
+        header_line = clean_lines[0]
+        if "\t" in header_line:
+            delim = "\t"
+        elif ";" in header_line and "," not in header_line:
+            delim = ";"
+        else:
+            delim = ","
+        reader = csv.DictReader(io.StringIO("\n".join(clean_lines)), delimiter=delim)
         return [dict(row) for row in reader]
 
 
@@ -306,6 +312,13 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     if not batch.storage_uri:
         raise ValueError("No file associated with this batch")
 
+    logger.info(
+        "upload.validate.start",
+        batch_id=batch_id,
+        kind=batch.kind,
+        storage_uri=batch.storage_uri,
+    )
+
     supported = (
         "cost_center",
         "cost_centers",
@@ -331,6 +344,12 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     try:
         rows = _read_file(batch.storage_uri)
     except Exception as e:
+        logger.error(
+            "upload.validate.file_read_error",
+            batch_id=batch_id,
+            storage_uri=batch.storage_uri,
+            error=str(e),
+        )
         batch.status = "failed"
         db.add(
             UploadError(

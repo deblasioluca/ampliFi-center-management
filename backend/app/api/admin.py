@@ -951,12 +951,12 @@ def create_upload(
     from app.config import settings
 
     content = file.file.read()
-    storage_dir = pathlib.Path(settings.storage_local_path) / "uploads"
+    storage_dir = pathlib.Path(settings.storage_local_path).resolve() / "uploads"
     storage_dir.mkdir(parents=True, exist_ok=True)
     fname = pathlib.Path(file.filename or "unknown").name  # strip directory components
     unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_"
     dest = storage_dir / (unique_prefix + fname)
-    if not dest.resolve().is_relative_to(storage_dir.resolve()):
+    if not dest.resolve().is_relative_to(storage_dir):
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)
 
@@ -965,7 +965,7 @@ def create_upload(
         filename=fname,
         status="uploaded",
         uploaded_by=_user.id,
-        storage_uri=str(dest),
+        storage_uri=str(dest.resolve()),
     )
     db.add(batch)
     db.commit()
@@ -1039,12 +1039,20 @@ def validate_upload_batch(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
+    import logging as _logging
+
     from app.services.upload_processor import validate_upload
 
+    _log = _logging.getLogger(__name__)
     try:
-        return validate_upload(batch_id, db)
+        result = validate_upload(batch_id, db)
+        _log.info("Validate batch %s: %s", batch_id, result)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception as exc:
+        _log.exception("Validate batch %s failed unexpectedly", batch_id)
+        raise HTTPException(status_code=500, detail=f"Validation error: {exc}") from None
 
 
 @router.post("/uploads/{batch_id}/load")

@@ -891,7 +891,11 @@ import Layout from '../../components/layout/Layout.astro';
     if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
     if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : ''));
+    if (d.status === 'failed') {
+      alert('Validation failed: ' + (d.error || 'Check upload errors for details'));
+    } else {
+      alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : '') + ' — ' + (d.rows_valid || 0) + ' valid rows');
+    }
     loadUploadHistory();
   };
   window.loadUpload = async function(id) {
