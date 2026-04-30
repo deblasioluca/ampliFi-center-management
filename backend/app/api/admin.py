@@ -1047,7 +1047,8 @@ def _run_validate_in_background(batch_id: int) -> None:
         if not batch or batch.status != "validating":
             _log.info(
                 "Validate batch %s aborted — status: %s",
-                batch_id, batch.status if batch else "deleted",
+                batch_id,
+                batch.status if batch else "deleted",
             )
             return
         result = validate_upload(batch_id, db)
@@ -1080,7 +1081,8 @@ def _run_load_in_background(batch_id: int) -> None:
         if not batch or batch.status != "loading":
             _log.info(
                 "Load batch %s aborted — status: %s",
-                batch_id, batch.status if batch else "deleted",
+                batch_id,
+                batch.status if batch else "deleted",
             )
             return
         result = load_upload(batch_id, db)
