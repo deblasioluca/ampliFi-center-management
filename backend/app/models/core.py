@@ -32,27 +32,97 @@ class Entity(TimestampMixin, Base):
     __table_args__ = {"schema": "cleanup"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # --- key fields (T001) ---
+    # --- key fields ---
     mandt: Mapped[str | None] = mapped_column(String(3))
     ccode: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # BUKRS
     # --- T001 master fields ---
     name: Mapped[str] = mapped_column(String(200), nullable=False)  # BUTXT
+    city: Mapped[str | None] = mapped_column(String(25))  # ORT01
     country: Mapped[str | None] = mapped_column(String(3))  # LAND1
     region: Mapped[str | None] = mapped_column(String(50))
     currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
-    city: Mapped[str | None] = mapped_column(String(25))  # ORT01
     language: Mapped[str | None] = mapped_column(String(2))  # SPRAS
     chart_of_accounts: Mapped[str | None] = mapped_column(String(4))  # KTOPL
+    waabw: Mapped[str | None] = mapped_column(String(2))
     fiscal_year_variant: Mapped[str | None] = mapped_column(String(2))  # PERIV
-    company: Mapped[str | None] = mapped_column(String(6))  # RCOMP (consolidation company)
+    kokfi: Mapped[str | None] = mapped_column(String(1))
+    company: Mapped[str | None] = mapped_column(String(6))  # RCOMP
+    adrnr: Mapped[str | None] = mapped_column(String(10))
+    stceg: Mapped[str | None] = mapped_column(String(20))
+    fikrs: Mapped[str | None] = mapped_column(String(4))  # FM area
+    fm_area: Mapped[str | None] = mapped_column(String(4))  # FIKRS alias
+    xfmco: Mapped[str | None] = mapped_column(String(1))
+    xfmcb: Mapped[str | None] = mapped_column(String(1))
+    xfmca: Mapped[str | None] = mapped_column(String(1))
+    txjcd: Mapped[str | None] = mapped_column(String(15))
+    fmhrdate: Mapped[str | None] = mapped_column(String(8))
+    # --- SI_T001 include ---
+    buvar: Mapped[str | None] = mapped_column(String(1))
+    fdbuk: Mapped[str | None] = mapped_column(String(4))
+    xfdis: Mapped[str | None] = mapped_column(String(1))
+    xvalv: Mapped[str | None] = mapped_column(String(1))
+    xskfn: Mapped[str | None] = mapped_column(String(1))
     credit_control_area: Mapped[str | None] = mapped_column(String(4))  # KKBER
-    fm_area: Mapped[str | None] = mapped_column(String(4))  # FMHRP (funds management area)
+    xmwsn: Mapped[str | None] = mapped_column(String(1))
+    mregl: Mapped[str | None] = mapped_column(String(4))
+    xgsbe: Mapped[str | None] = mapped_column(String(1))
+    xgjrv: Mapped[str | None] = mapped_column(String(1))
+    xkdft: Mapped[str | None] = mapped_column(String(1))
+    xprod: Mapped[str | None] = mapped_column(String(1))
+    xeink: Mapped[str | None] = mapped_column(String(1))
+    xjvaa: Mapped[str | None] = mapped_column(String(1))
+    xvvwa: Mapped[str | None] = mapped_column(String(1))
+    xslta: Mapped[str | None] = mapped_column(String(1))
+    xfdmm: Mapped[str | None] = mapped_column(String(1))
+    xfdsd: Mapped[str | None] = mapped_column(String(1))
+    xextb: Mapped[str | None] = mapped_column(String(1))
+    ebukr: Mapped[str | None] = mapped_column(String(4))
+    ktop2: Mapped[str | None] = mapped_column(String(4))
+    umkrs: Mapped[str | None] = mapped_column(String(4))
+    bukrs_glob: Mapped[str | None] = mapped_column(String(6))
+    fstva: Mapped[str | None] = mapped_column(String(4))
+    opvar: Mapped[str | None] = mapped_column(String(4))
+    xcovr: Mapped[str | None] = mapped_column(String(1))
+    txkrs: Mapped[str | None] = mapped_column(String(1))
+    wfvar: Mapped[str | None] = mapped_column(String(4))
+    xbbbf: Mapped[str | None] = mapped_column(String(1))
+    xbbbe: Mapped[str | None] = mapped_column(String(1))
+    xbbba: Mapped[str | None] = mapped_column(String(1))
+    xbbko: Mapped[str | None] = mapped_column(String(1))
+    xstdt: Mapped[str | None] = mapped_column(String(1))
+    mwskv: Mapped[str | None] = mapped_column(String(2))
+    mwska: Mapped[str | None] = mapped_column(String(2))
+    impda: Mapped[str | None] = mapped_column(String(1))
+    xnegp: Mapped[str | None] = mapped_column(String(1))
+    xkkbi: Mapped[str | None] = mapped_column(String(1))
+    wt_newwt: Mapped[str | None] = mapped_column(String(1))
+    pp_pdate: Mapped[str | None] = mapped_column(String(1))
+    infmt: Mapped[str | None] = mapped_column(String(4))
+    fstvare: Mapped[str | None] = mapped_column(String(4))
+    kopim: Mapped[str | None] = mapped_column(String(1))
+    dkweg: Mapped[str | None] = mapped_column(String(1))
+    offsacct: Mapped[str | None] = mapped_column(String(1))
+    bapovar: Mapped[str | None] = mapped_column(String(2))
+    xcos: Mapped[str | None] = mapped_column(String(1))
+    xcession: Mapped[str | None] = mapped_column(String(1))
+    xsplt: Mapped[str | None] = mapped_column(String(1))
+    surccm: Mapped[str | None] = mapped_column(String(1))
+    dtprov: Mapped[str | None] = mapped_column(String(2))
+    dtamtc: Mapped[str | None] = mapped_column(String(2))
+    dttaxc: Mapped[str | None] = mapped_column(String(2))
+    dttdsp: Mapped[str | None] = mapped_column(String(2))
+    dtaxr: Mapped[str | None] = mapped_column(String(4))
+    xvatdate: Mapped[str | None] = mapped_column(String(1))
+    pst_per_var: Mapped[str | None] = mapped_column(String(1))
+    xbbsc: Mapped[str | None] = mapped_column(String(1))
+    f_obsolete: Mapped[str | None] = mapped_column(String(1))
+    # --- app fields ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     attrs: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class Employee(TimestampMixin, Base):
-    """Employee master data (sourced from SAP HR or manual CSV upload)."""
+    """Employee master data — aligned with SAP ZUHL_GRD_GPF."""
 
     __tablename__ = "employee"
     __table_args__ = (
@@ -64,7 +134,147 @@ class Employee(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    gpn: Mapped[str] = mapped_column(String(20), nullable=False)
+    # --- key fields (ZUHL_GRD_GPF) ---
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    gpn: Mapped[str] = mapped_column(String(20), nullable=False)  # GPN
+    # --- personal data ---
+    name: Mapped[str | None] = mapped_column(String(40))  # NAME (Nachname)
+    vorname: Mapped[str | None] = mapped_column(String(40))  # VORNAME
+    sprachenschluess: Mapped[str | None] = mapped_column(String(1))
+    anredecode: Mapped[str | None] = mapped_column(String(1))
+    userid: Mapped[str | None] = mapped_column(String(6))
+    eintrittsdatum: Mapped[str | None] = mapped_column(String(8))
+    oe_leiter: Mapped[str | None] = mapped_column(String(1))
+    # --- workplace 1 ---
+    int_tel_nr_1ap: Mapped[str | None] = mapped_column(String(20))
+    ext_tel_nr_1ap: Mapped[str | None] = mapped_column(String(25))
+    nl_code_geb_1ap: Mapped[str | None] = mapped_column(String(8))
+    strasse_geb_1ap: Mapped[str | None] = mapped_column(String(30))
+    stockwerk_1ap: Mapped[str | None] = mapped_column(String(10))
+    bueronummer_1ap: Mapped[str | None] = mapped_column(String(8))
+    # --- cost center / org ---
+    kstst: Mapped[str | None] = mapped_column(String(10))
+    kstst_text: Mapped[str | None] = mapped_column(String(20))
+    oe_objekt_id: Mapped[str | None] = mapped_column(String(8))
+    oe_code: Mapped[str | None] = mapped_column(String(12))
+    oe_text: Mapped[str | None] = mapped_column(String(40))
+    sap_bukrs: Mapped[str | None] = mapped_column(String(4))
+    sap_bukrs_text: Mapped[str | None] = mapped_column(String(25))
+    t_nummer: Mapped[str | None] = mapped_column(String(12))
+    instrad_1: Mapped[str | None] = mapped_column(String(35))
+    instrad_2: Mapped[str | None] = mapped_column(String(35))
+    kstst_einsatz_oe: Mapped[str | None] = mapped_column(String(10))
+    personalber_text: Mapped[str | None] = mapped_column(String(30))
+    nl_oe_ma: Mapped[str | None] = mapped_column(String(12))
+    nl_text: Mapped[str | None] = mapped_column(String(40))
+    gsfld_oe_ma: Mapped[str | None] = mapped_column(String(3))
+    gsfld_oe_ma_text: Mapped[str | None] = mapped_column(String(30))
+    ma_gruppe: Mapped[str | None] = mapped_column(String(3))
+    ma_gruppe_text: Mapped[str | None] = mapped_column(String(20))
+    ma_kreis: Mapped[str | None] = mapped_column(String(2))
+    ma_kreis_text: Mapped[str | None] = mapped_column(String(25))
+    rang_code: Mapped[str | None] = mapped_column(String(4))
+    rang_text: Mapped[str | None] = mapped_column(String(35))
+    akademischer_tit: Mapped[str | None] = mapped_column(String(15))
+    ubs_funk: Mapped[str | None] = mapped_column(String(5))
+    ubs_funk_text: Mapped[str | None] = mapped_column(String(50))
+    # --- manager ---
+    gpn_vg_ma: Mapped[str | None] = mapped_column(String(8))
+    name_vg_ma: Mapped[str | None] = mapped_column(String(50))
+    ueg_oe_objektid: Mapped[str | None] = mapped_column(String(8))
+    ueg_oe_bez: Mapped[str | None] = mapped_column(String(12))
+    ueg_oe_krz: Mapped[str | None] = mapped_column(String(40))
+    bschgrad: Mapped[str | None] = mapped_column(String(3))
+    personalbereich: Mapped[str | None] = mapped_column(String(4))
+    fax_ext_1ap: Mapped[str | None] = mapped_column(String(25))
+    email_adresse: Mapped[str | None] = mapped_column(String(80))
+    ma_kz: Mapped[str | None] = mapped_column(String(3))
+    firma_ext_ma: Mapped[str | None] = mapped_column(String(40))
+    begdat_orgwechs: Mapped[str | None] = mapped_column(String(8))
+    austritt_datum: Mapped[str | None] = mapped_column(String(8))
+    natel_nummer: Mapped[str | None] = mapped_column(String(25))
+    pager_nummer: Mapped[str | None] = mapped_column(String(25))
+    plz_geb_1ap: Mapped[str | None] = mapped_column(String(10))
+    ort_geb_1ap: Mapped[str | None] = mapped_column(String(20))
+    einsatz_oe_krz: Mapped[str | None] = mapped_column(String(12))
+    einsatz_oe_text: Mapped[str | None] = mapped_column(String(40))
+    division: Mapped[str | None] = mapped_column(String(14))
+    geb_cod_1ap: Mapped[str | None] = mapped_column(String(8))
+    rang_krz: Mapped[str | None] = mapped_column(String(4))
+    systemdatum: Mapped[str | None] = mapped_column(String(8))
+    ap_nummer: Mapped[str | None] = mapped_column(String(30))
+    einsatz_oe_objid: Mapped[str | None] = mapped_column(String(8))
+    # --- workplace 2 ---
+    int_tel_nr_2ap: Mapped[str | None] = mapped_column(String(20))
+    ext_tel_nr_2ap: Mapped[str | None] = mapped_column(String(25))
+    bueronummer_2ap: Mapped[str | None] = mapped_column(String(8))
+    geb_cod_2ap: Mapped[str | None] = mapped_column(String(8))
+    strasse_geb_2ap: Mapped[str | None] = mapped_column(String(30))
+    plz_geb_2ap: Mapped[str | None] = mapped_column(String(10))
+    ort_geb_2ap: Mapped[str | None] = mapped_column(String(20))
+    geb_cod_geb_2ap: Mapped[str | None] = mapped_column(String(8))
+    fax_nr_2ap: Mapped[str | None] = mapped_column(String(25))
+    stockwerk_2ap: Mapped[str | None] = mapped_column(String(10))
+    gpin_nummer: Mapped[str | None] = mapped_column(String(9))
+    nat: Mapped[str | None] = mapped_column(String(3))
+    # --- address 1 ---
+    land_geb_1ap: Mapped[str | None] = mapped_column(String(3))
+    reg_nr_1ap: Mapped[str | None] = mapped_column(String(4))
+    postf_1ap: Mapped[str | None] = mapped_column(String(30))
+    plz_postfadr_1ap: Mapped[str | None] = mapped_column(String(10))
+    ort_postfadr_1ap: Mapped[str | None] = mapped_column(String(20))
+    # --- address 2 ---
+    land_geb_2ap: Mapped[str | None] = mapped_column(String(3))
+    reg_nr_2ap: Mapped[str | None] = mapped_column(String(4))
+    postf_2ap: Mapped[str | None] = mapped_column(String(30))
+    plz_postfadr_2ap: Mapped[str | None] = mapped_column(String(10))
+    ort_postfadr_2ap: Mapped[str | None] = mapped_column(String(20))
+    letzter_arb_tag: Mapped[str | None] = mapped_column(String(8))
+    abac_nl_ag_einoe: Mapped[str | None] = mapped_column(String(6))
+    vertr_ende_exma: Mapped[str | None] = mapped_column(String(8))
+    untergrp_code: Mapped[str | None] = mapped_column(String(4))
+    # --- business name variants ---
+    bs_first_name: Mapped[str | None] = mapped_column(String(50))
+    bs_last_name: Mapped[str | None] = mapped_column(String(50))
+    name_uc: Mapped[str | None] = mapped_column(String(40))
+    vorname_uc: Mapped[str | None] = mapped_column(String(40))
+    name_ph: Mapped[str | None] = mapped_column(String(20))
+    vorname_ph: Mapped[str | None] = mapped_column(String(20))
+    ma_oe: Mapped[str | None] = mapped_column(String(4))
+    updated_id: Mapped[str | None] = mapped_column(String(10))
+    ma_kstst: Mapped[str | None] = mapped_column(String(4))
+    business_name: Mapped[str | None] = mapped_column(String(50))
+    # --- job category ---
+    job_categ_code: Mapped[str | None] = mapped_column(String(6))
+    job_categ_descr: Mapped[str | None] = mapped_column(String(30))
+    costcenter_code: Mapped[str | None] = mapped_column(String(10))
+    costcenter_descr: Mapped[str | None] = mapped_column(String(50))
+    # --- GCRS/Management accounting ---
+    manacs_func_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_func_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_segm_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_segm_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_sect_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_sect_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_bsar_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_bsar_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_bsun_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_bsun_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_bsgp_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_bsgp_desc: Mapped[str | None] = mapped_column(String(50))
+    manacs_reg_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_reg_descr: Mapped[str | None] = mapped_column(String(50))
+    manacs_loc_code: Mapped[str | None] = mapped_column(String(10))
+    manacs_loc_descr: Mapped[str | None] = mapped_column(String(50))
+    regulatory_reg: Mapped[str | None] = mapped_column(String(5))
+    supervisors_gpin: Mapped[str | None] = mapped_column(String(11))
+    uuname: Mapped[str | None] = mapped_column(String(20))
+    web_sso: Mapped[str | None] = mapped_column(String(20))
+    sap_user: Mapped[str | None] = mapped_column(String(12))
+    hr_company: Mapped[str | None] = mapped_column(String(3))
+    regulatory_regst: Mapped[str | None] = mapped_column(String(3))
+    global_cc: Mapped[str | None] = mapped_column(String(10))
+    # --- legacy app fields (backward compat) ---
     bs_name: Mapped[str | None] = mapped_column(String(200))
     bs_firstname: Mapped[str | None] = mapped_column(String(100))
     bs_lastname: Mapped[str | None] = mapped_column(String(100))
@@ -77,39 +287,33 @@ class Employee(TimestampMixin, Base):
     gender_code: Mapped[str | None] = mapped_column(String(5))
     user_id_pid: Mapped[str | None] = mapped_column(String(30))
     user_id_tnumber: Mapped[str | None] = mapped_column(String(30))
-    uuname: Mapped[str | None] = mapped_column(String(30))
-    # Organizational
     ou_pk: Mapped[str | None] = mapped_column(String(20))
     ou_cd: Mapped[str | None] = mapped_column(String(20))
     ou_desc: Mapped[str | None] = mapped_column(String(200))
     wrk_in_ou_pk: Mapped[str | None] = mapped_column(String(20))
     wrk_in_ou_cd: Mapped[str | None] = mapped_column(String(20))
     wrk_in_ou_desc: Mapped[str | None] = mapped_column(String(200))
-    # Cost center / company
     local_cc_cd: Mapped[str | None] = mapped_column(String(20))
     local_cc_desc: Mapped[str | None] = mapped_column(String(200))
     gcrs_comp_cd: Mapped[str | None] = mapped_column(String(20))
     gcrs_comp_desc: Mapped[str | None] = mapped_column(String(200))
     cost_pc_cd_e_ou: Mapped[str | None] = mapped_column(String(20))
     cost_pc_cd_w_ou: Mapped[str | None] = mapped_column(String(20))
-    # Manager
     lm_gpn: Mapped[str | None] = mapped_column(String(20))
     lm_bs_firstname: Mapped[str | None] = mapped_column(String(100))
     lm_bs_lastname: Mapped[str | None] = mapped_column(String(100))
     supervisor_gpn: Mapped[str | None] = mapped_column(String(20))
-    # Job / rank
     rank_cd: Mapped[str | None] = mapped_column(String(20))
     rank_desc: Mapped[str | None] = mapped_column(String(200))
     job_desc: Mapped[str | None] = mapped_column(String(200))
     empl_class: Mapped[str | None] = mapped_column(String(20))
     full_time_eq: Mapped[str | None] = mapped_column(String(10))
     head_of_own_ou: Mapped[str | None] = mapped_column(String(5))
-    # Location
     reg_region: Mapped[str | None] = mapped_column(String(50))
     locn_city_name_1: Mapped[str | None] = mapped_column(String(100))
     locn_ctry_cd_1: Mapped[str | None] = mapped_column(String(5))
     building_cd_1: Mapped[str | None] = mapped_column(String(20))
-    # All remaining fields stored as JSON
+    # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
@@ -118,7 +322,9 @@ class Employee(TimestampMixin, Base):
     @property
     def display_name(self) -> str:
         """Format as 'GPN Name' for owner display."""
-        name = self.bs_name or f"{self.bs_firstname or ''} {self.bs_lastname or ''}".strip()
+        sap_name = f"{self.vorname or ''} {self.name or ''}".strip()
+        legacy_name = self.bs_name or f"{self.bs_firstname or ''} {self.bs_lastname or ''}".strip()
+        name = sap_name or legacy_name
         return f"{self.gpn} {name}".strip()
 
 
@@ -139,30 +345,125 @@ class LegacyCostCenter(TimestampMixin, Base):
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
     cctr: Mapped[str] = mapped_column(String(20), nullable=False)  # KOSTL
     # --- descriptive (CSKT) ---
-    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT (short text)
-    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT (medium text)
-    # --- CSKS master fields ---
-    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(24))  # VERAK_USER
+    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
+    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    # --- CSKS standard fields ---
+    datbi: Mapped[str | None] = mapped_column(String(8))
+    datab: Mapped[str | None] = mapped_column(String(8))
+    bkzkp: Mapped[str | None] = mapped_column(String(1))
+    pkzkp: Mapped[str | None] = mapped_column(String(1))
     ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
+    gsber: Mapped[str | None] = mapped_column(String(4))
     cctrcgy: Mapped[str | None] = mapped_column(String(4))  # KOSAR
-    currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
+    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
+    verak_user: Mapped[str | None] = mapped_column(String(12))
+    currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
+    kalsm: Mapped[str | None] = mapped_column(String(6))
+    txjcd: Mapped[str | None] = mapped_column(String(15))
     pctr: Mapped[str | None] = mapped_column(String(20))  # PRCTR
-    gsber: Mapped[str | None] = mapped_column(String(4))  # business area
-    werks: Mapped[str | None] = mapped_column(String(4))  # plant
-    abtei: Mapped[str | None] = mapped_column(String(12))  # department
-    func_area: Mapped[str | None] = mapped_column(String(16))  # FUNC_AREA
-    land1: Mapped[str | None] = mapped_column(String(3))  # country
-    nkost: Mapped[str | None] = mapped_column(String(20))  # successor cost center
-    # --- lock indicators ---
-    bkzkp: Mapped[str | None] = mapped_column(String(1))  # lock actual primary
-    bkzks: Mapped[str | None] = mapped_column(String(1))  # lock actual secondary
-    pkzkp: Mapped[str | None] = mapped_column(String(1))  # lock plan primary
-    pkzks: Mapped[str | None] = mapped_column(String(1))  # lock plan secondary
-    # --- validity ---
+    werks: Mapped[str | None] = mapped_column(String(4))
+    logsystem: Mapped[str | None] = mapped_column(String(10))
+    # --- SI_CSKS include ---
+    ersda: Mapped[str | None] = mapped_column(String(8))
+    usnam: Mapped[str | None] = mapped_column(String(12))
+    bkzks: Mapped[str | None] = mapped_column(String(1))
+    bkzer: Mapped[str | None] = mapped_column(String(1))
+    bkzob: Mapped[str | None] = mapped_column(String(1))
+    pkzks: Mapped[str | None] = mapped_column(String(1))
+    pkzer: Mapped[str | None] = mapped_column(String(1))
+    vmeth: Mapped[str | None] = mapped_column(String(2))
+    mgefl: Mapped[str | None] = mapped_column(String(1))
+    abtei: Mapped[str | None] = mapped_column(String(12))
+    nkost: Mapped[str | None] = mapped_column(String(10))
+    kvewe: Mapped[str | None] = mapped_column(String(1))
+    kappl: Mapped[str | None] = mapped_column(String(2))
+    koszschl: Mapped[str | None] = mapped_column(String(6))
+    land1: Mapped[str | None] = mapped_column(String(3))
+    anred: Mapped[str | None] = mapped_column(String(15))
+    name1: Mapped[str | None] = mapped_column(String(35))
+    name2: Mapped[str | None] = mapped_column(String(35))
+    name3: Mapped[str | None] = mapped_column(String(35))
+    name4: Mapped[str | None] = mapped_column(String(35))
+    ort01: Mapped[str | None] = mapped_column(String(35))
+    ort02: Mapped[str | None] = mapped_column(String(35))
+    stras: Mapped[str | None] = mapped_column(String(35))
+    pfach: Mapped[str | None] = mapped_column(String(10))
+    pstlz: Mapped[str | None] = mapped_column(String(10))
+    pstl2: Mapped[str | None] = mapped_column(String(10))
+    regio: Mapped[str | None] = mapped_column(String(3))
+    spras: Mapped[str | None] = mapped_column(String(1))
+    telbx: Mapped[str | None] = mapped_column(String(15))
+    telf1: Mapped[str | None] = mapped_column(String(16))
+    telf2: Mapped[str | None] = mapped_column(String(16))
+    telfx: Mapped[str | None] = mapped_column(String(31))
+    teltx: Mapped[str | None] = mapped_column(String(30))
+    telx1: Mapped[str | None] = mapped_column(String(30))
+    datlt: Mapped[str | None] = mapped_column(String(14))
+    drnam: Mapped[str | None] = mapped_column(String(4))
+    khinr: Mapped[str | None] = mapped_column(String(12))
+    cckey: Mapped[str | None] = mapped_column(String(23))
+    kompl: Mapped[str | None] = mapped_column(String(1))
+    stakz: Mapped[str | None] = mapped_column(String(1))
+    objnr: Mapped[str | None] = mapped_column(String(22))
+    funkt: Mapped[str | None] = mapped_column(String(3))
+    afunk: Mapped[str | None] = mapped_column(String(3))
+    cpi_templ: Mapped[str | None] = mapped_column(String(10))
+    cpd_templ: Mapped[str | None] = mapped_column(String(10))
+    func_area: Mapped[str | None] = mapped_column(String(16))  # FKBER
+    sci_templ: Mapped[str | None] = mapped_column(String(10))
+    scd_templ: Mapped[str | None] = mapped_column(String(10))
+    ski_templ: Mapped[str | None] = mapped_column(String(10))
+    skd_templ: Mapped[str | None] = mapped_column(String(10))
+    # --- CI_CSKS customer fields ---
+    zzcuemncfu: Mapped[str | None] = mapped_column(String(5))
+    zzcueabacc: Mapped[str | None] = mapped_column(String(4))
+    zzcuegbcd: Mapped[str | None] = mapped_column(String(4))
+    zzcueubcd: Mapped[str | None] = mapped_column(String(4))
+    zzcuenkos: Mapped[str | None] = mapped_column(String(10))
+    zzstrpctyp: Mapped[str | None] = mapped_column(String(3))
+    zzstrkklas: Mapped[str | None] = mapped_column(String(4))
+    zzstraagcd: Mapped[str | None] = mapped_column(String(2))
+    zzstrgfd: Mapped[str | None] = mapped_column(String(3))
+    zzstrfst: Mapped[str | None] = mapped_column(String(2))
+    zzstrmacve: Mapped[str | None] = mapped_column(String(6))
+    zzstrabukr: Mapped[str | None] = mapped_column(String(4))
+    zzstrugcd: Mapped[str | None] = mapped_column(String(4))
+    zzstrinadt: Mapped[str | None] = mapped_column(String(8))
+    zzstrkstyp: Mapped[str | None] = mapped_column(String(1))
+    zzstrverik: Mapped[str | None] = mapped_column(String(20))
+    zzstrcurr2: Mapped[str | None] = mapped_column(String(3))
+    zzstrlccid: Mapped[str | None] = mapped_column(String(10))
+    zzstrmaloc: Mapped[str | None] = mapped_column(String(10))
+    zzstrtaxcd: Mapped[str | None] = mapped_column(String(4))
+    zzstrgrpid: Mapped[str | None] = mapped_column(String(4))
+    zzstrregcode: Mapped[str | None] = mapped_column(String(6))
+    zzstrtaxarea: Mapped[str | None] = mapped_column(String(10))
+    zzstrrepsit: Mapped[str | None] = mapped_column(String(10))
+    zzstrgsm: Mapped[str | None] = mapped_column(String(10))
+    zzcemapar: Mapped[str | None] = mapped_column(String(10))
+    zzledger: Mapped[str | None] = mapped_column(String(5))
+    zzhdstat: Mapped[str | None] = mapped_column(String(1))
+    zzhdtype: Mapped[str | None] = mapped_column(String(1))
+    zzfmd: Mapped[str | None] = mapped_column(String(5))
+    zzfmdcc: Mapped[str | None] = mapped_column(String(3))
+    zzfmdnode: Mapped[str | None] = mapped_column(String(5))
+    zzstate: Mapped[str | None] = mapped_column(String(2))
+    zztax: Mapped[str | None] = mapped_column(String(2))
+    zzstrentsa: Mapped[str | None] = mapped_column(String(11))
+    zzstrentzu: Mapped[str | None] = mapped_column(String(11))
+    xblnr: Mapped[str | None] = mapped_column(String(16))
+    # --- JV fields ---
+    vname: Mapped[str | None] = mapped_column(String(6))
+    recid: Mapped[str | None] = mapped_column(String(2))
+    etype: Mapped[str | None] = mapped_column(String(3))
+    jv_otype: Mapped[str | None] = mapped_column(String(4))
+    jv_jibcl: Mapped[str | None] = mapped_column(String(3))
+    jv_jibsa: Mapped[str | None] = mapped_column(String(5))
+    ferc_ind: Mapped[str | None] = mapped_column(String(4))
+    # --- validity (app fields) ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATAB
-    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATBI
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
@@ -185,26 +486,59 @@ class LegacyProfitCenter(TimestampMixin, Base):
     mandt: Mapped[str | None] = mapped_column(String(3))
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
     pctr: Mapped[str] = mapped_column(String(20), nullable=False)  # PRCTR
+    datbi: Mapped[str | None] = mapped_column(String(8))
     # --- descriptive (CEPCT) ---
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
-    # --- CEPC master fields ---
-    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(24))  # VERAK_USER
-    ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
+    # --- CEPC standard fields ---
+    datab: Mapped[str | None] = mapped_column(String(8))
+    ersda: Mapped[str | None] = mapped_column(String(8))
+    usnam: Mapped[str | None] = mapped_column(String(12))
+    merkmal: Mapped[str | None] = mapped_column(String(30))
     department: Mapped[str | None] = mapped_column(String(20))  # ABTEI
-    currency: Mapped[str | None] = mapped_column(String(3))  # WAERS
-    segment: Mapped[str | None] = mapped_column(String(10))  # SEGMENT
-    land1: Mapped[str | None] = mapped_column(String(3))  # country
-    name1: Mapped[str | None] = mapped_column(String(40))  # NAME1
-    name2: Mapped[str | None] = mapped_column(String(40))  # NAME2
+    responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
+    verak_user: Mapped[str | None] = mapped_column(String(12))
+    currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
+    nprctr: Mapped[str | None] = mapped_column(String(10))
+    land1: Mapped[str | None] = mapped_column(String(3))
+    anred: Mapped[str | None] = mapped_column(String(15))
+    name1: Mapped[str | None] = mapped_column(String(35))
+    name2: Mapped[str | None] = mapped_column(String(35))
+    name3: Mapped[str | None] = mapped_column(String(35))
+    name4: Mapped[str | None] = mapped_column(String(35))
+    ort01: Mapped[str | None] = mapped_column(String(35))
+    ort02: Mapped[str | None] = mapped_column(String(35))
+    stras: Mapped[str | None] = mapped_column(String(35))
+    pfach: Mapped[str | None] = mapped_column(String(10))
+    pstlz: Mapped[str | None] = mapped_column(String(10))
+    pstl2: Mapped[str | None] = mapped_column(String(10))
     language: Mapped[str | None] = mapped_column(String(2))  # SPRAS
-    nprctr: Mapped[str | None] = mapped_column(String(10))  # successor profit center
-    lock_ind: Mapped[str | None] = mapped_column(String(1))  # LOCK_IND
-    # --- validity ---
+    telbx: Mapped[str | None] = mapped_column(String(15))
+    telf1: Mapped[str | None] = mapped_column(String(16))
+    telf2: Mapped[str | None] = mapped_column(String(16))
+    telfx: Mapped[str | None] = mapped_column(String(31))
+    teltx: Mapped[str | None] = mapped_column(String(30))
+    telx1: Mapped[str | None] = mapped_column(String(30))
+    datlt: Mapped[str | None] = mapped_column(String(14))
+    drnam: Mapped[str | None] = mapped_column(String(4))
+    khinr: Mapped[str | None] = mapped_column(String(12))
+    ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
+    vname: Mapped[str | None] = mapped_column(String(6))
+    recid: Mapped[str | None] = mapped_column(String(2))
+    etype: Mapped[str | None] = mapped_column(String(3))
+    txjcd: Mapped[str | None] = mapped_column(String(15))
+    regio: Mapped[str | None] = mapped_column(String(3))
+    kvewe: Mapped[str | None] = mapped_column(String(1))
+    kappl: Mapped[str | None] = mapped_column(String(2))
+    kalsm: Mapped[str | None] = mapped_column(String(6))
+    logsystem: Mapped[str | None] = mapped_column(String(10))
+    lock_ind: Mapped[str | None] = mapped_column(String(1))
+    pca_template: Mapped[str | None] = mapped_column(String(10))
+    segment: Mapped[str | None] = mapped_column(String(10))
+    # --- validity (app fields) ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATAB
-    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # DATBI
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
