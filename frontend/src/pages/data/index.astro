@@ -898,9 +898,12 @@ import Layout from '../../components/layout/Layout.astro';
         attempts++;
         fetch('/api/admin/uploads/' + id, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(b) {
           loadUploadHistory();
-          if (targetStatuses.indexOf(b.status) !== -1 || attempts >= maxAttempts) {
+          if (targetStatuses.indexOf(b.status) !== -1) {
             clearInterval(interval);
             resolve(b);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            resolve(null);
           }
         }).catch(function() {
           if (attempts >= maxAttempts) { clearInterval(interval); resolve(null); }
