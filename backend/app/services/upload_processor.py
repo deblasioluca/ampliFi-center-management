@@ -881,11 +881,12 @@ def load_upload(batch_id: int, db: Session) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
         raise ValueError(f"Batch {batch_id} not found")
-    if batch.status != "validated":
+    if batch.status not in ("validated", "loading"):
         raise ValueError(f"Batch must be validated first (status: {batch.status})")
 
-    batch.status = "loading"
-    db.commit()
+    if batch.status != "loading":
+        batch.status = "loading"
+        db.commit()
 
     try:
         rows = _read_file(batch.storage_uri)

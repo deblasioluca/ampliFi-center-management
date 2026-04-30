@@ -860,14 +860,17 @@ import Layout from '../../components/layout/Layout.astro';
         '<th class="py-2 px-2 text-right">Errors</th><th class="py-2 px-2 text-right">Loaded</th>' +
         '<th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
       items.forEach(function(u) {
-        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : 'text-gray-600';
+        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : (u.status === 'validating' || u.status === 'loading') ? 'text-yellow-600' : 'text-gray-600';
         var actions = '';
-        if (u.status === 'uploaded') {
+        if (u.status === 'uploaded' || u.status === 'failed') {
           actions = '<button onclick="validateUpload(' + u.id + ')" class="text-blue-600 hover:underline mr-2">Validate</button>';
         } else if (u.status === 'validated') {
           actions = '<button onclick="loadUpload(' + u.id + ')" class="text-green-600 hover:underline mr-2">Load</button>';
         } else if (u.status === 'loaded') {
           actions = '<button onclick="rollbackUpload(' + u.id + ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
+        } else if (u.status === 'validating' || u.status === 'loading') {
+          actions = '<span class="text-yellow-600 text-xs animate-pulse">Processing...</span> ' +
+            '<button onclick="resetUpload(' + u.id + ')" class="text-orange-600 hover:underline text-xs mr-2" title="Reset stuck batch">Reset</button>';
         }
         actions += '<button onclick="deleteUpload(' + u.id + ')" class="text-red-500 hover:underline text-xs" title="Delete this upload batch">Delete</button>';
         html += '<tr class="border-b hover:bg-gray-50">' +
@@ -886,16 +889,38 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadUploadHistory();
 
+  function pollBatchStatus(id, targetStatuses, label) {
+    return new Promise(function(resolve) {
+      loadUploadHistory();
+      var attempts = 0;
+      var maxAttempts = 180; // 6 minutes at 2s intervals
+      var interval = setInterval(function() {
+        attempts++;
+        fetch('/api/admin/uploads/' + id, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(b) {
+          loadUploadHistory();
+          if (targetStatuses.indexOf(b.status) !== -1 || attempts >= maxAttempts) {
+            clearInterval(interval);
+            resolve(b);
+          }
+        }).catch(function() {
+          if (attempts >= maxAttempts) { clearInterval(interval); resolve(null); }
+        });
+      }, 2000);
+    });
+  }
   window.validateUpload = async function(id) {
     if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/validate', { method: 'POST', headers: authHdr });
     if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
     if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    if (d.status === 'failed') {
-      alert('Validation failed: ' + (d.error || 'Check upload errors for details'));
+    loadUploadHistory();
+    var result = await pollBatchStatus(id, ['validated', 'failed'], 'Validating');
+    if (!result) { alert('Validation timed out — check status manually.'); return; }
+    if (result.status === 'failed') {
+      alert('Validation failed — check upload errors for details.');
     } else {
-      alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : '') + ' — ' + (d.rows_valid || 0) + ' valid rows');
+      alert('Validation: ' + result.status + (result.rows_error ? ' (' + result.rows_error + ' errors)' : '') + ' — ' + (result.rows_valid || 0) + ' valid rows');
     }
     loadUploadHistory();
   };
@@ -905,7 +930,14 @@ import Layout from '../../components/layout/Layout.astro';
     if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
     if (!res.ok) { alert('Load error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    alert('Load: ' + d.status + (d.rows_loaded ? ' (' + d.rows_loaded + ' rows)' : ''));
+    loadUploadHistory();
+    var result = await pollBatchStatus(id, ['loaded', 'failed'], 'Loading');
+    if (!result) { alert('Load timed out — check status manually.'); return; }
+    if (result.status === 'failed') {
+      alert('Load failed — check upload errors for details.');
+    } else {
+      alert('Load: ' + result.status + (result.rows_loaded ? ' (' + result.rows_loaded + ' rows)' : ''));
+    }
     loadUploadHistory(); refreshAllData();
   };
   window.rollbackUpload = async function(id) {
@@ -928,6 +960,18 @@ import Layout from '../../components/layout/Layout.astro';
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Delete failed');
       loadUploadHistory(); refreshAllData();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  window.resetUpload = async function(id) {
+    if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
+    if (!token) { alert('Please log in first.'); return; }
+    try {
+      var res = await fetch('/api/admin/uploads/' + id + '/reset', { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Reset failed');
+      alert(d.message || 'Batch reset successfully.');
+      loadUploadHistory();
     } catch(e) { alert('Error: ' + e.message); }
   };
 
