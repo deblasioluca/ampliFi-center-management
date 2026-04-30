@@ -1043,6 +1043,13 @@ def _run_validate_in_background(batch_id: int) -> None:
     _log = _logging.getLogger(__name__)
     db = SessionLocal()
     try:
+        batch = db.get(UploadBatch, batch_id)
+        if not batch or batch.status != "validating":
+            _log.info(
+                "Validate batch %s aborted — status: %s",
+                batch_id, batch.status if batch else "deleted",
+            )
+            return
         result = validate_upload(batch_id, db)
         _log.info("Validate batch %s completed: %s", batch_id, result)
     except Exception:
@@ -1069,6 +1076,13 @@ def _run_load_in_background(batch_id: int) -> None:
     _log = _logging.getLogger(__name__)
     db = SessionLocal()
     try:
+        batch = db.get(UploadBatch, batch_id)
+        if not batch or batch.status != "loading":
+            _log.info(
+                "Load batch %s aborted — status: %s",
+                batch_id, batch.status if batch else "deleted",
+            )
+            return
         result = load_upload(batch_id, db)
         _log.info("Load batch %s completed: %s", batch_id, result)
     except Exception:
