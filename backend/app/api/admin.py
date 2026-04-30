@@ -1052,6 +1052,13 @@ def validate_upload_batch(
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except Exception as exc:
         _log.exception("Validate batch %s failed unexpectedly", batch_id)
+        try:
+            batch = db.get(UploadBatch, batch_id)
+            if batch:
+                batch.status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
         raise HTTPException(status_code=500, detail=f"Validation error: {exc}") from None
 
 
