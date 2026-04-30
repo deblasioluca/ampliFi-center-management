@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -1033,25 +1033,28 @@ def get_upload(
     }
 
 
-@router.post("/uploads/{batch_id}/validate")
-def validate_upload_batch(
-    batch_id: int,
-    db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
-) -> dict:
+def _run_validate_in_background(batch_id: int) -> None:
+    """Run validate_upload in a background thread with its own DB session."""
     import logging as _logging
 
+    from app.infra.db.session import SessionLocal
     from app.services.upload_processor import validate_upload
 
     _log = _logging.getLogger(__name__)
+    db = SessionLocal()
     try:
+        batch = db.get(UploadBatch, batch_id)
+        if not batch or batch.status != "validating":
+            _log.info(
+                "Validate batch %s aborted — status: %s",
+                batch_id,
+                batch.status if batch else "deleted",
+            )
+            return
         result = validate_upload(batch_id, db)
-        _log.info("Validate batch %s: %s", batch_id, result)
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    except Exception as exc:
-        _log.exception("Validate batch %s failed unexpectedly", batch_id)
+        _log.info("Validate batch %s completed: %s", batch_id, result)
+    except Exception:
+        _log.exception("Validate batch %s failed in background", batch_id)
         try:
             db.rollback()
             batch = db.get(UploadBatch, batch_id)
@@ -1060,21 +1063,84 @@ def validate_upload_batch(
                 db.commit()
         except Exception:
             db.rollback()
-        raise HTTPException(status_code=500, detail=f"Validation error: {exc}") from None
+    finally:
+        db.close()
+
+
+def _run_load_in_background(batch_id: int) -> None:
+    """Run load_upload in a background thread with its own DB session."""
+    import logging as _logging
+
+    from app.infra.db.session import SessionLocal
+    from app.services.upload_processor import load_upload
+
+    _log = _logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        batch = db.get(UploadBatch, batch_id)
+        if not batch or batch.status != "loading":
+            _log.info(
+                "Load batch %s aborted — status: %s",
+                batch_id,
+                batch.status if batch else "deleted",
+            )
+            return
+        result = load_upload(batch_id, db)
+        _log.info("Load batch %s completed: %s", batch_id, result)
+    except Exception:
+        _log.exception("Load batch %s failed in background", batch_id)
+        try:
+            db.rollback()
+            batch = db.get(UploadBatch, batch_id)
+            if batch:
+                batch.status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
+
+@router.post("/uploads/{batch_id}/validate")
+def validate_upload_batch(
+    batch_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    batch = db.get(UploadBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    if batch.status not in ("uploaded", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot validate batch in status '{batch.status}'",
+        )
+    batch.status = "validating"
+    db.commit()
+    background_tasks.add_task(_run_validate_in_background, batch_id)
+    return {"status": "validating", "batch_id": batch_id}
 
 
 @router.post("/uploads/{batch_id}/load")
 def load_upload_batch(
     batch_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
-    from app.services.upload_processor import load_upload
-
-    try:
-        return load_upload(batch_id, db)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+    batch = db.get(UploadBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    if batch.status != "validated":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch must be validated first (status: {batch.status})",
+        )
+    batch.status = "loading"
+    db.commit()
+    background_tasks.add_task(_run_load_in_background, batch_id)
+    return {"status": "loading", "batch_id": batch_id}
 
 
 @router.post("/uploads/{batch_id}/rollback")
@@ -1089,6 +1155,30 @@ def rollback_upload_batch(
         return rollback_upload(batch_id, db)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.post("/uploads/{batch_id}/reset")
+def reset_upload_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Reset a stuck batch (validating/loading) back to a retryable state."""
+    batch = db.get(UploadBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    if batch.status == "validating":
+        batch.status = "uploaded"
+        db.commit()
+        return {"status": "uploaded", "message": "Reset to uploaded — you can re-validate."}
+    if batch.status == "loading":
+        batch.status = "validated"
+        db.commit()
+        return {"status": "validated", "message": "Reset to validated — you can re-load."}
+    raise HTTPException(
+        status_code=400,
+        detail=f"Batch is not stuck (status: {batch.status})",
+    )
 
 
 @router.get("/uploads/{batch_id}/errors")

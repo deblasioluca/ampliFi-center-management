@@ -14,6 +14,7 @@ export const ALL: APIRoute = async ({ request, params }) => {
     method: request.method,
     headers,
     redirect: 'manual',
+    signal: AbortSignal.timeout(300_000), // 5 min timeout for large uploads
   };
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
