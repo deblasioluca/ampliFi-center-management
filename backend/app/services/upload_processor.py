@@ -268,7 +268,15 @@ def _read_file(path: str) -> list[dict[str, str]]:
         except ImportError as exc:
             raise ValueError("openpyxl not installed") from exc
     else:
-        content = p.read_text(encoding="utf-8-sig")
+        # Try UTF-8 first, fall back to cp1252 (European Excel default)
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                content = p.read_text(encoding=enc)
+                break
+            except (UnicodeDecodeError, ValueError):
+                continue
+        else:
+            content = p.read_bytes().decode("utf-8", errors="replace")
         # Skip MDG header lines starting with *
         lines = content.split("\n")
         clean_lines = [ln for ln in lines if not ln.startswith("*")]
