@@ -260,6 +260,9 @@ class SAPConnectionCreate(BaseModel):
     system_type: str
     landscape_type: str | None = None
     base_url: str
+    host: str | None = None
+    port: str | None = None
+    conn_protocol: str | None = "https"
     client: str = "100"
     language: str = "EN"
     username: str
@@ -269,6 +272,49 @@ class SAPConnectionCreate(BaseModel):
     use_proxy: bool = False
     saml2_disabled: bool = False
     allowed_tables: str | None = None
+    fiori_launchpad_url: str | None = None
+    webgui_url: str | None = None
+    # Web Dispatcher
+    webdisp_host: str | None = None
+    webdisp_port: str | None = None
+    webdisp_protocol: str | None = "https"
+    use_webdisp: bool = False
+    adt_use_webdisp: bool | None = None
+    soap_use_webdisp: bool | None = None
+    odata_use_webdisp: bool | None = None
+    # Per-endpoint overrides
+    adt_verify_ssl: bool | None = None
+    adt_use_proxy: bool | None = None
+    adt_saml2_disabled: bool | None = None
+    soap_verify_ssl: bool | None = None
+    soap_use_proxy: bool | None = None
+    soap_saml2_disabled: bool | None = None
+    odata_verify_ssl: bool | None = None
+    odata_use_proxy: bool | None = None
+    odata_saml2_disabled: bool | None = None
+    # ICF aliases
+    use_icf_aliases: bool = False
+    adt_icf_source: str | None = None
+    soap_icf_source: str | None = None
+    odata_icf_source: str | None = None
+    adt_icf_cert: str | None = None
+    soap_icf_cert: str | None = None
+    odata_icf_cert: str | None = None
+    adt_icf_basic: str | None = None
+    soap_icf_basic: str | None = None
+    odata_icf_basic: str | None = None
+    # Per-endpoint certificate source
+    adt_cert_source: str | None = None
+    soap_cert_source: str | None = None
+    odata_cert_source: str | None = None
+    # Principal Propagation
+    pp_enabled: bool = False
+    pp_sap_oauth_token_url: str | None = "/sap/bc/sec/oauth2/token"
+    pp_sap_oauth_client_id: str | None = None
+    pp_sap_oauth_client_secret: str | None = None
+    pp_saml_issuer: str | None = None
+    pp_saml_audience: str | None = None
+    pp_user_mapping: str | None = "email"
 
 
 class SAPConnectionUpdate(SAPConnectionCreate):
@@ -282,6 +328,9 @@ class SAPConnectionOut(BaseModel):
     system_type: str
     landscape_type: str | None
     base_url: str
+    host: str | None = None
+    port: str | None = None
+    conn_protocol: str | None = None
     client: str
     language: str
     username: str
@@ -291,6 +340,43 @@ class SAPConnectionOut(BaseModel):
     saml2_disabled: bool
     is_active: bool
     allowed_tables: str | None
+    fiori_launchpad_url: str | None = None
+    webgui_url: str | None = None
+    webdisp_host: str | None = None
+    webdisp_port: str | None = None
+    webdisp_protocol: str | None = None
+    use_webdisp: bool = False
+    adt_use_webdisp: bool | None = None
+    soap_use_webdisp: bool | None = None
+    odata_use_webdisp: bool | None = None
+    adt_verify_ssl: bool | None = None
+    adt_use_proxy: bool | None = None
+    adt_saml2_disabled: bool | None = None
+    soap_verify_ssl: bool | None = None
+    soap_use_proxy: bool | None = None
+    soap_saml2_disabled: bool | None = None
+    odata_verify_ssl: bool | None = None
+    odata_use_proxy: bool | None = None
+    odata_saml2_disabled: bool | None = None
+    use_icf_aliases: bool = False
+    adt_icf_source: str | None = None
+    soap_icf_source: str | None = None
+    odata_icf_source: str | None = None
+    adt_icf_cert: str | None = None
+    soap_icf_cert: str | None = None
+    odata_icf_cert: str | None = None
+    adt_icf_basic: str | None = None
+    soap_icf_basic: str | None = None
+    odata_icf_basic: str | None = None
+    adt_cert_source: str | None = None
+    soap_cert_source: str | None = None
+    odata_cert_source: str | None = None
+    pp_enabled: bool = False
+    pp_sap_oauth_token_url: str | None = None
+    pp_sap_oauth_client_id: str | None = None
+    pp_saml_issuer: str | None = None
+    pp_saml_audience: str | None = None
+    pp_user_mapping: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -312,12 +398,18 @@ def create_sap_connection(
 ) -> SAPConnectionOut:
     from app.infra.sap.encryption import encrypt_password
 
+    pp_secret_enc = None
+    if body.pp_sap_oauth_client_secret:
+        pp_secret_enc = encrypt_password(body.pp_sap_oauth_client_secret)
     conn = SAPConnection(
         name=body.name,
         description=body.description,
         system_type=body.system_type,
         landscape_type=body.landscape_type,
         base_url=body.base_url,
+        host=body.host,
+        port=body.port,
+        conn_protocol=body.conn_protocol,
         client=body.client,
         language=body.language,
         username=body.username,
@@ -327,6 +419,44 @@ def create_sap_connection(
         use_proxy=body.use_proxy,
         saml2_disabled=body.saml2_disabled,
         allowed_tables=body.allowed_tables,
+        fiori_launchpad_url=body.fiori_launchpad_url,
+        webgui_url=body.webgui_url,
+        webdisp_host=body.webdisp_host,
+        webdisp_port=body.webdisp_port,
+        webdisp_protocol=body.webdisp_protocol,
+        use_webdisp=body.use_webdisp,
+        adt_use_webdisp=body.adt_use_webdisp,
+        soap_use_webdisp=body.soap_use_webdisp,
+        odata_use_webdisp=body.odata_use_webdisp,
+        adt_verify_ssl=body.adt_verify_ssl,
+        adt_use_proxy=body.adt_use_proxy,
+        adt_saml2_disabled=body.adt_saml2_disabled,
+        soap_verify_ssl=body.soap_verify_ssl,
+        soap_use_proxy=body.soap_use_proxy,
+        soap_saml2_disabled=body.soap_saml2_disabled,
+        odata_verify_ssl=body.odata_verify_ssl,
+        odata_use_proxy=body.odata_use_proxy,
+        odata_saml2_disabled=body.odata_saml2_disabled,
+        use_icf_aliases=body.use_icf_aliases,
+        adt_icf_source=body.adt_icf_source,
+        soap_icf_source=body.soap_icf_source,
+        odata_icf_source=body.odata_icf_source,
+        adt_icf_cert=body.adt_icf_cert,
+        soap_icf_cert=body.soap_icf_cert,
+        odata_icf_cert=body.odata_icf_cert,
+        adt_icf_basic=body.adt_icf_basic,
+        soap_icf_basic=body.soap_icf_basic,
+        odata_icf_basic=body.odata_icf_basic,
+        adt_cert_source=body.adt_cert_source,
+        soap_cert_source=body.soap_cert_source,
+        odata_cert_source=body.odata_cert_source,
+        pp_enabled=body.pp_enabled,
+        pp_sap_oauth_token_url=body.pp_sap_oauth_token_url,
+        pp_sap_oauth_client_id=body.pp_sap_oauth_client_id,
+        pp_sap_oauth_client_secret_enc=pp_secret_enc,
+        pp_saml_issuer=body.pp_saml_issuer,
+        pp_saml_audience=body.pp_saml_audience,
+        pp_user_mapping=body.pp_user_mapping,
     )
     db.add(conn)
     db.commit()
@@ -363,6 +493,9 @@ def update_sap_connection(
     conn.system_type = body.system_type
     conn.landscape_type = body.landscape_type
     conn.base_url = body.base_url
+    conn.host = body.host
+    conn.port = body.port
+    conn.conn_protocol = body.conn_protocol
     conn.client = body.client
     conn.language = body.language
     conn.username = body.username
@@ -373,6 +506,47 @@ def update_sap_connection(
     conn.use_proxy = body.use_proxy
     conn.saml2_disabled = body.saml2_disabled
     conn.allowed_tables = body.allowed_tables
+    conn.fiori_launchpad_url = body.fiori_launchpad_url
+    conn.webgui_url = body.webgui_url
+    conn.webdisp_host = body.webdisp_host
+    conn.webdisp_port = body.webdisp_port
+    conn.webdisp_protocol = body.webdisp_protocol
+    conn.use_webdisp = body.use_webdisp
+    conn.adt_use_webdisp = body.adt_use_webdisp
+    conn.soap_use_webdisp = body.soap_use_webdisp
+    conn.odata_use_webdisp = body.odata_use_webdisp
+    conn.adt_verify_ssl = body.adt_verify_ssl
+    conn.adt_use_proxy = body.adt_use_proxy
+    conn.adt_saml2_disabled = body.adt_saml2_disabled
+    conn.soap_verify_ssl = body.soap_verify_ssl
+    conn.soap_use_proxy = body.soap_use_proxy
+    conn.soap_saml2_disabled = body.soap_saml2_disabled
+    conn.odata_verify_ssl = body.odata_verify_ssl
+    conn.odata_use_proxy = body.odata_use_proxy
+    conn.odata_saml2_disabled = body.odata_saml2_disabled
+    conn.use_icf_aliases = body.use_icf_aliases
+    conn.adt_icf_source = body.adt_icf_source
+    conn.soap_icf_source = body.soap_icf_source
+    conn.odata_icf_source = body.odata_icf_source
+    conn.adt_icf_cert = body.adt_icf_cert
+    conn.soap_icf_cert = body.soap_icf_cert
+    conn.odata_icf_cert = body.odata_icf_cert
+    conn.adt_icf_basic = body.adt_icf_basic
+    conn.soap_icf_basic = body.soap_icf_basic
+    conn.odata_icf_basic = body.odata_icf_basic
+    conn.adt_cert_source = body.adt_cert_source
+    conn.soap_cert_source = body.soap_cert_source
+    conn.odata_cert_source = body.odata_cert_source
+    conn.pp_enabled = body.pp_enabled
+    conn.pp_sap_oauth_token_url = body.pp_sap_oauth_token_url
+    conn.pp_sap_oauth_client_id = body.pp_sap_oauth_client_id
+    if body.pp_sap_oauth_client_secret:
+        conn.pp_sap_oauth_client_secret_enc = encrypt_password(
+            body.pp_sap_oauth_client_secret
+        )
+    conn.pp_saml_issuer = body.pp_saml_issuer
+    conn.pp_saml_audience = body.pp_saml_audience
+    conn.pp_user_mapping = body.pp_user_mapping
     db.commit()
     db.refresh(conn)
     return SAPConnectionOut.model_validate(conn)

@@ -343,11 +343,14 @@ def explore_object(
                 query = query.where(flt)
                 count_q = count_q.where(flt)
 
-    # Sort
+    # Sort (validate against actual column names to prevent 500 on non-column attrs)
     sort_col_name = sort or config.get("default_sort_column") or _DEFAULT_SORT.get(object_type)
     if sort_col_name:
-        sort_attr = getattr(model, sort_col_name, None)
-        if sort_attr is not None:
+        from sqlalchemy import inspect as sa_inspect
+
+        valid_columns = {c.key for c in sa_inspect(model).column_attrs}
+        if sort_col_name in valid_columns:
+            sort_attr = getattr(model, sort_col_name)
             direction = sort_dir or config.get("default_sort_dir", "asc")
             if direction == "desc":
                 query = query.order_by(sort_attr.desc().nulls_last())

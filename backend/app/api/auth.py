@@ -140,18 +140,26 @@ async def entra_spa_token(
         upsert_user_from_claims,
         validate_id_token,
     )
+    from app.models.core import AppConfig
 
     if not settings.entraid_client_id:
         raise HTTPException(status_code=500, detail="EntraID not configured")
 
-    cfg = EntraIDConfig(
-        {
-            "tenant_id": settings.entraid_tenant_id,
-            "client_id": settings.entraid_client_id,
-            "client_secret": (settings.entraid_client_secret.get_secret_value()),
-            "redirect_uri": "",
-        }
-    )
+    # Read full config from DB (includes role_map for group-based role assignment)
+    cfg_row = db.execute(
+        select(AppConfig).where(AppConfig.key == "auth.entraid")
+    ).scalar_one_or_none()
+    if cfg_row and cfg_row.value:
+        cfg = EntraIDConfig(cfg_row.value)
+    else:
+        cfg = EntraIDConfig(
+            {
+                "tenant_id": settings.entraid_tenant_id,
+                "client_id": settings.entraid_client_id,
+                "client_secret": (settings.entraid_client_secret.get_secret_value()),
+                "redirect_uri": "",
+            }
+        )
 
     claims = validate_id_token(cfg, body.id_token)
     user = upsert_user_from_claims(claims, cfg, db)

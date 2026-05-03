@@ -1084,6 +1084,12 @@ class SAPConnection(TimestampMixin, Base):
     system_type: Mapped[str] = mapped_column(String(20), nullable=False)
     landscape_type: Mapped[str | None] = mapped_column(String(10))
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Split address fields (preferred over base_url)
+    host: Mapped[str | None] = mapped_column(String(200))
+    port: Mapped[str | None] = mapped_column(String(10))
+    conn_protocol: Mapped[str | None] = mapped_column(
+        String(10), default="https"
+    )  # https|http
     client: Mapped[str] = mapped_column(String(3), nullable=False, default="100")
     language: Mapped[str] = mapped_column(String(2), nullable=False, default="EN")
     username: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -1096,6 +1102,52 @@ class SAPConnection(TimestampMixin, Base):
     saml2_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     allowed_tables: Mapped[str | None] = mapped_column(Text)
+    fiori_launchpad_url: Mapped[str | None] = mapped_column(String(500))
+    webgui_url: Mapped[str | None] = mapped_column(String(500))
+    # Web Dispatcher — alternative entry point
+    webdisp_host: Mapped[str | None] = mapped_column(String(200))
+    webdisp_port: Mapped[str | None] = mapped_column(String(10))
+    webdisp_protocol: Mapped[str | None] = mapped_column(String(10), default="https")
+    use_webdisp: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Per-endpoint Web Dispatcher routing
+    adt_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    soap_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    odata_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    # Per-endpoint overrides (None = inherit from global)
+    adt_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    adt_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    adt_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    soap_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    soap_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    soap_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    odata_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    odata_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    odata_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    # ICF node aliases
+    use_icf_aliases: Mapped[bool] = mapped_column(Boolean, default=False)
+    adt_icf_source: Mapped[str | None] = mapped_column(String(20))
+    soap_icf_source: Mapped[str | None] = mapped_column(String(20))
+    odata_icf_source: Mapped[str | None] = mapped_column(String(20))
+    adt_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    soap_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    odata_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    adt_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    soap_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    odata_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    # Per-endpoint client certificate source
+    adt_cert_source: Mapped[str | None] = mapped_column(String(20))
+    soap_cert_source: Mapped[str | None] = mapped_column(String(20))
+    odata_cert_source: Mapped[str | None] = mapped_column(String(20))
+    # Principal Propagation (Entra ID -> SAP)
+    pp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    pp_sap_oauth_token_url: Mapped[str | None] = mapped_column(
+        String(200), default="/sap/bc/sec/oauth2/token"
+    )
+    pp_sap_oauth_client_id: Mapped[str | None] = mapped_column(String(200))
+    pp_sap_oauth_client_secret_enc: Mapped[str | None] = mapped_column(Text)
+    pp_saml_issuer: Mapped[str | None] = mapped_column(String(200))
+    pp_saml_audience: Mapped[str | None] = mapped_column(String(200))
+    pp_user_mapping: Mapped[str | None] = mapped_column(String(20), default="email")
     attrs: Mapped[dict | None] = mapped_column(JSONB)
 
 

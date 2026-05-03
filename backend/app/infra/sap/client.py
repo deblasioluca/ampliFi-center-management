@@ -17,6 +17,7 @@ import structlog
 from app.infra.sap.base import ACCEPT_HEADERS, SSO_KEYWORDS
 from app.infra.sap.connection_trial import (
     _create_sap_client,
+    _resolve_base_url,
     run_connection_trial,
 )
 from app.infra.sap.encryption import decrypt_password
@@ -64,7 +65,7 @@ def test_connection_full(conn: SAPConnection) -> dict[str, Any]:
 
 def _test_odata(conn: SAPConnection, password: str, start: float) -> dict[str, Any]:
     """Test OData connectivity via CATALOGSERVICE discovery."""
-    url = f"{conn.base_url.rstrip('/')}/sap/opu/odata/iwfnd/CATALOGSERVICE;v=2/ServiceCollection"
+    url = f"{_resolve_base_url(conn)}/sap/opu/odata/iwfnd/CATALOGSERVICE;v=2/ServiceCollection"
     headers = {
         "sap-client": conn.client,
         "Accept": "application/json",
@@ -135,7 +136,7 @@ def _test_odata(conn: SAPConnection, password: str, start: float) -> dict[str, A
 
 def _test_adt(conn: SAPConnection, password: str, start: float) -> dict[str, Any]:
     """Test ADT connectivity via /sap/bc/adt/discovery."""
-    url = f"{conn.base_url.rstrip('/')}/sap/bc/adt/discovery"
+    url = f"{_resolve_base_url(conn)}/sap/bc/adt/discovery"
     headers = {
         "sap-client": conn.client,
         "Accept": ACCEPT_HEADERS["adt"],
@@ -208,7 +209,7 @@ def _test_adt(conn: SAPConnection, password: str, start: float) -> dict[str, Any
 
 def _test_soap(conn: SAPConnection, password: str, start: float) -> dict[str, Any]:
     """Test SOAP/RFC connectivity via /sap/bc/soap/rfc."""
-    url = f"{conn.base_url.rstrip('/')}/sap/bc/soap/rfc"
+    url = f"{_resolve_base_url(conn)}/sap/bc/soap/rfc"
     headers = {
         "sap-client": conn.client,
         "Content-Type": "text/xml; charset=utf-8",
@@ -288,7 +289,7 @@ def fetch_odata(
 ) -> list[dict[str, Any]]:
     """Fetch data from an SAP OData service with server-driven paging."""
     password = decrypt_password(conn.password_encrypted)
-    url = f"{conn.base_url.rstrip('/')}/sap/opu/odata/sap/{entity_set}"
+    url = f"{_resolve_base_url(conn)}/sap/opu/odata/sap/{entity_set}"
     headers = {
         "sap-client": conn.client,
         "Accept": "application/json",
@@ -358,7 +359,7 @@ def fetch_adt_table(
     from app.infra.sap.xml_parser import parse_datapreview
 
     password = decrypt_password(conn.password_encrypted)
-    base = conn.base_url.rstrip("/")
+    base = _resolve_base_url(conn)
 
     # Build SQL-like query
     query_parts = [f"SELECT {select}", f"FROM {table_name.upper()}"]
@@ -475,7 +476,7 @@ def call_soap_rfc(
     imports = imports or {}
     tables = tables or {}
     password = decrypt_password(conn.password_encrypted)
-    base = conn.base_url.rstrip("/")
+    base = _resolve_base_url(conn)
 
     # Build SOAP envelope
     soap_body_parts: list[str] = []
@@ -647,7 +648,7 @@ def discover_odata_services(conn: SAPConnection) -> list[dict[str, str]]:
     available. Uses v2 first, then falls back to v1.
     """
     password = decrypt_password(conn.password_encrypted)
-    base = conn.base_url.rstrip("/")
+    base = _resolve_base_url(conn)
     catalog_paths = [
         "/sap/opu/odata/iwfnd/CATALOGSERVICE;v=2/ServiceCollection",
         "/sap/opu/odata/iwfnd/CATALOGSERVICE/ServiceCollection",
