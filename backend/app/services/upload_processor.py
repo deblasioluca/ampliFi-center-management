@@ -931,6 +931,28 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     }
                 )
                 error_rows.add(i)
+        elif batch.kind == "gl_accounts_ska1":
+            if not row.get("saknr"):
+                errors.append(
+                    {"row": i, "col": "SAKNR", "code": "REQUIRED", "msg": "SAKNR is required"}
+                )
+                error_rows.add(i)
+            if not row.get("ktopl"):
+                errors.append(
+                    {"row": i, "col": "KTOPL", "code": "REQUIRED", "msg": "KTOPL is required"}
+                )
+                error_rows.add(i)
+        elif batch.kind == "gl_accounts_skb1":
+            if not row.get("saknr"):
+                errors.append(
+                    {"row": i, "col": "SAKNR", "code": "REQUIRED", "msg": "SAKNR is required"}
+                )
+                error_rows.add(i)
+            if not row.get("bukrs"):
+                errors.append(
+                    {"row": i, "col": "BUKRS", "code": "REQUIRED", "msg": "BUKRS is required"}
+                )
+                error_rows.add(i)
 
     # Store errors
     for err in errors[:5000]:
@@ -1429,6 +1451,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if v is not None:
                         setattr(existing, k, v)
             else:
+                kwargs["refresh_batch"] = batch.id
                 db.add(GLAccountSKA1(**kwargs))
             loaded += 1
 
@@ -1456,6 +1479,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if v is not None:
                         setattr(existing, k, v)
             else:
+                kwargs_b["refresh_batch"] = batch.id
                 db.add(GLAccountSKB1(**kwargs_b))
             loaded += 1
 
@@ -1505,6 +1529,12 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
             db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
             db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
         r = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+        deleted = r.rowcount
+    elif batch.kind == "gl_accounts_ska1":
+        r = db.execute(sa_delete(GLAccountSKA1).where(GLAccountSKA1.refresh_batch == batch.id))
+        deleted = r.rowcount
+    elif batch.kind == "gl_accounts_skb1":
+        r = db.execute(sa_delete(GLAccountSKB1).where(GLAccountSKB1.refresh_batch == batch.id))
         deleted = r.rowcount
 
     rows_loaded = batch.rows_loaded or 0

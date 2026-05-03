@@ -50,6 +50,11 @@ def upgrade() -> None:
         sa.Column("last_changed_ts", sa.String(15)),
         sa.Column("txt20", sa.String(20)),
         sa.Column("txt50", sa.String(50)),
+        sa.Column(
+            "refresh_batch",
+            sa.Integer(),
+            sa.ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL"),
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.UniqueConstraint("ktopl", "saknr"),
@@ -106,6 +111,11 @@ def upgrade() -> None:
         sa.Column("mcakey", sa.String(5)),
         sa.Column("cochanged", sa.String(1)),
         sa.Column("last_changed_ts", sa.String(15)),
+        sa.Column(
+            "refresh_batch",
+            sa.Integer(),
+            sa.ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL"),
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.UniqueConstraint("bukrs", "saknr"),

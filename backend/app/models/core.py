@@ -1402,6 +1402,9 @@ class GLAccountSKA1(TimestampMixin, Base):
     # description from SKAT
     txt20: Mapped[str | None] = mapped_column(String(20))
     txt50: Mapped[str | None] = mapped_column(String(50))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
 
 
 class GLAccountSKB1(TimestampMixin, Base):
@@ -1461,6 +1464,9 @@ class GLAccountSKB1(TimestampMixin, Base):
     mcakey: Mapped[str | None] = mapped_column(String(5))
     cochanged: Mapped[str | None] = mapped_column(String(1))
     last_changed_ts: Mapped[str | None] = mapped_column(String(15))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
 
 
 # ---------- data explorer display config ----------
