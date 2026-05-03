@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -153,6 +155,11 @@ async def entra_spa_token(
 
     claims = validate_id_token(cfg, body.id_token)
     user = upsert_user_from_claims(claims, cfg, db)
+
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Account disabled")
+    if user.locked_until and user.locked_until > datetime.now(UTC):
+        raise HTTPException(status_code=423, detail="Account locked")
 
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)

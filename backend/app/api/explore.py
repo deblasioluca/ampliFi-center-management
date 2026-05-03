@@ -398,15 +398,20 @@ def explore_object_detail(
 def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
     """Hierarchies endpoint with node/leaf data."""
     cls_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
-    hiers = (
-        db.execute(
-            select(Hierarchy)
-            .where(Hierarchy.is_active.is_(True))
-            .order_by(Hierarchy.setclass, Hierarchy.setname)
+    query = select(Hierarchy).where(Hierarchy.is_active.is_(True))
+    if search:
+        pat = f"%{search}%"
+        from sqlalchemy import or_
+
+        query = query.where(
+            or_(
+                Hierarchy.setname.ilike(pat),
+                Hierarchy.label.ilike(pat),
+                Hierarchy.description.ilike(pat),
+                Hierarchy.coarea.ilike(pat),
+            )
         )
-        .scalars()
-        .all()
-    )
+    hiers = db.execute(query.order_by(Hierarchy.setclass, Hierarchy.setname)).scalars().all()
     result = []
     for h in hiers:
         nodes = (
