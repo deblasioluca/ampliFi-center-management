@@ -1087,9 +1087,7 @@ class SAPConnection(TimestampMixin, Base):
     # Split address fields (preferred over base_url)
     host: Mapped[str | None] = mapped_column(String(200))
     port: Mapped[str | None] = mapped_column(String(10))
-    conn_protocol: Mapped[str | None] = mapped_column(
-        String(10), default="https"
-    )  # https|http
+    conn_protocol: Mapped[str | None] = mapped_column(String(10), default="https")  # https|http
     client: Mapped[str] = mapped_column(String(3), nullable=False, default="100")
     language: Mapped[str] = mapped_column(String(2), nullable=False, default="EN")
     username: Mapped[str] = mapped_column(String(100), nullable=False)

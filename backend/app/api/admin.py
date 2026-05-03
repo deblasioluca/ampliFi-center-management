@@ -541,9 +541,7 @@ def update_sap_connection(
     conn.pp_sap_oauth_token_url = body.pp_sap_oauth_token_url
     conn.pp_sap_oauth_client_id = body.pp_sap_oauth_client_id
     if body.pp_sap_oauth_client_secret:
-        conn.pp_sap_oauth_client_secret_enc = encrypt_password(
-            body.pp_sap_oauth_client_secret
-        )
+        conn.pp_sap_oauth_client_secret_enc = encrypt_password(body.pp_sap_oauth_client_secret)
     conn.pp_saml_issuer = body.pp_saml_issuer
     conn.pp_saml_audience = body.pp_saml_audience
     conn.pp_user_mapping = body.pp_user_mapping
