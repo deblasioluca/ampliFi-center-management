@@ -208,8 +208,14 @@ import Layout from '../../components/layout/Layout.astro';
               <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
               <input type="file" id="upload-file" accept=".csv,.xlsx,.xls,.tsv" class="input" required />
             </div>
-            <div class="flex gap-3">
+            <div class="flex gap-3 items-center">
               <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
+              <div id="upload-progress" class="hidden flex-1 flex items-center gap-2">
+                <div class="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
+                  <div id="upload-progress-bar" class="bg-amplifi-500 h-4 rounded-full transition-all duration-200" style="width:0%"></div>
+                </div>
+                <span id="upload-progress-text" class="text-xs text-gray-600 whitespace-nowrap">0%</span>
+              </div>
             </div>
             <div id="upload-result" class="text-sm hidden"></div>
           </form>
@@ -814,38 +820,69 @@ import Layout from '../../components/layout/Layout.astro';
     });
   }).catch(function() {});
 
-  // --- Upload ---
-  document.getElementById('upload-form').addEventListener('submit', async function(e) {
+  // --- Upload with progress bar ---
+  document.getElementById('upload-form').addEventListener('submit', function(e) {
     e.preventDefault();
     var fileInput = document.getElementById('upload-file');
     var type = document.getElementById('upload-type').value;
     var resultEl = document.getElementById('upload-result');
+    var progressEl = document.getElementById('upload-progress');
+    var progressBar = document.getElementById('upload-progress-bar');
+    var progressText = document.getElementById('upload-progress-text');
     resultEl.classList.add('hidden');
     if (!fileInput.files[0]) return;
+    if (!token) { alert('Please log in first to upload data.'); return; }
+
     var formData = new FormData();
     formData.append('file', fileInput.files[0]);
     document.getElementById('upload-btn').disabled = true;
     document.getElementById('upload-btn').textContent = 'Uploading...';
-    if (!token) { alert('Please log in first to upload data.'); document.getElementById('upload-btn').disabled = false; document.getElementById('upload-btn').textContent = 'Upload'; return; }
-    try {
-      var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
-        method: 'POST', headers: authHdr, body: formData
-      });
-      if (res.status === 401 || res.status === 403) throw new Error('Session expired — please log in again.');
-      var data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Upload failed');
-      resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
-      resultEl.className = 'text-sm text-green-600';
-      resultEl.classList.remove('hidden');
-      refreshAllData(); loadUploadHistory();
-    } catch(err) {
-      resultEl.textContent = 'Error: ' + err.message;
-      resultEl.className = 'text-sm text-red-600';
-      resultEl.classList.remove('hidden');
-    } finally {
+    progressEl.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    progressText.textContent = '0%';
+
+    var xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', function(ev) {
+      if (ev.lengthComputable) {
+        var pct = Math.round((ev.loaded / ev.total) * 100);
+        progressBar.style.width = pct + '%';
+        progressText.textContent = pct + '%';
+      }
+    });
+    xhr.addEventListener('load', function() {
+      progressEl.classList.add('hidden');
       document.getElementById('upload-btn').disabled = false;
       document.getElementById('upload-btn').textContent = 'Upload';
-    }
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (xhr.status === 401 || xhr.status === 403) {
+          resultEl.textContent = 'Error: Session expired — please log in again.';
+          resultEl.className = 'text-sm text-red-600';
+        } else if (xhr.status >= 400) {
+          resultEl.textContent = 'Error: ' + (data.detail || 'Upload failed');
+          resultEl.className = 'text-sm text-red-600';
+        } else {
+          resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
+          resultEl.className = 'text-sm text-green-600';
+          refreshAllData(); loadUploadHistory();
+        }
+      } catch(err) {
+        resultEl.textContent = 'Error: Upload failed';
+        resultEl.className = 'text-sm text-red-600';
+      }
+      resultEl.classList.remove('hidden');
+    });
+    xhr.addEventListener('error', function() {
+      progressEl.classList.add('hidden');
+      document.getElementById('upload-btn').disabled = false;
+      document.getElementById('upload-btn').textContent = 'Upload';
+      resultEl.textContent = 'Error: Network error during upload';
+      resultEl.className = 'text-sm text-red-600';
+      resultEl.classList.remove('hidden');
+    });
+    xhr.open('POST', '/api/admin/uploads?kind=' + encodeURIComponent(type));
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.send(formData);
   });
 
   function loadUploadHistory() {
@@ -869,7 +906,13 @@ import Layout from '../../components/layout/Layout.astro';
         } else if (u.status === 'loaded') {
           actions = '<button onclick="rollbackUpload(' + u.id + ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
         } else if (u.status === 'validating' || u.status === 'loading') {
-          actions = '<span class="text-yellow-600 text-xs animate-pulse">Processing...</span> ' +
+          var pct = (u.rows_total > 0 && u.rows_processed != null) ? Math.round((u.rows_processed / u.rows_total) * 100) : 0;
+          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
+          actions = '<div class="inline-flex items-center gap-2">' +
+            '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" title="' + fmt(u.rows_processed || 0) + ' / ' + fmt(u.rows_total) + ' rows">' +
+            '<div class="bg-yellow-500 h-3 rounded-full transition-all duration-300" style="width:' + pct + '%"></div></div>' +
+            '<span class="text-yellow-700 text-[10px] font-medium whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
+            '</div> ' +
             '<button onclick="resetUpload(' + u.id + ')" class="text-orange-600 hover:underline text-xs mr-2" title="Reset stuck batch">Reset</button>';
         }
         actions += '<button onclick="deleteUpload(' + u.id + ')" class="text-red-500 hover:underline text-xs" title="Delete this upload batch">Delete</button>';

@@ -797,10 +797,20 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
+
+    # Set total row count early so frontend can show progress
+    batch.rows_total = len(normalized)
+    batch.rows_processed = 0
+    db.commit()
+
     errors: list[dict] = []
     error_rows: set[int] = set()
 
     for i, row in enumerate(normalized, start=1):
+        # Update progress every 100 rows
+        if i % 100 == 0:
+            batch.rows_processed = i
+            db.commit()
         if batch.kind in ("cost_center", "cost_centers"):
             if not row.get("cctr"):
                 errors.append(
@@ -969,6 +979,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     batch.rows_total = len(normalized)
     batch.rows_valid = len(normalized) - len(error_rows)
     batch.rows_error = len(error_rows)
+    batch.rows_processed = len(normalized)
     batch.status = "validated"
     batch.validated_at = datetime.now(UTC)
     db.commit()
@@ -1020,6 +1031,17 @@ def load_upload(batch_id: int, db: Session) -> dict:
     normalized = _normalize_headers(rows, mapping) if mapping else rows
     loaded = 0
 
+    # Reset progress counter for load phase
+    batch.rows_processed = 0
+    batch.rows_total = len(normalized)
+    db.commit()
+
+    def _update_load_progress(count: int) -> None:
+        """Flush progress to DB every 100 rows so frontend can poll it."""
+        if count % 100 == 0:
+            batch.rows_processed = count
+            db.commit()
+
     if batch.kind in ("cost_center", "cost_centers"):
         for row in normalized:
             if not row.get("cctr") or not row.get("coarea"):
@@ -1068,6 +1090,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 cc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind in ("profit_center", "profit_centers"):
         for row in normalized:
@@ -1108,6 +1131,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 pc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
         for row in normalized:
@@ -1162,6 +1186,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind in ("entity", "entities"):
         for row in normalized:
@@ -1194,6 +1219,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     ent_kwargs["name"] = row["ccode"]
                 db.add(Entity(**ent_kwargs))
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind in ("employee", "employees"):
         for row in normalized:
@@ -1241,6 +1267,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 db.add(Employee(**model_kwargs))
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind in ("hierarchy", "hierarchies"):
         # Pass 1: create Hierarchy headers
@@ -1274,6 +1301,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 hier_map[(setclass, setname)] = existing
             loaded += 1
+            _update_load_progress(loaded)
 
         # Pass 2: create nodes
         for row in normalized:
@@ -1304,6 +1332,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            _update_load_progress(loaded)
 
         # Pass 3: create leaves
         for row in normalized:
@@ -1335,6 +1364,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind == "hierarchies_flat":
         # Build hierarchy from flat SAP node export (NODEID/PARENTID/CHILDID).
@@ -1380,6 +1410,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             db.flush()
             hier_map_flat[root_id] = h
             loaded += 1
+            _update_load_progress(loaded)
 
         # BFS to create nodes and leaves
         from collections import deque
@@ -1427,6 +1458,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         )
                     )
                 loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind == "gl_accounts_ska1":
         for row in normalized:
@@ -1455,6 +1487,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 kwargs["refresh_batch"] = batch.id
                 db.add(GLAccountSKA1(**kwargs))
             loaded += 1
+            _update_load_progress(loaded)
 
     elif batch.kind == "gl_accounts_skb1":
         for row in normalized:
@@ -1483,8 +1516,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 kwargs_b["refresh_batch"] = batch.id
                 db.add(GLAccountSKB1(**kwargs_b))
             loaded += 1
+            _update_load_progress(loaded)
 
     batch.rows_loaded = loaded
+    batch.rows_processed = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
     db.commit()

@@ -1173,6 +1173,7 @@ def list_uploads(
                 "rows_valid": b.rows_valid,
                 "rows_error": b.rows_error,
                 "rows_loaded": b.rows_loaded,
+                "rows_processed": b.rows_processed,
                 "created_at": str(b.created_at) if b.created_at else None,
             }
             for b in batches
@@ -1198,6 +1199,7 @@ def get_upload(
         "rows_valid": batch.rows_valid,
         "rows_error": batch.rows_error,
         "rows_loaded": batch.rows_loaded,
+        "rows_processed": batch.rows_processed,
         "storage_uri": batch.storage_uri,
         "created_at": str(batch.created_at) if batch.created_at else None,
         "validated_at": str(batch.validated_at) if batch.validated_at else None,
