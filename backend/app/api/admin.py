@@ -1793,6 +1793,89 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
         ],
         "sample_row": [],
     },
+    "gl_accounts_ska1": {
+        "filename": "template_gl_accounts_ska1.csv",
+        "description": "GL Account upload — SAP SKA1 (Chart of Accounts level)",
+        "columns": [
+            "MANDT",
+            "KTOPL",
+            "SAKNR",
+            "XBILK",
+            "SAKAN",
+            "BILKT",
+            "ERDAT",
+            "ERNAM",
+            "GVTYP",
+            "KTOKS",
+            "MUSTR",
+            "VBUND",
+            "XLOEV",
+            "XSPEA",
+            "XSPEB",
+            "XSPEP",
+            "MCOD1",
+            "FUNC_AREA",
+            "GLACCOUNT_TYPE",
+            "GLACCOUNT_SUBTYPE",
+            "MAIN_SAKNR",
+            "LAST_CHANGED_TS",
+            "TXT20",
+            "TXT50",
+        ],
+        "sample_row": [],
+    },
+    "gl_accounts_skb1": {
+        "filename": "template_gl_accounts_skb1.csv",
+        "description": "GL Account upload — SAP SKB1 (Company Code level)",
+        "columns": [
+            "MANDT",
+            "BUKRS",
+            "SAKNR",
+            "BEGRU",
+            "BUSAB",
+            "DATLZ",
+            "ERDAT",
+            "ERNAM",
+            "FDGRV",
+            "FDLEV",
+            "FIPLS",
+            "FSTAG",
+            "HBKID",
+            "HKTID",
+            "KDFSL",
+            "MITKZ",
+            "MWSKZ",
+            "STEXT",
+            "VZSKZ",
+            "WAERS",
+            "WMETH",
+            "XGKON",
+            "XINTB",
+            "XKRES",
+            "XLOEB",
+            "XNKON",
+            "XOPVW",
+            "XSPEB",
+            "ZINDT",
+            "ZINRT",
+            "ZUAWA",
+            "ALTKT",
+            "XMITK",
+            "RECID",
+            "FIPOS",
+            "XMWNO",
+            "XSALH",
+            "BEWGP",
+            "INFKY",
+            "TOGRU",
+            "XLGCLR",
+            "X_UJ_CLR",
+            "MCAKEY",
+            "COCHANGED",
+            "LAST_CHANGED_TS",
+        ],
+        "sample_row": [],
+    },
 }
 
 
@@ -2146,6 +2229,115 @@ def delete_explorer_source(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+# --- Explorer Display Config (global attribute selection) ---
+
+
+class DisplayConfigIn(BaseModel):
+    object_type: str
+    table_columns: list[str] = []
+    detail_columns: list[str] = []
+    default_sort_column: str | None = None
+    default_sort_dir: str | None = "asc"
+
+
+class DisplayConfigOut(BaseModel):
+    id: int
+    object_type: str
+    table_columns: list[str]
+    detail_columns: list[str]
+    default_sort_column: str | None = None
+    default_sort_dir: str | None = "asc"
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/explorer-display-config")
+def list_display_configs(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """List all display configurations."""
+    from app.models.core import ExplorerDisplayConfig
+
+    rows = db.execute(
+        select(ExplorerDisplayConfig).order_by(ExplorerDisplayConfig.object_type)
+    ).scalars().all()
+    return {"items": [DisplayConfigOut.model_validate(r).model_dump() for r in rows]}
+
+
+@router.get("/explorer-display-config/{object_type}")
+def get_display_config(
+    object_type: str,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Get display config for a specific object type."""
+    from app.models.core import ExplorerDisplayConfig
+
+    row = db.execute(
+        select(ExplorerDisplayConfig).where(
+            ExplorerDisplayConfig.object_type == object_type
+        )
+    ).scalar_one_or_none()
+    if not row:
+        return {"object_type": object_type, "table_columns": [], "detail_columns": []}
+    return DisplayConfigOut.model_validate(row).model_dump()
+
+
+@router.put("/explorer-display-config/{object_type}")
+def upsert_display_config(
+    object_type: str,
+    body: DisplayConfigIn,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Create or update display config for an object type."""
+    from app.models.core import ExplorerDisplayConfig
+
+    row = db.execute(
+        select(ExplorerDisplayConfig).where(
+            ExplorerDisplayConfig.object_type == object_type
+        )
+    ).scalar_one_or_none()
+    if row:
+        row.table_columns = body.table_columns
+        row.detail_columns = body.detail_columns
+        row.default_sort_column = body.default_sort_column
+        row.default_sort_dir = body.default_sort_dir
+        row.updated_by = user.id
+    else:
+        row = ExplorerDisplayConfig(
+            object_type=object_type,
+            table_columns=body.table_columns,
+            detail_columns=body.detail_columns,
+            default_sort_column=body.default_sort_column,
+            default_sort_dir=body.default_sort_dir,
+            updated_by=user.id,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return DisplayConfigOut.model_validate(row).model_dump()
+
+
+@router.get("/explorer-available-columns/{object_type}")
+def get_available_columns(
+    object_type: str,
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Return all available columns for an object type."""
+    from sqlalchemy import inspect as sa_inspect
+
+    from app.api.explore import _OBJECT_MODELS
+
+    model = _OBJECT_MODELS.get(object_type)
+    if not model:
+        return {"columns": []}
+    mapper = sa_inspect(model)
+    cols = [c.key for c in mapper.column_attrs if c.key not in ("id", "created_at", "updated_at")]
+    return {"object_type": object_type, "columns": cols}
 
 
 # --- Application Logs ---

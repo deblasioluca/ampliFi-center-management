@@ -97,7 +97,85 @@ async def me(user: AppUser = Depends(get_current_user)) -> UserInfo | dict:
     return UserInfo.model_validate(user)
 
 
-# --- Azure EntraID OIDC routes (§10.1.2) ---
+# --- Azure EntraID configuration & SPA flow ---
+
+
+@router.get("/entra/config")
+async def entra_config(request: Request) -> dict:
+    """Return Entra ID configuration for MSAL.js SPA login."""
+    enabled = bool(settings.entraid_client_id and settings.entraid_tenant_id)
+    result: dict = {"enabled": enabled}
+    if enabled:
+        result["client_id"] = settings.entraid_client_id
+        result["tenant_id"] = settings.entraid_tenant_id
+        # SPA flow: no client secret needed, MSAL.js handles everything
+        has_secret = bool(
+            settings.entraid_client_secret.get_secret_value()
+        )
+        result["auth_mode"] = "server" if has_secret else "spa"
+        # SPA redirect URI → the login page itself
+        proto = request.headers.get(
+            "x-forwarded-proto", request.url.scheme
+        )
+        host = request.headers.get(
+            "x-forwarded-host",
+            request.headers.get("host", "localhost"),
+        )
+        result["spa_redirect_uri"] = f"{proto}://{host}/login"
+    return result
+
+
+class _SpaTokenRequest(BaseModel):
+    id_token: str
+    access_token: str = ""
+
+
+@router.post("/entra/token")
+async def entra_spa_token(
+    body: _SpaTokenRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Exchange an MSAL.js id_token for an app session JWT (SPA flow)."""
+    from app.auth.entraid import (
+        EntraIDConfig,
+        upsert_user_from_claims,
+        validate_id_token,
+    )
+
+    if not settings.entraid_client_id:
+        raise HTTPException(
+            status_code=500, detail="EntraID not configured"
+        )
+
+    cfg = EntraIDConfig(
+        {
+            "tenant_id": settings.entraid_tenant_id,
+            "client_id": settings.entraid_client_id,
+            "client_secret": (
+                settings.entraid_client_secret.get_secret_value()
+            ),
+            "redirect_uri": "",
+        }
+    )
+
+    claims = validate_id_token(cfg, body.id_token)
+    user = upsert_user_from_claims(claims, cfg, db)
+
+    access_token = create_access_token(user.id, user.role)
+    refresh_token = create_refresh_token(user.id)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.app_env != "dev",
+        samesite="lax",
+        max_age=settings.jwt_refresh_token_expire_days * 86400,
+    )
+    return TokenResponse(access_token=access_token)
+
+
+# --- Azure EntraID OIDC routes (§10.1.2 — server-side flow) ---
 
 _OIDC_COOKIE = "oidc_pkce"
 
