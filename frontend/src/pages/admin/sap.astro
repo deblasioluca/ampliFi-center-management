@@ -158,9 +158,15 @@ import Layout from '../../components/layout/Layout.astro';
             </div>
             <label class="flex items-center gap-2 text-sm"><input id="f-use-webdisp" type="checkbox" /> Enable Web Dispatcher globally</label>
             <div class="grid grid-cols-3 gap-3 text-xs">
-              <label class="flex items-center gap-1"><input id="f-adt-use-wd" type="checkbox" class="ep-wd-cb" data-ep="adt" /> ADT via WebDisp</label>
-              <label class="flex items-center gap-1"><input id="f-soap-use-wd" type="checkbox" class="ep-wd-cb" data-ep="soap" /> SOAP via WebDisp</label>
-              <label class="flex items-center gap-1"><input id="f-odata-use-wd" type="checkbox" class="ep-wd-cb" data-ep="odata" /> OData via WebDisp</label>
+              <label class="block"><span class="text-slate-600">ADT via WebDisp</span>
+                <select id="f-adt-use-wd" class="w-full border rounded px-1 py-0.5 text-xs"><option value="">Inherit</option><option value="true">Yes</option><option value="false">No</option></select>
+              </label>
+              <label class="block"><span class="text-slate-600">SOAP via WebDisp</span>
+                <select id="f-soap-use-wd" class="w-full border rounded px-1 py-0.5 text-xs"><option value="">Inherit</option><option value="true">Yes</option><option value="false">No</option></select>
+              </label>
+              <label class="block"><span class="text-slate-600">OData via WebDisp</span>
+                <select id="f-odata-use-wd" class="w-full border rounded px-1 py-0.5 text-xs"><option value="">Inherit</option><option value="true">Yes</option><option value="false">No</option></select>
+              </label>
             </div>
           </div>
         </details>
@@ -418,9 +424,9 @@ import Layout from '../../components/layout/Layout.astro';
       webdisp_port: document.getElementById('f-wd-port').value || null,
       webdisp_protocol: document.getElementById('f-wd-protocol').value,
       use_webdisp: document.getElementById('f-use-webdisp').checked,
-      adt_use_webdisp: document.getElementById('f-adt-use-wd').checked || null,
-      soap_use_webdisp: document.getElementById('f-soap-use-wd').checked || null,
-      odata_use_webdisp: document.getElementById('f-odata-use-wd').checked || null,
+      adt_use_webdisp: triVal('f-adt-use-wd'),
+      soap_use_webdisp: triVal('f-soap-use-wd'),
+      odata_use_webdisp: triVal('f-odata-use-wd'),
       adt_verify_ssl: triVal('f-adt-ssl'),
       adt_use_proxy: triVal('f-adt-proxy'),
       adt_saml2_disabled: triVal('f-adt-saml2'),
@@ -490,9 +496,9 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('f-wd-port').value = c.webdisp_port || '';
     document.getElementById('f-wd-protocol').value = c.webdisp_protocol || 'https';
     document.getElementById('f-use-webdisp').checked = c.use_webdisp || false;
-    document.getElementById('f-adt-use-wd').checked = c.adt_use_webdisp || false;
-    document.getElementById('f-soap-use-wd').checked = c.soap_use_webdisp || false;
-    document.getElementById('f-odata-use-wd').checked = c.odata_use_webdisp || false;
+    setTri('f-adt-use-wd', c.adt_use_webdisp);
+    setTri('f-soap-use-wd', c.soap_use_webdisp);
+    setTri('f-odata-use-wd', c.odata_use_webdisp);
     // Per-endpoint overrides
     function setTri(elId, val) { document.getElementById(elId).value = val === true ? 'true' : val === false ? 'false' : ''; }
     setTri('f-adt-ssl', c.adt_verify_ssl);
