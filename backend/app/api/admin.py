@@ -1291,6 +1291,7 @@ def validate_upload_batch(
             detail=f"Cannot validate batch in status '{batch.status}'",
         )
     batch.status = "validating"
+    batch.rows_processed = 0
     db.commit()
     background_tasks.add_task(_run_validate_in_background, batch_id)
     return {"status": "validating", "batch_id": batch_id}
@@ -1312,6 +1313,7 @@ def load_upload_batch(
             detail=f"Batch must be validated first (status: {batch.status})",
         )
     batch.status = "loading"
+    batch.rows_processed = 0
     db.commit()
     background_tasks.add_task(_run_load_in_background, batch_id)
     return {"status": "loading", "batch_id": batch_id}
