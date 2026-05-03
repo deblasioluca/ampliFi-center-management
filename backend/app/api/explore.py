@@ -512,7 +512,9 @@ def export_object(
             ws.title = object_type
             ws.append(table_cols)
             for row in rows:
-                ws.append([str(getattr(row, c, "") or "") for c in table_cols])
+                ws.append(
+                    ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
+                )
             buf = io.BytesIO()
             wb.save(buf)
             buf.seek(0)
@@ -529,7 +531,9 @@ def export_object(
     writer = csv.writer(buf)
     writer.writerow(table_cols)
     for row in rows:
-        writer.writerow([str(getattr(row, c, "") or "") for c in table_cols])
+        writer.writerow(
+            ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
+        )
     content = buf.getvalue().encode("utf-8-sig")
     return StreamingResponse(
         io.BytesIO(content),

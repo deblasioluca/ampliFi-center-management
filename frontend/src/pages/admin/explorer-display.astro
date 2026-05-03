@@ -95,7 +95,7 @@ async function loadConfig() {
 
   // Load available columns
   try {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+    const token = localStorage.getItem('amplifi_token') || '';
     const headers = { 'Authorization': `Bearer ${token}` };
 
     const [avResp, cfgResp] = await Promise.all([
