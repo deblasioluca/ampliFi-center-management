@@ -58,6 +58,8 @@ def _flush_progress(batch_id: int, count: int, total: int | None = None) -> None
                 {"p": count, "id": batch_id},
             )
         s.commit()
+    except Exception:
+        logger.warning("Failed to flush progress for batch %s", batch_id, exc_info=True)
     finally:
         s.close()
 
