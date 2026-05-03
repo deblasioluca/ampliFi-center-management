@@ -2261,9 +2261,11 @@ def list_display_configs(
     """List all display configurations."""
     from app.models.core import ExplorerDisplayConfig
 
-    rows = db.execute(
-        select(ExplorerDisplayConfig).order_by(ExplorerDisplayConfig.object_type)
-    ).scalars().all()
+    rows = (
+        db.execute(select(ExplorerDisplayConfig).order_by(ExplorerDisplayConfig.object_type))
+        .scalars()
+        .all()
+    )
     return {"items": [DisplayConfigOut.model_validate(r).model_dump() for r in rows]}
 
 
@@ -2277,9 +2279,7 @@ def get_display_config(
     from app.models.core import ExplorerDisplayConfig
 
     row = db.execute(
-        select(ExplorerDisplayConfig).where(
-            ExplorerDisplayConfig.object_type == object_type
-        )
+        select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
     ).scalar_one_or_none()
     if not row:
         return {"object_type": object_type, "table_columns": [], "detail_columns": []}
@@ -2297,9 +2297,7 @@ def upsert_display_config(
     from app.models.core import ExplorerDisplayConfig
 
     row = db.execute(
-        select(ExplorerDisplayConfig).where(
-            ExplorerDisplayConfig.object_type == object_type
-        )
+        select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
     ).scalar_one_or_none()
     if row:
         row.table_columns = body.table_columns

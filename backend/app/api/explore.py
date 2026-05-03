@@ -58,37 +58,87 @@ _OBJECT_MODELS: dict[str, Any] = {
 # Default columns per object type (when no ExplorerDisplayConfig exists)
 _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     "cost-centers": [
-        "cctr", "txtsh", "ccode", "coarea", "pctr",
-        "responsible", "cctrcgy", "currency", "is_active",
+        "cctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "pctr",
+        "responsible",
+        "cctrcgy",
+        "currency",
+        "is_active",
     ],
     "profit-centers": [
-        "pctr", "txtsh", "ccode", "coarea",
-        "responsible", "department", "currency", "is_active",
+        "pctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "responsible",
+        "department",
+        "currency",
+        "is_active",
     ],
     "entities": [
-        "ccode", "name", "city", "country",
-        "region", "currency", "language", "is_active",
+        "ccode",
+        "name",
+        "city",
+        "country",
+        "region",
+        "currency",
+        "language",
+        "is_active",
     ],
     "employees": [
-        "gpn", "bs_name", "bs_firstname", "bs_lastname",
-        "ou_cd", "ou_desc", "local_cc_cd", "job_desc",
+        "gpn",
+        "bs_name",
+        "bs_firstname",
+        "bs_lastname",
+        "ou_cd",
+        "ou_desc",
+        "local_cc_cd",
+        "job_desc",
         "email_address",
     ],
     "gl-accounts-ska1": [
-        "ktopl", "saknr", "txt20", "txt50", "xbilk",
-        "gvtyp", "ktoks", "bilkt", "func_area", "glaccount_type",
+        "ktopl",
+        "saknr",
+        "txt20",
+        "txt50",
+        "xbilk",
+        "gvtyp",
+        "ktoks",
+        "bilkt",
+        "func_area",
+        "glaccount_type",
     ],
     "gl-accounts-skb1": [
-        "bukrs", "saknr", "stext", "waers", "mitkz",
-        "mwskz", "fstag", "xopvw", "xkres", "xintb",
+        "bukrs",
+        "saknr",
+        "stext",
+        "waers",
+        "mitkz",
+        "mwskz",
+        "fstag",
+        "xopvw",
+        "xkres",
+        "xintb",
     ],
     "balances": [
-        "coarea", "cctr", "ccode", "fiscal_year",
-        "period", "account", "tc_amt", "currency_tc",
+        "coarea",
+        "cctr",
+        "ccode",
+        "fiscal_year",
+        "period",
+        "account",
+        "tc_amt",
+        "currency_tc",
     ],
     "gl-accounts": [
-        "class_code", "class_label", "from_account",
-        "to_account", "category",
+        "class_code",
+        "class_label",
+        "from_account",
+        "to_account",
+        "category",
     ],
 }
 
@@ -126,9 +176,7 @@ def _get_model_columns(model: Any) -> list[str]:
 def _get_display_config(db: Session, object_type: str) -> dict:
     """Get display configuration for an object type."""
     cfg = db.execute(
-        select(ExplorerDisplayConfig).where(
-            ExplorerDisplayConfig.object_type == object_type
-        )
+        select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
     ).scalar_one_or_none()
     if cfg:
         return {

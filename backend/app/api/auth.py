@@ -109,14 +109,10 @@ async def entra_config(request: Request) -> dict:
         result["client_id"] = settings.entraid_client_id
         result["tenant_id"] = settings.entraid_tenant_id
         # SPA flow: no client secret needed, MSAL.js handles everything
-        has_secret = bool(
-            settings.entraid_client_secret.get_secret_value()
-        )
+        has_secret = bool(settings.entraid_client_secret.get_secret_value())
         result["auth_mode"] = "server" if has_secret else "spa"
         # SPA redirect URI → the login page itself
-        proto = request.headers.get(
-            "x-forwarded-proto", request.url.scheme
-        )
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         host = request.headers.get(
             "x-forwarded-host",
             request.headers.get("host", "localhost"),
@@ -144,17 +140,13 @@ async def entra_spa_token(
     )
 
     if not settings.entraid_client_id:
-        raise HTTPException(
-            status_code=500, detail="EntraID not configured"
-        )
+        raise HTTPException(status_code=500, detail="EntraID not configured")
 
     cfg = EntraIDConfig(
         {
             "tenant_id": settings.entraid_tenant_id,
             "client_id": settings.entraid_client_id,
-            "client_secret": (
-                settings.entraid_client_secret.get_secret_value()
-            ),
+            "client_secret": (settings.entraid_client_secret.get_secret_value()),
             "redirect_uri": "",
         }
     )
