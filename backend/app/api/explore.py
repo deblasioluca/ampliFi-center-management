@@ -254,6 +254,49 @@ def get_display_config(object_type: str, db: Session = Depends(get_db)) -> dict:
     }
 
 
+# ── Legacy: Balances (aggregated) — must be before generic {object_type} ──
+
+
+@router.get("/legacy/balances-agg")
+def explore_balances_agg(
+    db: Session = Depends(get_db),
+    coarea: str | None = None,
+    cctr: str | None = None,
+    max_rows: int = Query(50000, ge=1, le=200000),
+) -> dict:
+    query = (
+        select(
+            Balance.coarea,
+            Balance.cctr,
+            Balance.fiscal_year,
+            Balance.period,
+            func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
+            func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
+            func.max(Balance.currency_tc).label("currency"),
+        )
+        .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
+        .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
+    )
+    if coarea:
+        query = query.where(Balance.coarea == coarea)
+    if cctr:
+        query = query.where(Balance.cctr == cctr)
+    rows = db.execute(query.limit(max_rows)).all()
+    items: dict[str, list[dict]] = {}
+    for ca, cc, fy, per, amt, post, curr in rows:
+        key = f"{ca}:{cc}"
+        items.setdefault(key, []).append(
+            {
+                "fiscal_year": fy,
+                "period": per,
+                "amount": float(amt),
+                "postings": int(post),
+                "currency": curr or "",
+            }
+        )
+    return {"total_keys": len(items), "balances": items}
+
+
 # ── Generic object data endpoint ─────────────────────────────────────────
 
 
@@ -398,49 +441,6 @@ def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
         )
     cols = ["setname", "setclass", "type_label", "label", "coarea"]
     return {"total": len(result), "hierarchies": result, "columns": cols}
-
-
-# ── Legacy: Balances (aggregated) ────────────────────────────────────────
-
-
-@router.get("/legacy/balances-agg")
-def explore_balances_agg(
-    db: Session = Depends(get_db),
-    coarea: str | None = None,
-    cctr: str | None = None,
-    max_rows: int = Query(50000, ge=1, le=200000),
-) -> dict:
-    query = (
-        select(
-            Balance.coarea,
-            Balance.cctr,
-            Balance.fiscal_year,
-            Balance.period,
-            func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
-            func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
-            func.max(Balance.currency_tc).label("currency"),
-        )
-        .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
-        .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
-    )
-    if coarea:
-        query = query.where(Balance.coarea == coarea)
-    if cctr:
-        query = query.where(Balance.cctr == cctr)
-    rows = db.execute(query.limit(max_rows)).all()
-    items: dict[str, list[dict]] = {}
-    for ca, cc, fy, per, amt, post, curr in rows:
-        key = f"{ca}:{cc}"
-        items.setdefault(key, []).append(
-            {
-                "fiscal_year": fy,
-                "period": per,
-                "amount": float(amt),
-                "postings": int(post),
-                "currency": curr or "",
-            }
-        )
-    return {"total_keys": len(items), "balances": items}
 
 
 # ── Export (CSV/Excel) ───────────────────────────────────────────────────
