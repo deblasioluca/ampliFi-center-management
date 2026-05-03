@@ -1084,6 +1084,10 @@ class SAPConnection(TimestampMixin, Base):
     system_type: Mapped[str] = mapped_column(String(20), nullable=False)
     landscape_type: Mapped[str | None] = mapped_column(String(10))
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Split address fields (preferred over base_url)
+    host: Mapped[str | None] = mapped_column(String(200))
+    port: Mapped[str | None] = mapped_column(String(10))
+    conn_protocol: Mapped[str | None] = mapped_column(String(10), default="https")  # https|http
     client: Mapped[str] = mapped_column(String(3), nullable=False, default="100")
     language: Mapped[str] = mapped_column(String(2), nullable=False, default="EN")
     username: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -1096,6 +1100,52 @@ class SAPConnection(TimestampMixin, Base):
     saml2_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     allowed_tables: Mapped[str | None] = mapped_column(Text)
+    fiori_launchpad_url: Mapped[str | None] = mapped_column(String(500))
+    webgui_url: Mapped[str | None] = mapped_column(String(500))
+    # Web Dispatcher — alternative entry point
+    webdisp_host: Mapped[str | None] = mapped_column(String(200))
+    webdisp_port: Mapped[str | None] = mapped_column(String(10))
+    webdisp_protocol: Mapped[str | None] = mapped_column(String(10), default="https")
+    use_webdisp: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Per-endpoint Web Dispatcher routing
+    adt_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    soap_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    odata_use_webdisp: Mapped[bool | None] = mapped_column(Boolean)
+    # Per-endpoint overrides (None = inherit from global)
+    adt_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    adt_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    adt_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    soap_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    soap_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    soap_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    odata_verify_ssl: Mapped[bool | None] = mapped_column(Boolean)
+    odata_use_proxy: Mapped[bool | None] = mapped_column(Boolean)
+    odata_saml2_disabled: Mapped[bool | None] = mapped_column(Boolean)
+    # ICF node aliases
+    use_icf_aliases: Mapped[bool] = mapped_column(Boolean, default=False)
+    adt_icf_source: Mapped[str | None] = mapped_column(String(20))
+    soap_icf_source: Mapped[str | None] = mapped_column(String(20))
+    odata_icf_source: Mapped[str | None] = mapped_column(String(20))
+    adt_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    soap_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    odata_icf_cert: Mapped[str | None] = mapped_column(String(200))
+    adt_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    soap_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    odata_icf_basic: Mapped[str | None] = mapped_column(String(200))
+    # Per-endpoint client certificate source
+    adt_cert_source: Mapped[str | None] = mapped_column(String(20))
+    soap_cert_source: Mapped[str | None] = mapped_column(String(20))
+    odata_cert_source: Mapped[str | None] = mapped_column(String(20))
+    # Principal Propagation (Entra ID -> SAP)
+    pp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    pp_sap_oauth_token_url: Mapped[str | None] = mapped_column(
+        String(200), default="/sap/bc/sec/oauth2/token"
+    )
+    pp_sap_oauth_client_id: Mapped[str | None] = mapped_column(String(200))
+    pp_sap_oauth_client_secret_enc: Mapped[str | None] = mapped_column(Text)
+    pp_saml_issuer: Mapped[str | None] = mapped_column(String(200))
+    pp_saml_audience: Mapped[str | None] = mapped_column(String(200))
+    pp_user_mapping: Mapped[str | None] = mapped_column(String(20), default="email")
     attrs: Mapped[dict | None] = mapped_column(JSONB)
 
 
@@ -1363,6 +1413,135 @@ class NamingAllocation(Base):
     pool: Mapped[NamingPool] = relationship(back_populates="allocations")
 
 
+# ---------- GL Account master data (SAP SKA1 / SKB1) ----------
+
+
+class GLAccountSKA1(TimestampMixin, Base):
+    """GL account chart-of-accounts level data — SAP SKA1."""
+
+    __tablename__ = "gl_account_ska1"
+    __table_args__ = (
+        UniqueConstraint("ktopl", "saknr"),
+        Index("ix_ska1_saknr", "saknr"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    ktopl: Mapped[str] = mapped_column(String(4), nullable=False)
+    saknr: Mapped[str] = mapped_column(String(10), nullable=False)
+    xbilk: Mapped[str | None] = mapped_column(String(1))
+    sakan: Mapped[str | None] = mapped_column(String(10))
+    bilkt: Mapped[str | None] = mapped_column(String(10))
+    erdat: Mapped[str | None] = mapped_column(String(8))
+    ernam: Mapped[str | None] = mapped_column(String(12))
+    gvtyp: Mapped[str | None] = mapped_column(String(2))
+    ktoks: Mapped[str | None] = mapped_column(String(4))
+    mustr: Mapped[str | None] = mapped_column(String(10))
+    vbund: Mapped[str | None] = mapped_column(String(6))
+    xloev: Mapped[str | None] = mapped_column(String(1))
+    xspea: Mapped[str | None] = mapped_column(String(1))
+    xspeb: Mapped[str | None] = mapped_column(String(1))
+    xspep: Mapped[str | None] = mapped_column(String(1))
+    mcod1: Mapped[str | None] = mapped_column(String(25))
+    func_area: Mapped[str | None] = mapped_column(String(16))
+    glaccount_type: Mapped[str | None] = mapped_column(String(1))
+    glaccount_subtype: Mapped[str | None] = mapped_column(String(1))
+    main_saknr: Mapped[str | None] = mapped_column(String(10))
+    last_changed_ts: Mapped[str | None] = mapped_column(String(15))
+    # description from SKAT
+    txt20: Mapped[str | None] = mapped_column(String(20))
+    txt50: Mapped[str | None] = mapped_column(String(50))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
+
+
+class GLAccountSKB1(TimestampMixin, Base):
+    """GL account company-code level data — SAP SKB1."""
+
+    __tablename__ = "gl_account_skb1"
+    __table_args__ = (
+        UniqueConstraint("bukrs", "saknr"),
+        Index("ix_skb1_saknr", "saknr"),
+        Index("ix_skb1_bukrs", "bukrs"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mandt: Mapped[str | None] = mapped_column(String(3))
+    bukrs: Mapped[str] = mapped_column(String(4), nullable=False)
+    saknr: Mapped[str] = mapped_column(String(10), nullable=False)
+    begru: Mapped[str | None] = mapped_column(String(4))
+    busab: Mapped[str | None] = mapped_column(String(2))
+    datlz: Mapped[str | None] = mapped_column(String(8))
+    erdat: Mapped[str | None] = mapped_column(String(8))
+    ernam: Mapped[str | None] = mapped_column(String(12))
+    fdgrv: Mapped[str | None] = mapped_column(String(10))
+    fdlev: Mapped[str | None] = mapped_column(String(2))
+    fipls: Mapped[str | None] = mapped_column(String(3))
+    fstag: Mapped[str | None] = mapped_column(String(4))
+    hbkid: Mapped[str | None] = mapped_column(String(5))
+    hktid: Mapped[str | None] = mapped_column(String(5))
+    kdfsl: Mapped[str | None] = mapped_column(String(4))
+    mitkz: Mapped[str | None] = mapped_column(String(1))
+    mwskz: Mapped[str | None] = mapped_column(String(2))
+    stext: Mapped[str | None] = mapped_column(String(50))
+    vzskz: Mapped[str | None] = mapped_column(String(2))
+    waers: Mapped[str | None] = mapped_column(String(5))
+    wmeth: Mapped[str | None] = mapped_column(String(2))
+    xgkon: Mapped[str | None] = mapped_column(String(1))
+    xintb: Mapped[str | None] = mapped_column(String(1))
+    xkres: Mapped[str | None] = mapped_column(String(1))
+    xloeb: Mapped[str | None] = mapped_column(String(1))
+    xnkon: Mapped[str | None] = mapped_column(String(1))
+    xopvw: Mapped[str | None] = mapped_column(String(1))
+    xspeb: Mapped[str | None] = mapped_column(String(1))
+    zindt: Mapped[str | None] = mapped_column(String(8))
+    zinrt: Mapped[str | None] = mapped_column(String(2))
+    zuawa: Mapped[str | None] = mapped_column(String(3))
+    altkt: Mapped[str | None] = mapped_column(String(10))
+    xmitk: Mapped[str | None] = mapped_column(String(1))
+    recid: Mapped[str | None] = mapped_column(String(2))
+    fipos: Mapped[str | None] = mapped_column(String(14))
+    xmwno: Mapped[str | None] = mapped_column(String(1))
+    xsalh: Mapped[str | None] = mapped_column(String(1))
+    bewgp: Mapped[str | None] = mapped_column(String(10))
+    infky: Mapped[str | None] = mapped_column(String(8))
+    togru: Mapped[str | None] = mapped_column(String(4))
+    xlgclr: Mapped[str | None] = mapped_column(String(1))
+    x_uj_clr: Mapped[str | None] = mapped_column(String(1))
+    mcakey: Mapped[str | None] = mapped_column(String(5))
+    cochanged: Mapped[str | None] = mapped_column(String(1))
+    last_changed_ts: Mapped[str | None] = mapped_column(String(15))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
+
+
+# ---------- data explorer display config ----------
+
+
+class ExplorerDisplayConfig(TimestampMixin, Base):
+    """Global display configuration for Data Explorer — which columns to show."""
+
+    __tablename__ = "explorer_display_config"
+    __table_args__ = (
+        UniqueConstraint("object_type"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    object_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    table_columns: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    detail_columns: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    default_sort_column: Mapped[str | None] = mapped_column(String(50))
+    default_sort_dir: Mapped[str | None] = mapped_column(String(4), default="asc")
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
+    )
+
+
 # ---------- data explorer source config ----------
 
 
@@ -1386,7 +1565,7 @@ class ExplorerSourceConfig(TimestampMixin, Base):
     )  # local_db | sap_s4 | sap_mdg | datasphere | custom_api
     protocol: Mapped[str] = mapped_column(
         String(20), nullable=False, default="db_query"
-    )  # db_query | odata | rfc | rest
+    )  # db_query | odata | adt | rfc | rest
     mode: Mapped[str] = mapped_column(
         String(15), nullable=False, default="replicated"
     )  # in_place | replicated

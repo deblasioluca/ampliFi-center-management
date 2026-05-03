@@ -2,12 +2,23 @@
 
 Provides read-only access to legacy data, analysis results (ampliFi), and
 mapping views for the public data visualization page.
+
+Now supports:
+- Dynamic column selection via ExplorerDisplayConfig
+- GL Accounts (SKA1/SKB1)
+- Excel/CSV export
+- Detail view data
 """
 
 from __future__ import annotations
 
+import csv
+import io
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.infra.db.session import get_db
@@ -17,7 +28,10 @@ from app.models.core import (
     CenterProposal,
     Employee,
     Entity,
+    ExplorerDisplayConfig,
     GLAccountClassRange,
+    GLAccountSKA1,
+    GLAccountSKB1,
     Hierarchy,
     HierarchyLeaf,
     HierarchyNode,
@@ -26,6 +40,182 @@ from app.models.core import (
 )
 
 router = APIRouter()
+
+# ── Object type → model mapping ──────────────────────────────────────────
+
+_OBJECT_MODELS: dict[str, Any] = {
+    "cost-centers": LegacyCostCenter,
+    "profit-centers": LegacyProfitCenter,
+    "entities": Entity,
+    "employees": Employee,
+    "gl-accounts-ska1": GLAccountSKA1,
+    "gl-accounts-skb1": GLAccountSKB1,
+    "balances": Balance,
+    "hierarchies": Hierarchy,
+    "gl-accounts": GLAccountClassRange,
+}
+
+# Default columns per object type (when no ExplorerDisplayConfig exists)
+_DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
+    "cost-centers": [
+        "cctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "pctr",
+        "responsible",
+        "cctrcgy",
+        "currency",
+        "is_active",
+    ],
+    "profit-centers": [
+        "pctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "responsible",
+        "department",
+        "currency",
+        "is_active",
+    ],
+    "entities": [
+        "ccode",
+        "name",
+        "city",
+        "country",
+        "region",
+        "currency",
+        "language",
+        "is_active",
+    ],
+    "employees": [
+        "gpn",
+        "bs_name",
+        "bs_firstname",
+        "bs_lastname",
+        "ou_cd",
+        "ou_desc",
+        "local_cc_cd",
+        "job_desc",
+        "email_address",
+    ],
+    "gl-accounts-ska1": [
+        "ktopl",
+        "saknr",
+        "txt20",
+        "txt50",
+        "xbilk",
+        "gvtyp",
+        "ktoks",
+        "bilkt",
+        "func_area",
+        "glaccount_type",
+    ],
+    "gl-accounts-skb1": [
+        "bukrs",
+        "saknr",
+        "stext",
+        "waers",
+        "mitkz",
+        "mwskz",
+        "fstag",
+        "xopvw",
+        "xkres",
+        "xintb",
+    ],
+    "balances": [
+        "coarea",
+        "cctr",
+        "ccode",
+        "fiscal_year",
+        "period",
+        "account",
+        "tc_amt",
+        "currency_tc",
+    ],
+    "gl-accounts": [
+        "class_code",
+        "class_label",
+        "from_account",
+        "to_account",
+        "category",
+    ],
+}
+
+# Search fields per object
+_SEARCH_FIELDS: dict[str, list[str]] = {
+    "cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
+    "profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
+    "entities": ["ccode", "name", "country"],
+    "employees": ["gpn", "bs_name", "email_address", "ou_cd"],
+    "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
+    "gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
+    "balances": ["cctr", "ccode", "coarea"],
+    "gl-accounts": ["class_code", "class_label"],
+}
+
+# Sort key per object
+_DEFAULT_SORT: dict[str, str] = {
+    "cost-centers": "cctr",
+    "profit-centers": "pctr",
+    "entities": "ccode",
+    "employees": "gpn",
+    "gl-accounts-ska1": "saknr",
+    "gl-accounts-skb1": "saknr",
+    "balances": "cctr",
+    "gl-accounts": "class_code",
+}
+
+
+def _get_model_columns(model: Any) -> list[str]:
+    """Get all column names from a SQLAlchemy model."""
+    mapper = inspect(model)
+    return [c.key for c in mapper.column_attrs]
+
+
+def _get_display_config(db: Session, object_type: str) -> dict:
+    """Get display configuration for an object type."""
+    cfg = db.execute(
+        select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
+    ).scalar_one_or_none()
+    if cfg:
+        return {
+            "table_columns": cfg.table_columns or [],
+            "detail_columns": cfg.detail_columns or [],
+            "default_sort_column": cfg.default_sort_column,
+            "default_sort_dir": cfg.default_sort_dir or "asc",
+        }
+    return {
+        "table_columns": _DEFAULT_TABLE_COLUMNS.get(object_type, []),
+        "detail_columns": [],
+        "default_sort_column": _DEFAULT_SORT.get(object_type),
+        "default_sort_dir": "asc",
+    }
+
+
+def _row_to_dict(row: Any, columns: list[str]) -> dict:
+    """Convert a model instance to a dict with only specified columns."""
+    result: dict = {"id": row.id}
+    for col in columns:
+        val = getattr(row, col, None)
+        if val is not None:
+            result[col] = val
+        else:
+            result[col] = None
+    return result
+
+
+def _row_to_full_dict(row: Any) -> dict:
+    """Convert a model instance to a dict with all columns."""
+    mapper = inspect(type(row))
+    result: dict = {}
+    for c in mapper.column_attrs:
+        val = getattr(row, c.key, None)
+        if val is not None:
+            result[c.key] = val
+        else:
+            result[c.key] = None
+    return result
 
 
 # ── Counts / overview ────────────────────────────────────────────────────
@@ -41,168 +231,34 @@ def explore_counts(db: Session = Depends(get_db)) -> dict:
         "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
+        "gl_accounts_ska1": db.execute(select(func.count(GLAccountSKA1.id))).scalar() or 0,
+        "gl_accounts_skb1": db.execute(select(func.count(GLAccountSKB1.id))).scalar() or 0,
         "gl_ranges": db.execute(select(func.count(GLAccountClassRange.id))).scalar() or 0,
         "proposals": db.execute(select(func.count(CenterProposal.id))).scalar() or 0,
     }
 
 
-# ── Legacy: Cost Centers ─────────────────────────────────────────────────
+# ── Display config (public) ─────────────────────────────────────────────
 
 
-@router.get("/legacy/cost-centers")
-def explore_cost_centers(
-    db: Session = Depends(get_db),
-    ccode: str | None = None,
-    coarea: str | None = None,
-    search: str | None = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(500, ge=1, le=5000),
-) -> dict:
-    query = select(LegacyCostCenter).order_by(LegacyCostCenter.cctr)
-    count_q = select(func.count(LegacyCostCenter.id))
-    if ccode:
-        query = query.where(LegacyCostCenter.ccode == ccode)
-        count_q = count_q.where(LegacyCostCenter.ccode == ccode)
-    if coarea:
-        query = query.where(LegacyCostCenter.coarea == coarea)
-        count_q = count_q.where(LegacyCostCenter.coarea == coarea)
-    if search:
-        pat = f"%{search}%"
-        flt = LegacyCostCenter.cctr.ilike(pat) | LegacyCostCenter.txtsh.ilike(pat)
-        query = query.where(flt)
-        count_q = count_q.where(flt)
-    total = db.execute(count_q).scalar() or 0
-    rows = db.execute(query.offset((page - 1) * size).limit(size)).scalars().all()
+@router.get("/display-config/{object_type}")
+def get_display_config(object_type: str, db: Session = Depends(get_db)) -> dict:
+    """Public: get display configuration for an object type."""
+    model = _OBJECT_MODELS.get(object_type)
+    all_columns = _get_model_columns(model) if model else []
+    config = _get_display_config(db, object_type)
     return {
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": [
-            {
-                "id": c.id,
-                "cctr": c.cctr,
-                "txtsh": c.txtsh,
-                "txtmi": c.txtmi,
-                "ccode": c.ccode,
-                "coarea": c.coarea,
-                "pctr": c.pctr,
-                "responsible": c.responsible,
-                "cctrcgy": c.cctrcgy,
-                "currency": c.currency,
-                "is_active": c.is_active,
-            }
-            for c in rows
-        ],
+        "object_type": object_type,
+        "all_columns": all_columns,
+        **config,
     }
 
 
-# ── Legacy: Profit Centers ───────────────────────────────────────────────
+# ── Legacy: Balances (aggregated) — must be before generic {object_type} ──
 
 
-@router.get("/legacy/profit-centers")
-def explore_profit_centers(
-    db: Session = Depends(get_db),
-    ccode: str | None = None,
-    coarea: str | None = None,
-    search: str | None = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(500, ge=1, le=5000),
-) -> dict:
-    query = select(LegacyProfitCenter).order_by(LegacyProfitCenter.pctr)
-    count_q = select(func.count(LegacyProfitCenter.id))
-    if ccode:
-        query = query.where(LegacyProfitCenter.ccode == ccode)
-        count_q = count_q.where(LegacyProfitCenter.ccode == ccode)
-    if coarea:
-        query = query.where(LegacyProfitCenter.coarea == coarea)
-        count_q = count_q.where(LegacyProfitCenter.coarea == coarea)
-    if search:
-        pat = f"%{search}%"
-        flt = LegacyProfitCenter.pctr.ilike(pat) | LegacyProfitCenter.txtsh.ilike(pat)
-        query = query.where(flt)
-        count_q = count_q.where(flt)
-    total = db.execute(count_q).scalar() or 0
-    rows = db.execute(query.offset((page - 1) * size).limit(size)).scalars().all()
-    return {
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": [
-            {
-                "id": p.id,
-                "pctr": p.pctr,
-                "txtsh": p.txtsh,
-                "txtmi": p.txtmi,
-                "ccode": p.ccode,
-                "coarea": p.coarea,
-                "responsible": p.responsible,
-                "department": p.department,
-                "currency": p.currency,
-                "is_active": p.is_active,
-            }
-            for p in rows
-        ],
-    }
-
-
-# ── Legacy: Entities ─────────────────────────────────────────────────────
-
-
-@router.get("/legacy/entities")
-def explore_entities(db: Session = Depends(get_db)) -> dict:
-    rows = db.execute(select(Entity).order_by(Entity.ccode)).scalars().all()
-    return {
-        "total": len(rows),
-        "items": [
-            {
-                "id": e.id,
-                "ccode": e.ccode,
-                "name": e.name,
-                "country": e.country,
-                "region": e.region,
-                "currency": e.currency,
-                "is_active": e.is_active,
-            }
-            for e in rows
-        ],
-    }
-
-
-# ── Legacy: GL Account Ranges ────────────────────────────────────────────
-
-
-@router.get("/legacy/gl-accounts")
-def explore_gl_accounts(db: Session = Depends(get_db)) -> dict:
-    rows = (
-        db.execute(
-            select(GLAccountClassRange).order_by(
-                GLAccountClassRange.class_code, GLAccountClassRange.from_account
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return {
-        "total": len(rows),
-        "items": [
-            {
-                "id": r.id,
-                "class_code": r.class_code,
-                "class_label": r.class_label,
-                "from_account": r.from_account,
-                "to_account": r.to_account,
-                "category": r.category,
-            }
-            for r in rows
-        ],
-    }
-
-
-# ── Legacy: Balances (aggregated) ────────────────────────────────────────
-
-
-@router.get("/legacy/balances")
-def explore_balances(
+@router.get("/legacy/balances-agg")
+def explore_balances_agg(
     db: Session = Depends(get_db),
     coarea: str | None = None,
     cctr: str | None = None,
@@ -241,21 +297,124 @@ def explore_balances(
     return {"total_keys": len(items), "balances": items}
 
 
-# ── Legacy: Hierarchies ─────────────────────────────────────────────────
+# ── Generic object data endpoint ─────────────────────────────────────────
 
 
-@router.get("/legacy/hierarchies")
-def explore_hierarchies(db: Session = Depends(get_db)) -> dict:
+@router.get("/legacy/{object_type}")
+def explore_object(
+    object_type: str,
+    db: Session = Depends(get_db),
+    search: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(500, ge=1, le=10000),
+    sort: str | None = None,
+    sort_dir: str | None = None,
+) -> dict:
+    """Generic endpoint: fetch data for any object type with dynamic columns."""
+    # Special case: hierarchies have their own endpoint
+    if object_type == "hierarchies":
+        return _explore_hierarchies(db, search)
+
+    model = _OBJECT_MODELS.get(object_type)
+    if not model:
+        return {"error": f"Unknown object type: {object_type}", "items": [], "total": 0}
+
+    config = _get_display_config(db, object_type)
+    table_cols = config["table_columns"]
+
+    # Build query
+    query = select(model)
+    count_q = select(func.count(model.id))
+
+    # Search
+    if search:
+        pat = f"%{search}%"
+        search_fields = _SEARCH_FIELDS.get(object_type, [])
+        if search_fields:
+            conditions = []
+            for field_name in search_fields:
+                col = getattr(model, field_name, None)
+                if col is not None:
+                    conditions.append(col.ilike(pat))
+            if conditions:
+                from sqlalchemy import or_
+
+                flt = or_(*conditions)
+                query = query.where(flt)
+                count_q = count_q.where(flt)
+
+    # Sort (validate against actual column names to prevent 500 on non-column attrs)
+    sort_col_name = sort or config.get("default_sort_column") or _DEFAULT_SORT.get(object_type)
+    if sort_col_name:
+        from sqlalchemy import inspect as sa_inspect
+
+        valid_columns = {c.key for c in sa_inspect(model).column_attrs}
+        if sort_col_name in valid_columns:
+            sort_attr = getattr(model, sort_col_name)
+            direction = sort_dir or config.get("default_sort_dir", "asc")
+            if direction == "desc":
+                query = query.order_by(sort_attr.desc().nulls_last())
+            else:
+                query = query.order_by(sort_attr.asc().nulls_last())
+
+    total = db.execute(count_q).scalar() or 0
+    rows = db.execute(query.offset((page - 1) * size).limit(size)).scalars().all()
+
+    return {
+        "total": total,
+        "page": page,
+        "size": size,
+        "columns": table_cols,
+        "items": [_row_to_dict(r, table_cols) for r in rows],
+    }
+
+
+# ── Detail view ──────────────────────────────────────────────────────────
+
+
+@router.get("/legacy/{object_type}/{item_id}")
+def explore_object_detail(
+    object_type: str,
+    item_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get full detail for a single item."""
+    model = _OBJECT_MODELS.get(object_type)
+    if not model:
+        return {"error": f"Unknown object type: {object_type}"}
+
+    row = db.get(model, item_id)
+    if not row:
+        return {"error": "Not found"}
+
+    config = _get_display_config(db, object_type)
+    detail_cols = config["detail_columns"]
+
+    data = _row_to_dict(row, detail_cols) if detail_cols else _row_to_full_dict(row)
+
+    return {"item": data, "detail_columns": detail_cols}
+
+
+# ── Hierarchies (special) ───────────────────────────────────────────────
+
+
+def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
+    """Hierarchies endpoint with node/leaf data."""
     cls_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
-    hiers = (
-        db.execute(
-            select(Hierarchy)
-            .where(Hierarchy.is_active.is_(True))
-            .order_by(Hierarchy.setclass, Hierarchy.setname)
+    query = select(Hierarchy).where(Hierarchy.is_active.is_(True))
+    if search:
+        pat = f"%{search}%"
+        from sqlalchemy import or_
+
+        query = query.where(
+            or_(
+                Hierarchy.setname.ilike(pat),
+                Hierarchy.label.ilike(pat),
+                Hierarchy.description.ilike(pat),
+                Hierarchy.coarea.ilike(pat),
+            )
         )
-        .scalars()
-        .all()
-    )
+    hiers = db.execute(query.order_by(Hierarchy.setclass, Hierarchy.setname)).scalars().all()
     result = []
     for h in hiers:
         nodes = (
@@ -288,51 +447,99 @@ def explore_hierarchies(db: Session = Depends(get_db)) -> dict:
                 ],
             }
         )
-    return {"total": len(result), "hierarchies": result}
+    cols = ["setname", "setclass", "type_label", "label", "coarea"]
+    return {"total": len(result), "hierarchies": result, "columns": cols}
 
 
-# ── Legacy: Employees ────────────────────────────────────────────────────
+# ── Export (CSV/Excel) ───────────────────────────────────────────────────
 
 
-@router.get("/legacy/employees")
-def explore_employees(
+@router.get("/export/{object_type}")
+def export_object(
+    object_type: str,
     db: Session = Depends(get_db),
+    export_format: str = Query("csv", alias="format"),
     search: str | None = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(200, ge=1, le=2000),
-) -> dict:
-    query = select(Employee).order_by(Employee.gpn)
-    count_q = select(func.count(Employee.id))
+) -> StreamingResponse:
+    """Export object data as CSV or Excel."""
+    model = _OBJECT_MODELS.get(object_type)
+    if not model:
+        return StreamingResponse(
+            io.BytesIO(b"Unknown object type"),
+            media_type="text/plain",
+            status_code=400,
+        )
+
+    config = _get_display_config(db, object_type)
+    table_cols = config["table_columns"]
+    if not table_cols:
+        table_cols = _get_model_columns(model)
+        # Remove internal columns
+        for skip in ("id", "created_at", "updated_at"):
+            if skip in table_cols:
+                table_cols.remove(skip)
+
+    # Build query
+    query = select(model)
     if search:
         pat = f"%{search}%"
-        flt = Employee.gpn.ilike(pat) | Employee.bs_name.ilike(pat) | Employee.ou_cd.ilike(pat)
-        query = query.where(flt)
-        count_q = count_q.where(flt)
-    total = db.execute(count_q).scalar() or 0
-    rows = db.execute(query.offset((page - 1) * size).limit(size)).scalars().all()
-    return {
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": [
-            {
-                "id": e.id,
-                "gpn": e.gpn,
-                "bs_name": e.bs_name,
-                "bs_firstname": e.bs_firstname,
-                "bs_lastname": e.bs_lastname,
-                "ou_cd": e.ou_cd,
-                "ou_desc": e.ou_desc,
-                "local_cc_cd": e.local_cc_cd,
-                "local_cc_desc": e.local_cc_desc,
-                "job_desc": e.job_desc,
-                "rank_desc": e.rank_desc,
-                "email_address": e.email_address,
-                "emp_status": e.emp_status,
-            }
-            for e in rows
-        ],
-    }
+        search_fields = _SEARCH_FIELDS.get(object_type, [])
+        if search_fields:
+            conditions = []
+            for field_name in search_fields:
+                col = getattr(model, field_name, None)
+                if col is not None:
+                    conditions.append(col.ilike(pat))
+            if conditions:
+                from sqlalchemy import or_
+
+                query = query.where(or_(*conditions))
+
+    sort_col_name = _DEFAULT_SORT.get(object_type)
+    if sort_col_name:
+        sort_attr = getattr(model, sort_col_name, None)
+        if sort_attr is not None:
+            query = query.order_by(sort_attr.asc().nulls_last())
+
+    rows = db.execute(query.limit(50000)).scalars().all()
+
+    if export_format == "excel":
+        try:
+            import openpyxl
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = object_type
+            ws.append(table_cols)
+            for row in rows:
+                ws.append(
+                    ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
+                )
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={object_type}.xlsx"},
+            )
+        except ImportError:
+            pass  # Fall back to CSV
+
+    # CSV export
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(table_cols)
+    for row in rows:
+        writer.writerow(
+            ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
+        )
+    content = buf.getvalue().encode("utf-8-sig")
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={object_type}.csv"},
+    )
 
 
 # ── ampliFi: Mapping (Legacy → Target) ──────────────────────────────────
@@ -343,10 +550,7 @@ def explore_mapping(
     db: Session = Depends(get_db),
     run_id: int | None = None,
 ) -> dict:
-    """Latest analysis results: legacy CC → proposed target mapping.
-
-    If run_id is not given, picks the most recent completed run.
-    """
+    """Latest analysis results: legacy CC → proposed target mapping."""
     if run_id is not None:
         run = db.execute(select(AnalysisRun).where(AnalysisRun.id == run_id)).scalars().first()
     else:
@@ -442,8 +646,6 @@ def explore_runs(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/data-sources")
 def list_data_sources(db: Session = Depends(get_db)) -> dict:
-    """Return available data sources per object type."""
-    # For now, return DB counts as indicator of data availability
     return {
         "sources": [
             {
@@ -483,7 +685,19 @@ def list_data_sources(db: Session = Depends(get_db)) -> dict:
                 "count": db.execute(select(func.count(Employee.id))).scalar() or 0,
             },
             {
-                "object": "gl_accounts",
+                "object": "gl_accounts_ska1",
+                "label": "GL Accounts (Chart of Accounts)",
+                "source": "Local DB",
+                "count": db.execute(select(func.count(GLAccountSKA1.id))).scalar() or 0,
+            },
+            {
+                "object": "gl_accounts_skb1",
+                "label": "GL Accounts (Company Code)",
+                "source": "Local DB",
+                "count": db.execute(select(func.count(GLAccountSKB1.id))).scalar() or 0,
+            },
+            {
+                "object": "gl_ranges",
                 "label": "GL Account Ranges",
                 "source": "Local DB",
                 "count": db.execute(select(func.count(GLAccountClassRange.id))).scalar() or 0,

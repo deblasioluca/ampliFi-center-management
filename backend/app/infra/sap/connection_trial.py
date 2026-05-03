@@ -236,9 +236,10 @@ def _probe_endpoint(
     language: str = "EN",
     verify_ssl: bool = True,
     saml2_disabled: bool = False,
+    icf_path: str | None = None,
 ) -> ProbeResult:
     """Probe a single endpoint (ADT, OData, SOAP)."""
-    path = ENDPOINT_PATHS[endpoint]
+    path = icf_path or ENDPOINT_PATHS[endpoint]
     t0 = time.monotonic()
 
     try:
@@ -401,22 +402,85 @@ def _probe_endpoint(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_base_url(conn: SAPConnection) -> str:
+    """Build the base URL from host/port/protocol or fall back to base_url."""
+    if conn.host:
+        proto = conn.conn_protocol or "https"
+        if conn.port:
+            return f"{proto}://{conn.host}:{conn.port}"
+        return f"{proto}://{conn.host}"
+    return conn.base_url.rstrip("/")
+
+
+def _resolve_webdisp_url(conn: SAPConnection) -> str | None:
+    """Build the Web Dispatcher URL if configured."""
+    if not conn.webdisp_host:
+        return None
+    proto = conn.webdisp_protocol or "https"
+    if conn.webdisp_port:
+        return f"{proto}://{conn.webdisp_host}:{conn.webdisp_port}"
+    return f"{proto}://{conn.webdisp_host}"
+
+
+def _ep_verify_ssl(conn: SAPConnection, ep: str) -> bool:
+    """Resolve per-endpoint verify_ssl (with fallback to global)."""
+    override = getattr(conn, f"{ep}_verify_ssl", None)
+    return override if override is not None else conn.verify_ssl
+
+
+def _ep_use_proxy(conn: SAPConnection, ep: str) -> bool:
+    """Resolve per-endpoint use_proxy (with fallback to global)."""
+    override = getattr(conn, f"{ep}_use_proxy", None)
+    return override if override is not None else conn.use_proxy
+
+
+def _ep_saml2_disabled(conn: SAPConnection, ep: str) -> bool:
+    """Resolve per-endpoint saml2_disabled (with fallback to global)."""
+    override = getattr(conn, f"{ep}_saml2_disabled", None)
+    return override if override is not None else conn.saml2_disabled
+
+
+def _ep_use_webdisp(conn: SAPConnection, ep: str) -> bool:
+    """Resolve per-endpoint use_webdisp (with fallback to global)."""
+    override = getattr(conn, f"{ep}_use_webdisp", None)
+    return override if override is not None else conn.use_webdisp
+
+
+def _ep_icf_path(conn: SAPConnection, ep: str) -> str | None:
+    """Resolve per-endpoint ICF path override (cert or basic alias)."""
+    if not conn.use_icf_aliases:
+        return None
+    source = getattr(conn, f"{ep}_icf_source", None) or "standard"
+    if source == "standard":
+        return None
+    basic_path: str | None = getattr(conn, f"{ep}_icf_basic", None)
+    cert_path: str | None = getattr(conn, f"{ep}_icf_cert", None)
+    cert_src = getattr(conn, f"{ep}_cert_source", None) or "none"
+    if cert_src in ("global", "local") and cert_path:
+        return cert_path
+    if basic_path:
+        return basic_path
+    return None
+
+
 def run_connection_trial(conn: SAPConnection) -> TrialResult:
     """Run a full connection trial on all 3 endpoints.
 
     This is the main entry point — mirrors the sap-ai-consultant connection
     trial engine. Tests login, then probes ADT, OData, and SOAP endpoints
-    separately, and builds recommendations.
+    separately with per-endpoint settings (SSL, proxy, SAML2, ICF paths,
+    Web Dispatcher routing), and builds recommendations.
     """
     password = decrypt_password(conn.password_encrypted)
-    base_url = conn.base_url.rstrip("/")
+    base_url = _resolve_base_url(conn)
+    webdisp_url = _resolve_webdisp_url(conn)
 
     result = TrialResult(
         connection_name=conn.name,
         base_url=base_url,
     )
 
-    # Step 1: Login check
+    # Step 1: Login check (uses global settings)
     result.login_check = check_login(
         base_url=base_url,
         username=conn.username,
@@ -427,36 +491,62 @@ def run_connection_trial(conn: SAPConnection) -> TrialResult:
         saml2_disabled=conn.saml2_disabled,
     )
 
-    # Step 2: Probe each endpoint
+    # Step 2: Probe each endpoint with per-endpoint overrides
     for ep in ENDPOINTS:
+        ep_ssl = _ep_verify_ssl(conn, ep)
+        ep_saml2 = _ep_saml2_disabled(conn, ep)
+        ep_webdisp = _ep_use_webdisp(conn, ep)
+        icf_path = _ep_icf_path(conn, ep)
+
+        target_url = webdisp_url if (ep_webdisp and webdisp_url) else base_url
+
         probe = _probe_endpoint(
-            base_url=base_url,
+            base_url=target_url,
             endpoint=ep,
             username=conn.username,
             password=password,
             sap_client=conn.client,
             language=conn.language,
-            verify_ssl=conn.verify_ssl,
-            saml2_disabled=conn.saml2_disabled,
+            verify_ssl=ep_ssl,
+            saml2_disabled=ep_saml2,
+            icf_path=icf_path,
         )
         result.probes.append(probe)
 
-    # Step 3: Build recommendations
+        # If app-server probe failed and webdisp is available, try the other path
+        if not probe.success and webdisp_url and not ep_webdisp:
+            wd_probe = _probe_endpoint(
+                base_url=webdisp_url,
+                endpoint=ep,
+                username=conn.username,
+                password=password,
+                sap_client=conn.client,
+                language=conn.language,
+                verify_ssl=ep_ssl,
+                saml2_disabled=ep_saml2,
+                icf_path=icf_path,
+            )
+            if wd_probe.success:
+                wd_probe.detail = f"[WebDisp] {wd_probe.detail}"
+                result.probes.append(wd_probe)
+
+    # Step 3: Build recommendations (pick best probe per endpoint)
     for ep in ENDPOINTS:
-        probe = next((p for p in result.probes if p.endpoint == ep), None)
-        if probe and probe.success:
+        ep_probes = [p for p in result.probes if p.endpoint == ep]
+        best = next((p for p in ep_probes if p.success), None)
+        if best:
             result.recommendations.append(
                 EndpointRecommendation(
                     endpoint=ep,
                     reachable=True,
-                    verify_ssl=conn.verify_ssl,
-                    use_proxy=conn.use_proxy,
-                    saml2_disabled=conn.saml2_disabled,
-                    note=probe.detail,
+                    verify_ssl=_ep_verify_ssl(conn, ep),
+                    use_proxy=_ep_use_proxy(conn, ep),
+                    saml2_disabled=_ep_saml2_disabled(conn, ep),
+                    note=best.detail,
                 )
             )
         else:
-            error = probe.error if probe else "Not tested"
+            error = ep_probes[0].error if ep_probes else "Not tested"
             result.recommendations.append(
                 EndpointRecommendation(
                     endpoint=ep,
@@ -474,6 +564,7 @@ def run_connection_trial(conn: SAPConnection) -> TrialResult:
             "endpoints_available": [r.endpoint for r in working],
             "verify_ssl": conn.verify_ssl,
             "saml2_disabled": conn.saml2_disabled,
+            "use_webdisp": conn.use_webdisp,
         }
 
     logger.info(

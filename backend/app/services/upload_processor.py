@@ -18,6 +18,8 @@ from app.models.core import (
     Balance,
     Employee,
     Entity,
+    GLAccountSKA1,
+    GLAccountSKB1,
     Hierarchy,
     HierarchyLeaf,
     HierarchyNode,
@@ -569,6 +571,83 @@ HIERARCHY_FLAT_COLUMNS = {
     "NODETEXT": "nodetext",
 }
 
+SKA1_COLUMNS = {
+    "MANDT": "mandt",
+    "KTOPL": "ktopl",
+    "SAKNR": "saknr",
+    "XBILK": "xbilk",
+    "SAKAN": "sakan",
+    "BILKT": "bilkt",
+    "ERDAT": "erdat",
+    "ERNAM": "ernam",
+    "GVTYP": "gvtyp",
+    "KTOKS": "ktoks",
+    "MUSTR": "mustr",
+    "VBUND": "vbund",
+    "XLOEV": "xloev",
+    "XSPEA": "xspea",
+    "XSPEB": "xspeb",
+    "XSPEP": "xspep",
+    "MCOD1": "mcod1",
+    "FUNC_AREA": "func_area",
+    "GLACCOUNT_TYPE": "glaccount_type",
+    "GLACCOUNT_SUBTYPE": "glaccount_subtype",
+    "MAIN_SAKNR": "main_saknr",
+    "LAST_CHANGED_TS": "last_changed_ts",
+    "TXT20": "txt20",
+    "TXT50": "txt50",
+}
+_SKA1_MODEL_FIELDS = set(SKA1_COLUMNS.values())
+
+SKB1_COLUMNS = {
+    "MANDT": "mandt",
+    "BUKRS": "bukrs",
+    "SAKNR": "saknr",
+    "BEGRU": "begru",
+    "BUSAB": "busab",
+    "DATLZ": "datlz",
+    "ERDAT": "erdat",
+    "ERNAM": "ernam",
+    "FDGRV": "fdgrv",
+    "FDLEV": "fdlev",
+    "FIPLS": "fipls",
+    "FSTAG": "fstag",
+    "HBKID": "hbkid",
+    "HKTID": "hktid",
+    "KDFSL": "kdfsl",
+    "MITKZ": "mitkz",
+    "MWSKZ": "mwskz",
+    "STEXT": "stext",
+    "VZSKZ": "vzskz",
+    "WAERS": "waers",
+    "WMETH": "wmeth",
+    "XGKON": "xgkon",
+    "XINTB": "xintb",
+    "XKRES": "xkres",
+    "XLOEB": "xloeb",
+    "XNKON": "xnkon",
+    "XOPVW": "xopvw",
+    "XSPEB": "xspeb",
+    "ZINDT": "zindt",
+    "ZINRT": "zinrt",
+    "ZUAWA": "zuawa",
+    "ALTKT": "altkt",
+    "XMITK": "xmitk",
+    "RECID": "recid",
+    "FIPOS": "fipos",
+    "XMWNO": "xmwno",
+    "XSALH": "xsalh",
+    "BEWGP": "bewgp",
+    "INFKY": "infky",
+    "TOGRU": "togru",
+    "XLGCLR": "xlgclr",
+    "X_UJ_CLR": "x_uj_clr",
+    "MCAKEY": "mcakey",
+    "COCHANGED": "cochanged",
+    "LAST_CHANGED_TS": "last_changed_ts",
+}
+_SKB1_MODEL_FIELDS = set(SKB1_COLUMNS.values())
+
 
 def _read_file(path: str) -> list[dict[str, str]]:
     """Read CSV or Excel file and return list of row dicts."""
@@ -669,6 +748,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "hierarchies_flat",
         "employee",
         "employees",
+        "gl_accounts_ska1",
+        "gl_accounts_skb1",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
@@ -711,6 +792,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
+        "gl_accounts_ska1": SKA1_COLUMNS,
+        "gl_accounts_skb1": SKB1_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -848,6 +931,28 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     }
                 )
                 error_rows.add(i)
+        elif batch.kind == "gl_accounts_ska1":
+            if not row.get("saknr"):
+                errors.append(
+                    {"row": i, "col": "SAKNR", "code": "REQUIRED", "msg": "SAKNR is required"}
+                )
+                error_rows.add(i)
+            if not row.get("ktopl"):
+                errors.append(
+                    {"row": i, "col": "KTOPL", "code": "REQUIRED", "msg": "KTOPL is required"}
+                )
+                error_rows.add(i)
+        elif batch.kind == "gl_accounts_skb1":
+            if not row.get("saknr"):
+                errors.append(
+                    {"row": i, "col": "SAKNR", "code": "REQUIRED", "msg": "SAKNR is required"}
+                )
+                error_rows.add(i)
+            if not row.get("bukrs"):
+                errors.append(
+                    {"row": i, "col": "BUKRS", "code": "REQUIRED", "msg": "BUKRS is required"}
+                )
+                error_rows.add(i)
 
     # Store errors
     for err in errors[:5000]:
@@ -908,6 +1013,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
+        "gl_accounts_ska1": SKA1_COLUMNS,
+        "gl_accounts_skb1": SKB1_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -1321,6 +1428,62 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     )
                 loaded += 1
 
+    elif batch.kind == "gl_accounts_ska1":
+        for row in normalized:
+            saknr = (row.get("saknr") or "").strip()
+            ktopl = (row.get("ktopl") or "").strip()
+            if not saknr or not ktopl:
+                continue
+            existing = db.execute(
+                select(GLAccountSKA1).where(
+                    GLAccountSKA1.ktopl == ktopl,
+                    GLAccountSKA1.saknr == saknr,
+                )
+            ).scalar_one_or_none()
+            kwargs: dict = {}
+            for field_name in _SKA1_MODEL_FIELDS:
+                val = row.get(field_name)
+                if val is not None:
+                    kwargs[field_name] = val if val else None
+            kwargs["ktopl"] = ktopl
+            kwargs["saknr"] = saknr
+            if existing:
+                for k, v in kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                kwargs["refresh_batch"] = batch.id
+                db.add(GLAccountSKA1(**kwargs))
+            loaded += 1
+
+    elif batch.kind == "gl_accounts_skb1":
+        for row in normalized:
+            saknr = (row.get("saknr") or "").strip()
+            bukrs = (row.get("bukrs") or "").strip()
+            if not saknr or not bukrs:
+                continue
+            existing = db.execute(
+                select(GLAccountSKB1).where(
+                    GLAccountSKB1.bukrs == bukrs,
+                    GLAccountSKB1.saknr == saknr,
+                )
+            ).scalar_one_or_none()
+            kwargs_b: dict = {}
+            for field_name in _SKB1_MODEL_FIELDS:
+                val = row.get(field_name)
+                if val is not None:
+                    kwargs_b[field_name] = val if val else None
+            kwargs_b["bukrs"] = bukrs
+            kwargs_b["saknr"] = saknr
+            if existing:
+                for k, v in kwargs_b.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                kwargs_b["refresh_batch"] = batch.id
+                db.add(GLAccountSKB1(**kwargs_b))
+            loaded += 1
+
     batch.rows_loaded = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
@@ -1367,6 +1530,12 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
             db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
             db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
         r = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+        deleted = r.rowcount
+    elif batch.kind == "gl_accounts_ska1":
+        r = db.execute(sa_delete(GLAccountSKA1).where(GLAccountSKA1.refresh_batch == batch.id))
+        deleted = r.rowcount
+    elif batch.kind == "gl_accounts_skb1":
+        r = db.execute(sa_delete(GLAccountSKB1).where(GLAccountSKB1.refresh_batch == batch.id))
         deleted = r.rowcount
 
     rows_loaded = batch.rows_loaded or 0

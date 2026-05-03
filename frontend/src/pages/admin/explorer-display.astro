@@ -1,0 +1,253 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Explorer Display Config" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Explorer Display Configuration</h1>
+      <p class="text-xs text-gray-500 mt-1">Configure which columns are displayed in the Data Explorer for each object type (global, all users)</p>
+    </div>
+  </div>
+
+  <!-- Object type selector -->
+  <div class="bg-white rounded-lg border p-4 mb-4">
+    <div class="flex items-center gap-3 mb-3">
+      <label class="text-sm font-medium text-gray-700">Object Type:</label>
+      <select id="object-type-select" class="border rounded px-3 py-1.5 text-sm" onchange="loadConfig()">
+        <option value="">Select...</option>
+        <option value="cost-centers">Cost Centers</option>
+        <option value="profit-centers">Profit Centers</option>
+        <option value="entities">Entities</option>
+        <option value="employees">Employees</option>
+        <option value="gl-accounts-ska1">GL Accounts (Chart of Accounts / SKA1)</option>
+        <option value="gl-accounts-skb1">GL Accounts (Company Code / SKB1)</option>
+        <option value="hierarchies">Hierarchies</option>
+        <option value="balances">Balances</option>
+        <option value="gl-accounts">GL Account Ranges</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Configuration panel -->
+  <div id="config-panel" class="hidden">
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Table Columns -->
+      <div class="bg-white rounded-lg border p-4">
+        <h3 class="text-sm font-semibold text-gray-800 mb-2">Table Columns (displayed in list view)</h3>
+        <p class="text-xs text-gray-500 mb-3">Drag to reorder. Check to include in the table.</p>
+        <div class="mb-2">
+          <input id="col-search" type="text" placeholder="Search columns..." class="border rounded px-2 py-1 text-xs w-full" oninput="filterAvailableCols()" />
+        </div>
+        <div id="table-columns-list" class="space-y-1 max-h-[50vh] overflow-y-auto"></div>
+      </div>
+
+      <!-- Detail Columns -->
+      <div class="bg-white rounded-lg border p-4">
+        <h3 class="text-sm font-semibold text-gray-800 mb-2">Detail View Columns (shown when clicking a row)</h3>
+        <p class="text-xs text-gray-500 mb-3">Check columns to show in the detail panel. Leave empty to show all.</p>
+        <div class="mb-2">
+          <input id="detail-col-search" type="text" placeholder="Search columns..." class="border rounded px-2 py-1 text-xs w-full" oninput="filterDetailCols()" />
+        </div>
+        <div id="detail-columns-list" class="space-y-1 max-h-[50vh] overflow-y-auto"></div>
+      </div>
+    </div>
+
+    <!-- Sort config + Save -->
+    <div class="bg-white rounded-lg border p-4 mt-4">
+      <div class="flex items-center gap-4">
+        <div>
+          <label class="text-xs font-medium text-gray-700">Default Sort Column:</label>
+          <select id="sort-column" class="border rounded px-2 py-1 text-xs ml-2">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-gray-700">Direction:</label>
+          <select id="sort-dir" class="border rounded px-2 py-1 text-xs ml-2">
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
+        </div>
+        <div class="flex-1"></div>
+        <button onclick="saveConfig()" class="btn-amplifi text-sm px-4 py-1.5">Save Configuration</button>
+      </div>
+      <div id="save-status" class="text-xs mt-2 text-green-600 hidden"></div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+const API_BASE = window.location.origin;
+
+let availableColumns = [];
+let selectedTableCols = [];
+let selectedDetailCols = [];
+
+async function loadConfig() {
+  const objectType = document.getElementById('object-type-select').value;
+  if (!objectType) {
+    document.getElementById('config-panel').classList.add('hidden');
+    return;
+  }
+  document.getElementById('config-panel').classList.remove('hidden');
+
+  // Load available columns
+  try {
+    const token = localStorage.getItem('amplifi_token') || '';
+    const headers = { 'Authorization': `Bearer ${token}` };
+
+    const [avResp, cfgResp] = await Promise.all([
+      fetch(`${API_BASE}/api/admin/explorer-available-columns/${objectType}`, { headers }),
+      fetch(`${API_BASE}/api/admin/explorer-display-config/${objectType}`, { headers }),
+    ]);
+    const avData = await avResp.json();
+    const cfgData = await cfgResp.json();
+
+    availableColumns = avData.columns || [];
+    selectedTableCols = cfgData.table_columns || [];
+    selectedDetailCols = cfgData.detail_columns || [];
+
+    // Update sort column dropdown
+    const sortSel = document.getElementById('sort-column');
+    sortSel.innerHTML = '<option value="">None</option>';
+    for (const col of availableColumns) {
+      const opt = document.createElement('option');
+      opt.value = col;
+      opt.textContent = col;
+      sortSel.appendChild(opt);
+    }
+    if (cfgData.default_sort_column) sortSel.value = cfgData.default_sort_column;
+    if (cfgData.default_sort_dir) document.getElementById('sort-dir').value = cfgData.default_sort_dir;
+
+    renderColumnLists();
+  } catch (err) {
+    console.error('Failed to load config:', err);
+  }
+}
+
+function renderColumnLists() {
+  const search = (document.getElementById('col-search')?.value || '').toLowerCase();
+  const detailSearch = (document.getElementById('detail-col-search')?.value || '').toLowerCase();
+
+  // Table columns
+  const tableList = document.getElementById('table-columns-list');
+  let html = '';
+
+  // First show selected columns in order
+  for (const col of selectedTableCols) {
+    if (search && !col.toLowerCase().includes(search)) continue;
+    html += `<label class="flex items-center gap-2 px-2 py-1 hover:bg-blue-50 rounded cursor-pointer bg-blue-50/50">
+      <input type="checkbox" checked onchange="toggleTableCol('${col}')" />
+      <span class="text-xs font-medium text-blue-800">${col}</span>
+      <span class="text-[10px] text-blue-500 ml-auto">selected</span>
+    </label>`;
+  }
+  // Then unselected
+  for (const col of availableColumns) {
+    if (selectedTableCols.includes(col)) continue;
+    if (search && !col.toLowerCase().includes(search)) continue;
+    html += `<label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+      <input type="checkbox" onchange="toggleTableCol('${col}')" />
+      <span class="text-xs text-gray-700">${col}</span>
+    </label>`;
+  }
+  tableList.innerHTML = html;
+
+  // Detail columns
+  const detailList = document.getElementById('detail-columns-list');
+  html = '';
+  for (const col of selectedDetailCols) {
+    if (detailSearch && !col.toLowerCase().includes(detailSearch)) continue;
+    html += `<label class="flex items-center gap-2 px-2 py-1 hover:bg-blue-50 rounded cursor-pointer bg-blue-50/50">
+      <input type="checkbox" checked onchange="toggleDetailCol('${col}')" />
+      <span class="text-xs font-medium text-blue-800">${col}</span>
+    </label>`;
+  }
+  for (const col of availableColumns) {
+    if (selectedDetailCols.includes(col)) continue;
+    if (detailSearch && !col.toLowerCase().includes(detailSearch)) continue;
+    html += `<label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+      <input type="checkbox" onchange="toggleDetailCol('${col}')" />
+      <span class="text-xs text-gray-700">${col}</span>
+    </label>`;
+  }
+  detailList.innerHTML = html;
+}
+
+function toggleTableCol(col) {
+  const idx = selectedTableCols.indexOf(col);
+  if (idx >= 0) {
+    selectedTableCols.splice(idx, 1);
+  } else {
+    selectedTableCols.push(col);
+  }
+  renderColumnLists();
+}
+
+function toggleDetailCol(col) {
+  const idx = selectedDetailCols.indexOf(col);
+  if (idx >= 0) {
+    selectedDetailCols.splice(idx, 1);
+  } else {
+    selectedDetailCols.push(col);
+  }
+  renderColumnLists();
+}
+
+function filterAvailableCols() {
+  renderColumnLists();
+}
+
+function filterDetailCols() {
+  renderColumnLists();
+}
+
+async function saveConfig() {
+  const objectType = document.getElementById('object-type-select').value;
+  if (!objectType) return;
+
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  const body = {
+    object_type: objectType,
+    table_columns: selectedTableCols,
+    detail_columns: selectedDetailCols,
+    default_sort_column: document.getElementById('sort-column').value || null,
+    default_sort_dir: document.getElementById('sort-dir').value || 'asc',
+  };
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/admin/explorer-display-config/${objectType}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    const status = document.getElementById('save-status');
+    if (resp.ok) {
+      status.textContent = 'Configuration saved successfully!';
+      status.classList.remove('hidden', 'text-red-600');
+      status.classList.add('text-green-600');
+    } else {
+      status.textContent = `Error: ${JSON.stringify(data)}`;
+      status.classList.remove('hidden', 'text-green-600');
+      status.classList.add('text-red-600');
+    }
+    setTimeout(() => status.classList.add('hidden'), 3000);
+  } catch (err) {
+    console.error('Save failed:', err);
+  }
+}
+
+// Expose to global scope
+window.loadConfig = loadConfig;
+window.toggleTableCol = toggleTableCol;
+window.toggleDetailCol = toggleDetailCol;
+window.filterAvailableCols = filterAvailableCols;
+window.filterDetailCols = filterDetailCols;
+window.saveConfig = saveConfig;
+</script>

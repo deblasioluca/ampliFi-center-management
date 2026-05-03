@@ -47,8 +47,9 @@ import Layout from '../../components/layout/Layout.astro';
           <div>
             <label class="block text-xs font-medium text-gray-700 mb-1">Protocol</label>
             <select id="f-protocol" class="input text-sm">
-              <option value="db_query">DB Query</option>
+              <option value="db_query">DB Query (local)</option>
               <option value="odata">OData</option>
+              <option value="adt">ADT</option>
               <option value="rfc">RFC</option>
               <option value="rest">REST API</option>
             </select>
@@ -65,9 +66,11 @@ import Layout from '../../components/layout/Layout.astro';
             <input id="f-display-order" type="number" class="input text-sm" value="0" min="0" />
           </div>
           <div class="col-span-2">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Connection Reference</label>
-            <input id="f-connection-ref" type="text" class="input text-sm" placeholder="SAP connection name, Datasphere URL, API base URL..." />
-            <p class="text-[10px] text-gray-400 mt-0.5">Reference to a configured connection (SAP system, DSP instance, etc.)</p>
+            <label class="block text-xs font-medium text-gray-700 mb-1">SAP System / Connection</label>
+            <select id="f-connection-ref" class="input text-sm">
+              <option value="">None (local upload only)</option>
+            </select>
+            <p class="text-[10px] text-gray-400 mt-0.5">Select which SAP system to source data from (for RFC/ADT/OData modes)</p>
           </div>
           <div class="col-span-2">
             <label class="block text-xs font-medium text-gray-700 mb-1">Endpoint / Table</label>
@@ -126,13 +129,28 @@ import Layout from '../../components/layout/Layout.astro';
   var _items = [];
   var _editId = null;
   var _filter = 'all';
+  var _sapConnections = [];
 
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
   var SOURCE_LABELS = { local_db: 'Local DB', sap_s4: 'SAP S/4', sap_mdg: 'SAP MDG', datasphere: 'Datasphere', custom_api: 'Custom API' };
   var SOURCE_COLORS = { local_db: 'bg-green-100 text-green-700', sap_s4: 'bg-blue-100 text-blue-700', sap_mdg: 'bg-purple-100 text-purple-700', datasphere: 'bg-orange-100 text-orange-700', custom_api: 'bg-gray-100 text-gray-600' };
   var MODE_LABELS = { replicated: 'Replicated', in_place: 'In-Place' };
-  var PROTOCOL_LABELS = { db_query: 'DB', odata: 'OData', rfc: 'RFC', rest: 'REST' };
+  var PROTOCOL_LABELS = { db_query: 'DB', odata: 'OData', rfc: 'RFC', rest: 'REST', adt: 'ADT' };
+
+  function loadSapConnections() {
+    apiFetch('/api/admin/sap').then(function(r) { return r.json(); }).then(function(conns) {
+      _sapConnections = conns || [];
+      var sel = document.getElementById('f-connection-ref');
+      sel.innerHTML = '<option value="">None (local upload only)</option>';
+      _sapConnections.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = c.name + ' (' + (c.system_type || '') + ' — ' + (c.protocol || '') + ')';
+        sel.appendChild(opt);
+      });
+    }).catch(function() {});
+  }
 
   function load() {
     apiFetch('/api/admin/explorer-sources').then(function(r) { return r.json(); }).then(function(d) {
@@ -248,6 +266,7 @@ import Layout from '../../components/layout/Layout.astro';
     }).catch(function(e) { alert('Error: ' + e.message); });
   };
 
+  loadSapConnections();
   load();
 })();
 </script>

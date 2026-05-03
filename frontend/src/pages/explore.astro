@@ -14,7 +14,7 @@ export const prerender = false;
 </head>
 <body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
 
-  <!-- Slim standalone header (no app navigation) -->
+  <!-- Slim standalone header -->
   <header class="bg-navy-900 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-2">
       <img src="/ubs-logo.svg" alt="UBS" class="h-5" />
@@ -37,19 +37,31 @@ export const prerender = false;
     <!-- Toolbar -->
     <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
       <div class="flex items-center gap-2">
-        <button id="view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchView('tabular')">Tabular</button>
-        <button id="view-hierarchical" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="switchView('hierarchical')">Hierarchical</button>
+        <select id="view-mode" class="border rounded px-2 py-1 text-xs" onchange="onViewModeChange()">
+          <option value="flat">Flat</option>
+        </select>
         <input id="explore-search" type="text" placeholder="Search..." class="border rounded px-2 py-1 text-xs w-48" oninput="applySearch()" />
       </div>
       <div class="flex items-center gap-2">
         <span id="explore-count" class="text-xs text-gray-500"></span>
         <button onclick="exportCSV()" class="btn-secondary text-xs">CSV</button>
+        <button onclick="exportExcel()" class="btn-secondary text-xs">Excel</button>
       </div>
     </div>
 
     <!-- Content (scrollable) -->
-    <div id="legacy-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
-      <span class="p-4 text-sm text-gray-400 block">Loading data...</span>
+    <div class="flex flex-1 min-h-0 mt-1 gap-0">
+      <div id="legacy-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-l-lg flex-1 min-h-0">
+        <span class="p-4 text-sm text-gray-400 block">Loading data...</span>
+      </div>
+      <!-- Detail panel (hidden by default) -->
+      <div id="detail-panel" class="hidden w-80 bg-white border-t border-r border-b rounded-r-lg overflow-y-auto p-3 flex-shrink-0">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-sm font-semibold text-gray-800">Detail View</h3>
+          <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+        </div>
+        <div id="detail-content" class="text-xs space-y-1"></div>
+      </div>
     </div>
   </div>
 
@@ -58,715 +70,489 @@ export const prerender = false;
     <!-- Object sub-tabs -->
     <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="amplifi-tabs"></div>
 
-    <!-- Toolbar -->
-    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
-      <div class="flex items-center gap-2">
-        <button id="av-tabular" class="btn-sm bg-indigo-600 text-white text-xs" onclick="switchAmplifiView('tabular')">Tabular</button>
-        <button id="av-hierarchical" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="switchAmplifiView('hierarchical')">Hierarchical</button>
-        <input id="amplifi-search" type="text" placeholder="Search..." class="border rounded px-2 py-1 text-xs w-48" oninput="applyAmplifiSearch()" />
-      </div>
-      <div class="flex items-center gap-2">
-        <span id="amplifi-count" class="text-xs text-gray-500"></span>
-        <button onclick="exportAmplifiCSV()" class="btn-secondary text-xs">CSV</button>
-      </div>
+    <!-- Content area -->
+    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex-shrink-0">
+      <label for="amplifi-run-select" class="text-xs text-gray-500 mr-2">Analysis Run:</label>
+      <select id="amplifi-run-select" class="border rounded px-2 py-1 text-xs" onchange="loadMapping()"></select>
     </div>
-
-    <!-- Content (scrollable) -->
-    <div id="amplifi-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
-      <span class="p-4 text-sm text-gray-400 block">Loading analysis data...</span>
+    <div id="amplifi-content" class="overflow-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
+      <span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>
     </div>
   </div>
 
-  <footer class="bg-white border-t px-4 py-1 flex-shrink-0">
-    <div class="flex items-center justify-between text-[10px] text-gray-400">
-      <span>ampliFi Data Explorer</span>
-      <span>&copy; 2026</span>
-    </div>
-  </footer>
+<style is:global>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .bg-navy-900 { background-color: #1a1a2e; }
+  .btn-sm { padding: 2px 10px; border-radius: 4px; cursor: pointer; transition: all 0.15s; }
+  .btn-secondary { padding: 2px 10px; border-radius: 4px; border: 1px solid #d1d5db; cursor: pointer; background: #f9fafb; }
+  .btn-secondary:hover { background: #e5e7eb; }
 
-<style>
-  #legacy-content thead th,
-  #amplifi-content thead th {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: #f9fafb;
+  table.explore-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.explore-tbl th {
+    position: sticky; top: 0; z-index: 2; background: #f3f4f6; text-align: left;
+    padding: 4px 8px; font-weight: 600; color: #374151; border-bottom: 1px solid #d1d5db;
+    cursor: pointer; user-select: none; white-space: nowrap;
   }
+  table.explore-tbl th:hover { background: #e5e7eb; }
+  table.explore-tbl th .sort-icon { font-size: 8px; margin-left: 2px; color: #6b7280; }
+  table.explore-tbl td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; white-space: nowrap; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
+  table.explore-tbl tr:hover td { background: #f0f9ff; }
+  table.explore-tbl tr.selected td { background: #dbeafe; }
+  table.explore-tbl th .col-filter { display: block; font-weight: 400; margin-top: 2px; }
+  table.explore-tbl th .col-filter input {
+    width: 100%; padding: 1px 4px; font-size: 10px; border: 1px solid #d1d5db; border-radius: 3px;
+  }
+
+  /* GL account grouping */
+  .group-header { background: #eff6ff; font-weight: 600; color: #1e40af; }
+  .group-header td { padding: 6px 8px !important; }
+
+  /* Detail panel */
+  #detail-panel .detail-row { display: flex; gap: 4px; padding: 3px 0; border-bottom: 1px solid #f3f4f6; }
+  #detail-panel .detail-label { color: #6b7280; font-weight: 500; min-width: 100px; flex-shrink: 0; }
+  #detail-panel .detail-value { color: #111827; word-break: break-all; }
 </style>
 
 <script is:inline>
-(function() {
-  var BASE = '/api/explore';
-  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+const API = window.location.origin + '/api/explore';
 
-  // ── State ──────────────────────────────────────────────────────────────
-  var _legacyObj = 'cost-centers';
-  var _legacyView = 'tabular';
-  var _legacyData = {};
-  var _amplifiObj = 'cost-centers';
-  var _amplifiView = 'tabular';
-  var _amplifiData = {};
-  var _sourceConfig = { legacy: [], amplifi: [] };
+// State
+let currentMainTab = 'legacy';
+let currentObjectType = '';
+let currentData = [];
+let currentColumns = [];
+let currentSort = { col: '', dir: 'asc' };
+let columnFilters = {};
+let selectedRowId = null;
+let currentPage = 1;
+let pageSize = 2000;
+let totalRows = 0;
 
-  // ── Source config driven tabs ──────────────────────────────────────────
-  function loadSourceConfig() {
-    return fetch(BASE + '/source-config').then(function(r) { return r.json(); }).then(function(d) {
-      _sourceConfig = d;
-      buildTabs('legacy', d.legacy || []);
-      buildTabs('amplifi', d.amplifi || []);
-    }).catch(function() {
-      // Fallback defaults if config endpoint not available
-      var defLegacy = [
-        { object_type: 'cost-centers', label: 'Cost Centers' },
-        { object_type: 'profit-centers', label: 'Profit Centers' },
-        { object_type: 'entities', label: 'Entities' },
-        { object_type: 'hierarchies', label: 'Hierarchies' },
-        { object_type: 'balances', label: 'Balances' },
-        { object_type: 'employees', label: 'Employees' },
-        { object_type: 'gl-accounts', label: 'GL Accounts' },
-      ];
-      var defAmplifi = [
-        { object_type: 'cost-centers', label: 'Cost Centers (Target)' },
-        { object_type: 'profit-centers', label: 'Profit Centers (Target)' },
-        { object_type: 'entities', label: 'Entities (Target)' },
-        { object_type: 'hierarchies', label: 'Hierarchies (Target)' },
-        { object_type: 'mapping', label: 'Legacy → Target Mapping' },
-      ];
-      _sourceConfig = { legacy: defLegacy, amplifi: defAmplifi };
-      buildTabs('legacy', defLegacy);
-      buildTabs('amplifi', defAmplifi);
-    });
+// ── Object type configuration ──
+const OBJECT_TYPES = {
+  'cost-centers':     { label: 'Cost Centers',    area: 'legacy', viewModes: ['flat', 'flat_hierarchy', 'hierarchical'] },
+  'profit-centers':   { label: 'Profit Centers',  area: 'legacy', viewModes: ['flat', 'flat_hierarchy', 'hierarchical'] },
+  'entities':         { label: 'Entities',         area: 'legacy', viewModes: ['flat'] },
+  'gl-accounts-ska1': { label: 'GL Accts (CoA)',   area: 'legacy', viewModes: ['flat', 'group_1digit', 'group_5digits'] },
+  'gl-accounts-skb1': { label: 'GL Accts (CoCd)',  area: 'legacy', viewModes: ['flat', 'group_1digit', 'group_5digits'] },
+  'hierarchies':      { label: 'Hierarchies',     area: 'legacy', viewModes: ['flat', 'hierarchical'] },
+  'employees':        { label: 'Employees',        area: 'legacy', viewModes: ['flat'] },
+};
+
+const VIEW_MODE_LABELS = {
+  'flat': 'Flat',
+  'flat_hierarchy': 'Flat (with hierarchy levels)',
+  'hierarchical': 'Hierarchical',
+  'group_1digit': 'Grouped (1st digit)',
+  'group_5digits': 'Grouped (first 5 digits)',
+};
+
+// ── Init ──
+async function init() {
+  buildLegacyTabs();
+  await loadAmplifiRuns();
+  // Auto-select first tab
+  const first = Object.keys(OBJECT_TYPES)[0];
+  if (first) selectObjectTab(first);
+}
+
+function buildLegacyTabs() {
+  const container = document.getElementById('legacy-tabs');
+  container.innerHTML = '';
+  for (const [key, cfg] of Object.entries(OBJECT_TYPES)) {
+    if (cfg.area !== 'legacy') continue;
+    const btn = document.createElement('button');
+    btn.className = 'px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent whitespace-nowrap';
+    btn.textContent = cfg.label;
+    btn.dataset.tab = key;
+    btn.onclick = () => selectObjectTab(key);
+    container.appendChild(btn);
+  }
+}
+
+function selectObjectTab(objectType) {
+  currentObjectType = objectType;
+  currentPage = 1;
+  columnFilters = {};
+  selectedRowId = null;
+  closeDetail();
+
+  // Highlight tab
+  document.querySelectorAll('#legacy-tabs button').forEach(b => {
+    const active = b.dataset.tab === objectType;
+    b.classList.toggle('border-blue-600', active);
+    b.classList.toggle('text-blue-700', active);
+    b.classList.toggle('border-transparent', !active);
+    b.classList.toggle('text-gray-500', !active);
+  });
+
+  // Update view mode dropdown
+  const cfg = OBJECT_TYPES[objectType];
+  const sel = document.getElementById('view-mode');
+  sel.innerHTML = '';
+  for (const mode of (cfg?.viewModes || ['flat'])) {
+    const opt = document.createElement('option');
+    opt.value = mode;
+    opt.textContent = VIEW_MODE_LABELS[mode] || mode;
+    sel.appendChild(opt);
   }
 
-  function buildTabs(area, items) {
-    var container = document.getElementById(area + '-tabs');
-    if (!container || !items.length) return;
-    var html = '';
-    var cls = area === 'amplifi' ? 'amplifi-sub' : 'explore-sub';
-    var activeColor = area === 'amplifi' ? 'border-indigo-600 text-indigo-700' : 'border-blue-600 text-blue-700';
-    items.forEach(function(it, idx) {
-      var objKey = normalizeKey(it.object_type);
-      var isActive = idx === 0;
-      html += '<button class="' + cls + (isActive ? ' active' : '') + ' px-3 py-1 text-xs font-medium' + (isActive ? ' rounded-t border-b-2 ' + activeColor : ' text-gray-500 hover:text-gray-700') + '" data-obj="' + esc(objKey) + '" onclick="switch' + (area === 'amplifi' ? 'AmplifiObj' : 'LegacyObj') + '(\'' + esc(objKey) + '\')">' + esc(it.label) + '</button>';
-    });
-    container.innerHTML = html;
-    // Set initial object
-    if (area === 'legacy' && items.length) { _legacyObj = normalizeKey(items[0].object_type); }
-    if (area === 'amplifi' && items.length) { _amplifiObj = normalizeKey(items[0].object_type); }
+  loadObjectData();
+}
+
+// ── Data loading ──
+async function loadObjectData() {
+  const el = document.getElementById('legacy-content');
+  el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
+
+  const search = document.getElementById('explore-search')?.value || '';
+  const params = new URLSearchParams({
+    page: currentPage.toString(),
+    size: pageSize.toString(),
+  });
+  if (search) params.set('search', search);
+  if (currentSort.col) {
+    params.set('sort', currentSort.col);
+    params.set('sort_dir', currentSort.dir);
   }
 
-  function normalizeKey(k) {
-    return (k || '').replace(/_/g, '-');
-  }
+  try {
+    const resp = await fetch(`${API}/legacy/${currentObjectType}?${params}`);
+    const data = await resp.json();
 
-  // ── Main tab switching ────────────────────────────────────────────────
-  window.switchMainTab = function(tab) {
-    ['legacy', 'amplifi'].forEach(function(t) {
-      var panel = document.getElementById('panel-' + t);
-      var btn = document.getElementById('main-tab-' + t);
-      if (t === tab) {
-        panel.classList.remove('hidden');
-        panel.classList.add('flex');
-        btn.className = 'px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700';
-      } else {
-        panel.classList.add('hidden');
-        panel.classList.remove('flex');
-        btn.className = 'px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700';
-      }
-    });
-    if (tab === 'amplifi') loadAmplifiObj(_amplifiObj);
-  };
-
-  // ── Legacy object switching ───────────────────────────────────────────
-  window.switchLegacyObj = function(obj) {
-    _legacyObj = obj;
-    document.querySelectorAll('.explore-sub').forEach(function(b) {
-      if (b.getAttribute('data-obj') === obj) {
-        b.className = 'explore-sub active px-3 py-1 text-xs font-medium rounded-t border-b-2 border-blue-600 text-blue-700';
-      } else {
-        b.className = 'explore-sub px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700';
-      }
-    });
-    var hierBtn = document.getElementById('view-hierarchical');
-    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'entities' || obj === 'hierarchies') {
-      hierBtn.classList.remove('hidden');
-    } else {
-      hierBtn.classList.add('hidden');
-      _legacyView = 'tabular';
-    }
-    loadLegacyObj(obj);
-  };
-
-  window.switchView = function(view) {
-    _legacyView = view;
-    document.getElementById('view-tabular').className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    document.getElementById('view-hierarchical').className = view === 'hierarchical' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    renderLegacy();
-  };
-
-  window.applySearch = function() { renderLegacy(); };
-  window.reloadHierView = function(panel) {
-    if (panel === 'amplifi' || (!panel && document.getElementById('panel-amplifi') && !document.getElementById('panel-amplifi').classList.contains('hidden'))) {
-      renderAmplifi();
-    } else {
-      renderLegacy();
-    }
-  };
-
-  // ── Load legacy data ──────────────────────────────────────────────────
-  function loadLegacyObj(obj) {
-    var el = document.getElementById('legacy-content');
-    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
-    var url = BASE + '/legacy/' + obj + '?size=2000';
-    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-      _legacyData[obj] = d;
-      document.getElementById('explore-count').textContent = (d.total || (d.items || []).length) + ' records';
-      renderLegacy();
-    }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
-  }
-
-  function renderLegacy() {
-    var el = document.getElementById('legacy-content');
-    var d = _legacyData[_legacyObj];
-    if (!d) return;
-    var search = (document.getElementById('explore-search').value || '').toLowerCase();
-    var cid = 'explore-count';
-    if (_legacyObj === 'cost-centers') renderCostCenters(el, d, search, _legacyView, cid, 'legacy');
-    else if (_legacyObj === 'profit-centers') renderProfitCenters(el, d, search, _legacyView, cid, 'legacy');
-    else if (_legacyObj === 'entities') renderEntities(el, d, search, _legacyView, cid, 'legacy');
-    else if (_legacyObj === 'hierarchies') renderHierarchies(el, d, search, _legacyView, cid, 'legacy');
-    else if (_legacyObj === 'balances') renderBalances(el, d, search, cid);
-    else if (_legacyObj === 'employees') renderEmployees(el, d, search, cid);
-    else if (_legacyObj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
-  }
-
-  // ── Hierarchy level map builder ───────────────────────────────────────
-  function buildHierLevelMap(keyField) {
-    var hierData = _legacyData['hierarchies'];
-    if (!hierData) return { levels: [], map: {} };
-    var hiers = hierData.hierarchies || [];
-    // Pick the first matching hierarchy by key type
-    var setclass = keyField === 'cctr' ? '0101' : (keyField === 'pctr' ? '0104' : '0106');
-    var hier = hiers.filter(function(h) { return h.setclass === setclass; })[0] || hiers[0];
-    if (!hier) return { levels: [], map: {} };
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value });
-    });
-    var allChildren = {};
-    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
-    var valPaths = {};
-    var maxDepth = 0;
-    function dfs(nodeName, path) {
-      var children = childMap[nodeName] || [];
-      children.forEach(function(c) {
-        if (c.type === 'leaf') {
-          valPaths[c.value] = path.slice();
-          if (path.length > maxDepth) maxDepth = path.length;
-        } else {
-          dfs(c.name, path.concat([c.name]));
-        }
-      });
-    }
-    roots.forEach(function(r) { dfs(r, [r]); });
-    var levelCols = [];
-    for (var i = 0; i < maxDepth; i++) levelCols.push('L' + (i + 1));
-    var levelMap = {};
-    Object.keys(valPaths).forEach(function(val) {
-      var p = valPaths[val];
-      var obj = {};
-      for (var i = 0; i < maxDepth; i++) obj['hier_L' + (i + 1)] = p[i] || '';
-      levelMap[val] = obj;
-    });
-    return { levels: levelCols, map: levelMap };
-  }
-
-  // ── Cost Centers ──────────────────────────────────────────────────────
-  function renderCostCenters(el, d, search, view, countElId, panel) {
-    var items = (d.items || []).filter(function(c) {
-      if (!search) return true;
-      return (c.cctr||'').toLowerCase().indexOf(search)>=0 || (c.txtsh||'').toLowerCase().indexOf(search)>=0 ||
-             (c.ccode||'').toLowerCase().indexOf(search)>=0 || (c.responsible||'').toLowerCase().indexOf(search)>=0;
-    });
-    if (view === 'hierarchical') { renderHierTree(el, items, 'cctr', panel); return; }
-    var hierInfo = buildHierLevelMap('cctr');
-    var hierLevels = hierInfo.levels;
-    var hierMap = hierInfo.map;
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">CC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
-    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Profit Ctr</th><th class="py-1.5 px-2 text-left">Responsible</th>';
-    html += '<th class="py-1.5 px-2 text-left">Category</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
-    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
-    html += '</tr></thead><tbody>';
-    items.forEach(function(c) {
-      var hm = hierMap[c.cctr] || {};
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(c.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(c.coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(c.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(c.responsible) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(c.cctrcgy) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(c.currency) + '</td>';
-      html += '<td class="py-1 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
-      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
-  }
-
-  // ── Profit Centers ────────────────────────────────────────────────────
-  function renderProfitCenters(el, d, search, view, countElId, panel) {
-    var items = (d.items || []).filter(function(p) {
-      if (!search) return true;
-      return (p.pctr||'').toLowerCase().indexOf(search)>=0 || (p.txtsh||'').toLowerCase().indexOf(search)>=0 ||
-             (p.ccode||'').toLowerCase().indexOf(search)>=0;
-    });
-    if (view === 'hierarchical') { renderHierTree(el, items, 'pctr', panel); return; }
-    var hierInfo = buildHierLevelMap('pctr');
-    var hierLevels = hierInfo.levels;
-    var hierMap = hierInfo.map;
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">PC</th><th class="py-1.5 px-2 text-left">Short Text</th><th class="py-1.5 px-2 text-left">Entity</th>';
-    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Responsible</th><th class="py-1.5 px-2 text-left">Department</th>';
-    html += '<th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
-    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
-    html += '</tr></thead><tbody>';
-    items.forEach(function(p) {
-      var hm = hierMap[p.pctr] || {};
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(p.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(p.coarea) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(p.responsible) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(p.department) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(p.currency) + '</td>';
-      html += '<td class="py-1 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
-      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
-  }
-
-  // ── Entities ──────────────────────────────────────────────────────────
-  function renderEntities(el, d, search, view, countElId, panel) {
-    var items = (d.items || []).filter(function(e) {
-      if (!search) return true;
-      return (e.ccode||'').toLowerCase().indexOf(search)>=0 || (e.name||'').toLowerCase().indexOf(search)>=0;
-    });
-    if (view === 'hierarchical') { renderHierTree(el, items, 'ccode', panel); return; }
-    var hierInfo = buildHierLevelMap('ccode');
-    var hierLevels = hierInfo.levels;
-    var hierMap = hierInfo.map;
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">Code</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">Country</th>';
-    html += '<th class="py-1.5 px-2 text-left">Region</th><th class="py-1.5 px-2 text-left">Currency</th><th class="py-1.5 px-2 text-center">Active</th>';
-    hierLevels.forEach(function(lvl) { html += '<th class="py-1.5 px-2 text-left text-indigo-600">' + esc(lvl) + '</th>'; });
-    html += '</tr></thead><tbody>';
-    items.forEach(function(e) {
-      var hm = hierMap[e.ccode] || {};
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.name) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.country) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.region) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(e.currency) + '</td>';
-      html += '<td class="py-1 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
-      hierLevels.forEach(function(lvl, i) { html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm['hier_L' + (i+1)] || '') + '</td>'; });
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
-  }
-
-  // ── GL Accounts ───────────────────────────────────────────────────────
-  function renderGLAccounts(el, d, search, countElId) {
-    var items = (d.items || []).filter(function(r) {
-      if (!search) return true;
-      return (r.class_code||'').toLowerCase().indexOf(search)>=0 || (r.class_label||'').toLowerCase().indexOf(search)>=0;
-    });
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">Class Code</th><th class="py-1.5 px-2 text-left">Label</th>';
-    html += '<th class="py-1.5 px-2 text-left">From Account</th><th class="py-1.5 px-2 text-left">To Account</th><th class="py-1.5 px-2 text-left">Category</th>';
-    html += '</tr></thead><tbody>';
-    items.forEach(function(r) {
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(r.class_code) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(r.class_label) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(r.from_account) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(r.to_account) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(r.category) + '</td>';
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = items.length + ' records';
-  }
-
-  // ── Balances ──────────────────────────────────────────────────────────
-  function renderBalances(el, d, search, countElId) {
-    var bals = d.balances || {};
-    var keys = Object.keys(bals).filter(function(k) { return !search || k.toLowerCase().indexOf(search)>=0; }).sort();
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">CO Area : CC</th><th class="py-1.5 px-2 text-right">Periods</th><th class="py-1.5 px-2 text-right">Total Amount</th><th class="py-1.5 px-2 text-right">Total Postings</th><th class="py-1.5 px-2 text-left">Currency</th>';
-    html += '</tr></thead><tbody>';
-    keys.forEach(function(k) {
-      var periods = bals[k];
-      var totalAmt = 0, totalPost = 0, curr = '';
-      periods.forEach(function(p) { totalAmt += p.amount; totalPost += p.postings; curr = p.currency || curr; });
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(k) + '</td>';
-      html += '<td class="py-1 px-2 text-right">' + periods.length + '</td>';
-      html += '<td class="py-1 px-2 text-right font-mono' + (totalAmt<0 ? ' text-red-600' : '') + '">' + totalAmt.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}) + '</td>';
-      html += '<td class="py-1 px-2 text-right font-mono">' + totalPost.toLocaleString() + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(curr) + '</td>';
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = keys.length + ' cost center keys';
-  }
-
-  // ── Employees ─────────────────────────────────────────────────────────
-  function renderEmployees(el, d, search, countElId) {
-    var items = (d.items || []).filter(function(e) {
-      if (!search) return true;
-      return (e.gpn||'').toLowerCase().indexOf(search)>=0 || (e.bs_name||'').toLowerCase().indexOf(search)>=0 ||
-             (e.email_address||'').toLowerCase().indexOf(search)>=0;
-    });
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">GPN</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">First</th><th class="py-1.5 px-2 text-left">Last</th>';
-    html += '<th class="py-1.5 px-2 text-left">OU Code</th><th class="py-1.5 px-2 text-left">OU Desc</th><th class="py-1.5 px-2 text-left">Local CC</th>';
-    html += '<th class="py-1.5 px-2 text-left">Job</th><th class="py-1.5 px-2 text-left">Email</th>';
-    html += '</tr></thead><tbody>';
-    items.forEach(function(e) {
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(e.gpn) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.bs_name) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.bs_firstname) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.bs_lastname) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(e.ou_cd) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.ou_desc) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(e.local_cc_cd) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.job_desc) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(e.email_address) + '</td>';
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById(countElId || 'explore-count').textContent = items.length + ' of ' + (d.total || items.length) + ' records';
-  }
-
-  // ── Hierarchies (list) ────────────────────────────────────────────────
-  function renderHierarchies(el, d, search, view, countElId, panel) {
-    var pfx = panel || 'legacy';
-    var hiers = d.hierarchies || [];
-    if (!hiers.length) { el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded</span>'; return; }
-
-    if (view === 'tabular') {
-      // Tabular: hierarchy selector + table with level columns
-      var selId = 'hier-tab-sel-' + pfx;
-      var prevSelEl = document.getElementById(selId);
-      var selIdx = prevSelEl ? (parseInt(prevSelEl.value) || 0) : 0;
-      var html = '<div class="p-2"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
-      html += '<select id="' + selId + '" class="input text-xs w-64" onchange="reloadHierView(\'' + pfx + '\')">';
-      hiers.forEach(function(h, i) { html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>'; });
-      html += '</select></div>';
-      var h = hiers[selIdx] || hiers[0];
-      if (!h) { el.innerHTML = html + '<span class="text-gray-400">No hierarchy selected</span></div>'; return; }
-      var childMap = {};
-      (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push({ type: 'node', name: n.child }); });
-      (h.leaves || []).forEach(function(lf) { if (!childMap[lf.setname]) childMap[lf.setname] = []; childMap[lf.setname].push({ type: 'leaf', value: lf.value }); });
-      var allChildren = {};
-      (h.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-      var roots = [];
-      (h.nodes || []).forEach(function(n) { if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent); });
-      if (!roots.length && h.nodes && h.nodes.length) roots.push(h.nodes[0].parent);
-      var leafPaths = {};
-      var maxDepth = 0;
-      function dfs(nodeName, path) {
-        var children = childMap[nodeName] || [];
-        children.forEach(function(c) {
-          if (c.type === 'leaf') {
-            leafPaths[c.value] = path.slice();
-            if (path.length > maxDepth) maxDepth = path.length;
-          } else {
-            dfs(c.name, path.concat([c.name]));
-          }
-        });
-      }
-      roots.forEach(function(r) { dfs(r, [r]); });
-      html += '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-      html += '<th class="py-1.5 px-2 text-left">Leaf Value</th>';
-      for (var i = 0; i < maxDepth; i++) html += '<th class="py-1.5 px-2 text-left text-indigo-600">L' + (i+1) + '</th>';
-      html += '</tr></thead><tbody>';
-      var leafKeys = Object.keys(leafPaths);
-      if (search) { leafKeys = leafKeys.filter(function(k) { return k.toLowerCase().indexOf(search) >= 0 || (leafPaths[k] || []).join(' ').toLowerCase().indexOf(search) >= 0; }); }
-      leafKeys.sort();
-      leafKeys.forEach(function(val) {
-        var path = leafPaths[val];
-        html += '<tr class="border-b hover:bg-gray-50">';
-        html += '<td class="py-1 px-2 font-mono font-medium">' + esc(val) + '</td>';
-        for (var i = 0; i < maxDepth; i++) html += '<td class="py-1 px-2 text-gray-600">' + esc(path[i] || '') + '</td>';
-        html += '</tr>';
-      });
-      if (!leafKeys.length) html += '<tr><td colspan="' + (maxDepth+1) + '" class="py-4 text-center text-gray-400">No matching leaves.</td></tr>';
-      html += '</tbody></table></div>';
-      el.innerHTML = html;
-      document.getElementById(countElId || 'explore-count').textContent = leafKeys.length + ' leaves';
+    if (data.error) {
+      el.innerHTML = `<span class="p-4 text-sm text-red-500 block">${data.error}</span>`;
       return;
     }
 
-    // Hierarchical: expandable tree cards
-    var html = '<div class="p-2">';
-    hiers.forEach(function(h, idx) {
-      html += '<div class="mb-2 border rounded-lg overflow-hidden">';
-      html += '<div class="bg-gray-50 px-3 py-1.5 flex items-center gap-2 cursor-pointer" onclick="toggleHierTree(' + idx + ',\'' + pfx + '\')">';
-      html += '<span class="text-xs font-semibold text-gray-700">' + esc(h.label) + '</span>';
-      html += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">' + esc(h.type_label) + '</span>';
-      html += '<span class="text-[10px] text-gray-400">' + (h.leaves||[]).length + ' leaves, ' + (h.nodes||[]).length + ' nodes</span>';
-      html += '</div>';
-      html += '<div id="hier-tree-' + pfx + '-' + idx + '" class="hidden p-2 text-xs font-mono max-h-48 overflow-auto"></div>';
-      html += '</div>';
-    });
+    // Hierarchies have special format
+    if (currentObjectType === 'hierarchies') {
+      currentData = data.hierarchies || [];
+      currentColumns = data.columns || ['setname', 'setclass', 'type_label', 'label', 'coarea'];
+      totalRows = data.total || 0;
+    } else {
+      currentData = data.items || [];
+      currentColumns = data.columns || [];
+      totalRows = data.total || 0;
+    }
+
+    document.getElementById('explore-count').textContent = `${totalRows.toLocaleString()} rows`;
+    document.getElementById('explore-status').textContent = `${OBJECT_TYPES[currentObjectType]?.label || currentObjectType}`;
+
+    renderTable();
+  } catch (err) {
+    el.innerHTML = `<span class="p-4 text-sm text-red-500 block">Error: ${err.message}</span>`;
+  }
+}
+
+// ── Table rendering ──
+function renderTable() {
+  const el = document.getElementById('legacy-content');
+  const viewMode = document.getElementById('view-mode')?.value || 'flat';
+
+  // Apply column filters locally
+  let filtered = currentData;
+  for (const [col, val] of Object.entries(columnFilters)) {
+    if (val) {
+      const lower = val.toLowerCase();
+      filtered = filtered.filter(row => {
+        const cell = String(row[col] || '').toLowerCase();
+        return cell.includes(lower);
+      });
+    }
+  }
+
+  // GL grouping modes
+  if ((viewMode === 'group_1digit' || viewMode === 'group_5digits') && currentObjectType.startsWith('gl-accounts')) {
+    renderGroupedTable(el, filtered, viewMode);
+    return;
+  }
+
+  if (viewMode === 'hierarchical' && currentObjectType === 'hierarchies') {
+    renderHierarchicalView(el, filtered);
+    return;
+  }
+
+  // Standard flat table
+  let html = '<table class="explore-tbl"><thead><tr>';
+  for (const col of currentColumns) {
+    const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+    const filterVal = columnFilters[col] || '';
+    html += `<th onclick="sortByColumn('${col}')">
+      ${col}<span class="sort-icon">${sortIcon}</span>
+      <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
+    </th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const row of filtered) {
+    const cls = row.id === selectedRowId ? 'selected' : '';
+    html += `<tr class="${cls}" onclick="showDetail(${row.id})" style="cursor:pointer">`;
+    for (const col of currentColumns) {
+      const val = row[col];
+      html += `<td title="${escHtml(String(val ?? ''))}">${escHtml(String(val ?? ''))}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderGroupedTable(el, data, mode) {
+  // Group by account prefix
+  const groups = {};
+  const acctField = currentObjectType === 'gl-accounts-ska1' ? 'saknr' : 'saknr';
+  for (const row of data) {
+    const acct = String(row[acctField] || '');
+    const key = mode === 'group_1digit' ? (acct[0] || '?') : (acct.substring(0, 5) || '?????');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(row);
+  }
+
+  let html = '<table class="explore-tbl"><thead><tr>';
+  for (const col of currentColumns) {
+    const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+    const filterVal = columnFilters[col] || '';
+    html += `<th onclick="sortByColumn('${col}')">
+      ${col}<span class="sort-icon">${sortIcon}</span>
+      <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
+    </th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  const sortedKeys = Object.keys(groups).sort();
+  for (const key of sortedKeys) {
+    const label = mode === 'group_1digit'
+      ? `Account Group ${key}xxx (${groups[key].length} accounts)`
+      : `Account Range ${key}xxxxx (${groups[key].length} accounts)`;
+    html += `<tr class="group-header"><td colspan="${currentColumns.length}">${escHtml(label)}</td></tr>`;
+    for (const row of groups[key]) {
+      const cls = row.id === selectedRowId ? 'selected' : '';
+      html += `<tr class="${cls}" onclick="showDetail(${row.id})" style="cursor:pointer">`;
+      for (const col of currentColumns) {
+        html += `<td>${escHtml(String(row[col] ?? ''))}</td>`;
+      }
+      html += '</tr>';
+    }
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderHierarchicalView(el, hierarchies) {
+  if (!hierarchies || hierarchies.length === 0) {
+    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">No hierarchies loaded.</span>';
+    return;
+  }
+  let html = '';
+  for (const h of hierarchies) {
+    html += `<div class="p-3 border-b">
+      <div class="font-semibold text-sm text-blue-800 mb-1">${escHtml(h.label || h.setname)}</div>
+      <div class="text-xs text-gray-500 mb-2">Type: ${escHtml(h.type_label)} | Area: ${escHtml(h.coarea || '-')}</div>`;
+
+    // Build tree from nodes and leaves
+    const tree = buildTree(h.nodes || [], h.leaves || [], h.setname);
+    html += renderTreeNode(tree, 0);
     html += '</div>';
-    el.innerHTML = html;
-    document.getElementById(countElId || 'explore-count').textContent = hiers.length + ' hierarchies';
   }
+  el.innerHTML = html || '<span class="p-4 text-sm text-gray-400">No hierarchies.</span>';
+}
 
-  window.toggleHierTree = function(idx, panel) {
-    var pfx = panel || 'legacy';
-    var el = document.getElementById('hier-tree-' + pfx + '-' + idx);
-    if (!el) return;
-    if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
-    el.classList.remove('hidden');
-    if (el.innerHTML) return;
-    var d = (pfx === 'amplifi' ? _amplifiData : _legacyData)['hierarchies'];
-    var h = (d.hierarchies || [])[idx];
-    if (!h) return;
-    var childMap = {};
-    (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push(n.child); });
-    var leafMap = {};
-    (h.leaves || []).forEach(function(lf) { if (!leafMap[lf.setname]) leafMap[lf.setname] = []; leafMap[lf.setname].push(lf.value); });
-    function buildTree(node, depth) {
-      var html = '<div style="padding-left:' + (depth*16) + 'px" class="py-0.5"><span class="text-blue-700 font-semibold">' + esc(node) + '</span>';
-      var leaves = leafMap[node] || [];
-      if (leaves.length) html += ' <span class="text-gray-400">(' + leaves.length + ')</span>';
-      html += '</div>';
-      leaves.forEach(function(v) { html += '<div style="padding-left:' + ((depth+1)*16) + 'px" class="py-0.5 text-gray-600">' + esc(v) + '</div>'; });
-      (childMap[node] || []).forEach(function(child) { html += buildTree(child, depth+1); });
-      return html;
+function buildTree(nodes, leaves, rootName) {
+  const children = {};
+  for (const n of nodes) {
+    if (!children[n.parent]) children[n.parent] = [];
+    children[n.parent].push({ name: n.child, type: 'node' });
+  }
+  for (const l of leaves) {
+    if (!children[l.setname]) children[l.setname] = [];
+    children[l.setname].push({ name: l.value, type: 'leaf' });
+  }
+  return { name: rootName, type: 'node', children };
+}
+
+function renderTreeNode(tree, depth) {
+  const kids = tree.children?.[tree.name] || [];
+  if (kids.length === 0 && depth > 0) return '';
+
+  let html = '';
+  for (const kid of kids) {
+    const indent = 16 * (depth + 1);
+    const icon = kid.type === 'node' ? '&#128193;' : '&#128196;';
+    html += `<div style="padding-left:${indent}px" class="py-0.5 text-xs ${kid.type === 'node' ? 'font-medium' : 'text-gray-600'}">${icon} ${escHtml(kid.name)}</div>`;
+    if (kid.type === 'node' && tree.children) {
+      html += renderTreeNode({ name: kid.name, children: tree.children }, depth + 1);
     }
-    el.innerHTML = buildTree(h.setname, 0);
-  };
+  }
+  return html;
+}
 
-  // ── Hierarchical tree view for CC/PC ──────────────────────────────────
-  function renderHierTree(el, items, keyField, panel) {
-    var pfx = panel || 'legacy';
-    var hierData = _legacyData['hierarchies'];
-    if (!hierData || !(hierData.hierarchies||[]).length) {
-      el.innerHTML = '<span class="p-4 text-gray-400 block">No hierarchies loaded. Load hierarchies first to use hierarchical view.</span>';
+// ── Column sorting ──
+function sortByColumn(col) {
+  if (currentSort.col === col) {
+    currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSort.col = col;
+    currentSort.dir = 'asc';
+  }
+  // Re-fetch with sort
+  loadObjectData();
+}
+
+function setColumnFilter(col, val) {
+  columnFilters[col] = val;
+  renderTable();
+}
+
+function onViewModeChange() {
+  renderTable();
+}
+
+function applySearch() {
+  currentPage = 1;
+  loadObjectData();
+}
+
+// ── Detail view ──
+async function showDetail(itemId) {
+  selectedRowId = itemId;
+  renderTable(); // Re-render to highlight selected row
+
+  const panel = document.getElementById('detail-panel');
+  const content = document.getElementById('detail-content');
+  panel.classList.remove('hidden');
+  content.innerHTML = '<span class="text-gray-400">Loading...</span>';
+
+  try {
+    const resp = await fetch(`${API}/legacy/${currentObjectType}/${itemId}`);
+    const data = await resp.json();
+    if (data.error) {
+      content.innerHTML = `<span class="text-red-500">${data.error}</span>`;
       return;
     }
-    var hiers = hierData.hierarchies;
-    var selId = 'hier-sel-' + pfx;
-    var html = '<div class="p-2"><div class="mb-2"><label class="text-xs font-medium mr-2">Hierarchy:</label>';
-    var prevSelEl = document.getElementById(selId);
-    var selIdx = prevSelEl ? (parseInt(prevSelEl.value) || 0) : 0;
-    html += '<select id="' + selId + '" class="input text-xs w-64" onchange="reloadHierView(\'' + pfx + '\')">';
-    hiers.forEach(function(h, i) { html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>'; });
-    html += '</select></div>';
-    var h = hiers[selIdx] || hiers[0];
-    var itemMap = {};
-    items.forEach(function(it) { if (it[keyField]) itemMap[it[keyField]] = it; });
-    var leafMap = {};
-    (h.leaves || []).forEach(function(lf) { if (!leafMap[lf.setname]) leafMap[lf.setname] = []; leafMap[lf.setname].push(lf.value); });
-    var childMap = {};
-    (h.nodes || []).forEach(function(n) { if (!childMap[n.parent]) childMap[n.parent] = []; childMap[n.parent].push(n.child); });
-    function buildNode(node, depth) {
-      var leaves = leafMap[node] || [];
-      var children = childMap[node] || [];
-      var count = leaves.length;
-      children.forEach(function(c) { count += countLeaves(c); });
-      var r = '<div style="padding-left:' + (depth*16) + 'px" class="py-0.5 border-b border-gray-100">';
-      r += '<span class="font-semibold text-blue-800 text-xs">' + esc(node) + '</span>';
-      r += '<span class="text-[10px] text-gray-400 ml-1">(' + count + ')</span></div>';
-      leaves.forEach(function(v) {
-        var it = itemMap[v];
-        r += '<div style="padding-left:' + ((depth+1)*16) + 'px" class="py-0.5 text-[11px] border-b border-gray-50">';
-        r += '<span class="font-mono">' + esc(v) + '</span>';
-        if (it) r += ' <span class="text-gray-500">' + esc(it.txtsh || it.txtmi || it.name || '') + '</span>';
-        r += '</div>';
-      });
-      children.forEach(function(c) { r += buildNode(c, depth+1); });
-      return r;
+    const item = data.item || {};
+    let html = '';
+    for (const [key, val] of Object.entries(item)) {
+      if (key === 'id') continue;
+      html += `<div class="detail-row">
+        <span class="detail-label">${escHtml(key)}</span>
+        <span class="detail-value">${escHtml(String(val ?? '-'))}</span>
+      </div>`;
     }
-    function countLeaves(node) {
-      var n = (leafMap[node] || []).length;
-      (childMap[node] || []).forEach(function(c) { n += countLeaves(c); });
-      return n;
-    }
-    html += buildNode(h.setname, 0) + '</div>';
-    el.innerHTML = html;
+    content.innerHTML = html || '<span class="text-gray-400">No data</span>';
+  } catch (err) {
+    content.innerHTML = `<span class="text-red-500">Error: ${err.message}</span>`;
   }
+}
 
-  // ── ampliFi tab ───────────────────────────────────────────────────────
-  window.switchAmplifiObj = function(obj) {
-    _amplifiObj = obj;
-    document.querySelectorAll('.amplifi-sub').forEach(function(b) {
-      if (b.getAttribute('data-obj') === obj) {
-        b.className = 'amplifi-sub active px-3 py-1 text-xs font-medium rounded-t border-b-2 border-indigo-600 text-indigo-700';
-      } else {
-        b.className = 'amplifi-sub px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700';
+function closeDetail() {
+  document.getElementById('detail-panel').classList.add('hidden');
+  selectedRowId = null;
+  renderTable();
+}
+
+// ── Export ──
+function exportCSV() {
+  window.location.href = `${API}/export/${currentObjectType}?format=csv`;
+}
+
+function exportExcel() {
+  window.location.href = `${API}/export/${currentObjectType}?format=excel`;
+}
+
+// ── Main tab switching ──
+function switchMainTab(tab) {
+  currentMainTab = tab;
+  document.getElementById('panel-legacy').classList.toggle('hidden', tab !== 'legacy');
+  document.getElementById('panel-amplifi').classList.toggle('hidden', tab !== 'amplifi');
+
+  document.getElementById('main-tab-legacy').classList.toggle('border-blue-600', tab === 'legacy');
+  document.getElementById('main-tab-legacy').classList.toggle('text-blue-700', tab === 'legacy');
+  document.getElementById('main-tab-legacy').classList.toggle('border-transparent', tab !== 'legacy');
+  document.getElementById('main-tab-legacy').classList.toggle('text-gray-500', tab !== 'legacy');
+
+  document.getElementById('main-tab-amplifi').classList.toggle('border-blue-600', tab === 'amplifi');
+  document.getElementById('main-tab-amplifi').classList.toggle('text-blue-700', tab === 'amplifi');
+  document.getElementById('main-tab-amplifi').classList.toggle('border-transparent', tab !== 'amplifi');
+  document.getElementById('main-tab-amplifi').classList.toggle('text-gray-500', tab !== 'amplifi');
+}
+
+// ── ampliFi tab ──
+async function loadAmplifiRuns() {
+  try {
+    const resp = await fetch(`${API}/amplifi/runs`);
+    const data = await resp.json();
+    const sel = document.getElementById('amplifi-run-select');
+    sel.innerHTML = '<option value="">Select run...</option>';
+    for (const r of (data.runs || [])) {
+      sel.innerHTML += `<option value="${r.id}">${escHtml(r.label)} (${r.finished_at || 'N/A'})</option>`;
+    }
+  } catch (err) {
+    console.error('Failed to load runs:', err);
+  }
+}
+
+async function loadMapping() {
+  const runId = document.getElementById('amplifi-run-select').value;
+  const el = document.getElementById('amplifi-content');
+  if (!runId) {
+    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>';
+    return;
+  }
+  el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
+  try {
+    const resp = await fetch(`${API}/amplifi/mapping?run_id=${runId}`);
+    const data = await resp.json();
+    let html = `<div class="p-3 text-xs text-gray-500">Run: ${escHtml(data.run_label || '')} | ${data.total || 0} proposals</div>`;
+    if (data.summary) {
+      html += '<div class="px-3 flex gap-2 mb-2">';
+      for (const [outcome, count] of Object.entries(data.summary)) {
+        const color = outcome === 'KEEP' ? 'green' : outcome === 'CLOSE' ? 'red' : outcome === 'MERGE' ? 'yellow' : 'gray';
+        html += `<span class="px-2 py-0.5 rounded text-xs font-medium bg-${color}-100 text-${color}-800">${outcome}: ${count}</span>`;
       }
-    });
-    // Show/hide hierarchical button for amplifi
-    var hierBtn = document.getElementById('av-hierarchical');
-    if (obj === 'cost-centers' || obj === 'profit-centers' || obj === 'entities' || obj === 'hierarchies') {
-      hierBtn.classList.remove('hidden');
-    } else {
-      hierBtn.classList.add('hidden');
-      _amplifiView = 'tabular';
+      html += '</div>';
     }
-    loadAmplifiObj(obj);
-  };
-
-  window.switchAmplifiView = function(view) {
-    _amplifiView = view;
-    document.getElementById('av-tabular').className = view === 'tabular' ? 'btn-sm bg-indigo-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    document.getElementById('av-hierarchical').className = view === 'hierarchical' ? 'btn-sm bg-indigo-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    renderAmplifi();
-  };
-
-  window.applyAmplifiSearch = function() { renderAmplifi(); };
-
-  function loadAmplifiObj(obj) {
-    var el = document.getElementById('amplifi-content');
-    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
-
-    if (obj === 'mapping') {
-      // Load mapping from dedicated endpoint
-      fetch(BASE + '/amplifi/mapping').then(function(r) { return r.json(); }).then(function(d) {
-        _amplifiData['mapping'] = d;
-        document.getElementById('amplifi-count').textContent = (d.total || 0) + ' proposals';
-        renderAmplifi();
-      }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
-    } else {
-      // For ampliFi object views, use the same legacy endpoints for now
-      // (will be swapped to amplifi-specific endpoints when those are configured)
-      var url = BASE + '/legacy/' + obj + '?size=2000';
-      fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-        _amplifiData[obj] = d;
-        document.getElementById('amplifi-count').textContent = (d.total || (d.items || []).length) + ' records';
-        renderAmplifi();
-      }).catch(function(e) { el.innerHTML = '<span class="p-4 text-red-500 block">Error: ' + esc(e.message) + '</span>'; });
-    }
-  }
-
-  function renderAmplifi() {
-    var el = document.getElementById('amplifi-content');
-    var obj = _amplifiObj;
-    if (obj === 'mapping') { renderMapping(el); return; }
-    var d = _amplifiData[obj];
-    if (!d) return;
-    var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
-    var cid = 'amplifi-count';
-    if (obj === 'cost-centers') renderCostCenters(el, d, search, _amplifiView, cid, 'amplifi');
-    else if (obj === 'profit-centers') renderProfitCenters(el, d, search, _amplifiView, cid, 'amplifi');
-    else if (obj === 'entities') renderEntities(el, d, search, _amplifiView, cid, 'amplifi');
-    else if (obj === 'hierarchies') renderHierarchies(el, d, search, _amplifiView, cid, 'amplifi');
-    else if (obj === 'balances') renderBalances(el, d, search, cid);
-    else if (obj === 'employees') renderEmployees(el, d, search, cid);
-    else if (obj === 'gl-accounts') renderGLAccounts(el, d, search, cid);
-  }
-
-  function renderMapping(el) {
-    var d = _amplifiData['mapping'];
-    if (!d) { el.innerHTML = '<span class="p-4 text-gray-400 block">No analysis data available. Run an analysis first.</span>'; return; }
-    var search = (document.getElementById('amplifi-search').value || '').toLowerCase();
-    var items = (d.items || []).filter(function(it) {
-      if (!search) return true;
-      return (it.legacy_cctr||'').toLowerCase().indexOf(search)>=0 || (it.legacy_txtsh||'').toLowerCase().indexOf(search)>=0 ||
-             (it.outcome||'').toLowerCase().indexOf(search)>=0 || (it.merge_into_cctr||'').toLowerCase().indexOf(search)>=0;
-    });
-    var COLORS = { KEEP: '#22c55e', RETIRE: '#ef4444', MERGE_MAP: '#f59e0b', REDESIGN: '#3b82f6' };
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
-    html += '<th class="py-1.5 px-2 text-left">Legacy CC</th><th class="py-1.5 px-2 text-left">Name</th><th class="py-1.5 px-2 text-left">Entity</th>';
-    html += '<th class="py-1.5 px-2 text-left">CO Area</th><th class="py-1.5 px-2 text-left">Legacy PC</th>';
-    html += '<th class="py-1.5 px-2 text-center">Outcome</th><th class="py-1.5 px-2 text-left">Target Object</th><th class="py-1.5 px-2 text-left">Target CC</th>';
-    html += '<th class="py-1.5 px-2 text-center">Confidence</th>';
+    html += '<table class="explore-tbl"><thead><tr>';
+    html += '<th>Legacy CC</th><th>Description</th><th>Company</th><th>Outcome</th><th>Target</th><th>Merge Into</th><th>Confidence</th>';
     html += '</tr></thead><tbody>';
-    items.forEach(function(it) {
-      var color = COLORS[it.outcome] || '#9ca3af';
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.legacy_cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.legacy_txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.legacy_pctr) + '</td>';
-      html += '<td class="py-1 px-2 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white" style="background:' + color + '">' + esc(it.outcome) + '</span></td>';
-      html += '<td class="py-1 px-2">' + esc(it.target_object) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.merge_into_cctr) + '</td>';
-      html += '<td class="py-1 px-2 text-center font-mono">' + (it.confidence ? parseFloat(it.confidence).toFixed(2) : '-') + '</td>';
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-    document.getElementById('amplifi-count').textContent = items.length + ' proposals';
+    for (const item of (data.items || [])) {
+      html += `<tr>
+        <td>${escHtml(item.legacy_cctr || '')}</td>
+        <td>${escHtml(item.legacy_txtsh || '')}</td>
+        <td>${escHtml(item.legacy_ccode || '')}</td>
+        <td><span class="font-medium">${escHtml(item.outcome || '')}</span></td>
+        <td>${escHtml(item.target_object || '')}</td>
+        <td>${escHtml(item.merge_into_cctr || '')}</td>
+        <td>${escHtml(item.confidence || '')}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<span class="p-4 text-sm text-red-500 block">Error: ${err.message}</span>`;
   }
+}
 
-  // ── CSV Export ─────────────────────────────────────────────────────────
-  window.exportCSV = function() { doExportCSV('legacy-content', _legacyObj); };
-  window.exportAmplifiCSV = function() { doExportCSV('amplifi-content', 'amplifi-' + _amplifiObj); };
+// ── Helpers ──
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
-  function doExportCSV(containerId, filename) {
-    var el = document.getElementById(containerId);
-    var table = el.querySelector('table');
-    if (!table) return;
-    var rows = [];
-    table.querySelectorAll('tr').forEach(function(tr) {
-      var cols = [];
-      tr.querySelectorAll('th, td').forEach(function(td) { cols.push('"' + (td.textContent||'').replace(/"/g, '""') + '"'); });
-      rows.push(cols.join(','));
-    });
-    var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename + '.csv';
-    a.click();
-  }
+// ── Boot ──
+document.addEventListener('DOMContentLoaded', init);
 
-  // ── Init ──────────────────────────────────────────────────────────────
-  fetch(BASE + '/counts').then(function(r) { return r.json(); }).then(function(d) {
-    var parts = [];
-    if (d.cost_centers) parts.push(d.cost_centers + ' CC');
-    if (d.profit_centers) parts.push(d.profit_centers + ' PC');
-    if (d.entities) parts.push(d.entities + ' entities');
-    if (d.employees) parts.push(d.employees + ' employees');
-    document.getElementById('explore-status').textContent = parts.join(' | ') || 'No data loaded';
-  });
-
-  // Pre-fetch hierarchies so hierarchy level columns are available for CC/PC/entity tables
-  var hierReady = fetch(BASE + '/legacy/hierarchies').then(function(r) { return r.json(); }).then(function(d) {
-    _legacyData['hierarchies'] = d;
-  }).catch(function() {});
-
-  // Load source config then initial view (wait for hierarchies too)
-  Promise.all([loadSourceConfig(), hierReady]).then(function() {
-    loadLegacyObj(_legacyObj);
-  });
-
-})();
+// Expose to global scope for inline event handlers
+window.switchMainTab = switchMainTab;
+window.selectObjectTab = selectObjectTab;
+window.sortByColumn = sortByColumn;
+window.setColumnFilter = setColumnFilter;
+window.onViewModeChange = onViewModeChange;
+window.applySearch = applySearch;
+window.showDetail = showDetail;
+window.closeDetail = closeDetail;
+window.exportCSV = exportCSV;
+window.exportExcel = exportExcel;
+window.loadMapping = loadMapping;
 </script>
 
 </body>

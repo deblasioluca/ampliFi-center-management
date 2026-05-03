@@ -9,6 +9,8 @@ import '../styles/global.css';
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Login | ampliFi Center Management</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- MSAL.js for Entra ID SPA authentication (bundled locally) -->
+    <script is:inline src="/msal-browser-2.38.3.min.js"></script>
   </head>
   <body class="bg-gray-50 min-h-screen flex items-center justify-center">
     <div class="w-full max-w-md">
@@ -22,6 +24,29 @@ import '../styles/global.css';
       </div>
 
       <div class="card">
+        <!-- Entra ID Login Button (shown only when configured) -->
+        <div id="entra-section" class="hidden mb-4">
+          <button id="entra-login-btn" onclick="entraLogin()" class="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+            <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-700">Sign in with Microsoft</span>
+          </button>
+          <div id="entra-error" class="text-sm text-red-600 mt-2 hidden"></div>
+
+          <div class="relative my-5">
+            <div class="absolute inset-0 flex items-center">
+              <div class="w-full border-t border-gray-200"></div>
+            </div>
+            <div class="relative flex justify-center text-xs">
+              <span class="bg-white px-3 text-gray-400">or sign in with credentials</span>
+            </div>
+          </div>
+        </div>
+
         <h2 class="text-lg font-semibold text-gray-900 mb-4">Sign In</h2>
 
         <form id="login-form" class="space-y-4">
@@ -40,11 +65,162 @@ import '../styles/global.css';
     </div>
 
     <script is:inline>
+      // Handle Entra ID callback — check for token in URL params
+      (function handleEntraCallback() {
+        var params = new URLSearchParams(window.location.search);
+        var token = params.get('token');
+        if (token) {
+          localStorage.setItem('amplifi_token', token);
+          var userId = params.get('user_id') || '';
+          var username = params.get('username') || '';
+          var role = params.get('role') || 'user';
+          localStorage.setItem('amplifi_user', JSON.stringify({ id: userId, username: username, role: role }));
+          window.location.href = '/';
+          return;
+        }
+        var error = params.get('error');
+        if (error) {
+          var entraError = document.getElementById('entra-error');
+          if (entraError) {
+            entraError.textContent = decodeURIComponent(error);
+            entraError.classList.remove('hidden');
+          }
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })();
+
       // Redirect if already logged in
       if (localStorage.getItem('amplifi_token')) {
         window.location.href = '/';
       }
 
+      // Check if Entra ID is configured and show the button
+      var _entraConfig = null;
+      var _msalInstance = null;
+
+      (async function checkEntraConfig() {
+        try {
+          var res = await fetch('/api/auth/entra/config');
+          if (res.ok) {
+            var data = await res.json();
+            if (data.enabled) {
+              _entraConfig = data;
+              document.getElementById('entra-section').classList.remove('hidden');
+
+              // Initialise MSAL.js for SPA flow
+              if (data.auth_mode === 'spa' && typeof msal !== 'undefined') {
+                _msalInstance = new msal.PublicClientApplication({
+                  auth: {
+                    clientId: data.client_id,
+                    authority: 'https://login.microsoftonline.com/' + data.tenant_id,
+                    redirectUri: data.spa_redirect_uri,
+                  },
+                  cache: {
+                    cacheLocation: 'sessionStorage',
+                    storeAuthStateInCookie: false,
+                  },
+                });
+
+                // Handle redirect callback (if user was redirected back from Microsoft)
+                try {
+                  var redirectResult = await _msalInstance.handleRedirectPromise();
+                  if (redirectResult && redirectResult.idToken) {
+                    await _exchangeSpaToken(redirectResult.idToken, redirectResult.accessToken || '');
+                    return;
+                  }
+                } catch (err) {
+                  console.error('MSAL redirect error:', err);
+                  var entraError = document.getElementById('entra-error');
+                  if (entraError) {
+                    entraError.textContent = err.message || 'Entra ID login failed';
+                    entraError.classList.remove('hidden');
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Entra ID not available — just show password login
+        }
+      })();
+
+      // Exchange SPA id_token for app session JWT
+      async function _exchangeSpaToken(idToken, accessToken) {
+        var entraError = document.getElementById('entra-error');
+        try {
+          var res = await fetch('/api/auth/entra/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id_token: idToken, access_token: accessToken || '' }),
+          });
+          if (!res.ok) {
+            var body = {};
+            try { body = await res.json(); } catch(ex) {}
+            throw new Error(body.detail || 'Token validation failed');
+          }
+          var data = await res.json();
+          localStorage.setItem('amplifi_token', data.access_token);
+          // Fetch user info with the new token
+          var meRes = await fetch('/api/auth/me', {
+            headers: { 'Authorization': 'Bearer ' + data.access_token },
+          });
+          if (meRes.ok) {
+            var me = await meRes.json();
+            localStorage.setItem('amplifi_user', JSON.stringify(me));
+          }
+          window.location.href = '/';
+        } catch (err) {
+          if (entraError) {
+            entraError.textContent = err.message || 'Login failed';
+            entraError.classList.remove('hidden');
+          }
+        }
+      }
+
+      window.entraLogin = async function() {
+        // SPA flow: use MSAL.js popup
+        if (_msalInstance) {
+          var entraError = document.getElementById('entra-error');
+          var btn = document.getElementById('entra-login-btn');
+          try {
+            if (entraError) entraError.classList.add('hidden');
+            if (btn) btn.disabled = true;
+
+            // Try popup first; fall back to redirect if popup is blocked
+            var result;
+            try {
+              result = await _msalInstance.loginPopup({
+                scopes: ['User.Read', 'openid', 'profile'],
+              });
+            } catch (popupErr) {
+              if (popupErr.errorCode === 'popup_window_error') {
+                _msalInstance.loginRedirect({
+                  scopes: ['User.Read', 'openid', 'profile'],
+                });
+                return;
+              }
+              throw popupErr;
+            }
+
+            if (result && result.idToken) {
+              await _exchangeSpaToken(result.idToken, result.accessToken || '');
+            }
+          } catch (err) {
+            if (entraError) {
+              entraError.textContent = err.message || 'Entra ID login failed';
+              entraError.classList.remove('hidden');
+            }
+          } finally {
+            if (btn) btn.disabled = false;
+          }
+          return;
+        }
+
+        // Server flow: redirect to backend login endpoint
+        window.location.href = '/api/auth/oidc/start';
+      };
+
+      // Password login form
       document.getElementById('login-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         var username = document.getElementById('login-username').value;
