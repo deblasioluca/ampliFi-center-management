@@ -494,7 +494,6 @@ def run_connection_trial(conn: SAPConnection) -> TrialResult:
     # Step 2: Probe each endpoint with per-endpoint overrides
     for ep in ENDPOINTS:
         ep_ssl = _ep_verify_ssl(conn, ep)
-        ep_proxy = _ep_use_proxy(conn, ep)
         ep_saml2 = _ep_saml2_disabled(conn, ep)
         ep_webdisp = _ep_use_webdisp(conn, ep)
         icf_path = _ep_icf_path(conn, ep)
