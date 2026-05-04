@@ -53,6 +53,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In proxy TLS mode, trust X-Forwarded-* headers from the reverse proxy
+if settings.tls_mode.lower() == "proxy":
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]

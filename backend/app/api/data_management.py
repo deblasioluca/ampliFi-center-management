@@ -12,6 +12,7 @@ from app.infra.db.session import get_db
 from app.models.core import (
     AppUser,
     Balance,
+    CenterMapping,
     Employee,
     Entity,
     Hierarchy,
@@ -19,6 +20,8 @@ from app.models.core import (
     HierarchyNode,
     LegacyCostCenter,
     LegacyProfitCenter,
+    TargetCostCenter,
+    TargetProfitCenter,
     UploadBatch,
     UploadError,
 )
@@ -141,6 +144,111 @@ def delete_all_profit_centers(
     result = db.execute(delete(LegacyProfitCenter))
     db.commit()
     return DeleteResult(table="legacy_profit_center", deleted=result.rowcount)
+
+
+# ── Target cost centers ─────────────────────────────────────────────────
+
+
+@router.delete("/target/cost-centers")
+def delete_target_cost_centers(
+    body: DeleteByIds | None = None,
+    ccode: str | None = None,
+    coarea: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    if body and body.ids:
+        stmt = delete(TargetCostCenter).where(TargetCostCenter.id.in_(body.ids))
+    elif ccode:
+        stmt = delete(TargetCostCenter).where(TargetCostCenter.ccode == ccode)
+    elif coarea:
+        stmt = delete(TargetCostCenter).where(TargetCostCenter.coarea == coarea)
+    else:
+        raise HTTPException(
+            status_code=400, detail="Provide ids in body, or ccode/coarea as query param"
+        )
+    result = db.execute(stmt)
+    db.commit()
+    return DeleteResult(table="target_cost_center", deleted=result.rowcount)
+
+
+@router.delete("/target/cost-centers/all")
+def delete_all_target_cost_centers(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    result = db.execute(delete(TargetCostCenter))
+    db.commit()
+    return DeleteResult(table="target_cost_center", deleted=result.rowcount)
+
+
+# ── Target profit centers ───────────────────────────────────────────────
+
+
+@router.delete("/target/profit-centers")
+def delete_target_profit_centers(
+    body: DeleteByIds | None = None,
+    ccode: str | None = None,
+    coarea: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    if body and body.ids:
+        stmt = delete(TargetProfitCenter).where(TargetProfitCenter.id.in_(body.ids))
+    elif ccode:
+        stmt = delete(TargetProfitCenter).where(TargetProfitCenter.ccode == ccode)
+    elif coarea:
+        stmt = delete(TargetProfitCenter).where(TargetProfitCenter.coarea == coarea)
+    else:
+        raise HTTPException(
+            status_code=400, detail="Provide ids in body, or ccode/coarea as query param"
+        )
+    result = db.execute(stmt)
+    db.commit()
+    return DeleteResult(table="target_profit_center", deleted=result.rowcount)
+
+
+@router.delete("/target/profit-centers/all")
+def delete_all_target_profit_centers(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    result = db.execute(delete(TargetProfitCenter))
+    db.commit()
+    return DeleteResult(table="target_profit_center", deleted=result.rowcount)
+
+
+# ── Center mappings ─────────────────────────────────────────────────────
+
+
+@router.delete("/center-mappings")
+def delete_center_mappings(
+    body: DeleteByIds | None = None,
+    object_type: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    if body and body.ids:
+        stmt = delete(CenterMapping).where(CenterMapping.id.in_(body.ids))
+    elif object_type:
+        stmt = delete(CenterMapping).where(CenterMapping.object_type == object_type)
+    else:
+        raise HTTPException(
+            status_code=400, detail="Provide ids in body or object_type as query param"
+        )
+    result = db.execute(stmt)
+    db.commit()
+    return DeleteResult(table="center_mapping", deleted=result.rowcount)
+
+
+@router.delete("/center-mappings/all")
+def delete_all_center_mappings(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> DeleteResult:
+    result = db.execute(delete(CenterMapping))
+    db.commit()
+    return DeleteResult(table="center_mapping", deleted=result.rowcount)
 
 
 # ── Balances ────────────────────────────────────────────────────────────
@@ -293,6 +401,12 @@ def purge_all_data(
     user: AppUser = Depends(require_role("admin")),
 ) -> dict:
     counts: dict[str, int] = {}
+    r = db.execute(delete(CenterMapping))
+    counts["center_mappings"] = r.rowcount
+    r = db.execute(delete(TargetCostCenter))
+    counts["target_cost_centers"] = r.rowcount
+    r = db.execute(delete(TargetProfitCenter))
+    counts["target_profit_centers"] = r.rowcount
     r = db.execute(delete(UploadError))
     counts["upload_errors"] = r.rowcount
     r = db.execute(delete(UploadBatch))
@@ -330,6 +444,10 @@ def data_counts(
         "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
+        "target_cost_centers": db.execute(select(func.count(TargetCostCenter.id))).scalar() or 0,
+        "target_profit_centers": db.execute(select(func.count(TargetProfitCenter.id))).scalar()
+        or 0,
+        "center_mappings": db.execute(select(func.count(CenterMapping.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
 

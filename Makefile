@@ -44,7 +44,13 @@ start: ## Start backend + frontend
 	else \
 		cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
-		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) \
+		export $$(grep -E '^(TLS_MODE|TLS_CERT_FILE|TLS_KEY_FILE)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		TLS_ARGS=""; \
+		if [ "$${TLS_MODE:-off}" = "direct" ]; then \
+			TLS_ARGS="--ssl-certfile $${TLS_CERT_FILE} --ssl-keyfile $${TLS_KEY_FILE}"; \
+			echo "[tls] Direct mode: uvicorn will serve HTTPS"; \
+		fi; \
+		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) $$TLS_ARGS \
 			> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
 		echo $$! > $(BACKEND_PID) && \
 		echo "[ok] Backend started on port $(BACKEND_PORT) (PID $$!)"; \

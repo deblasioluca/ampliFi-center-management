@@ -10,6 +10,7 @@ from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
 from app.models.core import (
     Balance,
+    CenterMapping,
     Employee,
     Entity,
     Hierarchy,
@@ -17,6 +18,8 @@ from app.models.core import (
     HierarchyNode,
     LegacyCostCenter,
     LegacyProfitCenter,
+    TargetCostCenter,
+    TargetProfitCenter,
     UploadBatch,
 )
 
@@ -185,6 +188,163 @@ def list_legacy_pcs(
                 "is_active": p.is_active,
             }
             for p in pcs
+        ],
+    }
+
+
+@router.get("/target/cost-centers")
+def list_target_ccs(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    ccode: str | None = None,
+    coarea: str | None = None,
+    search: str | None = None,
+) -> dict:
+    query = select(TargetCostCenter).order_by(TargetCostCenter.cctr)
+    count_q = select(func.count(TargetCostCenter.id))
+    if ccode:
+        query = query.where(TargetCostCenter.ccode == ccode)
+        count_q = count_q.where(TargetCostCenter.ccode == ccode)
+    if coarea:
+        query = query.where(TargetCostCenter.coarea == coarea)
+        count_q = count_q.where(TargetCostCenter.coarea == coarea)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            TargetCostCenter.cctr.ilike(pattern)
+            | TargetCostCenter.txtsh.ilike(pattern)
+            | TargetCostCenter.txtmi.ilike(pattern)
+        )
+        count_q = count_q.where(
+            TargetCostCenter.cctr.ilike(pattern)
+            | TargetCostCenter.txtsh.ilike(pattern)
+            | TargetCostCenter.txtmi.ilike(pattern)
+        )
+    total = db.execute(count_q).scalar() or 0
+    ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": c.id,
+                "coarea": c.coarea,
+                "cctr": c.cctr,
+                "txtsh": c.txtsh,
+                "txtmi": c.txtmi,
+                "responsible": c.responsible,
+                "cctrcgy": c.cctrcgy,
+                "ccode": c.ccode,
+                "currency": c.currency,
+                "pctr": c.pctr,
+                "is_active": c.is_active,
+                "mdg_status": c.mdg_status,
+                "mdg_change_request_id": c.mdg_change_request_id,
+            }
+            for c in ccs
+        ],
+    }
+
+
+@router.get("/target/profit-centers")
+def list_target_pcs(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    ccode: str | None = None,
+    coarea: str | None = None,
+    search: str | None = None,
+) -> dict:
+    query = select(TargetProfitCenter).order_by(TargetProfitCenter.pctr)
+    count_q = select(func.count(TargetProfitCenter.id))
+    if ccode:
+        query = query.where(TargetProfitCenter.ccode == ccode)
+        count_q = count_q.where(TargetProfitCenter.ccode == ccode)
+    if coarea:
+        query = query.where(TargetProfitCenter.coarea == coarea)
+        count_q = count_q.where(TargetProfitCenter.coarea == coarea)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            TargetProfitCenter.pctr.ilike(pattern)
+            | TargetProfitCenter.txtsh.ilike(pattern)
+            | TargetProfitCenter.txtmi.ilike(pattern)
+        )
+        count_q = count_q.where(
+            TargetProfitCenter.pctr.ilike(pattern)
+            | TargetProfitCenter.txtsh.ilike(pattern)
+            | TargetProfitCenter.txtmi.ilike(pattern)
+        )
+    total = db.execute(count_q).scalar() or 0
+    pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": p.id,
+                "coarea": p.coarea,
+                "pctr": p.pctr,
+                "txtsh": p.txtsh,
+                "txtmi": p.txtmi,
+                "responsible": p.responsible,
+                "department": p.department,
+                "ccode": p.ccode,
+                "currency": p.currency,
+                "is_active": p.is_active,
+            }
+            for p in pcs
+        ],
+    }
+
+
+@router.get("/center-mappings")
+def list_center_mappings(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    object_type: str | None = None,
+    search: str | None = None,
+) -> dict:
+    query = select(CenterMapping).order_by(CenterMapping.legacy_center)
+    count_q = select(func.count(CenterMapping.id))
+    if object_type:
+        query = query.where(CenterMapping.object_type == object_type)
+        count_q = count_q.where(CenterMapping.object_type == object_type)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            CenterMapping.legacy_center.ilike(pattern)
+            | CenterMapping.target_center.ilike(pattern)
+            | CenterMapping.legacy_name.ilike(pattern)
+            | CenterMapping.target_name.ilike(pattern)
+        )
+        count_q = count_q.where(
+            CenterMapping.legacy_center.ilike(pattern)
+            | CenterMapping.target_center.ilike(pattern)
+            | CenterMapping.legacy_name.ilike(pattern)
+            | CenterMapping.target_name.ilike(pattern)
+        )
+    total = db.execute(count_q).scalar() or 0
+    rows = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": m.id,
+                "object_type": m.object_type,
+                "legacy_coarea": m.legacy_coarea,
+                "legacy_center": m.legacy_center,
+                "legacy_name": m.legacy_name,
+                "target_coarea": m.target_coarea,
+                "target_center": m.target_center,
+                "target_name": m.target_name,
+                "mapping_type": m.mapping_type,
+                "notes": m.notes,
+            }
+            for m in rows
         ],
     }
 

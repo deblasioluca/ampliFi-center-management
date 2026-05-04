@@ -49,6 +49,7 @@ import Layout from '../../components/layout/Layout.astro';
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="cost-centers">Cost Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="mapping">Mapping</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="employees">Employees</button>
@@ -91,32 +92,83 @@ import Layout from '../../components/layout/Layout.astro';
 
     <!-- Cost Centers Tab -->
     <div id="tab-cost-centers" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
-        <div class="flex items-center gap-2">
-          <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
-          <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-          <button onclick="downloadTableCSV('cc-table','cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
+      <!-- Legacy Section -->
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
+          <div class="flex items-center gap-2">
+            <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
+            <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+            <button onclick="downloadTableCSV('cc-table','legacy_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+            <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
+          </div>
         </div>
+        <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
+        <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
       </div>
-      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <!-- Target Section -->
+      <div class="border-t border-gray-200 pt-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold">Target Cost Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
+          <div class="flex items-center gap-2">
+            <input id="search-tcc" type="text" placeholder="Search..." class="input text-sm w-48" />
+            <button onclick="downloadTableCSV('tcc-table','target_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+            <button id="delete-all-tcc" class="btn-danger text-xs">Delete All</button>
+          </div>
+        </div>
+        <div id="tcc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
+        <div id="tcc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
     </div>
 
     <!-- Profit Centers Tab -->
     <div id="tab-profit-centers" class="hidden">
+      <!-- Legacy Section -->
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
+          <div class="flex items-center gap-2">
+            <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
+            <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+            <button onclick="downloadTableCSV('pc-table','legacy_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+            <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
+          </div>
+        </div>
+        <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
+        <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+      <!-- Target Section -->
+      <div class="border-t border-gray-200 pt-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold">Target Profit Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
+          <div class="flex items-center gap-2">
+            <input id="search-tpc" type="text" placeholder="Search..." class="input text-sm w-48" />
+            <button onclick="downloadTableCSV('tpc-table','target_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+            <button id="delete-all-tpc" class="btn-danger text-xs">Delete All</button>
+          </div>
+        </div>
+        <div id="tpc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
+        <div id="tpc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+    </div>
+
+    <!-- Mapping Tab -->
+    <div id="tab-mapping" class="hidden">
       <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
+        <h3 class="text-base font-semibold">Center Mapping <span class="text-xs font-normal text-gray-500">(Legacy → Target)</span></h3>
         <div class="flex items-center gap-2">
-          <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
-          <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-          <button onclick="downloadTableCSV('pc-table','profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
+          <input id="search-mapping" type="text" placeholder="Search centers..." class="input text-sm w-48" />
+          <select id="filter-mapping-type" class="input text-sm w-36">
+            <option value="">All Types</option>
+            <option value="cost_center">Cost Centers</option>
+            <option value="profit_center">Profit Centers</option>
+          </select>
+          <button onclick="downloadTableCSV('mapping-table','center_mapping.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-mapping" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <div id="mapping-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+      <div id="mapping-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
     <!-- Balances Tab -->
@@ -190,8 +242,11 @@ import Layout from '../../components/layout/Layout.astro';
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
               <select id="upload-type" class="input">
-                <option value="cost_centers">Cost Centers</option>
-                <option value="profit_centers">Profit Centers</option>
+                <option value="cost_centers">Legacy Cost Centers</option>
+                <option value="profit_centers">Legacy Profit Centers</option>
+                <option value="target_cost_centers">Target Cost Centers (ampliFi)</option>
+                <option value="target_profit_centers">Target Profit Centers (ampliFi)</option>
+                <option value="center_mapping">Center Mapping (Legacy → Target)</option>
                 <option value="balances">Balances</option>
                 <option value="balances_gcr">Balances (GCR aggregated)</option>
                 <option value="entities">Entities (Company Codes)</option>
@@ -339,12 +394,12 @@ import Layout from '../../components/layout/Layout.astro';
       if (t) sortTable(t);
     });
   });
-  ['entities-table','cc-table','pc-table','bal-table','hier-table','emp-table'].forEach(function(id) {
+  ['entities-table','cc-table','pc-table','tcc-table','tpc-table','mapping-table','bal-table','hier-table','emp-table'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) sortObserver.observe(el, { childList: true });
   });
 
-  var allTabs = ['data-browser','entities','cost-centers','profit-centers','balances','hierarchies','employees','upload','sample-data'];
+  var allTabs = ['data-browser','entities','cost-centers','profit-centers','mapping','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -364,6 +419,9 @@ import Layout from '../../components/layout/Layout.astro';
     loadCounts();
     if (typeof loadCC === 'function') loadCC(1);
     if (typeof loadPC === 'function') loadPC(1);
+    if (typeof loadTargetCC === 'function') loadTargetCC(1);
+    if (typeof loadTargetPC === 'function') loadTargetPC(1);
+    if (typeof loadMapping === 'function') loadMapping(1);
     if (typeof loadEntities === 'function') loadEntities(1);
     if (typeof loadBalances === 'function') loadBalances(1);
     if (typeof loadHierarchies === 'function') loadHierarchies();
@@ -544,6 +602,148 @@ import Layout from '../../components/layout/Layout.astro';
   loadPC(1);
   document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
   document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
+
+  // --- Target Cost Centers ---
+  var _tccData = [];
+  window.loadTargetCC = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-tcc').value;
+    var url = '/api/target/cost-centers?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      _tccData = d.items || [];
+      _renderTCCTable();
+      document.getElementById('tcc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetCC');
+    }).catch(function(e) { document.getElementById('tcc-table').textContent = 'Error: ' + e.message; });
+  };
+  window._renderTCCTable = function() {
+    var el = document.getElementById('tcc-table');
+    if (!_tccData.length) { el.textContent = 'No target cost centers found.'; return; }
+    var items = sortTableData('tcc', _tccData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('tcc','cctr','CC','_renderTCCTable') +
+      sortTh('tcc','txtsh','Short Text','_renderTCCTable') +
+      sortTh('tcc','txtmi','Medium Text','_renderTCCTable') +
+      sortTh('tcc','ccode','Entity','_renderTCCTable') +
+      sortTh('tcc','coarea','CO Area','_renderTCCTable') +
+      sortTh('tcc','cctrcgy','Category','_renderTCCTable') +
+      sortTh('tcc','responsible','Responsible','_renderTCCTable') +
+      sortTh('tcc','pctr','PC','_renderTCCTable') +
+      sortTh('tcc','mdg_status','MDG Status','_renderTCCTable') +
+      sortTh('tcc','is_active','Active','_renderTCCTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(c) {
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(c.mdg_status) + '</td>' +
+        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  };
+  loadTargetCC(1);
+  document.getElementById('search-tcc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetCC(1); }, 300); });
+
+  // --- Target Profit Centers ---
+  var _tpcData = [];
+  window.loadTargetPC = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-tpc').value;
+    var url = '/api/target/profit-centers?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      _tpcData = d.items || [];
+      _renderTPCTable();
+      document.getElementById('tpc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetPC');
+    }).catch(function(e) { document.getElementById('tpc-table').textContent = 'Error: ' + e.message; });
+  };
+  window._renderTPCTable = function() {
+    var el = document.getElementById('tpc-table');
+    if (!_tpcData.length) { el.textContent = 'No target profit centers found.'; return; }
+    var items = sortTableData('tpc', _tpcData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('tpc','pctr','PC','_renderTPCTable') +
+      sortTh('tpc','txtsh','Short Text','_renderTPCTable') +
+      sortTh('tpc','txtmi','Medium Text','_renderTPCTable') +
+      sortTh('tpc','ccode','Entity','_renderTPCTable') +
+      sortTh('tpc','coarea','CO Area','_renderTPCTable') +
+      sortTh('tpc','department','Department','_renderTPCTable') +
+      sortTh('tpc','responsible','Responsible','_renderTPCTable') +
+      sortTh('tpc','is_active','Active','_renderTPCTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(p) {
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
+        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  };
+  loadTargetPC(1);
+  document.getElementById('search-tpc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetPC(1); }, 300); });
+
+  // --- Center Mapping ---
+  var _mappingData = [];
+  window.loadMapping = function(page) {
+    page = page || 1;
+    var search = document.getElementById('search-mapping').value;
+    var objType = document.getElementById('filter-mapping-type').value;
+    var url = '/api/center-mappings?page=' + page + '&size=50';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (objType) url += '&object_type=' + encodeURIComponent(objType);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      _mappingData = d.items || [];
+      _renderMappingTable();
+      document.getElementById('mapping-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadMapping');
+    }).catch(function(e) { document.getElementById('mapping-table').textContent = 'Error: ' + e.message; });
+  };
+  window._renderMappingTable = function() {
+    var el = document.getElementById('mapping-table');
+    if (!_mappingData.length) { el.textContent = 'No center mappings found. Upload a mapping file to get started.'; return; }
+    var items = sortTableData('mapping', _mappingData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('mapping','object_type','Type','_renderMappingTable') +
+      sortTh('mapping','legacy_coarea','Legacy CO','_renderMappingTable') +
+      sortTh('mapping','legacy_center','Legacy Center','_renderMappingTable') +
+      sortTh('mapping','legacy_name','Legacy Name','_renderMappingTable') +
+      '<th class="py-2 px-2 text-center">→</th>' +
+      sortTh('mapping','target_coarea','Target CO','_renderMappingTable') +
+      sortTh('mapping','target_center','Target Center','_renderMappingTable') +
+      sortTh('mapping','target_name','Target Name','_renderMappingTable') +
+      sortTh('mapping','mapping_type','Map Type','_renderMappingTable') +
+      sortTh('mapping','notes','Notes','_renderMappingTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(m) {
+      var typeLabel = m.object_type === 'cost_center' ? 'CC' : 'PC';
+      var typeBg = m.object_type === 'cost_center' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800';
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2"><span class="text-[10px] font-medium px-1.5 py-0.5 rounded ' + typeBg + '">' + typeLabel + '</span></td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(m.legacy_coarea) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(m.legacy_center) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(m.legacy_name) + '</td>' +
+        '<td class="py-1.5 px-2 text-center text-gray-400">→</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(m.target_coarea) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono font-medium text-amplifi-700">' + esc(m.target_center) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(m.target_name) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(m.mapping_type) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(m.notes) + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  };
+  loadMapping(1);
+  document.getElementById('search-mapping').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadMapping(1); }, 300); });
+  document.getElementById('filter-mapping-type').addEventListener('change', function() { loadMapping(1); });
 
   // --- Balances ---
   window.loadBalances = function(page) {
@@ -1047,8 +1247,20 @@ import Layout from '../../components/layout/Layout.astro';
     fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadCC(1); });
   });
   document.getElementById('delete-all-pc').addEventListener('click', function() {
-    if (!confirm('Delete ALL profit centers?')) return;
+    if (!confirm('Delete ALL legacy profit centers?')) return;
     fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadPC(1); });
+  });
+  document.getElementById('delete-all-tcc').addEventListener('click', function() {
+    if (!confirm('Delete ALL target cost centers?')) return;
+    fetch('/api/data/target/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetCC(1); });
+  });
+  document.getElementById('delete-all-tpc').addEventListener('click', function() {
+    if (!confirm('Delete ALL target profit centers?')) return;
+    fetch('/api/data/target/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetPC(1); });
+  });
+  document.getElementById('delete-all-mapping').addEventListener('click', function() {
+    if (!confirm('Delete ALL center mappings?')) return;
+    fetch('/api/data/center-mappings/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadMapping(1); });
   });
   document.getElementById('delete-all-bal').addEventListener('click', function() {
     if (!confirm('Delete ALL balances?')) return;
