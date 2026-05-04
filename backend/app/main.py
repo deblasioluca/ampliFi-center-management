@@ -100,10 +100,11 @@ async def readyz() -> Response:
         r.ping()
         r.close()
         checks["redis"] = "ok"
-    except Exception as exc:
-        checks["redis"] = f"error: {exc}"
+    except Exception:
+        checks["redis"] = "unavailable (optional)"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    # Redis is optional — only DB is required for healthy status
+    all_ok = checks.get("db") == "ok"
     return JSONResponse(
         content={"status": "ready" if all_ok else "degraded", "checks": checks},
         status_code=200 if all_ok else 503,
