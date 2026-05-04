@@ -299,8 +299,7 @@ import Layout from '../../components/layout/Layout.astro';
           var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
             '<th class="text-left py-2 px-2">Username</th><th class="text-left py-2 px-2">Name</th>' +
             '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Role</th>' +
-            '<th class="text-left py-2 px-2">Active</th>' +
-            '<th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
+            '<th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
           items.forEach(function(u) {
             var roleSelect = '<select class="role-select input text-xs py-0.5 px-1 w-28" data-id="' + u.id + '" data-orig="' + u.role + '">' +
               ROLES.map(function(r) { return roleOption(r, u.role); }).join('') + '</select>';
@@ -312,8 +311,7 @@ import Layout from '../../components/layout/Layout.astro';
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
               '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
               '<td class="py-2 px-2">' + roleSelect + '</td>' +
-              '<td class="py-2 px-2">' + activeToggle + '</td>' +
-              '<td class="py-2 px-2"><button class="delete-user text-xs text-red-600 hover:text-red-800" data-id="' + u.id + '">Delete</button></td></tr>';
+              '<td class="py-2 px-2">' + activeToggle + '</td></tr>';
           });
           html += '</tbody></table>';
           el.innerHTML = html;
@@ -341,13 +339,7 @@ import Layout from '../../components/layout/Layout.astro';
               loadUsers();
             });
           });
-          el.querySelectorAll('.delete-user').forEach(function(btn) {
-            btn.addEventListener('click', async function() {
-              if (!confirm('Delete this user permanently?')) return;
-              await fetch('/api/admin/users/' + this.getAttribute('data-id'), { method: 'DELETE', headers: authHdr });
-              loadUsers();
-            });
-          });
+
         })
         .catch(function() { document.getElementById('users-table').textContent = 'Unable to load'; });
     }
