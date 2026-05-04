@@ -75,9 +75,12 @@ import Layout from '../../components/layout/Layout.astro';
             <div>
               <label class="block text-xs text-gray-500 mb-1">Role</label>
               <select id="nu-role" class="input text-sm">
+                <option value="analyst">Analyst</option>
+                <option value="admin">Admin</option>
                 <option value="data_manager">Data Manager</option>
-                <option value="admin">System Admin</option>
                 <option value="reviewer">Reviewer</option>
+                <option value="auditor">Auditor</option>
+                <option value="owner">Owner</option>
                 <option value="viewer">Viewer</option>
               </select>
             </div>
@@ -283,6 +286,9 @@ import Layout from '../../components/layout/Layout.astro';
     });
 
     // ---- Users ----
+    var ROLES = ['admin', 'analyst', 'data_manager', 'reviewer', 'auditor', 'owner', 'viewer'];
+    function roleOption(val, sel) { return '<option value="' + val + '"' + (val === sel ? ' selected' : '') + '>' + val + '</option>'; }
+
     function loadUsers() {
       fetch('/api/admin/users?page=1&size=100', { headers: authHdr })
         .then(function(r) { return r.json(); })
@@ -296,20 +302,48 @@ import Layout from '../../components/layout/Layout.astro';
             '<th class="text-left py-2 px-2">Active</th>' +
             '<th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
           items.forEach(function(u) {
+            var roleSelect = '<select class="role-select input text-xs py-0.5 px-1 w-28" data-id="' + u.id + '" data-orig="' + u.role + '">' +
+              ROLES.map(function(r) { return roleOption(r, u.role); }).join('') + '</select>';
+            var activeToggle = u.is_active
+              ? '<button class="toggle-active text-xs text-green-600 hover:text-red-600" data-id="' + u.id + '" data-active="true" title="Click to deactivate">Active</button>'
+              : '<button class="toggle-active text-xs text-red-600 hover:text-green-600" data-id="' + u.id + '" data-active="false" title="Click to activate">Inactive</button>';
             html += '<tr class="border-b border-gray-100">' +
               '<td class="py-2 px-2 font-medium">' + escapeHtml(u.username) + '</td>' +
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
               '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
-              '<td class="py-2 px-2"><span class="text-xs px-2 py-0.5 rounded ' +
-                (u.role === 'admin' ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-600') + '">' + escapeHtml(u.role) + '</span></td>' +
-              '<td class="py-2 px-2">' + (u.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-600">No</span>') + '</td>' +
-              '<td class="py-2 px-2"><button class="deactivate-user text-xs text-red-600 hover:text-red-800" data-id="' + u.id + '">Deactivate</button></td></tr>';
+              '<td class="py-2 px-2">' + roleSelect + '</td>' +
+              '<td class="py-2 px-2">' + activeToggle + '</td>' +
+              '<td class="py-2 px-2"><button class="delete-user text-xs text-red-600 hover:text-red-800" data-id="' + u.id + '">Delete</button></td></tr>';
           });
           html += '</tbody></table>';
           el.innerHTML = html;
-          el.querySelectorAll('.deactivate-user').forEach(function(btn) {
+          el.querySelectorAll('.role-select').forEach(function(sel) {
+            sel.addEventListener('change', async function() {
+              var uid = this.getAttribute('data-id');
+              var res = await fetch('/api/admin/users/' + uid, {
+                method: 'PATCH', headers: jsonHdr,
+                body: JSON.stringify({ role: this.value })
+              });
+              if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed to update role'); loadUsers(); }
+            });
+          });
+          el.querySelectorAll('.toggle-active').forEach(function(btn) {
             btn.addEventListener('click', async function() {
-              if (!confirm('Deactivate this user?')) return;
+              var uid = this.getAttribute('data-id');
+              var isActive = this.getAttribute('data-active') === 'true';
+              var action = isActive ? 'deactivate' : 'activate';
+              if (!confirm(action.charAt(0).toUpperCase() + action.slice(1) + ' this user?')) return;
+              var res = await fetch('/api/admin/users/' + uid, {
+                method: 'PATCH', headers: jsonHdr,
+                body: JSON.stringify({ is_active: !isActive })
+              });
+              if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed'); }
+              loadUsers();
+            });
+          });
+          el.querySelectorAll('.delete-user').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+              if (!confirm('Delete this user permanently?')) return;
               await fetch('/api/admin/users/' + this.getAttribute('data-id'), { method: 'DELETE', headers: authHdr });
               loadUsers();
             });
