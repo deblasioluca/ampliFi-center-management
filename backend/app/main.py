@@ -216,4 +216,15 @@ async def prometheus_metrics() -> Response:
 # Mount AFTER all API routes so /api/* takes priority
 _frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _frontend_dist.is_dir():
+    from fastapi.responses import HTMLResponse
+
+    # SPA-style catch-all for /review/{token} — serves the review index page
+    _review_html = _frontend_dist / "review" / "index.html"
+    if _review_html.is_file():
+        _review_content = _review_html.read_text()
+
+        @app.get("/review/{token:path}", response_class=HTMLResponse)
+        async def _review_catchall(token: str) -> HTMLResponse:
+            return HTMLResponse(content=_review_content)
+
     app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
