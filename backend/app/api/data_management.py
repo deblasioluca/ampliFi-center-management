@@ -401,6 +401,12 @@ def purge_all_data(
     user: AppUser = Depends(require_role("admin")),
 ) -> dict:
     counts: dict[str, int] = {}
+    r = db.execute(delete(CenterMapping))
+    counts["center_mappings"] = r.rowcount
+    r = db.execute(delete(TargetCostCenter))
+    counts["target_cost_centers"] = r.rowcount
+    r = db.execute(delete(TargetProfitCenter))
+    counts["target_profit_centers"] = r.rowcount
     r = db.execute(delete(UploadError))
     counts["upload_errors"] = r.rowcount
     r = db.execute(delete(UploadBatch))
@@ -438,6 +444,11 @@ def data_counts(
         "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
+        "target_cost_centers": db.execute(select(func.count(TargetCostCenter.id))).scalar() or 0,
+        "target_profit_centers": db.execute(
+            select(func.count(TargetProfitCenter.id))
+        ).scalar() or 0,
+        "center_mappings": db.execute(select(func.count(CenterMapping.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
 
