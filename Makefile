@@ -47,7 +47,11 @@ start: ## Start backend + frontend
 		export $$(grep -E '^(TLS_MODE|TLS_CERT_FILE|TLS_KEY_FILE)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 		TLS_ARGS=""; \
 		if [ "$${TLS_MODE:-off}" = "direct" ]; then \
-			TLS_ARGS="--ssl-certfile $${TLS_CERT_FILE} --ssl-keyfile $${TLS_KEY_FILE}"; \
+			_CERT="$${TLS_CERT_FILE}"; \
+			_KEY="$${TLS_KEY_FILE}"; \
+			case "$$_CERT" in /*) ;; *) _CERT="$(ROOT_DIR)/$$_CERT" ;; esac; \
+			case "$$_KEY" in /*) ;; *) _KEY="$(ROOT_DIR)/$$_KEY" ;; esac; \
+			TLS_ARGS="--ssl-certfile $$_CERT --ssl-keyfile $$_KEY"; \
 			echo "[tls] Direct mode: uvicorn will serve HTTPS"; \
 		fi; \
 		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) $$TLS_ARGS \
