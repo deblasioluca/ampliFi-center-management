@@ -675,9 +675,18 @@ TARGET_CC_COLUMNS = {
     "MDG_CHANGE_REQUEST_ID": "mdg_change_request_id",
 }
 _TARGET_CC_MODEL_FIELDS = {
-    "coarea", "cctr", "txtsh", "txtmi", "responsible",
-    "ccode", "cctrcgy", "currency", "pctr", "is_active",
-    "mdg_status", "mdg_change_request_id",
+    "coarea",
+    "cctr",
+    "txtsh",
+    "txtmi",
+    "responsible",
+    "ccode",
+    "cctrcgy",
+    "currency",
+    "pctr",
+    "is_active",
+    "mdg_status",
+    "mdg_change_request_id",
 }
 
 TARGET_PC_COLUMNS = {
@@ -700,8 +709,15 @@ TARGET_PC_COLUMNS = {
     "IS_ACTIVE": "is_active",
 }
 _TARGET_PC_MODEL_FIELDS = {
-    "coarea", "pctr", "txtsh", "txtmi", "responsible",
-    "ccode", "department", "currency", "is_active",
+    "coarea",
+    "pctr",
+    "txtsh",
+    "txtmi",
+    "responsible",
+    "ccode",
+    "department",
+    "currency",
+    "is_active",
 }
 
 CENTER_MAPPING_COLUMNS = {
@@ -723,9 +739,15 @@ CENTER_MAPPING_COLUMNS = {
     "NOTES": "notes",
 }
 _CENTER_MAPPING_MODEL_FIELDS = {
-    "object_type", "legacy_coarea", "legacy_center", "legacy_name",
-    "target_coarea", "target_center", "target_name",
-    "mapping_type", "notes",
+    "object_type",
+    "legacy_coarea",
+    "legacy_center",
+    "legacy_name",
+    "target_coarea",
+    "target_center",
+    "target_name",
+    "mapping_type",
+    "notes",
 }
 
 
@@ -933,7 +955,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
             if not row.get("legacy_center"):
                 errors.append(
                     {
-                        "row": i, "col": "LEGACY_CENTER",
+                        "row": i,
+                        "col": "LEGACY_CENTER",
                         "code": "REQUIRED",
                         "msg": "LEGACY_CENTER is required",
                     },
@@ -942,7 +965,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
             if not row.get("target_center"):
                 errors.append(
                     {
-                        "row": i, "col": "TARGET_CENTER",
+                        "row": i,
+                        "col": "TARGET_CENTER",
                         "code": "REQUIRED",
                         "msg": "TARGET_CENTER is required",
                     },
@@ -951,7 +975,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
             if not row.get("object_type"):
                 errors.append(
                     {
-                        "row": i, "col": "OBJECT_TYPE",
+                        "row": i,
+                        "col": "OBJECT_TYPE",
                         "code": "REQUIRED",
                         "msg": "OBJECT_TYPE is required",
                     },
@@ -1775,9 +1800,7 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
         )
         deleted = r.rowcount
     elif batch.kind == "center_mapping":
-        r = db.execute(
-            sa_delete(CenterMapping).where(CenterMapping.refresh_batch == batch.id)
-        )
+        r = db.execute(sa_delete(CenterMapping).where(CenterMapping.refresh_batch == batch.id))
         deleted = r.rowcount
 
     rows_loaded = batch.rows_loaded or 0
