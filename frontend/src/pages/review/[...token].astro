@@ -1,6 +1,9 @@
 ---
 import Layout from '../../components/layout/Layout.astro';
-export const prerender = false;
+
+export function getStaticPaths() {
+  return [{ params: { token: undefined } }];
+}
 ---
 
 <Layout title="Review" requireAuth={false}>

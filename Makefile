@@ -39,6 +39,17 @@ help: ## Show this help
 
 start: ## Start backend + frontend
 	@echo "=== Starting ampliFi ==="
+	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
+		if [ -d $(FRONTEND_DIR)/dist ]; then \
+			echo "[ok] Frontend already built (serving from backend)"; \
+		else \
+			echo "Building frontend..."; \
+			cd $(FRONTEND_DIR) && npm run build && \
+			echo "[ok] Frontend built — served by backend on port $(BACKEND_PORT)"; \
+		fi; \
+	else \
+		echo "[skip] Frontend not found (no frontend/package.json)"; \
+	fi
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
 		echo "Backend already running (PID $$(cat $(BACKEND_PID)))"; \
 	else \
@@ -58,18 +69,6 @@ start: ## Start backend + frontend
 			> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
 		echo $$! > $(BACKEND_PID) && \
 		echo "[ok] Backend started on port $(BACKEND_PORT) (PID $$!)"; \
-	fi
-	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then \
-			echo "Frontend already running (PID $$(cat $(FRONTEND_PID)))"; \
-		else \
-			cd $(FRONTEND_DIR) && \
-			FRONTEND_PORT=$(FRONTEND_PORT) nohup npm run dev > $(ROOT_DIR)/amplifi-frontend.log 2>&1 & \
-			echo $$! > $(FRONTEND_PID) && \
-			echo "[ok] Frontend started on port $(FRONTEND_PORT) (PID $$!)"; \
-		fi; \
-	else \
-		echo "[skip] Frontend not found (no frontend/package.json)"; \
 	fi
 
 stop: ## Stop backend + frontend
