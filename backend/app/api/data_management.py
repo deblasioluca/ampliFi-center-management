@@ -445,9 +445,8 @@ def data_counts(
         "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
         "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
         "target_cost_centers": db.execute(select(func.count(TargetCostCenter.id))).scalar() or 0,
-        "target_profit_centers": db.execute(
-            select(func.count(TargetProfitCenter.id))
-        ).scalar() or 0,
+        "target_profit_centers": db.execute(select(func.count(TargetProfitCenter.id))).scalar()
+        or 0,
         "center_mappings": db.execute(select(func.count(CenterMapping.id))).scalar() or 0,
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
