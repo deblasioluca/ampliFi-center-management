@@ -1173,6 +1173,7 @@ def list_uploads(
                 "rows_valid": b.rows_valid,
                 "rows_error": b.rows_error,
                 "rows_loaded": b.rows_loaded,
+                "rows_processed": b.rows_processed,
                 "created_at": str(b.created_at) if b.created_at else None,
             }
             for b in batches
@@ -1198,6 +1199,7 @@ def get_upload(
         "rows_valid": batch.rows_valid,
         "rows_error": batch.rows_error,
         "rows_loaded": batch.rows_loaded,
+        "rows_processed": batch.rows_processed,
         "storage_uri": batch.storage_uri,
         "created_at": str(batch.created_at) if batch.created_at else None,
         "validated_at": str(batch.validated_at) if batch.validated_at else None,
@@ -1289,6 +1291,7 @@ def validate_upload_batch(
             detail=f"Cannot validate batch in status '{batch.status}'",
         )
     batch.status = "validating"
+    batch.rows_processed = 0
     db.commit()
     background_tasks.add_task(_run_validate_in_background, batch_id)
     return {"status": "validating", "batch_id": batch_id}
@@ -1310,6 +1313,7 @@ def load_upload_batch(
             detail=f"Batch must be validated first (status: {batch.status})",
         )
     batch.status = "loading"
+    batch.rows_processed = 0
     db.commit()
     background_tasks.add_task(_run_load_in_background, batch_id)
     return {"status": "loading", "batch_id": batch_id}

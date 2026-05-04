@@ -1049,6 +1049,7 @@ class UploadBatch(TimestampMixin, Base):
     rows_valid: Mapped[int] = mapped_column(Integer, default=0)
     rows_error: Mapped[int] = mapped_column(Integer, default=0)
     rows_loaded: Mapped[int] = mapped_column(Integer, default=0)
+    rows_processed: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )

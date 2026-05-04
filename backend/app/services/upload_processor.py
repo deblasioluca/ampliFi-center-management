@@ -31,6 +31,39 @@ from app.models.core import (
 
 logger = structlog.get_logger()
 
+
+def _flush_progress(batch_id: int, count: int, total: int | None = None) -> None:
+    """Write rows_processed to DB via an independent session.
+
+    Uses a separate connection so the caller's main transaction is never
+    committed or disturbed — only the progress counter row is updated.
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.infra.db.session import SessionLocal
+
+    s = SessionLocal()
+    try:
+        if total is not None:
+            s.execute(
+                sa_text(
+                    "UPDATE cleanup.upload_batch "
+                    "SET rows_processed = :p, rows_total = :t WHERE id = :id"
+                ),
+                {"p": count, "t": total, "id": batch_id},
+            )
+        else:
+            s.execute(
+                sa_text("UPDATE cleanup.upload_batch SET rows_processed = :p WHERE id = :id"),
+                {"p": count, "id": batch_id},
+            )
+        s.commit()
+    except Exception:
+        logger.warning("Failed to flush progress for batch %s", batch_id, exc_info=True)
+    finally:
+        s.close()
+
+
 _DATE_FORMATS = (
     "%Y-%m-%d",
     "%Y-%m-%dT%H:%M:%S",
@@ -797,10 +830,16 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
+
+    # Publish total + reset progress so frontend can show a progress bar
+    _flush_progress(batch.id, 0, len(normalized))
+
     errors: list[dict] = []
     error_rows: set[int] = set()
 
     for i, row in enumerate(normalized, start=1):
+        if i % 100 == 0:
+            _flush_progress(batch.id, i)
         if batch.kind in ("cost_center", "cost_centers"):
             if not row.get("cctr"):
                 errors.append(
@@ -969,6 +1008,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     batch.rows_total = len(normalized)
     batch.rows_valid = len(normalized) - len(error_rows)
     batch.rows_error = len(error_rows)
+    batch.rows_processed = len(normalized)
     batch.status = "validated"
     batch.validated_at = datetime.now(UTC)
     db.commit()
@@ -1020,6 +1060,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
     normalized = _normalize_headers(rows, mapping) if mapping else rows
     loaded = 0
 
+    # Publish total + reset progress for load phase
+    _flush_progress(batch.id, 0, len(normalized))
+
     if batch.kind in ("cost_center", "cost_centers"):
         for row in normalized:
             if not row.get("cctr") or not row.get("coarea"):
@@ -1068,6 +1111,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 cc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind in ("profit_center", "profit_centers"):
         for row in normalized:
@@ -1108,6 +1153,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 pc_kwargs["refresh_batch"] = batch.id
                 db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
         for row in normalized:
@@ -1162,6 +1209,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind in ("entity", "entities"):
         for row in normalized:
@@ -1194,6 +1243,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     ent_kwargs["name"] = row["ccode"]
                 db.add(Entity(**ent_kwargs))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind in ("employee", "employees"):
         for row in normalized:
@@ -1241,6 +1292,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 db.add(Employee(**model_kwargs))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind in ("hierarchy", "hierarchies"):
         # Pass 1: create Hierarchy headers
@@ -1274,6 +1327,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 hier_map[(setclass, setname)] = existing
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
         # Pass 2: create nodes
         for row in normalized:
@@ -1304,6 +1359,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
         # Pass 3: create leaves
         for row in normalized:
@@ -1335,6 +1392,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind == "hierarchies_flat":
         # Build hierarchy from flat SAP node export (NODEID/PARENTID/CHILDID).
@@ -1380,6 +1439,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             db.flush()
             hier_map_flat[root_id] = h
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
         # BFS to create nodes and leaves
         from collections import deque
@@ -1427,6 +1488,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         )
                     )
                 loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind == "gl_accounts_ska1":
         for row in normalized:
@@ -1455,6 +1518,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 kwargs["refresh_batch"] = batch.id
                 db.add(GLAccountSKA1(**kwargs))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     elif batch.kind == "gl_accounts_skb1":
         for row in normalized:
@@ -1483,8 +1548,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 kwargs_b["refresh_batch"] = batch.id
                 db.add(GLAccountSKB1(**kwargs_b))
             loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
 
     batch.rows_loaded = loaded
+    batch.rows_processed = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
     db.commit()
