@@ -985,6 +985,19 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     },
                 )
                 error_rows.add(i)
+            elif (row.get("object_type") or "").strip().lower() not in (
+                "cost_center",
+                "profit_center",
+            ):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "OBJECT_TYPE",
+                        "code": "INVALID",
+                        "msg": "OBJECT_TYPE must be 'cost_center' or 'profit_center'",
+                    },
+                )
+                error_rows.add(i)
         elif batch.kind in ("balance", "balances", "balances_gcr"):
             if not row.get("cctr"):
                 errors.append(
@@ -1724,7 +1737,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not legacy_center or not target_center or not obj_type:
                 continue
             if obj_type not in ("cost_center", "profit_center"):
-                obj_type = "cost_center"
+                continue
             legacy_co = (row.get("legacy_coarea") or "").strip() or ""
             target_co = (row.get("target_coarea") or "").strip() or ""
             existing = db.execute(
