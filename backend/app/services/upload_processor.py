@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.core import (
     Balance,
+    CenterMapping,
     Employee,
     Entity,
     GLAccountSKA1,
@@ -25,6 +26,8 @@ from app.models.core import (
     HierarchyNode,
     LegacyCostCenter,
     LegacyProfitCenter,
+    TargetCostCenter,
+    TargetProfitCenter,
     UploadBatch,
     UploadError,
 )
@@ -648,6 +651,83 @@ SKB1_COLUMNS = {
 }
 _SKB1_MODEL_FIELDS = set(SKB1_COLUMNS.values())
 
+TARGET_CC_COLUMNS = {
+    "COAREA": "coarea",
+    "KOKRS": "coarea",
+    "CCTR": "cctr",
+    "KOSTL": "cctr",
+    "TXTSH": "txtsh",
+    "KTEXT": "txtsh",
+    "TXTMI": "txtmi",
+    "LTEXT": "txtmi",
+    "RESPONSIBLE": "responsible",
+    "VERAK": "responsible",
+    "CCODE": "ccode",
+    "BUKRS": "ccode",
+    "CCTRCGY": "cctrcgy",
+    "KOSAR": "cctrcgy",
+    "CURRENCY": "currency",
+    "WAERS": "currency",
+    "PCTR": "pctr",
+    "PRCTR": "pctr",
+    "IS_ACTIVE": "is_active",
+    "MDG_STATUS": "mdg_status",
+    "MDG_CHANGE_REQUEST_ID": "mdg_change_request_id",
+}
+_TARGET_CC_MODEL_FIELDS = {
+    "coarea", "cctr", "txtsh", "txtmi", "responsible",
+    "ccode", "cctrcgy", "currency", "pctr", "is_active",
+    "mdg_status", "mdg_change_request_id",
+}
+
+TARGET_PC_COLUMNS = {
+    "COAREA": "coarea",
+    "KOKRS": "coarea",
+    "PCTR": "pctr",
+    "PRCTR": "pctr",
+    "TXTSH": "txtsh",
+    "KTEXT": "txtsh",
+    "TXTMI": "txtmi",
+    "LTEXT": "txtmi",
+    "RESPONSIBLE": "responsible",
+    "VERAK": "responsible",
+    "CCODE": "ccode",
+    "BUKRS": "ccode",
+    "DEPARTMENT": "department",
+    "ABTEI": "department",
+    "CURRENCY": "currency",
+    "WAERS": "currency",
+    "IS_ACTIVE": "is_active",
+}
+_TARGET_PC_MODEL_FIELDS = {
+    "coarea", "pctr", "txtsh", "txtmi", "responsible",
+    "ccode", "department", "currency", "is_active",
+}
+
+CENTER_MAPPING_COLUMNS = {
+    "OBJECT_TYPE": "object_type",
+    "TYPE": "object_type",
+    "LEGACY_COAREA": "legacy_coarea",
+    "LEGACY_KOKRS": "legacy_coarea",
+    "LEGACY_CENTER": "legacy_center",
+    "LEGACY_KOSTL": "legacy_center",
+    "LEGACY_PRCTR": "legacy_center",
+    "LEGACY_NAME": "legacy_name",
+    "TARGET_COAREA": "target_coarea",
+    "TARGET_KOKRS": "target_coarea",
+    "TARGET_CENTER": "target_center",
+    "TARGET_KOSTL": "target_center",
+    "TARGET_PRCTR": "target_center",
+    "TARGET_NAME": "target_name",
+    "MAPPING_TYPE": "mapping_type",
+    "NOTES": "notes",
+}
+_CENTER_MAPPING_MODEL_FIELDS = {
+    "object_type", "legacy_coarea", "legacy_center", "legacy_name",
+    "target_coarea", "target_center", "target_name",
+    "mapping_type", "notes",
+}
+
 
 def _read_file(path: str) -> list[dict[str, str]]:
     """Read CSV or Excel file and return list of row dicts."""
@@ -794,6 +874,9 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
+        "target_cost_centers": TARGET_CC_COLUMNS,
+        "target_profit_centers": TARGET_PC_COLUMNS,
+        "center_mapping": CENTER_MAPPING_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -822,6 +905,56 @@ def validate_upload(batch_id: int, db: Session) -> dict:
             if not row.get("pctr"):
                 errors.append(
                     {"row": i, "col": "PCTR", "code": "REQUIRED", "msg": "PCTR is required"},
+                )
+                error_rows.add(i)
+        elif batch.kind == "target_cost_centers":
+            if not row.get("cctr"):
+                errors.append(
+                    {"row": i, "col": "CCTR", "code": "REQUIRED", "msg": "CCTR is required"},
+                )
+                error_rows.add(i)
+            if not row.get("coarea"):
+                errors.append(
+                    {"row": i, "col": "COAREA", "code": "REQUIRED", "msg": "COAREA is required"},
+                )
+                error_rows.add(i)
+        elif batch.kind == "target_profit_centers":
+            if not row.get("pctr"):
+                errors.append(
+                    {"row": i, "col": "PCTR", "code": "REQUIRED", "msg": "PCTR is required"},
+                )
+                error_rows.add(i)
+            if not row.get("coarea"):
+                errors.append(
+                    {"row": i, "col": "COAREA", "code": "REQUIRED", "msg": "COAREA is required"},
+                )
+                error_rows.add(i)
+        elif batch.kind == "center_mapping":
+            if not row.get("legacy_center"):
+                errors.append(
+                    {
+                        "row": i, "col": "LEGACY_CENTER",
+                        "code": "REQUIRED",
+                        "msg": "LEGACY_CENTER is required",
+                    },
+                )
+                error_rows.add(i)
+            if not row.get("target_center"):
+                errors.append(
+                    {
+                        "row": i, "col": "TARGET_CENTER",
+                        "code": "REQUIRED",
+                        "msg": "TARGET_CENTER is required",
+                    },
+                )
+                error_rows.add(i)
+            if not row.get("object_type"):
+                errors.append(
+                    {
+                        "row": i, "col": "OBJECT_TYPE",
+                        "code": "REQUIRED",
+                        "msg": "OBJECT_TYPE is required",
+                    },
                 )
                 error_rows.add(i)
         elif batch.kind in ("balance", "balances", "balances_gcr"):
@@ -1015,6 +1148,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
+        "target_cost_centers": TARGET_CC_COLUMNS,
+        "target_profit_centers": TARGET_PC_COLUMNS,
+        "center_mapping": CENTER_MAPPING_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -1484,6 +1620,97 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 db.add(GLAccountSKB1(**kwargs_b))
             loaded += 1
 
+    elif batch.kind == "target_cost_centers":
+        for row in normalized:
+            cctr = (row.get("cctr") or "").strip()
+            coarea = (row.get("coarea") or "").strip()
+            if not cctr or not coarea:
+                continue
+            existing = db.execute(
+                select(TargetCostCenter).where(
+                    TargetCostCenter.coarea == coarea,
+                    TargetCostCenter.cctr == cctr,
+                )
+            ).scalar_one_or_none()
+            is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
+            tcc_kwargs: dict = {}
+            for field_name in _TARGET_CC_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
+                val = row.get(field_name)
+                if val is not None:
+                    tcc_kwargs[field_name] = val if val else None
+            tcc_kwargs["coarea"] = coarea
+            tcc_kwargs["cctr"] = cctr
+            if row.get("is_active"):
+                tcc_kwargs["is_active"] = is_act
+            if existing:
+                for k, v in tcc_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                tcc_kwargs.setdefault("is_active", True)
+                tcc_kwargs["refresh_batch"] = batch.id
+                db.add(TargetCostCenter(**tcc_kwargs))
+            loaded += 1
+
+    elif batch.kind == "target_profit_centers":
+        for row in normalized:
+            pctr = (row.get("pctr") or "").strip()
+            coarea = (row.get("coarea") or "").strip()
+            if not pctr or not coarea:
+                continue
+            existing = db.execute(
+                select(TargetProfitCenter).where(
+                    TargetProfitCenter.coarea == coarea,
+                    TargetProfitCenter.pctr == pctr,
+                )
+            ).scalar_one_or_none()
+            is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
+            tpc_kwargs: dict = {}
+            for field_name in _TARGET_PC_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
+                val = row.get(field_name)
+                if val is not None:
+                    tpc_kwargs[field_name] = val if val else None
+            tpc_kwargs["coarea"] = coarea
+            tpc_kwargs["pctr"] = pctr
+            if row.get("is_active"):
+                tpc_kwargs["is_active"] = is_act
+            if existing:
+                for k, v in tpc_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                tpc_kwargs.setdefault("is_active", True)
+                tpc_kwargs["refresh_batch"] = batch.id
+                db.add(TargetProfitCenter(**tpc_kwargs))
+            loaded += 1
+
+    elif batch.kind == "center_mapping":
+        for row in normalized:
+            legacy_center = (row.get("legacy_center") or "").strip()
+            target_center = (row.get("target_center") or "").strip()
+            obj_type = (row.get("object_type") or "").strip().lower()
+            if not legacy_center or not target_center or not obj_type:
+                continue
+            if obj_type not in ("cost_center", "profit_center"):
+                obj_type = "cost_center"
+            cm_kwargs: dict = {}
+            for field_name in _CENTER_MAPPING_MODEL_FIELDS:
+                val = row.get(field_name)
+                if val is not None:
+                    cm_kwargs[field_name] = val if val else None
+            cm_kwargs["object_type"] = obj_type
+            cm_kwargs["legacy_center"] = legacy_center
+            cm_kwargs["target_center"] = target_center
+            cm_kwargs["legacy_coarea"] = (row.get("legacy_coarea") or "").strip() or ""
+            cm_kwargs["target_coarea"] = (row.get("target_coarea") or "").strip() or ""
+            cm_kwargs["refresh_batch"] = batch.id
+            db.add(CenterMapping(**cm_kwargs))
+            loaded += 1
+
     batch.rows_loaded = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
@@ -1536,6 +1763,21 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
         deleted = r.rowcount
     elif batch.kind == "gl_accounts_skb1":
         r = db.execute(sa_delete(GLAccountSKB1).where(GLAccountSKB1.refresh_batch == batch.id))
+        deleted = r.rowcount
+    elif batch.kind == "target_cost_centers":
+        r = db.execute(
+            sa_delete(TargetCostCenter).where(TargetCostCenter.refresh_batch == batch.id)
+        )
+        deleted = r.rowcount
+    elif batch.kind == "target_profit_centers":
+        r = db.execute(
+            sa_delete(TargetProfitCenter).where(TargetProfitCenter.refresh_batch == batch.id)
+        )
+        deleted = r.rowcount
+    elif batch.kind == "center_mapping":
+        r = db.execute(
+            sa_delete(CenterMapping).where(CenterMapping.refresh_batch == batch.id)
+        )
         deleted = r.rowcount
 
     rows_loaded = batch.rows_loaded or 0

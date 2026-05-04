@@ -955,6 +955,9 @@ class TargetCostCenter(TimestampMixin, Base):
     mdg_status: Mapped[str | None] = mapped_column(String(30))
     mdg_change_request_id: Mapped[str | None] = mapped_column(String(40))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
 
 
 class TargetProfitCenter(TimestampMixin, Base):
@@ -981,6 +984,38 @@ class TargetProfitCenter(TimestampMixin, Base):
         ForeignKey("cleanup.wave.id", ondelete="SET NULL")
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
+
+
+# ---------- legacy ↔ target mapping ----------
+
+
+class CenterMapping(TimestampMixin, Base):
+    """Maps a legacy cost/profit center to its target counterpart."""
+
+    __tablename__ = "center_mapping"
+    __table_args__ = (
+        UniqueConstraint("object_type", "legacy_coarea", "legacy_center", "refresh_batch"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    object_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # cost_center | profit_center
+    legacy_coarea: Mapped[str] = mapped_column(String(10), nullable=False)
+    legacy_center: Mapped[str] = mapped_column(String(20), nullable=False)
+    legacy_name: Mapped[str | None] = mapped_column(String(200))
+    target_coarea: Mapped[str] = mapped_column(String(10), nullable=False)
+    target_center: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_name: Mapped[str | None] = mapped_column(String(200))
+    mapping_type: Mapped[str | None] = mapped_column(String(20))  # 1:1 | merge | split | new
+    notes: Mapped[str | None] = mapped_column(Text)
+    refresh_batch: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
 
 
 # ---------- housekeeping ----------
@@ -1604,6 +1639,7 @@ DATASPHERE_DOMAINS = [
     "routine_output",
     "target_cost_center",
     "target_profit_center",
+    "center_mapping",
     "signoff",
 ]
 
