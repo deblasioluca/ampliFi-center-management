@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     datasphere_password: SecretStr = SecretStr("")
     datasphere_use_ssl: bool = True
 
+    # --- TLS / HTTPS ---
+    # Modes: "off" | "direct" (uvicorn HTTPS) | "proxy" (reverse proxy TLS)
+    tls_mode: str = "off"
+    tls_cert_file: str = ""  # path to PEM certificate (direct mode)
+    tls_key_file: str = ""  # path to PEM private key (direct mode)
+    # External URL override for Entra ID redirect URIs (e.g. https://amplifi.company.com)
+    tls_external_url: str = ""
+
     # --- feature flags ---
     feature_mdg_api: bool = False
     feature_datasphere: bool = False

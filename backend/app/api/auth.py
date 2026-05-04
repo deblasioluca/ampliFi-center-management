@@ -114,12 +114,21 @@ async def entra_config(request: Request) -> dict:
         has_secret = bool(settings.entraid_client_secret.get_secret_value())
         result["auth_mode"] = "server" if has_secret else "spa"
         # SPA redirect URI → the login page itself
-        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-        host = request.headers.get(
-            "x-forwarded-host",
-            request.headers.get("host", "localhost"),
-        )
-        result["spa_redirect_uri"] = f"{proto}://{host}/login"
+        # Respects TLS settings: external_url > direct > proxy > off
+        if settings.tls_external_url:
+            base = settings.tls_external_url.rstrip("/")
+            result["spa_redirect_uri"] = f"{base}/login"
+        else:
+            tls_mode = settings.tls_mode.lower()
+            if tls_mode == "direct":
+                proto = "https"
+            else:
+                proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+            host = request.headers.get(
+                "x-forwarded-host",
+                request.headers.get("host", "localhost"),
+            )
+            result["spa_redirect_uri"] = f"{proto}://{host}/login"
     return result
 
 
