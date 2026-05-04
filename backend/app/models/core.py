@@ -1577,6 +1577,7 @@ class ExplorerDisplayConfig(TimestampMixin, Base):
     object_type: Mapped[str] = mapped_column(String(30), nullable=False)
     table_columns: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     detail_columns: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    column_labels: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     default_sort_column: Mapped[str | None] = mapped_column(String(50))
     default_sort_dir: Mapped[str | None] = mapped_column(String(4), default="asc")
     updated_by: Mapped[int | None] = mapped_column(

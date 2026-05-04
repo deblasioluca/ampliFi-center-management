@@ -2565,6 +2565,7 @@ class DisplayConfigIn(BaseModel):
     object_type: str
     table_columns: list[str] = []
     detail_columns: list[str] = []
+    column_labels: dict[str, str] = {}
     default_sort_column: str | None = None
     default_sort_dir: str | None = "asc"
 
@@ -2574,6 +2575,7 @@ class DisplayConfigOut(BaseModel):
     object_type: str
     table_columns: list[str]
     detail_columns: list[str]
+    column_labels: dict[str, str] = {}
     default_sort_column: str | None = None
     default_sort_dir: str | None = "asc"
 
@@ -2609,7 +2611,12 @@ def get_display_config(
         select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
     ).scalar_one_or_none()
     if not row:
-        return {"object_type": object_type, "table_columns": [], "detail_columns": []}
+        return {
+            "object_type": object_type,
+            "table_columns": [],
+            "detail_columns": [],
+            "column_labels": {},
+        }
     return DisplayConfigOut.model_validate(row).model_dump()
 
 
@@ -2629,6 +2636,7 @@ def upsert_display_config(
     if row:
         row.table_columns = body.table_columns
         row.detail_columns = body.detail_columns
+        row.column_labels = body.column_labels
         row.default_sort_column = body.default_sort_column
         row.default_sort_dir = body.default_sort_dir
         row.updated_by = user.id
@@ -2637,6 +2645,7 @@ def upsert_display_config(
             object_type=object_type,
             table_columns=body.table_columns,
             detail_columns=body.detail_columns,
+            column_labels=body.column_labels,
             default_sort_column=body.default_sort_column,
             default_sort_dir=body.default_sort_dir,
             updated_by=user.id,
@@ -2655,14 +2664,15 @@ def get_available_columns(
     """Return all available columns for an object type."""
     from sqlalchemy import inspect as sa_inspect
 
-    from app.api.explore import _OBJECT_MODELS
+    from app.api.explore import _DEFAULT_COLUMN_LABELS, _OBJECT_MODELS
 
     model = _OBJECT_MODELS.get(object_type)
     if not model:
-        return {"columns": []}
+        return {"columns": [], "default_labels": {}}
     mapper = sa_inspect(model)
     cols = [c.key for c in mapper.column_attrs if c.key not in ("id", "created_at", "updated_at")]
-    return {"object_type": object_type, "columns": cols}
+    labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in cols}
+    return {"object_type": object_type, "columns": cols, "default_labels": labels}
 
 
 # --- Application Logs ---

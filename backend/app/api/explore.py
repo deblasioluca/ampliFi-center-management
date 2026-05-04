@@ -167,6 +167,94 @@ _DEFAULT_SORT: dict[str, str] = {
 }
 
 
+# Human-readable default labels for technical field names
+_DEFAULT_COLUMN_LABELS: dict[str, str] = {
+    # Cost Centers (CSKS)
+    "cctr": "Cost Center",
+    "txtsh": "Short Text",
+    "txtmd": "Medium Text",
+    "txtlg": "Long Text",
+    "ccode": "Company Code",
+    "coarea": "Controlling Area",
+    "pctr": "Profit Center",
+    "responsible": "Responsible Person",
+    "cctrcgy": "Category",
+    "currency": "Currency",
+    "is_active": "Active",
+    "valid_from": "Valid From",
+    "valid_to": "Valid To",
+    "func_area": "Functional Area",
+    "department": "Department",
+    # Profit Centers (CEPC)
+    "segment": "Segment",
+    # Entities (T001)
+    "name": "Name",
+    "city": "City",
+    "country": "Country",
+    "region": "Region",
+    "language": "Language",
+    "fiscal_year_variant": "Fiscal Year Variant",
+    "chart_of_accounts": "Chart of Accounts",
+    # Employees
+    "gpn": "GPN",
+    "bs_name": "Full Name",
+    "bs_firstname": "First Name",
+    "bs_lastname": "Last Name",
+    "ou_cd": "Org Unit Code",
+    "ou_desc": "Org Unit",
+    "local_cc_cd": "Local Cost Center",
+    "job_desc": "Job Title",
+    "email_address": "Email",
+    # GL Accounts (SKA1)
+    "ktopl": "Chart of Accounts",
+    "saknr": "Account Number",
+    "txt20": "Short Text",
+    "txt50": "Long Text",
+    "xbilk": "BS Indicator",
+    "gvtyp": "P&L Type",
+    "ktoks": "Account Group",
+    "bilkt": "Alt Account",
+    "glaccount_type": "Account Type",
+    # GL Accounts (SKB1)
+    "bukrs": "Company Code",
+    "stext": "Description",
+    "waers": "Currency",
+    "mitkz": "Reconciliation",
+    "mwskz": "Tax Category",
+    "fstag": "Field Status Group",
+    "xopvw": "Open Item Mgmt",
+    "xkres": "Line Item Display",
+    "xintb": "Post Automatically",
+    # Balances
+    "fiscal_year": "Fiscal Year",
+    "period": "Period",
+    "account": "Account",
+    "tc_amt": "Amount (TC)",
+    "currency_tc": "Currency (TC)",
+    "gc_amt": "Amount (GC)",
+    "currency_gc": "Currency (GC)",
+    # GL Account Ranges
+    "class_code": "Class Code",
+    "class_label": "Class Label",
+    "from_account": "From Account",
+    "to_account": "To Account",
+    "category": "Category",
+    # Hierarchies
+    "setname": "Hierarchy Name",
+    "setclass": "Set Class",
+    "type_label": "Type",
+    "label": "Label",
+    "parent_set": "Parent",
+    "level": "Level",
+    # Common
+    "id": "ID",
+    "created_at": "Created",
+    "updated_at": "Updated",
+    "source_system": "Source System",
+    "refresh_batch": "Refresh Batch",
+}
+
+
 def _get_model_columns(model: Any) -> list[str]:
     """Get all column names from a SQLAlchemy model."""
     mapper = inspect(model)
@@ -182,12 +270,14 @@ def _get_display_config(db: Session, object_type: str) -> dict:
         return {
             "table_columns": cfg.table_columns or [],
             "detail_columns": cfg.detail_columns or [],
+            "column_labels": cfg.column_labels or {},
             "default_sort_column": cfg.default_sort_column,
             "default_sort_dir": cfg.default_sort_dir or "asc",
         }
     return {
         "table_columns": _DEFAULT_TABLE_COLUMNS.get(object_type, []),
         "detail_columns": [],
+        "column_labels": {},
         "default_sort_column": _DEFAULT_SORT.get(object_type),
         "default_sort_dir": "asc",
     }
@@ -247,10 +337,17 @@ def get_display_config(object_type: str, db: Session = Depends(get_db)) -> dict:
     model = _OBJECT_MODELS.get(object_type)
     all_columns = _get_model_columns(model) if model else []
     config = _get_display_config(db, object_type)
+
+    # Build full label mapping: defaults + custom overrides (for all available columns)
+    all_labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in all_columns}
+    all_labels.update(config.get("column_labels", {}))
+
     return {
         "object_type": object_type,
         "all_columns": all_columns,
+        "default_labels": dict(_DEFAULT_COLUMN_LABELS),
         **config,
+        "column_labels": all_labels,
     }
 
 
@@ -360,11 +457,16 @@ def explore_object(
     total = db.execute(count_q).scalar() or 0
     rows = db.execute(query.offset((page - 1) * size).limit(size)).scalars().all()
 
+    # Merge default labels with custom overrides
+    labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in table_cols}
+    labels.update({k: v for k, v in config.get("column_labels", {}).items() if k in table_cols})
+
     return {
         "total": total,
         "page": page,
         "size": size,
         "columns": table_cols,
+        "column_labels": labels,
         "items": [_row_to_dict(r, table_cols) for r in rows],
     }
 
@@ -392,7 +494,13 @@ def explore_object_detail(
 
     data = _row_to_dict(row, detail_cols) if detail_cols else _row_to_full_dict(row)
 
-    return {"item": data, "detail_columns": detail_cols}
+    # Merge default labels with custom overrides
+    cols_for_labels = detail_cols if detail_cols else list(data.keys())
+    labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in cols_for_labels}
+    custom = config.get("column_labels", {})
+    labels.update({k: v for k, v in custom.items() if k in cols_for_labels})
+
+    return {"item": data, "detail_columns": detail_cols, "column_labels": labels}
 
 
 # ── Hierarchies (special) ───────────────────────────────────────────────
@@ -448,7 +556,8 @@ def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
             }
         )
     cols = ["setname", "setclass", "type_label", "label", "coarea"]
-    return {"total": len(result), "hierarchies": result, "columns": cols}
+    labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in cols}
+    return {"total": len(result), "hierarchies": result, "columns": cols, "column_labels": labels}
 
 
 # ── Export (CSV/Excel) ───────────────────────────────────────────────────
@@ -503,6 +612,11 @@ def export_object(
 
     rows = db.execute(query.limit(50000)).scalars().all()
 
+    # Build display labels for export headers
+    labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in table_cols}
+    labels.update({k: v for k, v in config.get("column_labels", {}).items() if k in table_cols})
+    header_row = [labels.get(c, c) for c in table_cols]
+
     if export_format == "excel":
         try:
             import openpyxl
@@ -510,7 +624,7 @@ def export_object(
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = object_type
-            ws.append(table_cols)
+            ws.append(header_row)
             for row in rows:
                 ws.append(
                     ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
@@ -529,7 +643,7 @@ def export_object(
     # CSV export
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(table_cols)
+    writer.writerow(header_row)
     for row in rows:
         writer.writerow(
             ["" if (v := getattr(row, c, None)) is None else str(v) for c in table_cols]
