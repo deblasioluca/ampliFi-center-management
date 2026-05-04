@@ -1003,7 +1003,6 @@ class CenterMapping(TimestampMixin, Base):
             "legacy_center",
             "target_coarea",
             "target_center",
-            "refresh_batch",
         ),
         {"schema": "cleanup"},
     )

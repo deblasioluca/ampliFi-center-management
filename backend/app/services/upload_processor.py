@@ -1734,7 +1734,6 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     CenterMapping.legacy_center == legacy_center,
                     CenterMapping.target_coarea == target_co,
                     CenterMapping.target_center == target_center,
-                    CenterMapping.refresh_batch == batch.id,
                 )
             ).scalar_one_or_none()
             cm_kwargs: dict = {}
