@@ -5,11 +5,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.infra.logging import setup_logging
@@ -208,3 +210,10 @@ async def prometheus_metrics() -> Response:
         logger.debug("metrics.db_query_failed")
 
     return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
+
+# --- Serve static frontend build (if exists) ---
+# Mount AFTER all API routes so /api/* takes priority
+_frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
