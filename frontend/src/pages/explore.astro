@@ -120,6 +120,7 @@ let currentMainTab = 'legacy';
 let currentObjectType = '';
 let currentData = [];
 let currentColumns = [];
+let currentColumnLabels = {};
 let currentSort = { col: '', dir: 'asc' };
 let columnFilters = {};
 let selectedRowId = null;
@@ -234,6 +235,7 @@ async function loadObjectData() {
       currentColumns = data.columns || [];
       totalRows = data.total || 0;
     }
+    currentColumnLabels = data.column_labels || {};
 
     document.getElementById('explore-count').textContent = `${totalRows.toLocaleString()} rows`;
     document.getElementById('explore-status').textContent = `${OBJECT_TYPES[currentObjectType]?.label || currentObjectType}`;
@@ -242,6 +244,11 @@ async function loadObjectData() {
   } catch (err) {
     el.innerHTML = `<span class="p-4 text-sm text-red-500 block">Error: ${err.message}</span>`;
   }
+}
+
+// ── Column label helper ──
+function colLabel(col) {
+  return currentColumnLabels[col] || col;
 }
 
 // ── Table rendering ──
@@ -277,8 +284,8 @@ function renderTable() {
   for (const col of currentColumns) {
     const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
     const filterVal = columnFilters[col] || '';
-    html += `<th onclick="sortByColumn('${col}')">
-      ${col}<span class="sort-icon">${sortIcon}</span>
+    html += `<th onclick="sortByColumn('${col}')" title="${col}">
+      ${colLabel(col)}<span class="sort-icon">${sortIcon}</span>
       <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
     </th>`;
   }
@@ -312,8 +319,8 @@ function renderGroupedTable(el, data, mode) {
   for (const col of currentColumns) {
     const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
     const filterVal = columnFilters[col] || '';
-    html += `<th onclick="sortByColumn('${col}')">
-      ${col}<span class="sort-icon">${sortIcon}</span>
+    html += `<th onclick="sortByColumn('${col}')" title="${col}">
+      ${colLabel(col)}<span class="sort-icon">${sortIcon}</span>
       <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
     </th>`;
   }
@@ -430,11 +437,13 @@ async function showDetail(itemId) {
       return;
     }
     const item = data.item || {};
+    const detailLabels = data.column_labels || {};
     let html = '';
     for (const [key, val] of Object.entries(item)) {
       if (key === 'id') continue;
+      const displayKey = detailLabels[key] || currentColumnLabels[key] || key;
       html += `<div class="detail-row">
-        <span class="detail-label">${escHtml(key)}</span>
+        <span class="detail-label" title="${escHtml(key)}">${escHtml(displayKey)}</span>
         <span class="detail-value">${escHtml(String(val ?? '-'))}</span>
       </div>`;
     }
