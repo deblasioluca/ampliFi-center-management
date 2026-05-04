@@ -1725,6 +1725,18 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             if obj_type not in ("cost_center", "profit_center"):
                 obj_type = "cost_center"
+            legacy_co = (row.get("legacy_coarea") or "").strip() or ""
+            target_co = (row.get("target_coarea") or "").strip() or ""
+            existing = db.execute(
+                select(CenterMapping).where(
+                    CenterMapping.object_type == obj_type,
+                    CenterMapping.legacy_coarea == legacy_co,
+                    CenterMapping.legacy_center == legacy_center,
+                    CenterMapping.target_coarea == target_co,
+                    CenterMapping.target_center == target_center,
+                    CenterMapping.refresh_batch == batch.id,
+                )
+            ).scalar_one_or_none()
             cm_kwargs: dict = {}
             for field_name in _CENTER_MAPPING_MODEL_FIELDS:
                 val = row.get(field_name)
@@ -1733,10 +1745,15 @@ def load_upload(batch_id: int, db: Session) -> dict:
             cm_kwargs["object_type"] = obj_type
             cm_kwargs["legacy_center"] = legacy_center
             cm_kwargs["target_center"] = target_center
-            cm_kwargs["legacy_coarea"] = (row.get("legacy_coarea") or "").strip() or ""
-            cm_kwargs["target_coarea"] = (row.get("target_coarea") or "").strip() or ""
-            cm_kwargs["refresh_batch"] = batch.id
-            db.add(CenterMapping(**cm_kwargs))
+            cm_kwargs["legacy_coarea"] = legacy_co
+            cm_kwargs["target_coarea"] = target_co
+            if existing:
+                for k, v in cm_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                cm_kwargs["refresh_batch"] = batch.id
+                db.add(CenterMapping(**cm_kwargs))
             loaded += 1
 
     batch.rows_loaded = loaded

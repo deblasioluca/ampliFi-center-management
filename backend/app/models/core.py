@@ -997,7 +997,14 @@ class CenterMapping(TimestampMixin, Base):
 
     __tablename__ = "center_mapping"
     __table_args__ = (
-        UniqueConstraint("object_type", "legacy_coarea", "legacy_center", "refresh_batch"),
+        UniqueConstraint(
+            "object_type",
+            "legacy_coarea",
+            "legacy_center",
+            "target_coarea",
+            "target_center",
+            "refresh_batch",
+        ),
         {"schema": "cleanup"},
     )
 

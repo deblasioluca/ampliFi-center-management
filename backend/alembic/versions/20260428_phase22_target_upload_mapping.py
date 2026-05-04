@@ -69,7 +69,8 @@ def upgrade() -> None:
             onupdate=sa.func.now(),
         ),
         sa.UniqueConstraint(
-            "object_type", "legacy_coarea", "legacy_center", "refresh_batch"
+            "object_type", "legacy_coarea", "legacy_center",
+            "target_coarea", "target_center", "refresh_batch",
         ),
         schema="cleanup",
     )
