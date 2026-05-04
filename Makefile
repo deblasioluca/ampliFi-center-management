@@ -44,6 +44,7 @@ start: ## Start backend + frontend
 	else \
 		cd $(BACKEND_DIR) && \
 		source $(VENV)/bin/activate && \
+		export $$(grep -E '^(TLS_MODE|TLS_CERT_FILE|TLS_KEY_FILE)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
 		TLS_ARGS=""; \
 		if [ "$${TLS_MODE:-off}" = "direct" ]; then \
 			TLS_ARGS="--ssl-certfile $${TLS_CERT_FILE} --ssl-keyfile $${TLS_KEY_FILE}"; \
