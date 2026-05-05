@@ -1782,7 +1782,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 hier_attrs: dict | None = None
                 setname = raw_name
                 if is_entity_hier and period_val:
-                    setname = f"{raw_name}_{period_val}"
+                    setname = f"{raw_name}_{period_val}"[:40]
                     label = f"{raw_name} ({period_val})"
                     hier_attrs = {"period": period_val}
                 elif is_entity_hier:
@@ -2225,7 +2225,7 @@ def _build_hierarchy_from_levels(
             scope=batch_scope,
             data_category=batch_category,
             setclass=setclass,
-            setname=hier_setname,
+            setname=hier_setname[:40],
             label=hier_setname,
             description=f"Hierarchy {hier_setname} (from Excel upload)",
             coarea="",
