@@ -220,6 +220,23 @@ import Layout from '../../components/layout/Layout.astro';
         <button id="btn-create-scope" class="btn-amplifi text-sm">+ Create Scope</button>
       </div>
       <div id="review-scopes" class="text-sm">Loading...</div>
+
+      <!-- Reviewer Assignment Section -->
+      <div class="mt-6 border-t pt-4">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="text-sm font-semibold">Reviewer Assignment</h4>
+          <button id="btn-add-reviewer" class="btn-amplifi text-sm">+ Assign Reviewer</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">Assign reviewers by entity (company code) and/or hierarchy node. Each assignment defines which proposals a reviewer is responsible for.</p>
+        <div id="reviewer-assignments" class="space-y-2 text-sm">Loading...</div>
+      </div>
+
+      <!-- Scope Coverage Summary -->
+      <div class="mt-6 border-t pt-4">
+        <h4 class="text-sm font-semibold mb-2">Scope Coverage</h4>
+        <p class="text-xs text-gray-500 mb-3">Shows whether all in-scope centers have an assigned reviewer.</p>
+        <div id="scope-coverage-summary" class="text-sm">Loading...</div>
+      </div>
     </div>
 
     <!-- Progress Tab -->
@@ -241,6 +258,37 @@ import Layout from '../../components/layout/Layout.astro';
       <div id="why-content" class="text-sm"></div>
       <div class="flex justify-end mt-4">
         <button onclick="document.getElementById('why-overlay').classList.add('hidden')" class="btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign Reviewer Modal -->
+  <div id="reviewer-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Assign Reviewer</h2>
+      <div class="mb-3">
+        <label class="block text-xs font-medium mb-1">Reviewer (user)</label>
+        <select id="rev-user-select" class="input text-sm w-full">
+          <option value="">Select reviewer...</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="block text-xs font-medium mb-1">Assign by Entity (company code)</label>
+        <select id="rev-entity-select" class="input text-sm w-full" multiple>
+        </select>
+        <p class="text-xs text-gray-400 mt-1">Hold Ctrl to select multiple</p>
+      </div>
+      <div class="mb-3">
+        <label class="block text-xs font-medium mb-1">Assign by Hierarchy Node (optional)</label>
+        <select id="rev-hier-select" class="input text-sm w-full mb-2">
+          <option value="">Select hierarchy...</option>
+        </select>
+        <div id="rev-hier-tree" class="border rounded p-2 max-h-48 overflow-y-auto text-xs bg-gray-50 hidden"></div>
+        <div id="rev-selected-nodes" class="flex flex-wrap gap-1 mt-1"></div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="document.getElementById('reviewer-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+        <button id="btn-confirm-reviewer" class="btn-amplifi">Assign</button>
       </div>
     </div>
   </div>
@@ -1260,6 +1308,214 @@ import Layout from '../../components/layout/Layout.astro';
   document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
     if (btn.getAttribute('data-tab') === 'progress') {
       btn.addEventListener('click', function() { loadScopeCoverage(); });
+    }
+  });
+
+  // --- Reviewer Assignment ---
+  var revSelectedNodes = [];
+
+  function loadReviewerAssignments() {
+    fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('reviewer-assignments');
+        if (!d.items || !d.items.length) {
+          el.innerHTML = '<p class="text-gray-400">No reviewers assigned yet.</p>';
+          loadReviewCoverage();
+          return;
+        }
+        var html = '';
+        d.items.forEach(function(s) {
+          var filter = s.scope_filter || {};
+          var entities = (filter.entity_ccodes || []).join(', ') || 'All';
+          var nodes = (filter.hierarchy_nodes || []).map(function(n) { return n.node_name; }).join(', ') || '—';
+          var statusColor = s.status === 'completed' ? 'text-green-600' : s.status === 'in_progress' ? 'text-blue-600' : 'text-gray-500';
+          html += '<div class="border rounded p-3 flex items-center justify-between">';
+          html += '<div>';
+          html += '<span class="font-medium">' + esc(s.name) + '</span>';
+          html += ' <span class="' + statusColor + ' text-xs">(' + s.status + ')</span>';
+          html += '<div class="text-xs text-gray-500 mt-1">Entities: ' + esc(entities) + '</div>';
+          html += '<div class="text-xs text-gray-500">Hierarchy nodes: ' + esc(nodes) + '</div>';
+          html += '<div class="text-xs text-gray-400">Items: ' + (s.total_items || 0) + ' | Reviewer: ' + esc(s.reviewer_name || s.reviewer_email || 'Unassigned') + '</div>';
+          html += '</div>';
+          html += '<div class="flex gap-2">';
+          html += '<a href="/review/' + s.token + '" class="text-xs text-blue-600 hover:underline">Review link</a>';
+          html += '</div></div>';
+        });
+        el.innerHTML = html;
+        loadReviewCoverage();
+      });
+  }
+
+  function loadReviewCoverage() {
+    fetch('/api/waves/' + waveId + '/scope-coverage', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('scope-coverage-summary');
+        if (!el) return;
+        var pct = d.coverage_pct || 0;
+        var color = pct >= 100 ? 'bg-green-500' : pct > 50 ? 'bg-yellow-500' : 'bg-red-500';
+        var html = '<div class="flex items-center gap-4">';
+        html += '<div class="flex-1"><div class="w-full bg-gray-200 rounded-full h-4">';
+        html += '<div class="' + color + ' h-4 rounded-full transition-all" style="width:' + Math.min(pct, 100) + '%"></div></div></div>';
+        html += '<span class="font-bold text-lg ' + (pct >= 100 ? 'text-green-600' : 'text-orange-500') + '">' + pct + '%</span></div>';
+        html += '<div class="grid grid-cols-3 gap-3 mt-2 text-xs text-center">';
+        html += '<div class="bg-gray-50 rounded p-2"><div class="font-bold text-base">' + fmt(d.total_proposals) + '</div>Total Centers</div>';
+        html += '<div class="bg-green-50 rounded p-2"><div class="font-bold text-base text-green-600">' + fmt(d.covered) + '</div>Covered</div>';
+        html += '<div class="bg-red-50 rounded p-2"><div class="font-bold text-base text-red-600">' + fmt(d.uncovered) + '</div>Uncovered</div>';
+        html += '</div>';
+        el.innerHTML = html;
+      });
+  }
+
+  // Open reviewer assignment modal
+  document.getElementById('btn-add-reviewer').addEventListener('click', async function() {
+    revSelectedNodes = [];
+    document.getElementById('rev-selected-nodes').innerHTML = '';
+    document.getElementById('reviewer-overlay').classList.remove('hidden');
+
+    // Load users for dropdown
+    try {
+      var usersRes = await fetch('/api/admin/users', { headers: authHdr });
+      var usersData = await usersRes.json();
+      var sel = document.getElementById('rev-user-select');
+      sel.innerHTML = '<option value="">Select reviewer...</option>';
+      (usersData.items || usersData || []).forEach(function(u) {
+        sel.innerHTML += '<option value="' + u.id + '" data-email="' + esc(u.email || '') + '" data-name="' + esc(u.display_name || u.username || '') + '">' + esc(u.display_name || u.username) + ' (' + esc(u.email || '') + ')</option>';
+      });
+    } catch(e) { /* ignore */ }
+
+    // Load entities for entity selector
+    try {
+      var entRes = await fetch('/api/waves/' + waveId + '/scope', { headers: authHdr });
+      var entData = await entRes.json();
+      var entSel = document.getElementById('rev-entity-select');
+      entSel.innerHTML = '';
+      (entData.entities || []).forEach(function(e) {
+        entSel.innerHTML += '<option value="' + esc(e.ccode || e.code || '') + '">' + esc(e.ccode || e.code || '') + ' — ' + esc(e.name || '') + '</option>';
+      });
+    } catch(e) { /* ignore */ }
+
+    // Load hierarchies for hierarchy picker
+    try {
+      var hierRes = await fetch('/api/waves/hierarchy-nodes', { headers: authHdr });
+      var hierData = await hierRes.json();
+      var hierSel = document.getElementById('rev-hier-select');
+      hierSel.innerHTML = '<option value="">Select hierarchy...</option>';
+      (hierData.hierarchies || []).forEach(function(h) {
+        hierSel.innerHTML += '<option value="' + h.id + '">' + esc(h.label || h.setname) + '</option>';
+      });
+    } catch(e) { /* ignore */ }
+  });
+
+  // Load hierarchy tree when hierarchy is selected
+  document.getElementById('rev-hier-select').addEventListener('change', async function() {
+    var hierId = this.value;
+    var treeEl = document.getElementById('rev-hier-tree');
+    if (!hierId) { treeEl.classList.add('hidden'); return; }
+    treeEl.classList.remove('hidden');
+    treeEl.innerHTML = 'Loading...';
+    try {
+      var res = await fetch('/api/waves/hierarchy-nodes?hierarchy_id=' + hierId, { headers: authHdr });
+      var data = await res.json();
+      treeEl.innerHTML = renderRevHierNodes(data.nodes || [], 0);
+    } catch(e) {
+      treeEl.innerHTML = '<p class="text-red-500">Failed to load</p>';
+    }
+  });
+
+  function renderRevHierNodes(nodes, depth) {
+    var html = '';
+    nodes.forEach(function(n) {
+      var indent = depth * 16;
+      var isSelected = revSelectedNodes.some(function(s) { return s.node_name === n.node_name; });
+      html += '<div style="padding-left:' + indent + 'px" class="flex items-center gap-1 py-0.5">';
+      html += '<input type="checkbox" class="rev-node-cb" data-name="' + esc(n.node_name) + '" data-text="' + esc(n.node_text) + '"' + (isSelected ? ' checked' : '') + ' />';
+      html += '<span>' + esc(n.node_name) + '</span>';
+      html += '<span class="text-gray-400 text-xs ml-1">' + esc(n.node_text || '') + '</span>';
+      html += '</div>';
+      if (n.children && n.children.length) {
+        html += renderRevHierNodes(n.children, depth + 1);
+      }
+    });
+    return html;
+  }
+
+  document.getElementById('rev-hier-tree').addEventListener('change', function(e) {
+    if (!e.target.classList.contains('rev-node-cb')) return;
+    var name = e.target.getAttribute('data-name');
+    var text = e.target.getAttribute('data-text');
+    if (e.target.checked) {
+      revSelectedNodes.push({ node_name: name, node_text: text });
+    } else {
+      revSelectedNodes = revSelectedNodes.filter(function(n) { return n.node_name !== name; });
+    }
+    var display = document.getElementById('rev-selected-nodes');
+    display.innerHTML = revSelectedNodes.map(function(n) {
+      return '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">' + esc(n.node_name) + '</span>';
+    }).join('');
+  });
+
+  // Confirm reviewer assignment
+  document.getElementById('btn-confirm-reviewer').addEventListener('click', async function() {
+    var userSel = document.getElementById('rev-user-select');
+    var selectedOption = userSel.options[userSel.selectedIndex];
+    var userName = selectedOption ? selectedOption.getAttribute('data-name') : '';
+    var userEmail = selectedOption ? selectedOption.getAttribute('data-email') : '';
+
+    var entSel = document.getElementById('rev-entity-select');
+    var entityCodes = [];
+    for (var i = 0; i < entSel.selectedOptions.length; i++) {
+      entityCodes.push(entSel.selectedOptions[i].value);
+    }
+
+    if (!userName && !entityCodes.length && !revSelectedNodes.length) {
+      alert('Please select a reviewer and at least one entity or hierarchy node.');
+      return;
+    }
+
+    var scopeName = (userName || 'Reviewer') + ' — ' + (entityCodes.join(', ') || 'All entities');
+    if (revSelectedNodes.length) {
+      scopeName += ' + ' + revSelectedNodes.length + ' hierarchy nodes';
+    }
+
+    var scopeFilter = {};
+    if (entityCodes.length) scopeFilter.entity_ccodes = entityCodes;
+    if (revSelectedNodes.length) scopeFilter.hierarchy_nodes = revSelectedNodes;
+
+    this.disabled = true;
+    this.textContent = 'Assigning...';
+    try {
+      var res = await fetch('/api/waves/' + waveId + '/scopes', {
+        method: 'POST',
+        headers: jsonHdr,
+        body: JSON.stringify({
+          name: scopeName,
+          scope_type: revSelectedNodes.length ? 'hierarchy_node' : 'entity',
+          scope_filter: scopeFilter,
+          reviewer_name: userName,
+          reviewer_email: userEmail
+        })
+      });
+      if (!res.ok) {
+        var err = await res.json();
+        alert(err.detail || 'Assignment failed');
+        return;
+      }
+      document.getElementById('reviewer-overlay').classList.add('hidden');
+      loadReviewerAssignments();
+    } catch(e) {
+      alert('Error: ' + e.message);
+    } finally {
+      this.disabled = false;
+      this.textContent = 'Assign';
+    }
+  });
+
+  // Load reviewer assignments when review tab is shown
+  document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
+    if (btn.getAttribute('data-tab') === 'review') {
+      btn.addEventListener('click', function() { loadReviewerAssignments(); });
     }
   });
 

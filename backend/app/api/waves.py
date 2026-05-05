@@ -18,6 +18,7 @@ from app.models.core import (
     AppUser,
     CenterProposal,
     Entity,
+    HierarchyLeaf,
     LegacyCostCenter,
     ReviewItem,
     ReviewScope,
@@ -908,13 +909,36 @@ def create_review_scope(
             .all()
         )
 
-        # Filter by scope filter
+        # Filter by scope filter (entity codes AND/OR hierarchy nodes)
         scope_ccodes = body.scope_filter.get("entity_ccodes", [])
+        hier_nodes = body.scope_filter.get("hierarchy_nodes", [])
+
+        # If hierarchy_nodes specified, resolve which cost centers are under those nodes
+        hier_cctrs: set[str] = set()
+        if hier_nodes:
+            for node_info in hier_nodes:
+                node_name = node_info.get("node_name", "")
+                if node_name:
+                    leaves = (
+                        db.execute(
+                            select(HierarchyLeaf).where(HierarchyLeaf.node_name == node_name)
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    for lf in leaves:
+                        hier_cctrs.add(lf.leaf_name)
+
         for p in proposals:
-            if scope_ccodes:
-                cc = db.get(LegacyCostCenter, p.legacy_cc_id)
-                if not cc or cc.ccode not in scope_ccodes:
-                    continue
+            cc = db.get(LegacyCostCenter, p.legacy_cc_id)
+            if not cc:
+                continue
+            # Entity filter
+            if scope_ccodes and cc.ccode not in scope_ccodes:
+                continue
+            # Hierarchy filter
+            if hier_cctrs and (cc.cctr or "") not in hier_cctrs:
+                continue
             db.add(
                 ReviewItem(
                     scope_id=scope.id,
