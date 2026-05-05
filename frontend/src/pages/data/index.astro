@@ -1128,6 +1128,8 @@ import Layout from '../../components/layout/Layout.astro';
       hierarchy: 'hierarchies', balance: 'balances', employee: 'employees'
     };
     var uploadKind = kindMap[type] || type;
+    if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';
+    if (uCat === 'target' && type === 'profit_center') uploadKind = 'target_profit_centers';
 
     var formData = new FormData();
     formData.append('file', fileInput.files[0]);
