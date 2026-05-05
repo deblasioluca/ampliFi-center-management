@@ -63,6 +63,15 @@ COLUMNS_TO_WIDEN: dict[str, list[str]] = {
     "gl_account_skb1": [
         "bukrs", "begru", "fstag", "kdfsl", "togru",
     ],
+    "target_cost_center": [
+        "cctrcgy",
+    ],
+}
+
+# Existing columns to widen from VARCHAR(3) → VARCHAR(5)
+COLUMNS_TO_WIDEN_3_TO_5: dict[str, list[str]] = {
+    "target_cost_center": ["currency"],
+    "target_profit_center": ["currency"],
 }
 
 # --- Part 2: New columns for target_cost_center (full CSKS alignment) ---
@@ -242,6 +251,18 @@ def upgrade() -> None:
                     existing_nullable=True,
                 )
 
+    # Part 1b: Widen existing VARCHAR(3) columns to VARCHAR(5)
+    for table, columns in COLUMNS_TO_WIDEN_3_TO_5.items():
+        for col in columns:
+            if _column_exists(table, col):
+                op.alter_column(
+                    table,
+                    col,
+                    type_=sa.String(5),
+                    schema=SCHEMA,
+                    existing_nullable=True,
+                )
+
     # Part 2: Add new columns to target_cost_center
     for col_name, col_type in TCC_NEW_COLUMNS:
         if not _column_exists("target_cost_center", col_name):
@@ -271,6 +292,18 @@ def downgrade() -> None:
     for col_name, _ in reversed(TCC_NEW_COLUMNS):
         if _column_exists("target_cost_center", col_name):
             op.drop_column("target_cost_center", col_name, schema=SCHEMA)
+
+    # Revert VARCHAR(5) back to VARCHAR(3)
+    for table, columns in COLUMNS_TO_WIDEN_3_TO_5.items():
+        for col in columns:
+            if _column_exists(table, col):
+                op.alter_column(
+                    table,
+                    col,
+                    type_=sa.String(3),
+                    schema=SCHEMA,
+                    existing_nullable=True,
+                )
 
     # Revert VARCHAR(20) back to VARCHAR(4)
     for table, columns in COLUMNS_TO_WIDEN.items():
