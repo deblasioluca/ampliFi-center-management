@@ -1804,11 +1804,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 root_id = root_row.get("nodeid", "").strip()
                 setname = root_row.get("nodename", root_id)
                 description = root_row.get("nodetext", "")
-                label = setname
+                label = None
                 hier_attrs: dict | None = None
                 if is_entity_hier and period_val:
                     label = f"{setname} ({period_val})"
                     hier_attrs = {"period": period_val}
+                elif is_entity_hier:
+                    label = setname
                 h = Hierarchy(
                     scope=batch_scope,
                     data_category=batch_category,

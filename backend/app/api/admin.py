@@ -1184,7 +1184,6 @@ def create_upload(
     if kind == "cc_with_hierarchy":
         source_detail = json.dumps(
             {
-                "filename": fname,
                 "sheet_name": sheet_name or "Database",
                 "header_row": header_row if header_row is not None else 2,
                 "load_cc": load_cc,
