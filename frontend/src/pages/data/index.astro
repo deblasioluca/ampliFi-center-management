@@ -3,69 +3,55 @@ import Layout from '../../components/layout/Layout.astro';
 ---
 
 <Layout title="Data Management" requireAuth={true} requiredRole="data_manager">
-  <div class="flex items-center justify-between mb-2">
-    <div>
-      <h1 class="text-xl font-bold text-gray-900">Data Management</h1>
-      <p class="text-xs text-gray-500">Upload, browse, and manage cost centers, profit centers, balances, hierarchies, and employees</p>
-    </div>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Data Management</h1>
+    <p class="text-sm text-gray-500 mt-1">Upload, browse, and manage cost centers, profit centers, balances, hierarchies, and employees</p>
   </div>
 
-  <!-- Scope Selector -->
-  <div class="flex items-center gap-3 mb-3">
-    <label class="text-sm font-medium text-gray-700">Scope:</label>
-    <select id="scope-selector" class="input w-auto text-sm">
-      <option value="cleanup" selected>Center Management — Cleanup</option>
-      <option value="housekeeping">Center Management — Housekeeping</option>
-      <option value="explorer">Data Explorer</option>
-    </select>
-    <label class="text-sm font-medium text-gray-700 ml-4">Category:</label>
-    <select id="category-selector" class="input w-auto text-sm">
-      <option value="">All</option>
-      <option value="legacy">Legacy</option>
-      <option value="target">Target</option>
-    </select>
+  <!-- Upload guide -->
+  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+    <p class="text-xs font-semibold text-amber-800 mb-1">Data Upload Order</p>
+    <p class="text-[11px] text-amber-700">Upload in this sequence for best results: <strong>1. Entities</strong> (company codes) &rarr; <strong>2. Cost Centers</strong> &rarr; <strong>3. Profit Centers</strong> &rarr; <strong>4. Balances</strong> (posting data for inactivity detection) &rarr; <strong>5. Hierarchies</strong> (for scope selection in waves) &rarr; <strong>6. Employees</strong> (for owner resolution GPN &rarr; Name). Use CSV or extract directly from SAP.</p>
   </div>
 
   <!-- Data Counts -->
-  <div class="grid grid-cols-4 lg:grid-cols-7 gap-3 mb-3">
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Entities</span>
-      <p id="cnt-entities" class="text-lg font-bold text-gray-900">--</p>
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Entities</h4>
+      <p id="cnt-entities" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Cost Centers</span>
-      <p id="cnt-cc" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Cost Centers</h4>
+      <p id="cnt-cc" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Profit Centers</span>
-      <p id="cnt-pc" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Profit Centers</h4>
+      <p id="cnt-pc" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Balances</span>
-      <p id="cnt-balances" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Balances</h4>
+      <p id="cnt-balances" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Hierarchies</span>
-      <p id="cnt-hierarchies" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Hierarchies</h4>
+      <p id="cnt-hierarchies" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Employees</span>
-      <p id="cnt-employees" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Employees</h4>
+      <p id="cnt-employees" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
-      <span class="text-[10px] text-gray-500 uppercase">Uploads</span>
-      <p id="cnt-uploads" class="text-lg font-bold text-gray-900">--</p>
+    <div class="card text-center">
+      <h4 class="text-xs font-medium text-gray-500 uppercase">Uploads</h4>
+      <p id="cnt-uploads" class="text-xl font-bold text-gray-900 mt-1">--</p>
     </div>
   </div>
 
   <!-- Tabs -->
   <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
     <div class="flex space-x-0 overflow-x-auto" id="data-tabs">
-      <button class="tab-active px-4 py-3 whitespace-nowrap font-semibold text-blue-700" data-tab="data-browser">Data Browser</button>
-      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
+      <button class="tab-active px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="cost-centers">Cost Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
-      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="mapping">Mapping</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="employees">Employees</button>
@@ -76,24 +62,8 @@ import Layout from '../../components/layout/Layout.astro';
 
   <!-- Tab Content -->
   <div class="card rounded-t-none border-t-0">
-    <!-- Data Browser Tab -->
-    <div id="tab-data-browser">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Data Browser</h3>
-        <div class="flex items-center gap-2">
-          <button id="db-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchDataBrowserView('tabular')">Tabular</button>
-          <button id="db-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchDataBrowserView('hierarchy')">Hierarchical</button>
-          <input id="db-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
-          <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-        </div>
-      </div>
-      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">
-        <span class="text-sm text-gray-400">Loading data browser...</span>
-      </div>
-    </div>
-
     <!-- Entities Tab -->
-    <div id="tab-entities" class="hidden">
+    <div id="tab-entities">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
         <div class="flex items-center gap-2">
@@ -102,89 +72,38 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
       <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
     <!-- Cost Centers Tab -->
     <div id="tab-cost-centers" class="hidden">
-      <!-- Legacy Section -->
-      <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
-          <div class="flex items-center gap-2">
-            <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-            <button onclick="downloadTableCSV('cc-table','legacy_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
-          </div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
+        <div class="flex items-center gap-2">
+          <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('cc-table','cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
         </div>
-        <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
       </div>
-      <!-- Target Section -->
-      <div class="border-t border-gray-200 pt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Target Cost Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
-          <div class="flex items-center gap-2">
-            <input id="search-tcc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <button onclick="downloadTableCSV('tcc-table','target_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-tcc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="tcc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="tcc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
+      <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
     <!-- Profit Centers Tab -->
     <div id="tab-profit-centers" class="hidden">
-      <!-- Legacy Section -->
-      <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
-          <div class="flex items-center gap-2">
-            <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-            <button onclick="downloadTableCSV('pc-table','legacy_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Target Section -->
-      <div class="border-t border-gray-200 pt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Target Profit Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
-          <div class="flex items-center gap-2">
-            <input id="search-tpc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <button onclick="downloadTableCSV('tpc-table','target_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-tpc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="tpc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="tpc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-    </div>
-
-    <!-- Mapping Tab -->
-    <div id="tab-mapping" class="hidden">
       <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Center Mapping <span class="text-xs font-normal text-gray-500">(Legacy → Target)</span></h3>
+        <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
         <div class="flex items-center gap-2">
-          <input id="search-mapping" type="text" placeholder="Search centers..." class="input text-sm w-48" />
-          <select id="filter-mapping-type" class="input text-sm w-36">
-            <option value="">All Types</option>
-            <option value="cost_center">Cost Centers</option>
-            <option value="profit_center">Profit Centers</option>
-          </select>
-          <button onclick="downloadTableCSV('mapping-table','center_mapping.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-mapping" class="btn-danger text-xs">Delete All</button>
+          <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
+          <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
+          <button onclick="downloadTableCSV('pc-table','profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+          <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="mapping-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="mapping-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
+      <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
     <!-- Balances Tab -->
@@ -198,7 +117,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
       <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -216,7 +135,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
       <!-- List view -->
       <div id="hier-list-view">
-        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
       </div>
       <!-- Tree view -->
       <div id="hier-tree-view" class="hidden">
@@ -228,7 +147,7 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
           <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
         </div>
-        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 540px)">Select a hierarchy to view its tree structure.</div>
+        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto">Select a hierarchy to view its tree structure.</div>
       </div>
     </div>
 
@@ -243,7 +162,7 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
       </div>
       <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
-      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto">Loading...</div>
       <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
     </div>
 
@@ -255,28 +174,15 @@ import Layout from '../../components/layout/Layout.astro';
           <h3 class="text-base font-semibold mb-1">Option A: Upload from File</h3>
           <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
           <form id="upload-form" class="space-y-4">
-            <!-- Step 1: Scope -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">1. Scope</label>
-              <select id="upload-scope" class="input">
-                <option value="">— Select scope —</option>
-                <option value="cleanup">Center Management — Cleanup</option>
-                <option value="housekeeping">Center Management — Housekeeping</option>
-                <option value="explorer">Data Explorer</option>
-              </select>
-            </div>
-            <!-- Step 2: Category -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">2. Data Category</label>
-              <select id="upload-category" class="input" disabled>
-                <option value="">— Select scope first —</option>
-              </select>
-            </div>
-            <!-- Step 3: Object Type -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">3. Data Type</label>
-              <select id="upload-type" class="input" disabled>
-                <option value="">— Select category first —</option>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+              <select id="upload-type" class="input">
+                <option value="cost_centers">Cost Centers</option>
+                <option value="profit_centers">Profit Centers</option>
+                <option value="balances">Balances</option>
+                <option value="entities">Entities (Company Codes)</option>
+                <option value="hierarchies">Hierarchies</option>
+                <option value="employees">Employees (SAP HR)</option>
               </select>
             </div>
             <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
@@ -287,14 +193,8 @@ import Layout from '../../components/layout/Layout.astro';
               <label class="block text-sm font-medium text-gray-700 mb-1">File</label>
               <input type="file" id="upload-file" accept=".csv,.xlsx,.xls,.tsv" class="input" required />
             </div>
-            <div class="flex gap-3 items-center">
+            <div class="flex gap-3">
               <button type="submit" id="upload-btn" class="btn-amplifi">Upload</button>
-              <div id="upload-progress" class="hidden flex-1 flex items-center gap-2">
-                <div class="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
-                  <div id="upload-progress-bar" class="bg-amplifi-500 h-4 rounded-full transition-all duration-200" style="width:0%"></div>
-                </div>
-                <span id="upload-progress-text" class="text-xs text-gray-600 whitespace-nowrap">0%</span>
-              </div>
             </div>
             <div id="upload-result" class="text-sm hidden"></div>
           </form>
@@ -336,23 +236,6 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 </Layout>
 
-<style>
-  /* Sticky table headers inside scrollable containers */
-  #db-content thead th,
-  #db-hier-detail thead th,
-  #entities-table thead th,
-  #cc-table thead th,
-  #pc-table thead th,
-  #bal-table thead th,
-  #hier-table thead th,
-  #emp-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: #f9fafb;
-  }
-</style>
-
 <script is:inline>
 (function() {
   var token = localStorage.getItem('amplifi_token');
@@ -360,7 +243,6 @@ import Layout from '../../components/layout/Layout.astro';
   var jsonHdr = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : {};
 
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
-  function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function fmt(n) { return (n || 0).toLocaleString(); }
 
   // CSV download of current visible table
@@ -418,12 +300,12 @@ import Layout from '../../components/layout/Layout.astro';
       if (t) sortTable(t);
     });
   });
-  ['entities-table','cc-table','pc-table','tcc-table','tpc-table','mapping-table','bal-table','hier-table','emp-table'].forEach(function(id) {
+  ['entities-table','cc-table','pc-table','bal-table','hier-table','emp-table'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) sortObserver.observe(el, { childList: true });
   });
 
-  var allTabs = ['data-browser','entities','cost-centers','profit-centers','mapping','balances','hierarchies','employees','upload','sample-data'];
+  var allTabs = ['entities','cost-centers','profit-centers','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -443,29 +325,15 @@ import Layout from '../../components/layout/Layout.astro';
     loadCounts();
     if (typeof loadCC === 'function') loadCC(1);
     if (typeof loadPC === 'function') loadPC(1);
-    if (typeof loadTargetCC === 'function') loadTargetCC(1);
-    if (typeof loadTargetPC === 'function') loadTargetPC(1);
-    if (typeof loadMapping === 'function') loadMapping(1);
     if (typeof loadEntities === 'function') loadEntities(1);
     if (typeof loadBalances === 'function') loadBalances(1);
     if (typeof loadHierarchies === 'function') loadHierarchies();
     if (typeof loadEmployees === 'function') loadEmployees(1);
-    if (typeof loadDataBrowser === 'function') loadDataBrowser();
   }
 
-  // Scope/category selectors
-  var scopeSel = document.getElementById('scope-selector');
-  var catSel = document.getElementById('category-selector');
-  function getScope() { return scopeSel.value; }
-  function getCategory() { return catSel.value; }
-  scopeSel.addEventListener('change', function() { refreshAllData(); });
-  catSel.addEventListener('change', function() { refreshAllData(); });
-
-  // Load data counts with scope filtering
+  // Load data counts
   function loadCounts() {
-    var params = '?scope=' + encodeURIComponent(getScope());
-    if (getCategory()) params += '&data_category=' + encodeURIComponent(getCategory());
-    fetch('/api/data/counts' + params, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/data/counts', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       document.getElementById('cnt-entities').textContent = fmt(d.entities);
       document.getElementById('cnt-cc').textContent = fmt(d.cost_centers);
       document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
@@ -476,59 +344,6 @@ import Layout from '../../components/layout/Layout.astro';
     }).catch(function() {});
   }
   loadCounts();
-
-  // Upload rules from backend
-  var uploadRules = {};
-  fetch('/api/admin/upload-rules', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-    uploadRules = d.rules || {};
-  }).catch(function() {});
-
-  // Object display names
-  var objLabels = {
-    cost_center: 'Cost Centers', profit_center: 'Profit Centers',
-    gl_account_ska1: 'GL Accounts (SKA1)', gl_account_skb1: 'GL Accounts (SKB1)',
-    entity: 'Entities',
-    hierarchy: 'Hierarchies (SET format)', hierarchy_flat: 'Hierarchies (SAP flat export)',
-    balance: 'Balances', balance_gcr: 'Balances (GCR aggregated)',
-    employee: 'Employees'
-  };
-
-  // 3-step upload cascading
-  var uploadScopeSel = document.getElementById('upload-scope');
-  var uploadCatSel = document.getElementById('upload-category');
-  var uploadTypeSel = document.getElementById('upload-type');
-
-  uploadScopeSel.addEventListener('change', function() {
-    var scope = this.value;
-    uploadCatSel.innerHTML = '<option value="">— Select category —</option>';
-    uploadTypeSel.innerHTML = '<option value="">— Select category first —</option>';
-    uploadCatSel.disabled = true;
-    uploadTypeSel.disabled = true;
-    if (!scope || !uploadRules[scope]) return;
-    var cats = Object.keys(uploadRules[scope]);
-    cats.forEach(function(cat) {
-      var opt = document.createElement('option');
-      opt.value = cat;
-      opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
-      uploadCatSel.appendChild(opt);
-    });
-    uploadCatSel.disabled = false;
-  });
-
-  uploadCatSel.addEventListener('change', function() {
-    var scope = uploadScopeSel.value;
-    var cat = this.value;
-    uploadTypeSel.innerHTML = '<option value="">— Select data type —</option>';
-    uploadTypeSel.disabled = true;
-    if (!scope || !cat || !uploadRules[scope] || !uploadRules[scope][cat]) return;
-    uploadRules[scope][cat].forEach(function(obj) {
-      var opt = document.createElement('option');
-      opt.value = obj;
-      opt.textContent = objLabels[obj] || obj;
-      uploadTypeSel.appendChild(opt);
-    });
-    uploadTypeSel.disabled = false;
-  });
 
   function pagerHtml(total, page, size, loadFn) {
     var pages = Math.ceil(total / size) || 1;
@@ -568,36 +383,6 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('search-entities').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEntities(1); }, 300); });
 
   // --- Cost Centers ---
-  // Sortable table helper
-  var _tableSort = {};
-  window.sortTable = function(tableId, col, renderFn) {
-    var s = _tableSort[tableId] || { col: col, dir: 'asc' };
-    if (s.col === col) { s.dir = s.dir === 'asc' ? 'desc' : 'asc'; } else { s.col = col; s.dir = 'asc'; }
-    _tableSort[tableId] = s;
-    renderFn();
-  };
-  function sortTableData(tableId, data) {
-    var s = _tableSort[tableId];
-    if (!s) return data;
-    return data.slice().sort(function(a, b) {
-      var va = a[s.col], vb = b[s.col];
-      if (va == null) va = ''; if (vb == null) vb = '';
-      if (typeof va === 'string') va = va.toLowerCase();
-      if (typeof vb === 'string') vb = vb.toLowerCase();
-      return (va < vb ? -1 : va > vb ? 1 : 0) * (s.dir === 'asc' ? 1 : -1);
-    });
-  }
-  function sortIcon(tableId, col) {
-    var s = _tableSort[tableId];
-    if (!s || s.col !== col) return ' <span class="text-gray-300 text-[10px]">↕</span>';
-    return s.dir === 'asc' ? ' ↑' : ' ↓';
-  }
-  function sortTh(tableId, col, label, renderFn) {
-    return '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortTable(\'' +
-      tableId + '\',\'' + col + '\',' + renderFn + ')">' + label + sortIcon(tableId, col) + '</th>';
-  }
-
-  var _ccData = [];
   window.loadCC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-cc').value;
@@ -606,46 +391,35 @@ import Layout from '../../components/layout/Layout.astro';
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _ccData = d.items || [];
-      _renderCCTable();
+      var el = document.getElementById('cc-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No cost centers found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Short Text</th>' +
+        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Category</th>' +
+        '<th class="py-2 px-2 text-left">Responsible</th><th class="py-2 px-2 text-left">PC</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(c) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
+          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
       document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
     }).catch(function(e) { document.getElementById('cc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderCCTable = function() {
-    var el = document.getElementById('cc-table');
-    if (!_ccData.length) { el.textContent = 'No cost centers found.'; return; }
-    var items = sortTableData('cc', _ccData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('cc','cctr','CC','_renderCCTable') +
-      sortTh('cc','txtsh','Short Text','_renderCCTable') +
-      sortTh('cc','txtmi','Medium Text','_renderCCTable') +
-      sortTh('cc','ccode','Entity','_renderCCTable') +
-      sortTh('cc','coarea','CO Area','_renderCCTable') +
-      sortTh('cc','cctrcgy','Category','_renderCCTable') +
-      sortTh('cc','responsible','Responsible','_renderCCTable') +
-      sortTh('cc','pctr','PC','_renderCCTable') +
-      sortTh('cc','is_active','Active','_renderCCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(c) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
   };
   loadCC(1);
   document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
   document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
 
   // --- Profit Centers ---
-  var _pcData = [];
   window.loadPC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-pc').value;
@@ -654,183 +428,32 @@ import Layout from '../../components/layout/Layout.astro';
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _pcData = d.items || [];
-      _renderPCTable();
+      var el = document.getElementById('pc-table');
+      if (!d.items || !d.items.length) { el.textContent = 'No profit centers found.'; return; }
+      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">PC</th><th class="py-2 px-2 text-left">Short Text</th>' +
+        '<th class="py-2 px-2 text-left">Medium Text</th><th class="py-2 px-2 text-left">Entity</th>' +
+        '<th class="py-2 px-2 text-left">CO Area</th><th class="py-2 px-2 text-left">Department</th>' +
+        '<th class="py-2 px-2 text-left">Responsible</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(p) {
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
+          '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
       document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
     }).catch(function(e) { document.getElementById('pc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderPCTable = function() {
-    var el = document.getElementById('pc-table');
-    if (!_pcData.length) { el.textContent = 'No profit centers found.'; return; }
-    var items = sortTableData('pc', _pcData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('pc','pctr','PC','_renderPCTable') +
-      sortTh('pc','txtsh','Short Text','_renderPCTable') +
-      sortTh('pc','txtmi','Medium Text','_renderPCTable') +
-      sortTh('pc','ccode','Entity','_renderPCTable') +
-      sortTh('pc','coarea','CO Area','_renderPCTable') +
-      sortTh('pc','department','Department','_renderPCTable') +
-      sortTh('pc','responsible','Responsible','_renderPCTable') +
-      sortTh('pc','is_active','Active','_renderPCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(p) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
   };
   loadPC(1);
   document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
   document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
-
-  // --- Target Cost Centers ---
-  var _tccData = [];
-  window.loadTargetCC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-tcc').value;
-    var url = '/api/target/cost-centers?page=' + page + '&size=50';
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _tccData = d.items || [];
-      _renderTCCTable();
-      document.getElementById('tcc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetCC');
-    }).catch(function(e) { document.getElementById('tcc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderTCCTable = function() {
-    var el = document.getElementById('tcc-table');
-    if (!_tccData.length) { el.textContent = 'No target cost centers found.'; return; }
-    var items = sortTableData('tcc', _tccData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('tcc','cctr','CC','_renderTCCTable') +
-      sortTh('tcc','txtsh','Short Text','_renderTCCTable') +
-      sortTh('tcc','txtmi','Medium Text','_renderTCCTable') +
-      sortTh('tcc','ccode','Entity','_renderTCCTable') +
-      sortTh('tcc','coarea','CO Area','_renderTCCTable') +
-      sortTh('tcc','cctrcgy','Category','_renderTCCTable') +
-      sortTh('tcc','responsible','Responsible','_renderTCCTable') +
-      sortTh('tcc','pctr','PC','_renderTCCTable') +
-      sortTh('tcc','mdg_status','MDG Status','_renderTCCTable') +
-      sortTh('tcc','is_active','Active','_renderTCCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(c) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.mdg_status) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadTargetCC(1);
-  document.getElementById('search-tcc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetCC(1); }, 300); });
-
-  // --- Target Profit Centers ---
-  var _tpcData = [];
-  window.loadTargetPC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-tpc').value;
-    var url = '/api/target/profit-centers?page=' + page + '&size=50';
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _tpcData = d.items || [];
-      _renderTPCTable();
-      document.getElementById('tpc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetPC');
-    }).catch(function(e) { document.getElementById('tpc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderTPCTable = function() {
-    var el = document.getElementById('tpc-table');
-    if (!_tpcData.length) { el.textContent = 'No target profit centers found.'; return; }
-    var items = sortTableData('tpc', _tpcData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('tpc','pctr','PC','_renderTPCTable') +
-      sortTh('tpc','txtsh','Short Text','_renderTPCTable') +
-      sortTh('tpc','txtmi','Medium Text','_renderTPCTable') +
-      sortTh('tpc','ccode','Entity','_renderTPCTable') +
-      sortTh('tpc','coarea','CO Area','_renderTPCTable') +
-      sortTh('tpc','department','Department','_renderTPCTable') +
-      sortTh('tpc','responsible','Responsible','_renderTPCTable') +
-      sortTh('tpc','is_active','Active','_renderTPCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(p) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadTargetPC(1);
-  document.getElementById('search-tpc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetPC(1); }, 300); });
-
-  // --- Center Mapping ---
-  var _mappingData = [];
-  window.loadMapping = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-mapping').value;
-    var objType = document.getElementById('filter-mapping-type').value;
-    var url = '/api/center-mappings?page=' + page + '&size=50';
-    if (search) url += '&search=' + encodeURIComponent(search);
-    if (objType) url += '&object_type=' + encodeURIComponent(objType);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _mappingData = d.items || [];
-      _renderMappingTable();
-      document.getElementById('mapping-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadMapping');
-    }).catch(function(e) { document.getElementById('mapping-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderMappingTable = function() {
-    var el = document.getElementById('mapping-table');
-    if (!_mappingData.length) { el.textContent = 'No center mappings found. Upload a mapping file to get started.'; return; }
-    var items = sortTableData('mapping', _mappingData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('mapping','object_type','Type','_renderMappingTable') +
-      sortTh('mapping','legacy_coarea','Legacy CO','_renderMappingTable') +
-      sortTh('mapping','legacy_center','Legacy Center','_renderMappingTable') +
-      sortTh('mapping','legacy_name','Legacy Name','_renderMappingTable') +
-      '<th class="py-2 px-2 text-center">→</th>' +
-      sortTh('mapping','target_coarea','Target CO','_renderMappingTable') +
-      sortTh('mapping','target_center','Target Center','_renderMappingTable') +
-      sortTh('mapping','target_name','Target Name','_renderMappingTable') +
-      sortTh('mapping','mapping_type','Map Type','_renderMappingTable') +
-      sortTh('mapping','notes','Notes','_renderMappingTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(m) {
-      var typeLabel = m.object_type === 'cost_center' ? 'CC' : 'PC';
-      var typeBg = m.object_type === 'cost_center' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800';
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2"><span class="text-[10px] font-medium px-1.5 py-0.5 rounded ' + typeBg + '">' + typeLabel + '</span></td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(m.legacy_coarea) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(m.legacy_center) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.legacy_name) + '</td>' +
-        '<td class="py-1.5 px-2 text-center text-gray-400">→</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(m.target_coarea) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono font-medium text-amplifi-700">' + esc(m.target_center) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.target_name) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.mapping_type) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(m.notes) + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadMapping(1);
-  document.getElementById('search-mapping').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadMapping(1); }, 300); });
-  document.getElementById('filter-mapping-type').addEventListener('change', function() { loadMapping(1); });
 
   // --- Balances ---
   window.loadBalances = function(page) {
@@ -871,76 +494,23 @@ import Layout from '../../components/layout/Layout.astro';
 
   // --- Hierarchies ---
   function loadHierarchies() {
-    // Use admin endpoint for labels, fallback to legacy endpoint
-    fetch('/api/admin/hierarchies', { headers: authHdr }).then(function(r) {
-      if (!r.ok) return fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r2) { return r2.json(); }).then(function(d) { return d.items || []; });
-      return r.json();
-    }).then(function(items) {
+    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('hier-table');
-      if (!items || !items.length) { el.textContent = 'No hierarchies found.'; return; }
+      if (!d.items || !d.items.length) { el.textContent = 'No hierarchies found.'; return; }
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">Type</th><th class="py-2 px-2 text-left">Set Name</th>' +
-        '<th class="py-2 px-2 text-left">Label</th><th class="py-2 px-2 text-left">Description</th>' +
-        '<th class="py-2 px-2 text-left">CO Area</th>' +
-        '<th class="py-2 px-2 text-center">Active</th><th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
-      items.forEach(function(h) {
-        var typeLabel = h.type_label || h.setclass;
+        '<th class="py-2 px-2 text-left">Set Class</th><th class="py-2 px-2 text-left">Set Name</th>' +
+        '<th class="py-2 px-2 text-left">Description</th><th class="py-2 px-2 text-left">CO Area</th>' +
+        '<th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
+      d.items.forEach(function(h) {
         html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' +
-            (typeLabel === 'Cost Center' ? 'bg-blue-100 text-blue-800' : typeLabel === 'Profit Center' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700') +
-            '">' + esc(typeLabel) + '</span></td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(h.setclass) + '</td>' +
           '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
-          '<td class="py-1.5 px-2">' +
-            '<span id="hier-label-' + h.id + '-text">' + esc(h.display_label || h.label || '') + '</span>' +
-            '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" data-orig="' + escAttr(h.label || '') + '" placeholder="' + escAttr(h.display_label || '') + '" />' +
-          '</td>' +
-          '<td class="py-1.5 px-2 text-gray-500">' + esc(h.description || '') + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea || '') + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>' +
-          '<td class="py-1.5 px-2"><button class="text-blue-600 hover:underline text-[10px]" onclick="editHierLabel(' + h.id + ')">Edit Label</button></td></tr>';
+          '<td class="py-1.5 px-2">' + esc(h.description) + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea) + '</td>' +
+          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
       });
       el.innerHTML = html + '</tbody></table>';
     }).catch(function(e) { document.getElementById('hier-table').textContent = 'Error: ' + e.message; });
-  }
-  window.editHierLabel = function(hierId) {
-    var textEl = document.getElementById('hier-label-' + hierId + '-text');
-    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
-    if (!inputEl) return;
-    if (inputEl.classList.contains('hidden')) {
-      inputEl.classList.remove('hidden');
-      textEl.classList.add('hidden');
-      inputEl.focus();
-      inputEl.onkeydown = function(e) {
-        if (e.key === 'Enter') { saveHierLabel(hierId); }
-        if (e.key === 'Escape') { inputEl.classList.add('hidden'); textEl.classList.remove('hidden'); }
-      };
-      inputEl.onblur = function() { saveHierLabel(hierId); };
-    }
-  };
-  function saveHierLabel(hierId) {
-    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
-    var textEl = document.getElementById('hier-label-' + hierId + '-text');
-    if (!inputEl || inputEl.classList.contains('hidden')) return;
-    var label = inputEl.value.trim();
-    var origVal = inputEl.getAttribute('data-orig') || '';
-    // Skip save if value unchanged (prevents freezing auto-labels on blur)
-    if (label === origVal) {
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-      return;
-    }
-    fetch('/api/admin/hierarchies/' + hierId + '?label=' + encodeURIComponent(label), {
-      method: 'PATCH', headers: authHdr
-    }).then(function(r) { if (!r.ok) throw new Error('Save failed'); return r.json(); }).then(function(h) {
-      textEl.textContent = h.display_label || h.label || '';
-      inputEl.value = h.label || '';
-      inputEl.setAttribute('data-orig', h.label || '');
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-    }).catch(function() {
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-    });
   }
   loadHierarchies();
 
@@ -1107,86 +677,36 @@ import Layout from '../../components/layout/Layout.astro';
     });
   }).catch(function() {});
 
-  // --- Upload with progress bar ---
-  document.getElementById('upload-form').addEventListener('submit', function(e) {
+  // --- Upload ---
+  document.getElementById('upload-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var fileInput = document.getElementById('upload-file');
-    var uScope = document.getElementById('upload-scope').value;
-    var uCat = document.getElementById('upload-category').value;
     var type = document.getElementById('upload-type').value;
     var resultEl = document.getElementById('upload-result');
-    var progressEl = document.getElementById('upload-progress');
-    var progressBar = document.getElementById('upload-progress-bar');
-    var progressText = document.getElementById('upload-progress-text');
     resultEl.classList.add('hidden');
-    if (!uScope) { alert('Please select a scope.'); return; }
-    if (!uCat) { alert('Please select a data category.'); return; }
-    if (!type) { alert('Please select a data type.'); return; }
     if (!fileInput.files[0]) return;
-    if (!token) { alert('Please log in first to upload data.'); return; }
-    // Map object type keys to upload kind values
-    var kindMap = {
-      cost_center: 'cost_centers', profit_center: 'profit_centers',
-      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
-      entity: 'entities',
-      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
-      balance: 'balances', balance_gcr: 'balances_gcr',
-      employee: 'employees'
-    };
-    var uploadKind = kindMap[type] || type;
-    if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';
-    if (uCat === 'target' && type === 'profit_center') uploadKind = 'target_profit_centers';
-
     var formData = new FormData();
     formData.append('file', fileInput.files[0]);
     document.getElementById('upload-btn').disabled = true;
     document.getElementById('upload-btn').textContent = 'Uploading...';
-    progressEl.classList.remove('hidden');
-    progressBar.style.width = '0%';
-    progressText.textContent = '0%';
-
-    var xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', function(ev) {
-      if (ev.lengthComputable) {
-        var pct = Math.round((ev.loaded / ev.total) * 100);
-        progressBar.style.width = pct + '%';
-        progressText.textContent = pct + '%';
-      }
-    });
-    xhr.addEventListener('load', function() {
-      progressEl.classList.add('hidden');
-      document.getElementById('upload-btn').disabled = false;
-      document.getElementById('upload-btn').textContent = 'Upload';
-      try {
-        var data = JSON.parse(xhr.responseText);
-        if (xhr.status === 401 || xhr.status === 403) {
-          resultEl.textContent = 'Error: Session expired — please log in again.';
-          resultEl.className = 'text-sm text-red-600';
-        } else if (xhr.status >= 400) {
-          resultEl.textContent = 'Error: ' + (data.detail || 'Upload failed');
-          resultEl.className = 'text-sm text-red-600';
-        } else {
-          resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
-          resultEl.className = 'text-sm text-green-600';
-          refreshAllData(); loadUploadHistory();
-        }
-      } catch(err) {
-        resultEl.textContent = 'Error: Upload failed';
-        resultEl.className = 'text-sm text-red-600';
-      }
+    try {
+      var res = await fetch('/api/admin/uploads?kind=' + encodeURIComponent(type), {
+        method: 'POST', headers: authHdr, body: formData
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
+      resultEl.className = 'text-sm text-green-600';
       resultEl.classList.remove('hidden');
-    });
-    xhr.addEventListener('error', function() {
-      progressEl.classList.add('hidden');
-      document.getElementById('upload-btn').disabled = false;
-      document.getElementById('upload-btn').textContent = 'Upload';
-      resultEl.textContent = 'Error: Network error during upload';
+      refreshAllData(); loadUploadHistory();
+    } catch(err) {
+      resultEl.textContent = 'Error: ' + err.message;
       resultEl.className = 'text-sm text-red-600';
       resultEl.classList.remove('hidden');
-    });
-    xhr.open('POST', '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) + '&scope=' + encodeURIComponent(uScope) + '&data_category=' + encodeURIComponent(uCat));
-    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-    xhr.send(formData);
+    } finally {
+      document.getElementById('upload-btn').disabled = false;
+      document.getElementById('upload-btn').textContent = 'Upload';
+    }
   });
 
   function loadUploadHistory() {
@@ -1195,40 +715,26 @@ import Layout from '../../components/layout/Layout.astro';
       var items = d.items || [];
       if (!items.length) { el.textContent = 'No uploads yet.'; return; }
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Scope</th>' +
-        '<th class="py-2 px-2 text-left">Category</th><th class="py-2 px-2 text-left">Type</th>' +
-        '<th class="py-2 px-2 text-left">Source</th><th class="py-2 px-2 text-left">Status</th>' +
+        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Type</th>' +
+        '<th class="py-2 px-2 text-left">File</th><th class="py-2 px-2 text-left">Status</th>' +
         '<th class="py-2 px-2 text-right">Rows</th><th class="py-2 px-2 text-right">Valid</th>' +
         '<th class="py-2 px-2 text-right">Errors</th><th class="py-2 px-2 text-right">Loaded</th>' +
         '<th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
       items.forEach(function(u) {
-        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : (u.status === 'validating' || u.status === 'loading') ? 'text-yellow-600' : 'text-gray-600';
+        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : 'text-gray-600';
         var actions = '';
-        if (u.status === 'uploaded' || u.status === 'failed') {
+        if (u.status === 'uploaded') {
           actions = '<button onclick="validateUpload(' + u.id + ')" class="text-blue-600 hover:underline mr-2">Validate</button>';
         } else if (u.status === 'validated') {
           actions = '<button onclick="loadUpload(' + u.id + ')" class="text-green-600 hover:underline mr-2">Load</button>';
         } else if (u.status === 'loaded') {
           actions = '<button onclick="rollbackUpload(' + u.id + ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
-        } else if (u.status === 'validating' || u.status === 'loading') {
-          var pct = (u.rows_total > 0 && u.rows_processed != null) ? Math.round((u.rows_processed / u.rows_total) * 100) : 0;
-          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
-          actions = '<div class="inline-flex items-center gap-2">' +
-            '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" title="' + fmt(u.rows_processed || 0) + ' / ' + fmt(u.rows_total) + ' rows">' +
-            '<div class="bg-yellow-500 h-3 rounded-full transition-all duration-300" style="width:' + pct + '%"></div></div>' +
-            '<span class="text-yellow-700 text-[10px] font-medium whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
-            '</div> ' +
-            '<button onclick="resetUpload(' + u.id + ')" class="text-orange-600 hover:underline text-xs mr-2" title="Reset stuck batch">Reset</button>';
         }
         actions += '<button onclick="deleteUpload(' + u.id + ')" class="text-red-500 hover:underline text-xs" title="Delete this upload batch">Delete</button>';
-        var scopeLabel = { cleanup: 'CM Cleanup', housekeeping: 'CM Housekeeping', explorer: 'Data Explorer' };
-        var sourceInfo = (u.source_method || 'file') + (u.source_detail ? ': ' + u.source_detail : '');
         html += '<tr class="border-b hover:bg-gray-50">' +
           '<td class="py-1.5 px-2">' + u.id + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(scopeLabel[u.scope] || u.scope || '-') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(u.data_category || '-') + '</td>' +
           '<td class="py-1.5 px-2">' + esc(u.kind) + '</td>' +
-          '<td class="py-1.5 px-2 text-[10px]">' + esc(sourceInfo) + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.filename) + '</td>' +
           '<td class="py-1.5 px-2 ' + statusColor + ' font-medium">' + esc(u.status) + '</td>' +
           '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_total) + '</td>' +
           '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_valid) + '</td>' +
@@ -1241,67 +747,22 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadUploadHistory();
 
-  function pollBatchStatus(id, targetStatuses, label) {
-    return new Promise(function(resolve) {
-      loadUploadHistory();
-      var attempts = 0;
-      var maxAttempts = 180; // 6 minutes at 2s intervals
-      var interval = setInterval(function() {
-        attempts++;
-        fetch('/api/admin/uploads/' + id, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(b) {
-          loadUploadHistory();
-          if (targetStatuses.indexOf(b.status) !== -1) {
-            clearInterval(interval);
-            resolve(b);
-          } else if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            resolve(null);
-          }
-        }).catch(function() {
-          if (attempts >= maxAttempts) { clearInterval(interval); resolve(null); }
-        });
-      }, 2000);
-    });
-  }
   window.validateUpload = async function(id) {
-    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/validate', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
-    if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    loadUploadHistory();
-    var result = await pollBatchStatus(id, ['validated', 'failed'], 'Validating');
-    if (!result) { alert('Validation timed out — check status manually.'); return; }
-    if (result.status === 'failed') {
-      alert('Validation failed — check upload errors for details.');
-    } else {
-      alert('Validation: ' + result.status + (result.rows_error ? ' (' + result.rows_error + ' errors)' : '') + ' — ' + (result.rows_valid || 0) + ' valid rows');
-    }
+    alert('Validation: ' + d.status + (d.rows_error ? ' (' + d.rows_error + ' errors)' : ''));
     loadUploadHistory();
   };
   window.loadUpload = async function(id) {
-    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/load', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
-    if (!res.ok) { alert('Load error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    loadUploadHistory();
-    var result = await pollBatchStatus(id, ['loaded', 'failed'], 'Loading');
-    if (!result) { alert('Load timed out — check status manually.'); return; }
-    if (result.status === 'failed') {
-      alert('Load failed — check upload errors for details.');
-    } else {
-      alert('Load: ' + result.status + (result.rows_loaded ? ' (' + result.rows_loaded + ' rows)' : ''));
-    }
+    alert('Load: ' + d.status + (d.rows_loaded ? ' (' + d.rows_loaded + ' rows)' : ''));
     loadUploadHistory(); refreshAllData();
   };
   window.rollbackUpload = async function(id) {
     if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
-    if (!token) { alert('Please log in first.'); return; }
     var res = await fetch('/api/admin/uploads/' + id + '/rollback', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
     var d = await res.json();
-    if (!res.ok) { alert('Rollback error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
     alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
     loadUploadHistory(); refreshAllData();
   };
@@ -1318,23 +779,11 @@ import Layout from '../../components/layout/Layout.astro';
     } catch(e) { alert('Error: ' + e.message); }
   };
 
-  window.resetUpload = async function(id) {
-    if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
-    if (!token) { alert('Please log in first.'); return; }
-    try {
-      var res = await fetch('/api/admin/uploads/' + id + '/reset', { method: 'POST', headers: authHdr });
-      var d = await res.json();
-      if (!res.ok) throw new Error(d.detail || 'Reset failed');
-      alert(d.message || 'Batch reset successfully.');
-      loadUploadHistory();
-    } catch(e) { alert('Error: ' + e.message); }
-  };
-
   // --- Download upload template ---
   document.getElementById('download-template-btn').addEventListener('click', async function() {
     var kind = document.getElementById('upload-type').value;
     try {
-      var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
+      var res = await fetch('/api/admin/upload-templates/' + encodeURIComponent(kind), { headers: authHdr });
       if (!res.ok) { alert('Failed to fetch template'); return; }
       var d = await res.json();
       var blob = new Blob([d.content], { type: 'text/csv' });
@@ -1356,20 +805,8 @@ import Layout from '../../components/layout/Layout.astro';
     fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadCC(1); });
   });
   document.getElementById('delete-all-pc').addEventListener('click', function() {
-    if (!confirm('Delete ALL legacy profit centers?')) return;
+    if (!confirm('Delete ALL profit centers?')) return;
     fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadPC(1); });
-  });
-  document.getElementById('delete-all-tcc').addEventListener('click', function() {
-    if (!confirm('Delete ALL target cost centers?')) return;
-    fetch('/api/data/target/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetCC(1); });
-  });
-  document.getElementById('delete-all-tpc').addEventListener('click', function() {
-    if (!confirm('Delete ALL target profit centers?')) return;
-    fetch('/api/data/target/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetPC(1); });
-  });
-  document.getElementById('delete-all-mapping').addEventListener('click', function() {
-    if (!confirm('Delete ALL center mappings?')) return;
-    fetch('/api/data/center-mappings/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadMapping(1); });
   });
   document.getElementById('delete-all-bal').addEventListener('click', function() {
     if (!confirm('Delete ALL balances?')) return;
@@ -1434,6 +871,76 @@ import Layout from '../../components/layout/Layout.astro';
     var listEl = document.getElementById('sap-connections-list');
     var resEl = document.getElementById('sap-extract-result');
 
+    // Cache for SAP lookups per connection
+    var coAreaCache = {};
+    var hierCache = {};
+
+    function loadCoAreas(connId) {
+      if (coAreaCache[connId]) return Promise.resolve(coAreaCache[connId]);
+      return fetch('/api/admin/sap/' + connId + '/lookup/co-areas', { headers: authHdr })
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(data) { coAreaCache[connId] = data; return data; })
+        .catch(function() { return []; });
+    }
+
+    function loadHierarchies(connId, coArea) {
+      var key = connId + '_' + (coArea || '');
+      if (hierCache[key]) return Promise.resolve(hierCache[key]);
+      var url = '/api/admin/sap/' + connId + '/lookup/hierarchies';
+      if (coArea) url += '?co_area=' + encodeURIComponent(coArea);
+      return fetch(url, { headers: authHdr })
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(data) { hierCache[key] = data; return data; })
+        .catch(function() { return []; });
+    }
+
+    function buildCoAreaSelect(uid, connId, extraClass) {
+      return '<select id="' + uid + '_co" data-conn="' + connId + '" ' +
+        'class="border rounded px-2 py-0.5 text-xs ' + (extraClass || 'w-40') + ' sap-co-area-select">' +
+        '<option value="">All CO Areas (loading...)</option></select>';
+    }
+
+    function populateCoAreaSelects(connId) {
+      loadCoAreas(connId).then(function(areas) {
+        document.querySelectorAll('select.sap-co-area-select[data-conn="' + connId + '"]').forEach(function(sel) {
+          var val = sel.value;
+          var opts = '<option value="">All CO Areas</option>';
+          areas.forEach(function(a) {
+            opts += '<option value="' + esc(a.co_area) + '">' + esc(a.co_area) +
+              (a.description ? ' — ' + esc(a.description) : '') + '</option>';
+          });
+          sel.innerHTML = opts;
+          if (val) sel.value = val;
+        });
+      });
+    }
+
+    function buildHierSelect(uid, connId) {
+      return '<div id="' + uid + '_hier_wrap" data-conn="' + connId + '" class="inline-block">' +
+        '<select id="' + uid + '_hier" multiple size="3" ' +
+        'class="border rounded px-2 py-0.5 text-xs w-48 sap-hier-select" data-conn="' + connId + '">' +
+        '<option value="">Loading hierarchies...</option></select>' +
+        '<div class="text-xs text-gray-400 mt-0.5">Hold Ctrl to select multiple</div></div>';
+    }
+
+    function populateHierSelects(connId, coArea) {
+      loadHierarchies(connId, coArea).then(function(hiers) {
+        document.querySelectorAll('select.sap-hier-select[data-conn="' + connId + '"]').forEach(function(sel) {
+          var opts = '';
+          if (!hiers.length) {
+            opts = '<option value="" disabled>No hierarchies found</option>';
+          } else {
+            hiers.forEach(function(h) {
+              opts += '<option value="' + esc(h.set_name) + '">' + esc(h.set_name) +
+                (h.description ? ' — ' + esc(h.description) : '') +
+                ' [' + esc(h.kind) + ']</option>';
+            });
+          }
+          sel.innerHTML = opts;
+        });
+      });
+    }
+
     fetch('/api/data/sap-extract/available', { headers: authHdr })
       .then(function(r) { return r.ok ? r.json() : []; })
       .then(function(connections) {
@@ -1442,7 +949,6 @@ import Layout from '../../components/layout/Layout.astro';
           noConn.classList.remove('hidden');
           return;
         }
-        // Load bindings for each connection
         var html = '';
         var pending = connections.length;
         connections.forEach(function(c) {
@@ -1458,7 +964,7 @@ import Layout from '../../components/layout/Layout.astro';
                 html += '<table class="w-full text-xs"><thead><tr class="bg-gray-50">' +
                   '<th class="px-2 py-1 text-left">Object Type</th>' +
                   '<th class="px-2 py-1 text-left">Method</th>' +
-                  '<th class="px-2 py-1 text-left">Params</th>' +
+                  '<th class="px-2 py-1 text-left">Selection</th>' +
                   '<th class="px-2 py-1"></th></tr></thead><tbody>';
                 bindings.forEach(function(b) {
                   var uid = 'ext_' + c.connection_id + '_' + b.id;
@@ -1468,20 +974,19 @@ import Layout from '../../components/layout/Layout.astro';
                     '<td class="px-2 py-1 font-mono text-xs">' + esc(b.entity_set || b.path || '-') + '</td>' +
                     '<td class="px-2 py-1">';
                   if (ot === 'cost_center' || ot === 'profit_center') {
-                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-40" data-conn="' + c.connection_id + '">' +
-                      '<option value="">All CO Areas</option></select>';
+                    html += buildCoAreaSelect(uid, c.connection_id, 'w-40');
                   } else if (ot === 'hierarchy') {
-                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-36 mr-1" data-conn="' + c.connection_id + '" data-hier-trigger="' + uid + '_hier">' +
-                      '<option value="">All CO Areas</option></select>' +
-                      '<select id="' + uid + '_hier" multiple class="border rounded px-2 py-0.5 text-xs w-48" style="min-height:28px;max-height:80px" data-conn="' + c.connection_id + '">' +
-                      '<option value="">Loading hierarchies...</option></select>';
+                    html += '<div class="flex flex-col gap-1">' +
+                      buildCoAreaSelect(uid, c.connection_id, 'w-40') +
+                      buildHierSelect(uid, c.connection_id) + '</div>';
                   } else if (ot === 'balance') {
-                    html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-28 mr-1" data-conn="' + c.connection_id + '">' +
-                      '<option value="">All CO Areas</option></select>' +
-                      '<input id="' + uid + '_pfrom" type="text" placeholder="Period from" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
-                      '<input id="' + uid + '_pto" type="text" placeholder="Period to" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
-                      '<input id="' + uid + '_cc" type="text" placeholder="Company code" class="border rounded px-2 py-0.5 text-xs w-20 mr-1" />' +
-                      '<input id="' + uid + '_ledger" type="text" placeholder="Ledger" class="border rounded px-2 py-0.5 text-xs w-16" />';
+                    html += '<div class="flex flex-wrap gap-1">' +
+                      buildCoAreaSelect(uid, c.connection_id, 'w-32') +
+                      '<input id="' + uid + '_pfrom" type="text" placeholder="Period from" class="border rounded px-2 py-0.5 text-xs w-20" />' +
+                      '<input id="' + uid + '_pto" type="text" placeholder="Period to" class="border rounded px-2 py-0.5 text-xs w-20" />' +
+                      '<input id="' + uid + '_cc" type="text" placeholder="Company code" class="border rounded px-2 py-0.5 text-xs w-20" />' +
+                      '<input id="' + uid + '_ledger" type="text" placeholder="Ledger" class="border rounded px-2 py-0.5 text-xs w-16" />' +
+                      '</div>';
                   }
                   html += '</td>' +
                     '<td class="px-2 py-1"><button onclick="extractBinding(' + c.connection_id + ',' + b.id + ',this,\'' + uid + '\',\'' + esc(ot) + '\')" ' +
@@ -1493,8 +998,18 @@ import Layout from '../../components/layout/Layout.astro';
               pending--;
               if (pending === 0) {
                 listEl.innerHTML = html;
-                // Populate CO Area dropdowns from SAP
-                populateCoAreaDropdowns();
+                // Populate dynamic selectors after DOM update
+                connections.forEach(function(conn) {
+                  populateCoAreaSelects(conn.connection_id);
+                  populateHierSelects(conn.connection_id);
+                });
+                // Wire CO Area change to refresh hierarchy list
+                document.querySelectorAll('select.sap-co-area-select').forEach(function(sel) {
+                  sel.addEventListener('change', function() {
+                    var cid = this.getAttribute('data-conn');
+                    populateHierSelects(cid, this.value);
+                  });
+                });
               }
             });
         });
@@ -1502,77 +1017,6 @@ import Layout from '../../components/layout/Layout.astro';
       .catch(function() {
         listEl.textContent = 'Failed to load SAP connections.';
       });
-
-    // Dynamic SAP lookups
-    var coAreaCache = {};
-    var hierCache = {};
-
-    function populateCoAreaDropdowns() {
-      var selects = listEl.querySelectorAll('select[data-conn]');
-      var connIds = new Set();
-      selects.forEach(function(sel) { connIds.add(sel.getAttribute('data-conn')); });
-      connIds.forEach(function(connId) {
-        if (coAreaCache[connId]) { fillCoAreaSelects(connId); return; }
-        fetch('/api/admin/sap/' + connId + '/lookup/co-areas', { headers: authHdr })
-          .then(function(r) { return r.ok ? r.json() : []; })
-          .then(function(areas) {
-            coAreaCache[connId] = areas;
-            fillCoAreaSelects(connId);
-            // Also load hierarchies for hierarchy selects
-            loadHierarchiesForConn(connId, '');
-          }).catch(function() {});
-      });
-    }
-
-    function fillCoAreaSelects(connId) {
-      var areas = coAreaCache[connId] || [];
-      listEl.querySelectorAll('select[data-conn="' + connId + '"]').forEach(function(sel) {
-        if (sel.multiple) return; // skip hierarchy multi-selects
-        var val = sel.value;
-        var opts = '<option value="">All CO Areas</option>';
-        areas.forEach(function(a) {
-          opts += '<option value="' + escAttr(a.co_area) + '">' + esc(a.co_area) + (a.description ? ' — ' + esc(a.description) : '') + '</option>';
-        });
-        sel.innerHTML = opts;
-        sel.value = val;
-        // Wire change event for hierarchy trigger
-        var hierTarget = sel.getAttribute('data-hier-trigger');
-        if (hierTarget) {
-          sel.addEventListener('change', function() {
-            loadHierarchiesForConn(connId, sel.value);
-          });
-        }
-      });
-    }
-
-    function loadHierarchiesForConn(connId, coArea) {
-      var cacheKey = connId + ':' + (coArea || '*');
-      if (hierCache[cacheKey]) { fillHierSelects(connId, hierCache[cacheKey]); return; }
-      var url = '/api/admin/sap/' + connId + '/lookup/hierarchies';
-      if (coArea) url += '?co_area=' + encodeURIComponent(coArea);
-      fetch(url, { headers: authHdr })
-        .then(function(r) { return r.ok ? r.json() : []; })
-        .then(function(hiers) {
-          hierCache[cacheKey] = hiers;
-          fillHierSelects(connId, hiers);
-        }).catch(function() {});
-    }
-
-    function fillHierSelects(connId, hiers) {
-      listEl.querySelectorAll('select[multiple][data-conn="' + connId + '"]').forEach(function(sel) {
-        sel.innerHTML = '';
-        if (!hiers.length) {
-          sel.innerHTML = '<option value="" disabled>No hierarchies found</option>';
-          return;
-        }
-        hiers.forEach(function(h) {
-          var opt = document.createElement('option');
-          opt.value = h.set_name;
-          opt.textContent = h.set_name + (h.description ? ' — ' + h.description : '') + ' (' + h.kind + ')';
-          sel.appendChild(opt);
-        });
-      });
-    }
 
     window.extractBinding = async function(connId, bindingId, btn, uid, objType) {
       btn.disabled = true;
@@ -1586,12 +1030,8 @@ import Layout from '../../components/layout/Layout.astro';
       if (coEl && coEl.value.trim()) params.co_area = coEl.value.trim();
       var hierEl = document.getElementById(uid + '_hier');
       if (hierEl) {
-        if (hierEl.multiple) {
-          var selected = Array.from(hierEl.selectedOptions).map(function(o) { return o.value; }).filter(Boolean);
-          if (selected.length) params.hierarchy_name = selected.join(',');
-        } else if (hierEl.value.trim()) {
-          params.hierarchy_name = hierEl.value.trim();
-        }
+        var selected = Array.from(hierEl.selectedOptions).map(function(o) { return o.value; }).filter(Boolean);
+        if (selected.length) params.hierarchy_name = selected.join(',');
       }
       var pfromEl = document.getElementById(uid + '_pfrom');
       if (pfromEl && pfromEl.value.trim()) params.period_from = pfromEl.value.trim();
@@ -1624,577 +1064,5 @@ import Layout from '../../components/layout/Layout.astro';
       }
     };
   })();
-
-  // ─── Data Browser (unified view) ───────────────────────────────────
-  var dbData = null;
-  var dbView = 'tabular';
-  var dbSort = { col: 'cctr', dir: 'asc' };
-  var dbColFilters = {};
-
-  function loadDataBrowser() {
-    var el = document.getElementById('db-content');
-    el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
-    var dbParams = '?scope=' + encodeURIComponent(getScope());
-    if (getCategory()) dbParams += '&data_category=' + encodeURIComponent(getCategory());
-    (window.apiFetch || fetch)('/api/data/browser' + dbParams)
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(d) {
-        dbData = d;
-        dbColFilters = {};
-        dbHierSelectedNode = null;
-        _cachedHierMap = null;
-        renderDB();
-      })
-      .catch(function(err) {
-        el.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
-      });
-  }
-
-  window.switchDataBrowserView = function(view) {
-    dbView = view;
-    var tabBtn = document.getElementById('db-view-tabular');
-    var hierBtn = document.getElementById('db-view-hierarchy');
-    if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    renderDB();
-  };
-
-  window.sortDB = function(col) {
-    if (dbSort.col === col) {
-      dbSort.dir = dbSort.dir === 'asc' ? 'desc' : 'asc';
-    } else {
-      dbSort.col = col;
-      dbSort.dir = 'asc';
-    }
-    if (dbView === 'hierarchy' && dbHierSelectedNode) {
-      renderHierDetail();
-    } else {
-      renderDB();
-    }
-  };
-
-  function dbSortArrow(col) {
-    if (dbSort.col !== col) return ' <span class="text-gray-300">&#8597;</span>';
-    return dbSort.dir === 'asc' ? ' &#8593;' : ' &#8595;';
-  }
-
-  function dbSortItems(items) {
-    var col = dbSort.col, dir = dbSort.dir === 'asc' ? 1 : -1;
-    var isHierCol = col && col.indexOf('hier_') === 0;
-    var hierMap = isHierCol ? getCachedHierMap().map : null;
-    return items.slice().sort(function(a, b) {
-      var va, vb;
-      if (isHierCol) {
-        va = (hierMap[a.cctr] || {})[col] || '';
-        vb = (hierMap[b.cctr] || {})[col] || '';
-      } else {
-        va = a[col]; vb = b[col];
-      }
-      if (va == null) va = '';
-      if (vb == null) vb = '';
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
-      if (va < vb) return -1 * dir;
-      if (va > vb) return 1 * dir;
-      return 0;
-    });
-  }
-
-  window.setDbFilter = function(col, val) {
-    if (val === '') { delete dbColFilters[col]; } else { dbColFilters[col] = val; }
-    renderDB();
-  };
-
-  var _cachedHierMap = null;
-  function getCachedHierMap() {
-    if (!_cachedHierMap) _cachedHierMap = buildHierLevelMap();
-    return _cachedHierMap;
-  }
-
-  function getFilteredItems() {
-    var search = (document.getElementById('db-search').value || '').toLowerCase();
-    var items = (dbData && dbData.items) || [];
-    var hierMap = getCachedHierMap().map;
-    if (search) {
-      items = items.filter(function(it) {
-        return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtmi || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.ccode || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.pctr || '').toLowerCase().indexOf(search) >= 0;
-      });
-    }
-    Object.keys(dbColFilters).forEach(function(col) {
-      var fv = dbColFilters[col];
-      if (!fv) return;
-      items = items.filter(function(it) {
-        if (col === 'is_active') return String(it.is_active) === fv;
-        if (col.indexOf('hier_') === 0) {
-          var hm = hierMap[it.cctr] || {};
-          return String(hm[col] || '') === fv;
-        }
-        return String(it[col] || '') === fv;
-      });
-    });
-    return items;
-  }
-
-  window.renderDB = renderDB;
-  function renderDB() {
-    if (!dbData) return;
-    var el = document.getElementById('db-content');
-    var items = getFilteredItems();
-    if (dbView === 'tabular') {
-      renderDBTabular(el, items);
-    } else {
-      renderDBHierarchical(el, items);
-    }
-  }
-
-  function buildHierLevelMap() {
-    var hiers = (dbData && dbData.hierarchies) || [];
-    // Use the first CC hierarchy (setclass 0101) or the first available
-    var hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
-    if (!hier) return { levels: [], map: {} };
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    // Find roots
-    var allChildren = {};
-    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
-
-    // DFS to build paths: CC value -> [level0, level1, level2, ...]
-    var ccPaths = {};
-    var maxDepth = 0;
-    function dfs(nodeName, path) {
-      var children = childMap[nodeName] || [];
-      children.forEach(function(c) {
-        if (c.type === 'leaf') {
-          ccPaths[c.value] = path.slice();
-          if (path.length > maxDepth) maxDepth = path.length;
-        } else {
-          dfs(c.name, path.concat([c.name]));
-        }
-      });
-    }
-    roots.forEach(function(r) { dfs(r, [r]); });
-
-    var levelCols = [];
-    for (var i = 0; i < maxDepth; i++) {
-      levelCols.push('L' + (i + 1));
-    }
-
-    // Build map: cctr -> { L1: 'X', L2: 'Y', ... }
-    var ccLevelMap = {};
-    Object.keys(ccPaths).forEach(function(cctr) {
-      var p = ccPaths[cctr];
-      var obj = {};
-      for (var i = 0; i < maxDepth; i++) {
-        obj['hier_L' + (i + 1)] = p[i] || '';
-      }
-      ccLevelMap[cctr] = obj;
-    });
-
-    return { levels: levelCols, map: ccLevelMap, hierLabel: hier.label || hier.setname || 'Hierarchy' };
-  }
-
-  function renderDBTabular(el, items) {
-    if (!items.length && !Object.keys(dbColFilters).length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
-    var allItems = dbData.items || [];
-    var sorted = dbSortItems(items);
-
-    // Build hierarchy level data
-    var hierInfo = buildHierLevelMap();
-    var hierLevels = hierInfo.levels;
-    var hierMap = hierInfo.map;
-
-    // Collect all balance periods from ALL items (not filtered)
-    var periods = {};
-    var currencyForPeriod = {};
-    allItems.forEach(function(it) {
-      (it.monthly_balances || []).forEach(function(b) {
-        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-        periods[key] = 1;
-        if (b.currency) currencyForPeriod[key] = b.currency;
-      });
-    });
-    var pKeys = Object.keys(periods).sort();
-
-    var cols = [
-      { key: 'cctr', label: 'CC' },
-      { key: 'txtsh', label: 'Short Text' },
-      { key: 'ccode', label: 'Entity' },
-      { key: 'coarea', label: 'CO Area' },
-      { key: 'pctr', label: 'Profit Ctr' },
-      { key: 'pc_txtsh', label: 'PC Text' },
-      { key: 'responsible', label: 'Responsible' },
-      { key: 'is_active', label: 'Active' }
-    ];
-
-    // Add hierarchy level columns
-    var hierCols = [];
-    hierLevels.forEach(function(lvl, i) {
-      var colKey = 'hier_L' + (i + 1);
-      hierCols.push({ key: colKey, label: lvl });
-    });
-
-    var allCols = cols.concat(hierCols);
-
-    // Collect unique values per column from ALL items for filter dropdowns
-    var colVals = {};
-    allCols.forEach(function(c) { colVals[c.key] = {}; });
-    allItems.forEach(function(it) {
-      cols.forEach(function(c) {
-        var v = c.key === 'is_active' ? String(it.is_active) : String(it[c.key] || '');
-        if (v) colVals[c.key][v] = 1;
-      });
-      var hm = hierMap[it.cctr] || {};
-      hierCols.forEach(function(c) {
-        var v = hm[c.key] || '';
-        if (v) colVals[c.key][v] = 1;
-      });
-    });
-
-    var html = '<table class="w-full text-xs border-collapse"><thead>';
-    // Header row
-    html += '<tr class="border-b bg-gray-50">';
-    allCols.forEach(function(c) {
-      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
-    });
-    pKeys.forEach(function(pk) {
-      var curr = currencyForPeriod[pk];
-      var label = curr ? pk + ' (' + curr + ')' : pk;
-      html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(label) + '</th>';
-    });
-    html += '</tr>';
-    // Filter row
-    html += '<tr class="bg-gray-100 border-b">';
-    allCols.forEach(function(c) {
-      var vals = Object.keys(colVals[c.key]).sort();
-      var cur = dbColFilters[c.key] || '';
-      html += '<td class="px-1 py-1"><select class="w-full text-[10px] border rounded px-1 py-0.5 bg-white" onchange="setDbFilter(\'' + c.key + '\',this.value)">';
-      html += '<option value="">All</option>';
-      if (c.key === 'is_active') {
-        html += '<option value="true"' + (cur === 'true' ? ' selected' : '') + '>Yes</option>';
-        html += '<option value="false"' + (cur === 'false' ? ' selected' : '') + '>No</option>';
-      } else {
-        vals.forEach(function(v) {
-          var lbl = v.length > 20 ? v.substring(0, 20) + '...' : v;
-          html += '<option value="' + escAttr(v) + '"' + (cur === v ? ' selected' : '') + '>' + esc(lbl) + '</option>';
-        });
-      }
-      html += '</select></td>';
-    });
-    pKeys.forEach(function() { html += '<td></td>'; });
-    html += '</tr>';
-    html += '</thead><tbody>';
-
-    if (!items.length) {
-      html += '<tr><td colspan="' + (allCols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">No matching records.</td></tr>';
-    }
-
-    sorted.forEach(function(it) {
-      var balMap = {};
-      (it.monthly_balances || []).forEach(function(b) {
-        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
-      });
-      var hm = hierMap[it.cctr] || {};
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
-      html += '<td class="py-1 px-2 text-center">' + (it.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
-      hierCols.forEach(function(c) {
-        html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm[c.key] || '') + '</td>';
-      });
-      pKeys.forEach(function(pk) {
-        var b = balMap[pk];
-        if (b) {
-          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-          var curr = b.currency ? ' <span class="text-gray-400 text-[9px]">' + esc(b.currency) + '</span>' : '';
-          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + curr + '</td>';
-        } else {
-          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
-        }
-      });
-      html += '</tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  }
-
-  var dbHierSelectedNode = null;
-
-  window.resetHierSelection = function() {
-    dbHierSelectedNode = null;
-    renderDB();
-  };
-
-  window.selectHierNode = function(nodeName) {
-    // Remove highlight from previous selection
-    var prev = document.querySelector('[data-hier-node].bg-blue-50');
-    if (prev) {
-      prev.classList.remove('font-bold', 'text-blue-700', 'bg-blue-50');
-      prev.classList.add(prev.dataset.hierNode === '__unassigned__' ? 'text-gray-500' : 'text-gray-800');
-    }
-    dbHierSelectedNode = nodeName;
-    // Add highlight to new selection
-    var cur = document.querySelector('[data-hier-node="' + CSS.escape(nodeName) + '"]');
-    if (cur) {
-      cur.classList.add('font-bold', 'text-blue-700', 'bg-blue-50');
-      cur.classList.remove('text-gray-800', 'text-gray-500');
-    }
-    renderHierDetail();
-  };
-
-  function renderHierDetail() {
-    var detailEl = document.getElementById('db-hier-detail');
-    if (!detailEl || !dbData) return;
-    var items = getFilteredItems();
-    var ccMap = {};
-    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
-
-    var hiers = dbData.hierarchies || [];
-    var selIdx = 0;
-    var selEl = document.getElementById('db-hier-select');
-    if (selEl) selIdx = parseInt(selEl.value) || 0;
-    var hier = hiers[selIdx] || hiers[0];
-    if (!hier) return;
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    // Collect all leaf CCs under the selected node (recursively)
-    var leafCCs = [];
-    function collectLeaves(node) {
-      var ch = childMap[node] || [];
-      ch.forEach(function(c) {
-        if (c.type === 'leaf') { if (ccMap[c.value]) leafCCs.push(ccMap[c.value]); }
-        else { collectLeaves(c.name); }
-      });
-    }
-
-    if (dbHierSelectedNode === '__unassigned__') {
-      var assigned = {};
-      (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-      leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
-    } else if (dbHierSelectedNode) {
-      collectLeaves(dbHierSelectedNode);
-    } else {
-      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
-      return;
-    }
-
-    if (!leafCCs.length) {
-      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No cost centers under <b>' + esc(dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode) + '</b></div>';
-      return;
-    }
-
-    // Build table similar to tabular view
-    var periods = {};
-    leafCCs.forEach(function(it) {
-      (it.monthly_balances || []).forEach(function(b) {
-        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-        periods[key] = 1;
-      });
-    });
-    var pKeys = Object.keys(periods).sort();
-    var sorted = dbSortItems(leafCCs);
-
-    var label = dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode;
-    var html = '<div class="mb-2 flex items-center gap-2"><span class="font-semibold text-sm text-blue-800">' + esc(label) + '</span>';
-    html += '<span class="text-xs text-gray-500">(' + leafCCs.length + ' cost center' + (leafCCs.length !== 1 ? 's' : '') + ')</span></div>';
-    html += '<div class="overflow-auto" style="max-height:calc(100vh - 480px)"><table class="w-full text-xs border-collapse"><thead>';
-    html += '<tr class="border-b bg-gray-50 sticky top-0">';
-    var cols = [
-      { key: 'cctr', label: 'CC' },
-      { key: 'txtsh', label: 'Short Text' },
-      { key: 'ccode', label: 'Entity' },
-      { key: 'coarea', label: 'CO Area' },
-      { key: 'pctr', label: 'Profit Ctr' },
-      { key: 'pc_txtsh', label: 'PC Text' },
-      { key: 'responsible', label: 'Responsible' }
-    ];
-    cols.forEach(function(c) {
-      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap bg-gray-50" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
-    });
-    html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">Total</th>';
-    pKeys.forEach(function(pk) {
-      html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">' + esc(pk) + '</th>';
-    });
-    html += '</tr></thead><tbody>';
-
-    sorted.forEach(function(it) {
-      var balMap = {};
-      var total = 0;
-      (it.monthly_balances || []).forEach(function(b) {
-        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
-        total += b.amount;
-      });
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
-      var totalStr = total.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-      html += '<td class="py-1 px-2 text-right font-mono font-semibold' + (total < 0 ? ' text-red-600' : '') + '">' + totalStr + '</td>';
-      pKeys.forEach(function(pk) {
-        var b = balMap[pk];
-        if (b) {
-          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + '</td>';
-        } else {
-          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
-        }
-      });
-      html += '</tr>';
-    });
-    detailEl.innerHTML = html + '</tbody></table></div>';
-  }
-
-  function renderDBHierarchical(el, items) {
-    var hiers = (dbData.hierarchies || []);
-    if (!hiers.length) { el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchies via SAP extraction or upload.</span>'; return; }
-
-    var ccMap = {};
-    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
-
-    // Hierarchy selector — read current selection before rebuilding
-    var selIdx = 0;
-    var selEl = document.getElementById('db-hier-select');
-    if (selEl) selIdx = parseInt(selEl.value) || 0;
-    var hier = hiers[selIdx] || hiers[0];
-
-    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="resetHierSelection()">';
-    hiers.forEach(function(h, i) {
-      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
-    });
-    html += '</select></div>';
-
-    // Split panel: tree left, detail right
-    html += '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
-
-    // Left panel — compact tree
-    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto">';
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    var allChildren = {};
-    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
-
-    function countLeaves(node) {
-      var ch = childMap[node] || [];
-      var cnt = 0;
-      ch.forEach(function(c) {
-        if (c.type === 'leaf') { if (ccMap[c.value]) cnt++; }
-        else { cnt += countLeaves(c.name); }
-      });
-      return cnt;
-    }
-
-    function buildTree(nodeName, depth) {
-      var pad = depth * 12;
-      var lc = countLeaves(nodeName);
-      var isSelected = dbHierSelectedNode === nodeName;
-      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
-      out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
-      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
-      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
-      var children = childMap[nodeName] || [];
-      children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
-      out += '<div class="tree-children">';
-      children.forEach(function(c) {
-        if (c.type === 'node') out += buildTree(c.name, depth + 1);
-      });
-      out += '</div>';
-      return out;
-    }
-
-    roots.forEach(function(root) { html += buildTree(root, 0); });
-
-    // Unassigned entry
-    var assigned = {};
-    (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-    var unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
-    if (unassignedCount) {
-      var isUA = dbHierSelectedNode === '__unassigned__';
-      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '">';
-      html += 'Unassigned (' + unassignedCount + ')</div>';
-    }
-
-    html += '</div>';
-
-    // Right panel — detail table
-    html += '<div class="flex-1 border rounded bg-white overflow-auto" id="db-hier-detail">';
-    html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
-    html += '</div>';
-
-    html += '</div>';
-    el.innerHTML = html;
-
-    // Bind click handlers via addEventListener (avoids XSS from inline onclick with dynamic data)
-    el.querySelectorAll('[data-hier-node]').forEach(function(nodeEl) {
-      nodeEl.addEventListener('click', function() {
-        selectHierNode(this.dataset.hierNode);
-      });
-    });
-
-    // If a node was previously selected, render its detail
-    if (dbHierSelectedNode) renderHierDetail();
-  }
-
-  // Wire search
-  document.getElementById('db-search').addEventListener('input', function() {
-    clearTimeout(this._t);
-    this._t = setTimeout(function() { renderDB(); }, 300);
-  });
-
-  // Load on page init
-  loadDataBrowser();
-
 })();
 </script>

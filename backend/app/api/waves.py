@@ -661,10 +661,17 @@ def list_wave_runs(
     }
 
 
+class V1AnalysisParams(BaseModel):
+    config_id: int | None = None
+    mode: str = "simulation"
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+
+
 @router.post("/{wave_id}/analyse")
 def run_analysis(
     wave_id: int,
-    config_id: int | None = None,
+    params: V1AnalysisParams | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
@@ -675,20 +682,38 @@ def run_analysis(
     if not wave:
         raise HTTPException(status_code=404, detail="Wave not found")
     if wave.status not in ("draft", "analysing", "proposed"):
-        raise HTTPException(status_code=409, detail=f"Cannot analyse wave in status {wave.status}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot analyse wave in status {wave.status}",
+        )
 
+    config_id = params.config_id if params else None
     if config_id is None:
         config = get_or_create_default_config(db)
         config_id = config.id
 
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
     try:
-        run = execute_analysis(wave_id, config_id, user.id, db)
+        run = execute_analysis(
+            wave_id,
+            config_id,
+            user.id,
+            db,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}") from None
 
     return {
         "run_id": run.id,
         "status": run.status,
+        "mode": run.mode,
+        "label": run.label,
         "kpis": run.kpis,
         "started_at": str(run.started_at) if run.started_at else None,
         "finished_at": str(run.finished_at) if run.finished_at else None,
@@ -1829,18 +1854,21 @@ def run_global_v2_simulation(
 
 
 @router.get("/simulations/v2")
-def list_v2_simulations(
+def list_simulations(
     wave_id: int | None = None,
     mode: str | None = None,
+    engine: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
 ) -> dict:
-    """List V2 simulation/activated runs, optionally filtered by wave."""
-    q = select(AnalysisRun).where(AnalysisRun.engine_version == "v2.cema_migration")
+    """List simulation/activated runs (V1 and V2), optionally filtered."""
+    q = select(AnalysisRun)
     if wave_id is not None:
         q = q.where(AnalysisRun.wave_id == wave_id)
     if mode:
         q = q.where(AnalysisRun.mode == mode)
+    if engine:
+        q = q.where(AnalysisRun.engine_version == engine)
     q = q.order_by(AnalysisRun.created_at.desc())
 
     runs = db.execute(q).scalars().all()
