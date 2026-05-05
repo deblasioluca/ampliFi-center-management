@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from app.infra.db.session import get_db
 from app.models.core import (
+    SCOPE_EXPLORER,
     AnalysisRun,
     Balance,
+    CenterMapping,
     CenterProposal,
     Employee,
     Entity,
@@ -37,6 +39,8 @@ from app.models.core import (
     HierarchyNode,
     LegacyCostCenter,
     LegacyProfitCenter,
+    TargetCostCenter,
+    TargetProfitCenter,
 )
 
 router = APIRouter()
@@ -313,17 +317,30 @@ def _row_to_full_dict(row: Any) -> dict:
 
 @router.get("/counts")
 def explore_counts(db: Session = Depends(get_db)) -> dict:
-    """Object counts for the explore dashboard."""
+    """Object counts for the explore dashboard — only explorer-scoped data."""
+
+    def _cnt(model: type) -> int:
+        return (
+            db.execute(select(func.count(model.id)).where(model.scope == SCOPE_EXPLORER)).scalar()
+            or 0
+        )
+
     return {
-        "entities": db.execute(select(func.count(Entity.id))).scalar() or 0,
-        "cost_centers": db.execute(select(func.count(LegacyCostCenter.id))).scalar() or 0,
-        "profit_centers": db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0,
-        "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
-        "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
-        "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
-        "gl_accounts_ska1": db.execute(select(func.count(GLAccountSKA1.id))).scalar() or 0,
-        "gl_accounts_skb1": db.execute(select(func.count(GLAccountSKB1.id))).scalar() or 0,
+        "entities": _cnt(Entity),
+        "cost_centers": _cnt(LegacyCostCenter),
+        "profit_centers": _cnt(LegacyProfitCenter),
+        "balances": _cnt(Balance),
+        "hierarchies": _cnt(Hierarchy),
+        "employees": _cnt(Employee),
+        "gl_accounts_ska1": _cnt(GLAccountSKA1),
+        "gl_accounts_skb1": _cnt(GLAccountSKB1),
         "gl_ranges": db.execute(select(func.count(GLAccountClassRange.id))).scalar() or 0,
+        "target_cost_centers": _cnt(TargetCostCenter),
+        "target_profit_centers": _cnt(TargetProfitCenter),
+        "center_mappings": db.execute(
+            select(func.count(CenterMapping.id)).where(CenterMapping.scope == SCOPE_EXPLORER)
+        ).scalar()
+        or 0,
         "proposals": db.execute(select(func.count(CenterProposal.id))).scalar() or 0,
     }
 
@@ -371,6 +388,7 @@ def explore_balances_agg(
             func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
             func.max(Balance.currency_tc).label("currency"),
         )
+        .where(Balance.scope == SCOPE_EXPLORER)
         .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
         .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
     )
@@ -419,9 +437,12 @@ def explore_object(
     config = _get_display_config(db, object_type)
     table_cols = config["table_columns"]
 
-    # Build query
+    # Build query — only explorer-scoped data
     query = select(model)
     count_q = select(func.count(model.id))
+    if hasattr(model, "scope"):
+        query = query.where(model.scope == SCOPE_EXPLORER)
+        count_q = count_q.where(model.scope == SCOPE_EXPLORER)
 
     # Search
     if search:
@@ -488,6 +509,8 @@ def explore_object_detail(
     row = db.get(model, item_id)
     if not row:
         return {"error": "Not found"}
+    if hasattr(row, "scope") and row.scope != SCOPE_EXPLORER:
+        return {"error": "Not found"}
 
     config = _get_display_config(db, object_type)
     detail_cols = config["detail_columns"]
@@ -509,7 +532,9 @@ def explore_object_detail(
 def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
     """Hierarchies endpoint with node/leaf data."""
     cls_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
-    query = select(Hierarchy).where(Hierarchy.is_active.is_(True))
+    query = select(Hierarchy).where(
+        Hierarchy.scope == SCOPE_EXPLORER, Hierarchy.is_active.is_(True)
+    )
     if search:
         pat = f"%{search}%"
         from sqlalchemy import or_
@@ -588,8 +613,10 @@ def export_object(
             if skip in table_cols:
                 table_cols.remove(skip)
 
-    # Build query
+    # Build query — only explorer-scoped data
     query = select(model)
+    if hasattr(model, "scope"):
+        query = query.where(model.scope == SCOPE_EXPLORER)
     if search:
         pat = f"%{search}%"
         search_fields = _SEARCH_FIELDS.get(object_type, [])

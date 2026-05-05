@@ -14,6 +14,10 @@ from app.api.deps import PaginationParams, pagination, require_role
 from app.auth.service import hash_password
 from app.infra.db.session import get_db
 from app.models.core import (
+    ALL_CATEGORIES,
+    ALL_SCOPES,
+    SCOPE_CLEANUP,
+    SCOPE_UPLOAD_RULES,
     AppConfig,
     AppUser,
     AuditLog,
@@ -675,6 +679,8 @@ def discover_sap_services(
 
 class ObjectBindingCreate(BaseModel):
     object_type: str  # cost_center|profit_center|hierarchy|balance|gl_account|employee
+    scope: str = SCOPE_CLEANUP
+    data_category: str = "legacy"
     entity_set: str | None = None
     path: str | None = None
     params: dict | None = None
@@ -700,6 +706,8 @@ def list_object_bindings(
         {
             "id": b.id,
             "object_type": b.object_type,
+            "scope": b.scope,
+            "data_category": b.data_category,
             "entity_set": b.entity_set,
             "path": b.path,
             "params": b.params,
@@ -723,10 +731,16 @@ def create_object_binding(
     conn = db.get(SAPConnection, conn_id)
     if not conn:
         raise HTTPException(status_code=404, detail="SAP connection not found")
+    if body.scope not in ALL_SCOPES:
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope}")
+    if body.data_category not in ALL_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid data_category: {body.data_category}")
 
     binding = SAPObjectBinding(
         connection_id=conn_id,
         object_type=body.object_type,
+        scope=body.scope,
+        data_category=body.data_category,
         entity_set=body.entity_set,
         path=body.path,
         params=body.params,
@@ -739,6 +753,8 @@ def create_object_binding(
     return {
         "id": binding.id,
         "object_type": binding.object_type,
+        "scope": binding.scope,
+        "data_category": binding.data_category,
         "entity_set": binding.entity_set,
         "enabled": binding.enabled,
     }
@@ -909,6 +925,8 @@ def extract_via_binding(
             binding.object_type,
             merged_params or None,
             retrieval_method=retrieval_method,
+            scope=getattr(binding, "scope", None) or "cleanup",
+            data_category=getattr(binding, "data_category", None) or "legacy",
         )
         return result
     except ValueError as e:
@@ -1111,9 +1129,19 @@ def update_hierarchy(
 # --- Uploads ---
 
 
+@router.get("/upload-rules")
+def get_upload_rules(
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Return allowed scope/category/object combinations for the upload form."""
+    return {"rules": SCOPE_UPLOAD_RULES}
+
+
 @router.post("/uploads")
 def create_upload(
     kind: str = Query(...),
+    scope: str = Query(default=SCOPE_CLEANUP),
+    data_category: str = Query(default="legacy"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
@@ -1121,6 +1149,11 @@ def create_upload(
     import pathlib
 
     from app.config import settings
+
+    if scope not in ALL_SCOPES:
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
+    if data_category not in ALL_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid data_category: {data_category}")
 
     content = file.file.read()
     storage_dir = pathlib.Path(settings.storage_local_path).resolve() / "uploads"
@@ -1134,6 +1167,10 @@ def create_upload(
 
     batch = UploadBatch(
         kind=kind,
+        scope=scope,
+        data_category=data_category,
+        source_method="file",
+        source_detail=fname,
         filename=fname,
         status="uploaded",
         uploaded_by=_user.id,
@@ -1142,7 +1179,13 @@ def create_upload(
     db.add(batch)
     db.commit()
     db.refresh(batch)
-    return {"id": batch.id, "status": batch.status, "filename": batch.filename}
+    return {
+        "id": batch.id,
+        "status": batch.status,
+        "filename": batch.filename,
+        "scope": batch.scope,
+        "data_category": batch.data_category,
+    }
 
 
 @router.get("/uploads")
@@ -1167,6 +1210,10 @@ def list_uploads(
             {
                 "id": b.id,
                 "kind": b.kind,
+                "scope": b.scope,
+                "data_category": b.data_category,
+                "source_method": b.source_method,
+                "source_detail": b.source_detail,
                 "filename": b.filename,
                 "status": b.status,
                 "rows_total": b.rows_total,

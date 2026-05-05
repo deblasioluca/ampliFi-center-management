@@ -400,6 +400,8 @@ def extract_from_sap(
     odata_params: dict | None = None,
     *,
     retrieval_method: str | None = None,
+    scope: str = "cleanup",
+    data_category: str = "legacy",
 ) -> dict:
     """Extract data from SAP and create an upload batch.
 
@@ -517,6 +519,10 @@ def extract_from_sap(
         storage_uri=str(file_path),
         status="uploaded",
         rows_total=len(rows),
+        scope=scope,
+        data_category=data_category,
+        source_method="sap_connection",
+        source_detail=conn.name,
     )
     db.add(batch)
     db.commit()
