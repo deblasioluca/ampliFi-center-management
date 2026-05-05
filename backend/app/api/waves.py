@@ -6,6 +6,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -1433,4 +1434,294 @@ def auto_assign_scopes(
         "scopes": created_scopes,
         "total_items": len(proposals),
         "strategy": params.strategy,
+    }
+
+
+# ── V2 CEMA Migration endpoints ─────────────────────────────────────────
+
+
+class V2AnalysisParams(BaseModel):
+    config_id: int | None = None
+    pc_approach_rules: list[dict] | None = None
+    pc_start: int = 137
+    cc_start: int = 1
+
+
+@router.post("/{wave_id}/analyse-v2")
+def run_v2_analysis_endpoint(
+    wave_id: int,
+    params: V2AnalysisParams | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run V2 CEMA migration decision tree on wave's cost centers."""
+    from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("draft", "analysing", "proposed"):
+        raise HTTPException(status_code=409, detail=f"Cannot analyse wave in status {wave.status}")
+
+    # If inline params provided, build a runtime config
+    config_id = None
+    if params and params.config_id:
+        config_id = params.config_id
+    elif params and params.pc_approach_rules is not None:
+        from app.models.core import AnalysisConfig
+
+        cfg = dict(V2_DEFAULT_CONFIG)
+        for step in cfg["pipeline"]:
+            if step["routine"] == "v2.pc_approach":
+                step["params"]["approach_rules"] = params.pc_approach_rules
+        cfg["id_assignment"]["pc_start"] = params.pc_start
+        cfg["id_assignment"]["cc_start"] = params.cc_start
+        ac = AnalysisConfig(
+            code="cema_migration_v2",
+            version=1,
+            name="V2 CEMA Migration (runtime)",
+            config=cfg,
+            created_by=user.id,
+        )
+        db.add(ac)
+        db.flush()
+        config_id = ac.id
+
+    try:
+        result = run_v2_analysis(wave_id, config_id, db, user.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"V2 analysis failed: {e}") from None
+
+    wave.status = "analysing"
+    db.commit()
+    return result
+
+
+@router.get("/{wave_id}/runs/{run_id}/export-v2")
+def export_v2_results(
+    wave_id: int,
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> Response:
+    """Export V2 analysis results as Excel with PC/CC templates + mapping."""
+    import io
+
+    from openpyxl import Workbook
+
+    run = db.get(AnalysisRun, run_id)
+    if not run or run.wave_id != wave_id:
+        raise HTTPException(status_code=404, detail="Run not found for this wave")
+
+    proposals = (
+        db.execute(
+            select(CenterProposal)
+            .where(CenterProposal.run_id == run_id)
+            .order_by(CenterProposal.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    wb = Workbook()
+
+    # Sheet 1: PC Template
+    ws_pc = wb.active
+    ws_pc.title = "PC_Template"  # type: ignore[union-attr]
+    pc_headers = [
+        "PC_ID",
+        "PC_Name",
+        "CO_Area",
+        "Company_Code",
+        "Currency",
+        "Responsible",
+        "Approach",
+        "Group_Key",
+        "Migrate",
+    ]
+    ws_pc.append(pc_headers)  # type: ignore[union-attr]
+
+    # Sheet 2: CC Template
+    ws_cc = wb.create_sheet("CC_Template")
+    cc_headers = [
+        "CC_ID",
+        "CC_Name",
+        "CO_Area",
+        "Company_Code",
+        "Currency",
+        "Responsible",
+        "Category",
+        "Legacy_CCTR",
+        "Migrate",
+    ]
+    ws_cc.append(cc_headers)
+
+    # Sheet 3: Mapping
+    ws_map = wb.create_sheet("Mapping")
+    map_headers = [
+        "Legacy_CCTR",
+        "Legacy_Name",
+        "CO_Area",
+        "Company_Code",
+        "Migrate",
+        "Approach",
+        "PC_ID",
+        "PC_Name",
+        "CC_ID",
+        "CC_Name",
+        "External_Hierarchy",
+        "CEMA_Hierarchy",
+    ]
+    ws_map.append(map_headers)
+
+    # Track PCs already written (for 1:n dedup)
+    pc_written: set[str] = set()
+
+    for p in proposals:
+        attrs = p.attrs or {}
+        legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
+        if not legacy:
+            continue
+
+        migrate = attrs.get("migrate", "N")
+        approach = attrs.get("approach", "1:1")
+        pc_id = attrs.get("pc_id", "")
+        pc_name = attrs.get("pc_name", "")
+        cc_id = attrs.get("cc_id", "")
+        cc_name = attrs.get("cc_name", legacy.txtsh or "")
+        group_key = attrs.get("group_key", "")
+        ext_hierarchy = attrs.get("ext_levels", {}).get("ext_l0", "")
+        cema_hierarchy = attrs.get("ext_levels", {}).get("cema_l0", "")
+
+        # Mapping row — all centers
+        ws_map.append(
+            [
+                legacy.cctr,
+                legacy.txtsh,
+                legacy.coarea,
+                legacy.ccode,
+                migrate,
+                approach,
+                pc_id,
+                pc_name,
+                cc_id,
+                cc_name,
+                ext_hierarchy,
+                cema_hierarchy,
+            ]
+        )
+
+        if migrate != "Y":
+            continue
+
+        # PC Template (deduplicated for 1:n)
+        if pc_id and pc_id not in pc_written:
+            ws_pc.append(
+                [  # type: ignore[union-attr]
+                    pc_id,
+                    pc_name,
+                    legacy.coarea,
+                    legacy.ccode,
+                    legacy.currency,
+                    legacy.responsible,
+                    approach,
+                    group_key,
+                    "Y",
+                ]
+            )
+            pc_written.add(pc_id)
+
+        # CC Template
+        if cc_id:
+            ws_cc.append(
+                [
+                    cc_id,
+                    cc_name,
+                    legacy.coarea,
+                    legacy.ccode,
+                    legacy.currency,
+                    legacy.responsible,
+                    legacy.cctrcgy,
+                    legacy.cctr,
+                    "Y",
+                ]
+            )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"v2_migration_wave{wave_id}_run{run_id}.xlsx"
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/{wave_id}/runs/{run_id}/proposals-v2")
+def list_v2_proposals(
+    wave_id: int,
+    run_id: int,
+    migrate: str | None = None,
+    approach: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """List V2 proposals with migration details."""
+    run = db.get(AnalysisRun, run_id)
+    if not run or run.wave_id != wave_id:
+        raise HTTPException(status_code=404, detail="Run not found for this wave")
+
+    q = select(CenterProposal).where(CenterProposal.run_id == run_id)
+
+    # Count total
+    count_q = select(func.count()).select_from(q.subquery())
+    total = db.execute(count_q).scalar() or 0
+
+    # Paginate
+    proposals = (
+        db.execute(q.order_by(CenterProposal.id).offset((page - 1) * per_page).limit(per_page))
+        .scalars()
+        .all()
+    )
+
+    items = []
+    for p in proposals:
+        attrs = p.attrs or {}
+        mig = attrs.get("migrate", "N")
+        appr = attrs.get("approach", "1:1")
+
+        # Apply filters
+        if migrate and mig != migrate:
+            continue
+        if approach and appr != approach:
+            continue
+
+        legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
+        items.append(
+            {
+                "id": p.id,
+                "legacy_cctr": legacy.cctr if legacy else "",
+                "legacy_name": legacy.txtsh if legacy else "",
+                "coarea": legacy.coarea if legacy else "",
+                "ccode": legacy.ccode if legacy else "",
+                "migrate": mig,
+                "approach": appr,
+                "pc_id": attrs.get("pc_id", ""),
+                "pc_name": attrs.get("pc_name", ""),
+                "cc_id": attrs.get("cc_id", ""),
+                "cc_name": attrs.get("cc_name", ""),
+                "cleansing_outcome": p.cleansing_outcome,
+                "rule_path": p.rule_path,
+            }
+        )
+
+    return {
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "items": items,
     }
