@@ -921,6 +921,8 @@ def extract_via_binding(
             binding.object_type,
             merged_params or None,
             retrieval_method=retrieval_method,
+            scope=getattr(binding, "scope", None) or "cleanup",
+            data_category=getattr(binding, "data_category", None) or "legacy",
         )
         return result
     except ValueError as e:
