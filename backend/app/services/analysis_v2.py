@@ -191,7 +191,9 @@ def run_v2_analysis(
     config_data = dict(V2_DEFAULT_CONFIG)
     if config_id:
         ac = db.get(AnalysisConfig, config_id)
-        if ac and ac.config:
+        if not ac:
+            raise ValueError(f"Config {config_id} not found")
+        if ac.config:
             config_data = ac.config
     else:
         # Create default V2 config
