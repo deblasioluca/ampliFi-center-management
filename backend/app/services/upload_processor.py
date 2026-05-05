@@ -2166,11 +2166,11 @@ def _build_hierarchy_from_levels(
     batch_category: str,
     hier_name_col: str,
     level_prefix: str,
-    desc_prefix: str,
-    desc_suffix: str,
     num_levels: int,
     setclass: str,
     loaded_so_far: int,
+    desc_prefix: str = "",
+    desc_suffix: str = "",
 ) -> int:
     """Build a hierarchy from flattened level columns (L0..Ln).
 
@@ -2222,17 +2222,13 @@ def _build_hierarchy_from_levels(
         # node_key = (level_value, level_index)
         # We collect edges: parent_node → child_node
         edges: dict[str, set[str]] = {}  # parent → set of children
-        node_labels: dict[str, str] = {}  # node_id → description
         leaf_parents: dict[str, set[str]] = {}  # leaf_parent → set of leaf values
 
         for row in hier_rows:
             levels: list[str] = []
-            descs: list[str] = []
             for i in range(num_levels):
                 lval = (row.get(f"{level_prefix}{i}") or "").strip()
-                dval = (row.get(f"{desc_prefix}{i}{desc_suffix}") or "").strip()
                 levels.append(lval)
-                descs.append(dval)
 
             # Find rightmost non-empty level (this is the leaf/cost center)
             last_idx = -1
@@ -2248,8 +2244,6 @@ def _build_hierarchy_from_levels(
                 node_id = levels[i]
                 if not node_id:
                     continue
-                if descs[i]:
-                    node_labels[node_id] = descs[i]
 
                 if i < last_idx:
                     # Find next non-empty level as child
@@ -2280,20 +2274,18 @@ def _build_hierarchy_from_levels(
         seq = 0
         created_edges: set[tuple[str, str]] = set()
         for parent_id in sorted(edges.keys()):
-            parent_label = node_labels.get(parent_id, parent_id)
             for child_id in sorted(edges[parent_id]):
                 edge_key = (parent_id, child_id)
                 if edge_key in created_edges:
                     continue
                 created_edges.add(edge_key)
-                child_label = node_labels.get(child_id, child_id)
                 if child_id in internal_nodes:
                     seq += 1
                     db.add(
                         HierarchyNode(
                             hierarchy_id=hier.id,
-                            parent_setname=parent_label,
-                            child_setname=child_label,
+                            parent_setname=parent_id[:40],
+                            child_setname=child_id[:40],
                             seq=seq,
                         )
                     )
@@ -2301,14 +2293,13 @@ def _build_hierarchy_from_levels(
 
         # Create HierarchyLeaf records for leaf values
         for parent_id in sorted(leaf_parents.keys()):
-            parent_label = node_labels.get(parent_id, parent_id)
             for leaf_val in sorted(leaf_parents[parent_id]):
                 seq += 1
                 db.add(
                     HierarchyLeaf(
                         hierarchy_id=hier.id,
-                        setname=parent_label,
-                        value=leaf_val,
+                        setname=parent_id[:40],
+                        value=leaf_val[:20],
                         seq=seq,
                     )
                 )
@@ -2391,8 +2382,10 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
             .all()
         ]
         for hid in hier_ids:
-            db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
-            db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
+            r_leaf = db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
+            deleted += r_leaf.rowcount
+            r_node = db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
+            deleted += r_node.rowcount
         r2 = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
         deleted += r2.rowcount
 
