@@ -273,9 +273,11 @@ import Layout from '../../components/layout/Layout.astro';
       <h2 class="text-lg font-semibold mb-4">Assign Reviewer</h2>
       <div class="mb-3">
         <label class="block text-xs font-medium mb-1">Reviewer (user)</label>
-        <select id="rev-user-select" class="input text-sm w-full">
-          <option value="">Select reviewer...</option>
-        </select>
+        <div class="relative">
+          <input type="text" id="rev-user-search" class="input text-sm w-full" placeholder="Search user by name..." autocomplete="off" />
+          <input type="hidden" id="rev-user-select" value="" />
+          <div id="rev-user-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
+        </div>
       </div>
       <div class="mb-3">
         <label class="block text-xs font-medium mb-1">Assign by Entity (company code)</label>
@@ -1475,16 +1477,10 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('rev-selected-nodes').innerHTML = '';
     document.getElementById('reviewer-overlay').classList.remove('hidden');
 
-    // Load users for dropdown
-    try {
-      var usersRes = await fetch('/api/admin/users', { headers: authHdr });
-      var usersData = await usersRes.json();
-      var sel = document.getElementById('rev-user-select');
-      sel.innerHTML = '<option value="">Select reviewer...</option>';
-      (usersData.items || usersData || []).forEach(function(u) {
-        sel.innerHTML += '<option value="' + u.id + '" data-email="' + esc(u.email || '') + '" data-name="' + esc(u.display_name || u.username || '') + '">' + esc(u.display_name || u.username) + ' (' + esc(u.email || '') + ')</option>';
-      });
-    } catch(e) { /* ignore */ }
+    // Reset user search
+    document.getElementById('rev-user-search').value = '';
+    document.getElementById('rev-user-select').value = '';
+    document.getElementById('rev-user-results').classList.add('hidden');
 
     // Load entities for entity selector
     try {
@@ -1557,12 +1553,58 @@ import Layout from '../../components/layout/Layout.astro';
     }).join('');
   });
 
+  // User typeahead for reviewer assignment
+  var revUserTimer = null;
+  var revSelectedUser = { name: '', email: '' };
+  document.getElementById('rev-user-search').addEventListener('input', function() {
+    var q = this.value.trim();
+    var resultsEl = document.getElementById('rev-user-results');
+    clearTimeout(revUserTimer);
+    revSelectedUser = { name: '', email: '' };
+    document.getElementById('rev-user-select').value = '';
+    if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
+    revUserTimer = setTimeout(function() {
+      fetch('/api/admin/users?page=1&size=20', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var items = (data.items || []).filter(function(u) {
+            var name = ((u.display_name || '') + ' ' + (u.username || '') + ' ' + (u.email || '')).toLowerCase();
+            return name.indexOf(q.toLowerCase()) >= 0;
+          });
+          if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No users found</div>'; resultsEl.classList.remove('hidden'); return; }
+          var html = '';
+          items.forEach(function(u) {
+            html += '<div class="rev-user-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
+              'data-id="' + u.id + '" data-name="' + esc(u.display_name || u.username) + '" data-email="' + esc(u.email || '') + '">' +
+              '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
+              (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
+              ' <span class="text-gray-300">' + esc(u.role) + '</span></div>';
+          });
+          resultsEl.innerHTML = html;
+          resultsEl.classList.remove('hidden');
+          resultsEl.querySelectorAll('.rev-user-pick').forEach(function(el) {
+            el.addEventListener('click', function() {
+              revSelectedUser = { name: this.getAttribute('data-name'), email: this.getAttribute('data-email') };
+              document.getElementById('rev-user-select').value = this.getAttribute('data-id');
+              document.getElementById('rev-user-search').value = revSelectedUser.name;
+              resultsEl.classList.add('hidden');
+            });
+          });
+        });
+    }, 300);
+  });
+  document.addEventListener('click', function(e) {
+    var searchEl = document.getElementById('rev-user-search');
+    var resultsEl = document.getElementById('rev-user-results');
+    if (searchEl && resultsEl && !searchEl.contains(e.target) && !resultsEl.contains(e.target)) {
+      resultsEl.classList.add('hidden');
+    }
+  });
+
   // Confirm reviewer assignment
   document.getElementById('btn-confirm-reviewer').addEventListener('click', async function() {
-    var userSel = document.getElementById('rev-user-select');
-    var selectedOption = userSel.options[userSel.selectedIndex];
-    var userName = selectedOption ? selectedOption.getAttribute('data-name') : '';
-    var userEmail = selectedOption ? selectedOption.getAttribute('data-email') : '';
+    var userName = revSelectedUser.name;
+    var userEmail = revSelectedUser.email;
 
     var entSel = document.getElementById('rev-entity-select');
     var entityCodes = [];

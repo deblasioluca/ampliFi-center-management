@@ -125,6 +125,7 @@ import '../styles/global.css';
                 try {
                   var redirectResult = await _msalInstance.handleRedirectPromise();
                   if (redirectResult && redirectResult.idToken) {
+                    _showEntraClaims(redirectResult);
                     await _exchangeSpaToken(redirectResult.idToken, redirectResult.accessToken || '');
                     return;
                   }
@@ -143,6 +144,51 @@ import '../styles/global.css';
           // Entra ID not available — just show password login
         }
       })();
+
+      // Show Entra ID token claims in a popup for debugging
+      function _showEntraClaims(msalResult) {
+        try {
+          var claims = msalResult.idTokenClaims || {};
+          var account = msalResult.account || {};
+          var info = {
+            'Name': claims.name || account.name || '-',
+            'Email': claims.preferred_username || claims.email || account.username || '-',
+            'Given Name': claims.given_name || '-',
+            'Family Name': claims.family_name || '-',
+            'Object ID (OID)': claims.oid || '-',
+            'Tenant ID': claims.tid || '-',
+            'UPN': claims.upn || claims.preferred_username || '-',
+            'Roles': (claims.roles || []).join(', ') || '-',
+            'Groups': (claims.groups || []).join(', ') || '-',
+            'Audience': claims.aud || '-',
+            'Issuer': claims.iss || '-',
+          };
+          var html = '<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:20px">' +
+            '<h3 style="font-size:16px;font-weight:600;margin-bottom:12px">Entra ID Login Claims</h3>' +
+            '<table style="width:100%;font-size:13px;border-collapse:collapse">';
+          for (var key in info) {
+            html += '<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:500;color:#555;white-space:nowrap">' + key + '</td>' +
+              '<td style="padding:6px 8px;word-break:break-all">' + (info[key] || '-') + '</td></tr>';
+          }
+          // Show all raw claims
+          html += '<tr><td colspan="2" style="padding:10px 8px 4px;font-weight:600;font-size:12px;color:#888">All Raw Claims</td></tr>';
+          for (var ck in claims) {
+            var val = claims[ck];
+            if (typeof val === 'object') val = JSON.stringify(val);
+            html += '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:4px 8px;font-size:11px;color:#999">' + ck + '</td>' +
+              '<td style="padding:4px 8px;font-size:11px;word-break:break-all">' + String(val) + '</td></tr>';
+          }
+          html += '</table><button onclick="this.parentElement.parentElement.remove()" style="margin-top:12px;padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">Continue to App</button></div>';
+
+          var overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+          var box = document.createElement('div');
+          box.style.cssText = 'background:white;border-radius:12px;max-height:80vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)';
+          box.innerHTML = html;
+          overlay.appendChild(box);
+          document.body.appendChild(overlay);
+        } catch(e) { console.warn('Could not show Entra claims:', e); }
+      }
 
       // Exchange SPA id_token for app session JWT
       async function _exchangeSpaToken(idToken, accessToken) {
@@ -203,6 +249,8 @@ import '../styles/global.css';
             }
 
             if (result && result.idToken) {
+              // Show token claims popup for inspection
+              _showEntraClaims(result);
               await _exchangeSpaToken(result.idToken, result.accessToken || '');
             }
           } catch (err) {

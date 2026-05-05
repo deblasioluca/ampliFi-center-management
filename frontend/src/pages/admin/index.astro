@@ -55,6 +55,14 @@ import Layout from '../../components/layout/Layout.astro';
         <!-- New user form -->
         <div id="new-user-form" class="hidden mb-4 p-4 bg-gray-50 rounded-lg">
           <h3 class="text-sm font-semibold mb-3">Create User</h3>
+          <!-- Employee search -->
+          <div class="mb-3 p-3 border rounded bg-white">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Search Employee (optional — auto-fills name &amp; email)</label>
+            <div class="relative">
+              <input type="text" id="emp-search" class="input text-sm w-full" placeholder="Type name or email to search employees..." autocomplete="off" />
+              <div id="emp-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-gray-500 mb-1">Username</label>
@@ -350,6 +358,55 @@ import Layout from '../../components/layout/Layout.astro';
     });
     document.getElementById('cancel-user-btn').addEventListener('click', function() {
       document.getElementById('new-user-form').classList.add('hidden');
+    });
+
+    // Employee typeahead search for auto-filling user creation form
+    var empSearchTimer = null;
+    document.getElementById('emp-search').addEventListener('input', function() {
+      var q = this.value.trim();
+      var resultsEl = document.getElementById('emp-results');
+      clearTimeout(empSearchTimer);
+      if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
+      empSearchTimer = setTimeout(function() {
+        fetch('/api/employees?search=' + encodeURIComponent(q) + '&size=10', { headers: authHdr })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var items = data.items || [];
+            if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No employees found</div>'; resultsEl.classList.remove('hidden'); return; }
+            var html = '';
+            items.forEach(function(e) {
+              html += '<div class="emp-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
+                'data-fname="' + escapeHtml(e.bs_firstname || '') + '" ' +
+                'data-lname="' + escapeHtml(e.bs_lastname || '') + '" ' +
+                'data-name="' + escapeHtml(e.display_name || ((e.bs_firstname || '') + ' ' + (e.bs_lastname || '')).trim()) + '" ' +
+                'data-email="' + escapeHtml(e.email_address || '') + '" ' +
+                'data-gpn="' + escapeHtml(e.gpn || '') + '">' +
+                '<span class="font-medium">' + escapeHtml((e.bs_firstname || '') + ' ' + (e.bs_lastname || '')) + '</span>' +
+                (e.email_address ? ' <span class="text-gray-400">' + escapeHtml(e.email_address) + '</span>' : '') +
+                (e.ou_desc ? ' <span class="text-gray-300">| ' + escapeHtml(e.ou_desc) + '</span>' : '') +
+                '</div>';
+            });
+            resultsEl.innerHTML = html;
+            resultsEl.classList.remove('hidden');
+            resultsEl.querySelectorAll('.emp-pick').forEach(function(el) {
+              el.addEventListener('click', function() {
+                document.getElementById('nu-name').value = this.getAttribute('data-name');
+                document.getElementById('nu-email').value = this.getAttribute('data-email');
+                var gpn = this.getAttribute('data-gpn');
+                if (gpn && !document.getElementById('nu-username').value) {
+                  document.getElementById('nu-username').value = gpn.toLowerCase();
+                }
+                document.getElementById('emp-search').value = this.getAttribute('data-name');
+                resultsEl.classList.add('hidden');
+              });
+            });
+          });
+      }, 300);
+    });
+    document.addEventListener('click', function(e) {
+      if (!document.getElementById('emp-search').contains(e.target) && !document.getElementById('emp-results').contains(e.target)) {
+        document.getElementById('emp-results').classList.add('hidden');
+      }
     });
     document.getElementById('save-user-btn').addEventListener('click', async function() {
       var errEl = document.getElementById('user-form-error');
