@@ -2102,8 +2102,13 @@ def _load_cc_with_hierarchy(
                         setattr(existing, k, v)
             else:
                 _cc_defaults = (
-                    "txtsh", "txtmi", "responsible", "cctrcgy",
-                    "ccode", "currency", "pctr",
+                    "txtsh",
+                    "txtmi",
+                    "responsible",
+                    "cctrcgy",
+                    "ccode",
+                    "currency",
+                    "pctr",
                 )
                 for fld in _cc_defaults:
                     if cc_kwargs.get(fld) is None:
@@ -2192,7 +2197,8 @@ def _build_hierarchy_from_levels(
     for hier_setname in sorted(hier_names):
         # Filter rows belonging to this hierarchy
         hier_rows = [
-            r for r in rows
+            r
+            for r in rows
             if (r.get(hier_name_col) or "").strip() == hier_setname
             or (not r.get(hier_name_col, "").strip() and len(hier_names) == 1)
         ]
@@ -2285,12 +2291,14 @@ def _build_hierarchy_from_levels(
                 child_label = node_labels.get(child_id, child_id)
                 if child_id in internal_nodes:
                     seq += 1
-                    db.add(HierarchyNode(
-                        hierarchy_id=hier.id,
-                        parent_setname=parent_label,
-                        child_setname=child_label,
-                        seq=seq,
-                    ))
+                    db.add(
+                        HierarchyNode(
+                            hierarchy_id=hier.id,
+                            parent_setname=parent_label,
+                            child_setname=child_label,
+                            seq=seq,
+                        )
+                    )
                     loaded += 1
 
         # Create HierarchyLeaf records for leaf values
@@ -2298,12 +2306,14 @@ def _build_hierarchy_from_levels(
             parent_label = node_labels.get(parent_id, parent_id)
             for leaf_val in sorted(leaf_parents[parent_id]):
                 seq += 1
-                db.add(HierarchyLeaf(
-                    hierarchy_id=hier.id,
-                    setname=parent_label,
-                    value=leaf_val,
-                    seq=seq,
-                ))
+                db.add(
+                    HierarchyLeaf(
+                        hierarchy_id=hier.id,
+                        setname=parent_label,
+                        value=leaf_val,
+                        seq=seq,
+                    )
+                )
                 loaded += 1
 
         if loaded % 100 == 0:

@@ -1173,14 +1173,16 @@ def create_upload(
 
     # For cc_with_hierarchy, store options in source_detail as JSON
     if kind == "cc_with_hierarchy":
-        source_detail = json.dumps({
-            "filename": fname,
-            "sheet_name": sheet_name or "Database",
-            "header_row": header_row or 2,
-            "load_cc": load_cc,
-            "load_ext_hier": load_ext_hier,
-            "load_cema_hier": load_cema_hier,
-        })
+        source_detail = json.dumps(
+            {
+                "filename": fname,
+                "sheet_name": sheet_name or "Database",
+                "header_row": header_row or 2,
+                "load_cc": load_cc,
+                "load_ext_hier": load_ext_hier,
+                "load_cema_hier": load_cema_hier,
+            }
+        )
     else:
         source_detail = fname
 
