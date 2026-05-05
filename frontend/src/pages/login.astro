@@ -146,6 +146,7 @@ import '../styles/global.css';
       })();
 
       // Show Entra ID token claims in a popup for debugging
+      function _escHtml(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
       function _showEntraClaims(msalResult) {
         try {
           var claims = msalResult.idTokenClaims || {};
@@ -167,16 +168,15 @@ import '../styles/global.css';
             '<h3 style="font-size:16px;font-weight:600;margin-bottom:12px">Entra ID Login Claims</h3>' +
             '<table style="width:100%;font-size:13px;border-collapse:collapse">';
           for (var key in info) {
-            html += '<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:500;color:#555;white-space:nowrap">' + key + '</td>' +
-              '<td style="padding:6px 8px;word-break:break-all">' + (info[key] || '-') + '</td></tr>';
+            html += '<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:500;color:#555;white-space:nowrap">' + _escHtml(key) + '</td>' +
+              '<td style="padding:6px 8px;word-break:break-all">' + _escHtml(info[key] || '-') + '</td></tr>';
           }
-          // Show all raw claims
           html += '<tr><td colspan="2" style="padding:10px 8px 4px;font-weight:600;font-size:12px;color:#888">All Raw Claims</td></tr>';
           for (var ck in claims) {
             var val = claims[ck];
             if (typeof val === 'object') val = JSON.stringify(val);
-            html += '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:4px 8px;font-size:11px;color:#999">' + ck + '</td>' +
-              '<td style="padding:4px 8px;font-size:11px;word-break:break-all">' + String(val) + '</td></tr>';
+            html += '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:4px 8px;font-size:11px;color:#999">' + _escHtml(ck) + '</td>' +
+              '<td style="padding:4px 8px;font-size:11px;word-break:break-all">' + _escHtml(String(val)) + '</td></tr>';
           }
           html += '</table><button onclick="this.parentElement.parentElement.remove()" style="margin-top:12px;padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">Continue to App</button></div>';
 

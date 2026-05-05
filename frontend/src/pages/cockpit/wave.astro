@@ -67,6 +67,9 @@ import Layout from '../../components/layout/Layout.astro';
             <option value="v1">V1 — Standard Cleansing</option>
             <option value="v2">V2 — CEMA Migration</option>
           </select>
+          <select id="analysis-config-version" class="input text-sm" style="width:220px">
+            <option value="">Default config</option>
+          </select>
           <a id="link-compare-runs" href="#" class="btn-secondary text-sm hidden">Compare Runs</a>
           <button id="btn-run-analysis" class="btn-amplifi text-sm">Run Analysis</button>
         </div>
@@ -739,15 +742,39 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadRuns();
 
+  // Load config versions when engine changes
+  function loadConfigVersions() {
+    var cfgSel = document.getElementById('analysis-config-version');
+    cfgSel.innerHTML = '<option value="">Default config</option>';
+    fetch('/api/configs', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = Array.isArray(data) ? data : (data.items || []);
+        items.forEach(function(c) {
+          cfgSel.innerHTML += '<option value="' + c.id + '">' + esc(c.code) + ' v' + c.version + ' — ' + esc(c.name) + '</option>';
+        });
+      })
+      .catch(function() {});
+  }
+  loadConfigVersions();
+  document.getElementById('analysis-engine').addEventListener('change', loadConfigVersions);
+
   window.runAnalysis = async function() {
     var engine = document.getElementById('analysis-engine').value;
+    var configId = document.getElementById('analysis-config-version').value;
     document.getElementById('btn-run-analysis').disabled = true;
     document.getElementById('btn-run-analysis').textContent = 'Running...';
     try {
       var url = engine === 'v2'
         ? '/api/waves/' + waveId + '/analyse-v2'
         : '/api/waves/' + waveId + '/analyse';
-      var res = await fetch(url, { method: 'POST', headers: authHdr });
+      var body = {};
+      if (configId) body.config_id = parseInt(configId, 10);
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: jsonHdr,
+        body: Object.keys(body).length ? JSON.stringify(body) : undefined
+      });
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Analysis failed');
       loadRuns(); loadWave();
@@ -1564,7 +1591,7 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('rev-user-select').value = '';
     if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
     revUserTimer = setTimeout(function() {
-      fetch('/api/admin/users?page=1&size=20', { headers: authHdr })
+      fetch('/api/admin/users?page=1&size=500', { headers: authHdr })
         .then(function(r) { return r.json(); })
         .then(function(data) {
           var items = (data.items || []).filter(function(u) {
