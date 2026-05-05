@@ -374,6 +374,7 @@ import Layout from '../../components/layout/Layout.astro';
   var authHdr = { 'Authorization': 'Bearer ' + token };
   var jsonHdr = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
+  function escAttr(t) { return esc(t).replace(/"/g, '&quot;'); }
   function fmt(n) { return (n || 0).toLocaleString(); }
 
   var params = new URLSearchParams(window.location.search);
@@ -593,8 +594,8 @@ import Layout from '../../components/layout/Layout.astro';
       var html = '';
       allEntities.forEach(function(e) {
         var searchText = ((e.ccode || '') + ' ' + (e.name || '') + ' ' + (e.country || '') + ' ' + (e.region || '')).toLowerCase();
-        html += '<label class="entity-row flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded cursor-pointer" data-search="' + esc(searchText) + '">' +
-          '<input type="checkbox" value="' + esc(e.ccode) + '" class="entity-cb" />' +
+        html += '<label class="entity-row flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded cursor-pointer" data-search="' + escAttr(searchText) + '">' +
+          '<input type="checkbox" value="' + escAttr(e.ccode) + '" class="entity-cb" />' +
           '<span class="font-mono text-xs w-12 shrink-0">' + esc(e.ccode) + '</span>' +
           '<span class="text-sm truncate">' + esc(e.name) + '</span>' +
           (e.region ? '<span class="text-xs text-gray-400 ml-auto shrink-0">' + esc(e.region) + '</span>' : '') +
@@ -1602,7 +1603,7 @@ import Layout from '../../components/layout/Layout.astro';
           var html = '';
           items.forEach(function(u) {
             html += '<div class="rev-user-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
-              'data-id="' + u.id + '" data-name="' + esc(u.display_name || u.username) + '" data-email="' + esc(u.email || '') + '">' +
+              'data-id="' + u.id + '" data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
               '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
               (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
               ' <span class="text-gray-300">' + esc(u.role) + '</span></div>';
