@@ -920,14 +920,12 @@ def create_review_scope(
                 node_name = node_info.get("node_name", "")
                 if node_name:
                     leaves = (
-                        db.execute(
-                            select(HierarchyLeaf).where(HierarchyLeaf.node_name == node_name)
-                        )
+                        db.execute(select(HierarchyLeaf).where(HierarchyLeaf.setname == node_name))
                         .scalars()
                         .all()
                     )
                     for lf in leaves:
-                        hier_cctrs.add(lf.leaf_name)
+                        hier_cctrs.add(lf.value)
 
         for p in proposals:
             cc = db.get(LegacyCostCenter, p.legacy_cc_id)
@@ -1997,7 +1995,7 @@ def list_hierarchy_nodes_for_picker(
             db.execute(
                 select(HierarchyNode)
                 .where(HierarchyNode.hierarchy_id == hierarchy_id)
-                .order_by(HierarchyNode.sort_key, HierarchyNode.node_name)
+                .order_by(HierarchyNode.seq)
             )
             .scalars()
             .all()
@@ -2021,26 +2019,39 @@ def list_hierarchy_nodes_for_picker(
             ]
         }
 
-    # Build tree
-    node_map: dict[int, dict] = {}
-    root_nodes: list[dict] = []
-    for n in nodes:
-        nd = {
-            "id": n.id,
-            "node_name": n.node_name,
-            "node_text": n.node_text,
-            "node_type": n.node_type,
-            "parent_id": n.parent_id,
-            "level": n.level,
-            "children": [],
-        }
-        node_map[n.id] = nd
+    # Build tree using setname-based parent-child relationships
+    # Each HierarchyNode has parent_setname and child_setname
+    children_of: dict[str, list[dict]] = {}
+    all_children: set[str] = set()
+    all_parents: set[str] = set()
 
     for n in nodes:
-        nd = node_map[n.id]
-        if n.parent_id and n.parent_id in node_map:
-            node_map[n.parent_id]["children"].append(nd)
-        else:
+        all_parents.add(n.parent_setname)
+        all_children.add(n.child_setname)
+        nd = {
+            "id": n.id,
+            "node_name": n.child_setname,
+            "node_text": n.child_setname,
+            "parent_name": n.parent_setname,
+            "children": [],
+        }
+        children_of.setdefault(n.parent_setname, []).append(nd)
+
+    # Root parents are those that appear as parent but never as child
+    root_parents = all_parents - all_children
+
+    # Build tree recursively
+    def _build_subtree(parent_name: str) -> list[dict]:
+        result = []
+        for nd in children_of.get(parent_name, []):
+            nd["children"] = _build_subtree(nd["node_name"])
+            result.append(nd)
+        return result
+
+    root_nodes: list[dict] = []
+    for rp in sorted(root_parents):
+        for nd in children_of.get(rp, []):
+            nd["children"] = _build_subtree(nd["node_name"])
             root_nodes.append(nd)
 
     return {"hierarchy_id": hierarchy_id, "nodes": root_nodes, "total_nodes": len(nodes)}
