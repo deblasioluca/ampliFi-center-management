@@ -730,6 +730,10 @@ import Layout from '../../components/layout/Layout.astro';
       { value: 'adt:T001',                                    label: '[ADT] Query Table: T001',              proto: 'adt' },
       { value: 'rfc:RFC_READ_TABLE:T001',                    label: '[RFC] RFC_READ_TABLE on T001',         proto: 'soap_rfc' },
     ],
+    entity_hierarchy: [
+      { value: 'adt:ZUHL_GRD_GCRS_C',                         label: '[ADT] Query Table: ZUHL_GRD_GCRS_C (Entity Hierarchy)', proto: 'adt' },
+      { value: 'rfc:RFC_READ_TABLE:ZUHL_GRD_GCRS_C',         label: '[RFC] RFC_READ_TABLE on ZUHL_GRD_GCRS_C', proto: 'soap_rfc' },
+    ],
   };
 
   var _connProtocols = {}; // cache connId -> protocol
@@ -794,6 +798,7 @@ import Layout from '../../components/layout/Layout.astro';
       { value: 'gl_account', label: 'GL Account' },
       { value: 'employee', label: 'Employee' },
       { value: 'entity', label: 'Entity (Company Code)' },
+      { value: 'entity_hierarchy', label: 'Entity Hierarchy (GCRS)' },
     ];
 
     // Map protocol to matching proto tag for pre-selection

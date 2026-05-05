@@ -45,11 +45,12 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
             "entity",
             "hierarchy",
             "hierarchy_flat",
+            "entity_hierarchy",
             "balance",
             "balance_gcr",
             "employee",
         ],
-        CATEGORY_TARGET: ["entity", "hierarchy", "hierarchy_flat"],
+        CATEGORY_TARGET: ["entity", "hierarchy", "hierarchy_flat", "entity_hierarchy"],
     },
     SCOPE_HOUSEKEEPING: {
         CATEGORY_TARGET: [
@@ -62,6 +63,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
             "balance_gcr",
             "hierarchy",
             "hierarchy_flat",
+            "entity_hierarchy",
         ],
     },
     SCOPE_EXPLORER: {
@@ -74,6 +76,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
             "entity",
             "hierarchy",
             "hierarchy_flat",
+            "entity_hierarchy",
         ],
         CATEGORY_TARGET: [
             "cost_center",
@@ -84,6 +87,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
             "entity",
             "hierarchy",
             "hierarchy_flat",
+            "entity_hierarchy",
         ],
     },
 }

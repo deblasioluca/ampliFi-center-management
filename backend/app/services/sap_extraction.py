@@ -46,6 +46,7 @@ ENTITY_SETS = {
     "gl_accounts": "API_GLACCOUNTINCHARTOFACCOUNTS_SRV/A_GLAccountInChartOfAccounts",
     "employee": "API_BUSINESS_PARTNER/A_BusinessPartner",
     "employees": "API_BUSINESS_PARTNER/A_BusinessPartner",
+    "entity_hierarchy": None,  # no OData — use ADT/RFC with ZUHL_GRD_GCRS_C
 }
 
 CANONICAL_KINDS = [
@@ -56,6 +57,7 @@ CANONICAL_KINDS = [
     "gl_account",
     "employee",
     "entity",
+    "entity_hierarchy",
 ]
 
 # ---------------------------------------------------------------------------
@@ -70,6 +72,7 @@ SAP_TABLES = {
     "gl_account": ["SKA1"],
     "employee": ["ZUHL_GRD_GPF"],
     "entity": ["T001"],
+    "entity_hierarchy": ["ZUHL_GRD_GCRS_C"],
 }
 
 # ---------------------------------------------------------------------------
@@ -268,6 +271,18 @@ FIELD_MAP_TABLE: dict[str, dict[str, str]] = {
         "PERIV": "FISCAL_YEAR_VARIANT",
         "ORT01": "CITY",
     },
+    "entity_hierarchy": {
+        # ZUHL_GRD_GCRS_C — pass through as-is (field names match our model)
+        "MANDT": "MANDT",
+        "PERIOD": "PERIOD",
+        "NODEID": "NODEID",
+        "NODETYPE": "NODETYPE",
+        "NODENAME": "NODENAME",
+        "PARENTID": "PARENTID",
+        "CHILDID": "CHILDID",
+        "NEXTID": "NEXTID",
+        "NODETEXT": "NODETEXT",
+    },
 }
 
 # BAPI result table names and their field mappings
@@ -293,6 +308,12 @@ _PLURAL_MAP = {
     "balances": "balance",
     "gl_accounts": "gl_account",
     "employees": "employee",
+    "entity_hierarchies": "entity_hierarchy",
+}
+
+# entity_hierarchy extractions produce hierarchies_flat batches for processing
+_KIND_BATCH_MAP = {
+    "entity_hierarchy": "hierarchies_flat",
 }
 
 
@@ -483,6 +504,13 @@ def extract_from_sap(
         # Default: OData via entity set lookup
         entity_set = ENTITY_SETS.get(normalized) or ENTITY_SETS.get(kind)
         if not entity_set:
+            # Check if this kind requires a table-based method (ADT/RFC)
+            sap_tables = SAP_TABLES.get(normalized)
+            if sap_tables:
+                raise ValueError(
+                    f"Kind '{kind}' has no OData entity set. "
+                    f"Use ADT or RFC retrieval method (e.g. adt:{sap_tables[0]})"
+                )
             raise ValueError(f"Unknown extraction kind: {kind}")
         odata_filter = _build_odata_filter(normalized, odata_params)
         raw_data = fetch_odata(conn, entity_set, params=odata_filter)
@@ -513,9 +541,11 @@ def extract_from_sap(
     file_path = tmp_dir / filename
     file_path.write_text(csv_buffer.getvalue())
 
+    batch_kind = _KIND_BATCH_MAP.get(normalized, normalized)
+
     batch = UploadBatch(
         filename=filename,
-        kind=normalized,
+        kind=batch_kind,
         storage_uri=str(file_path),
         status="uploaded",
         rows_total=len(rows),

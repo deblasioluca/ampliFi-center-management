@@ -1010,6 +1010,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "hierarchy",
         "hierarchies",
         "hierarchies_flat",
+        "entity_hierarchy",
         "employee",
         "employees",
         "gl_accounts_ska1",
@@ -1074,6 +1075,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
+        "entity_hierarchy": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
         "target_cost_centers": TARGET_CC_COLUMNS,
@@ -1273,7 +1275,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     }
                 )
                 error_rows.add(i)
-        elif batch.kind == "hierarchies_flat":
+        elif batch.kind in ("hierarchies_flat", "entity_hierarchy"):
             if not row.get("nodeid"):
                 errors.append(
                     {"row": i, "col": "NODEID", "code": "REQUIRED", "msg": "NODEID is required"}
@@ -1372,6 +1374,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "employee": EMPLOYEE_COLUMNS,
         "employees": EMPLOYEE_COLUMNS,
         "hierarchies_flat": HIERARCHY_FLAT_COLUMNS,
+        "entity_hierarchy": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
         "target_cost_centers": TARGET_CC_COLUMNS,
@@ -1745,7 +1748,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if loaded % 100 == 0:
                 _flush_progress(batch.id, loaded)
 
-    elif batch.kind == "hierarchies_flat":
+    elif batch.kind in ("hierarchies_flat", "entity_hierarchy"):
         # Build hierarchy from flat SAP node export (NODEID/PARENTID/CHILDID).
         # Identify root nodes (no PARENTID) — each becomes a Hierarchy header.
         # Nodes with children become HierarchyNodes; leaf-level rows become HierarchyLeaves.
@@ -2338,7 +2341,7 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind in ("employee", "employees"):
         r = db.execute(sa_delete(Employee).where(Employee.refresh_batch == batch.id))
         deleted = r.rowcount
-    elif batch.kind in ("hierarchy", "hierarchies", "hierarchies_flat"):
+    elif batch.kind in ("hierarchy", "hierarchies", "hierarchies_flat", "entity_hierarchy"):
         hier_ids = [
             h.id
             for h in db.execute(select(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
