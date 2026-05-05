@@ -1237,6 +1237,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
     normalized = _normalize_headers(rows, mapping) if mapping else rows
     loaded = 0
 
+    # Read scope + data_category from batch (defaults for backward compat)
+    batch_scope = getattr(batch, "scope", None) or "cleanup"
+    batch_category = getattr(batch, "data_category", None) or "legacy"
+
     # Publish total + reset progress for load phase
     _flush_progress(batch.id, 0, len(normalized))
 
@@ -1246,6 +1250,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(LegacyCostCenter).where(
+                    LegacyCostCenter.scope == batch_scope,
                     LegacyCostCenter.coarea == row["coarea"],
                     LegacyCostCenter.cctr == row["cctr"],
                 )
@@ -1286,6 +1291,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         cc_kwargs[fld] = ""
                 cc_kwargs.setdefault("is_active", True)
                 cc_kwargs["refresh_batch"] = batch.id
+                cc_kwargs["scope"] = batch_scope
+                cc_kwargs["data_category"] = batch_category
                 db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
             if loaded % 100 == 0:
@@ -1297,6 +1304,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(LegacyProfitCenter).where(
+                    LegacyProfitCenter.scope == batch_scope,
                     LegacyProfitCenter.coarea == row.get("coarea", ""),
                     LegacyProfitCenter.pctr == row["pctr"],
                 )
@@ -1328,6 +1336,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         pc_kwargs[fld] = ""
                 pc_kwargs.setdefault("is_active", True)
                 pc_kwargs["refresh_batch"] = batch.id
+                pc_kwargs["scope"] = batch_scope
+                pc_kwargs["data_category"] = batch_category
                 db.add(LegacyProfitCenter(**pc_kwargs))
             loaded += 1
             if loaded % 100 == 0:
@@ -1370,6 +1380,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 pc = 0
             db.add(
                 Balance(
+                    scope=batch_scope,
+                    data_category=batch_category,
                     coarea=row.get("coarea", ""),
                     cctr=row["cctr"],
                     ccode=row.get("ccode", ""),
@@ -1394,7 +1406,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not row.get("ccode"):
                 continue
             existing = db.execute(
-                select(Entity).where(Entity.ccode == row["ccode"])
+                select(Entity).where(
+                    Entity.scope == batch_scope,
+                    Entity.ccode == row["ccode"],
+                )
             ).scalar_one_or_none()
             ent_kwargs: dict = {}
             for field_name in _ENTITY_MODEL_FIELDS:
@@ -1418,6 +1433,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 if ent_kwargs.get("name") is None:
                     ent_kwargs["name"] = row["ccode"]
+                ent_kwargs["scope"] = batch_scope
+                ent_kwargs["data_category"] = batch_category
                 db.add(Entity(**ent_kwargs))
             loaded += 1
             if loaded % 100 == 0:
@@ -1431,6 +1448,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             existing = (
                 db.execute(
                     select(Employee).where(
+                        Employee.scope == batch_scope,
                         Employee.gpn == gpn,
                         Employee.refresh_batch == batch.id,
                     )
@@ -1467,6 +1485,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     if k != "refresh_batch" and v is not None:
                         setattr(existing, k, v)
             else:
+                model_kwargs["scope"] = batch_scope
+                model_kwargs["data_category"] = batch_category
                 db.add(Employee(**model_kwargs))
             loaded += 1
             if loaded % 100 == 0:
@@ -1485,6 +1505,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(Hierarchy).where(
+                    Hierarchy.scope == batch_scope,
                     Hierarchy.setclass == setclass,
                     Hierarchy.setname == setname,
                     Hierarchy.refresh_batch == batch.id,
@@ -1492,6 +1513,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             ).scalar_one_or_none()
             if not existing:
                 h = Hierarchy(
+                    scope=batch_scope,
+                    data_category=batch_category,
                     setclass=setclass,
                     setname=setname,
                     description=row.get("description", ""),
@@ -1606,6 +1629,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             setname = root_row.get("nodename", root_id)
             description = root_row.get("nodetext", "")
             h = Hierarchy(
+                scope=batch_scope,
+                data_category=batch_category,
                 setclass="FLAT",
                 setname=setname,
                 description=description,
@@ -1676,6 +1701,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(GLAccountSKA1).where(
+                    GLAccountSKA1.scope == batch_scope,
                     GLAccountSKA1.ktopl == ktopl,
                     GLAccountSKA1.saknr == saknr,
                 )
@@ -1693,6 +1719,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         setattr(existing, k, v)
             else:
                 kwargs["refresh_batch"] = batch.id
+                kwargs["scope"] = batch_scope
+                kwargs["data_category"] = batch_category
                 db.add(GLAccountSKA1(**kwargs))
             loaded += 1
             if loaded % 100 == 0:
@@ -1706,6 +1734,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(GLAccountSKB1).where(
+                    GLAccountSKB1.scope == batch_scope,
                     GLAccountSKB1.bukrs == bukrs,
                     GLAccountSKB1.saknr == saknr,
                 )
@@ -1723,6 +1752,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         setattr(existing, k, v)
             else:
                 kwargs_b["refresh_batch"] = batch.id
+                kwargs_b["scope"] = batch_scope
+                kwargs_b["data_category"] = batch_category
                 db.add(GLAccountSKB1(**kwargs_b))
             loaded += 1
             if loaded % 100 == 0:
@@ -1736,6 +1767,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(TargetCostCenter).where(
+                    TargetCostCenter.scope == batch_scope,
                     TargetCostCenter.coarea == coarea,
                     TargetCostCenter.cctr == cctr,
                 )
@@ -1759,6 +1791,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 tcc_kwargs.setdefault("is_active", True)
                 tcc_kwargs["refresh_batch"] = batch.id
+                tcc_kwargs["scope"] = batch_scope
+                tcc_kwargs["data_category"] = batch_category
                 db.add(TargetCostCenter(**tcc_kwargs))
             loaded += 1
 
@@ -1770,6 +1804,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 continue
             existing = db.execute(
                 select(TargetProfitCenter).where(
+                    TargetProfitCenter.scope == batch_scope,
                     TargetProfitCenter.coarea == coarea,
                     TargetProfitCenter.pctr == pctr,
                 )
@@ -1793,6 +1828,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 tpc_kwargs.setdefault("is_active", True)
                 tpc_kwargs["refresh_batch"] = batch.id
+                tpc_kwargs["scope"] = batch_scope
+                tpc_kwargs["data_category"] = batch_category
                 db.add(TargetProfitCenter(**tpc_kwargs))
             loaded += 1
 
@@ -1809,6 +1846,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             target_co = (row.get("target_coarea") or "").strip() or ""
             existing = db.execute(
                 select(CenterMapping).where(
+                    CenterMapping.scope == batch_scope,
                     CenterMapping.object_type == obj_type,
                     CenterMapping.legacy_coarea == legacy_co,
                     CenterMapping.legacy_center == legacy_center,
@@ -1832,6 +1870,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                         setattr(existing, k, v)
             else:
                 cm_kwargs["refresh_batch"] = batch.id
+                cm_kwargs["scope"] = batch_scope
+                cm_kwargs["data_category"] = batch_category
                 db.add(CenterMapping(**cm_kwargs))
             loaded += 1
 

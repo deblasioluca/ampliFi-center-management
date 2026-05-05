@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_role
 from app.infra.db.session import get_db
 from app.models.core import (
+    SCOPE_CLEANUP,
     AppUser,
     Balance,
     CenterMapping,
     Employee,
     Entity,
+    GLAccountSKA1,
     Hierarchy,
     HierarchyLeaf,
     HierarchyNode,
@@ -434,21 +436,37 @@ def purge_all_data(
 
 @router.get("/counts")
 def data_counts(
+    scope: str | None = Query(default=None),
+    data_category: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin")),
 ) -> dict:
+    def _count(model: type, scope_col: str = "scope") -> int:
+        stmt = select(func.count(model.id))
+        if scope:
+            stmt = stmt.where(getattr(model, scope_col) == scope)
+        if data_category and hasattr(model, "data_category"):
+            stmt = stmt.where(model.data_category == data_category)
+        return db.execute(stmt).scalar() or 0
+
+    ub_stmt = select(func.count(UploadBatch.id))
+    if scope:
+        ub_stmt = ub_stmt.where(UploadBatch.scope == scope)
+    if data_category:
+        ub_stmt = ub_stmt.where(UploadBatch.data_category == data_category)
+
     return {
-        "entities": db.execute(select(func.count(Entity.id))).scalar() or 0,
-        "cost_centers": db.execute(select(func.count(LegacyCostCenter.id))).scalar() or 0,
-        "profit_centers": db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0,
-        "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
-        "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
-        "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
-        "target_cost_centers": db.execute(select(func.count(TargetCostCenter.id))).scalar() or 0,
-        "target_profit_centers": db.execute(select(func.count(TargetProfitCenter.id))).scalar()
-        or 0,
-        "center_mappings": db.execute(select(func.count(CenterMapping.id))).scalar() or 0,
-        "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
+        "entities": _count(Entity),
+        "cost_centers": _count(LegacyCostCenter),
+        "profit_centers": _count(LegacyProfitCenter),
+        "balances": _count(Balance),
+        "hierarchies": _count(Hierarchy),
+        "employees": _count(Employee),
+        "target_cost_centers": _count(TargetCostCenter),
+        "target_profit_centers": _count(TargetProfitCenter),
+        "center_mappings": _count(CenterMapping),
+        "gl_accounts": _count(GLAccountSKA1),
+        "upload_batches": db.execute(ub_stmt).scalar() or 0,
     }
 
 
@@ -458,6 +476,8 @@ def data_counts(
 class SAPExtractionRequest(BaseModel):
     connection_id: int
     kind: str
+    scope: str = SCOPE_CLEANUP
+    data_category: str = "legacy"
     odata_params: dict | None = None
 
 
@@ -471,7 +491,14 @@ def trigger_sap_extraction(
     from app.services.sap_extraction import extract_from_sap
 
     try:
-        result = extract_from_sap(db, body.connection_id, body.kind, body.odata_params)
+        result = extract_from_sap(
+            db,
+            body.connection_id,
+            body.kind,
+            body.odata_params,
+            scope=body.scope,
+            data_category=body.data_category,
+        )
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -490,16 +517,23 @@ def available_extractions(
 
 @router.get("/browser")
 def data_browser(
+    scope: str = Query(default=SCOPE_CLEANUP),
+    data_category: str | None = Query(default=None),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
-    """Unified data browser: all centers + balances + hierarchies."""
-    ccs = db.execute(select(LegacyCostCenter)).scalars().all()
-    pcs = db.execute(select(LegacyProfitCenter)).scalars().all()
+    """Unified data browser: all centers + balances + hierarchies filtered by scope."""
+    cc_q = select(LegacyCostCenter).where(LegacyCostCenter.scope == scope)
+    pc_q = select(LegacyProfitCenter).where(LegacyProfitCenter.scope == scope)
+    if data_category:
+        cc_q = cc_q.where(LegacyCostCenter.data_category == data_category)
+        pc_q = pc_q.where(LegacyProfitCenter.data_category == data_category)
+    ccs = db.execute(cc_q).scalars().all()
+    pcs = db.execute(pc_q).scalars().all()
     pc_map = {(p.coarea, p.pctr): p for p in pcs}
 
     # Monthly balances grouped by (coarea, cctr)
-    bal_rows = db.execute(
+    bal_q = (
         select(
             Balance.coarea,
             Balance.cctr,
@@ -509,9 +543,11 @@ def data_browser(
             func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
             func.max(Balance.currency_tc).label("currency"),
         )
+        .where(Balance.scope == scope)
         .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
         .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
-    ).all()
+    )
+    bal_rows = db.execute(bal_q).all()
     balance_map: dict[tuple[str, str], list[dict]] = {}
     for coarea, cctr, fy, per, amt, post, curr in bal_rows:
         balance_map.setdefault((coarea, cctr), []).append(
@@ -545,15 +581,12 @@ def data_browser(
         )
 
     # Hierarchies with tree structure
-    hiers = (
-        db.execute(
-            select(Hierarchy)
-            .where(Hierarchy.is_active.is_(True))
-            .order_by(Hierarchy.setclass, Hierarchy.setname)
-        )
-        .scalars()
-        .all()
+    hier_q = (
+        select(Hierarchy)
+        .where(Hierarchy.scope == scope, Hierarchy.is_active.is_(True))
+        .order_by(Hierarchy.setclass, Hierarchy.setname)
     )
+    hiers = db.execute(hier_q).scalars().all()
     cls_labels = {
         "0101": "Cost Center",
         "0104": "Profit Center",

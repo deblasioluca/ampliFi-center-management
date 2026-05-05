@@ -752,9 +752,12 @@ import Layout from '../../components/layout/Layout.astro';
       if (!bindings.length) {
         html += '<p class="text-sm text-gray-400">No bindings yet. Add one to configure data extraction.</p>';
       } else {
-        html += '<table class="w-full text-xs"><thead><tr class="bg-gray-50"><th class="px-2 py-1 text-left">Object Type</th><th class="px-2 py-1 text-left">Retrieval Method</th><th class="px-2 py-1 text-left">Schedule</th><th class="px-2 py-1 text-left">Status</th><th class="px-2 py-1"></th></tr></thead><tbody>';
+        html += '<table class="w-full text-xs"><thead><tr class="bg-gray-50"><th class="px-2 py-1 text-left">Scope</th><th class="px-2 py-1 text-left">Category</th><th class="px-2 py-1 text-left">Object Type</th><th class="px-2 py-1 text-left">Retrieval Method</th><th class="px-2 py-1 text-left">Schedule</th><th class="px-2 py-1 text-left">Status</th><th class="px-2 py-1"></th></tr></thead><tbody>';
+        var _scopeLabels = { cleanup: 'CM Cleanup', housekeeping: 'CM HK', explorer: 'Explorer' };
         bindings.forEach(function(b) {
-          html += '<tr class="border-t"><td class="px-2 py-1 font-mono">' + esc(b.object_type) + '</td>' +
+          html += '<tr class="border-t"><td class="px-2 py-1">' + esc(_scopeLabels[b.scope] || b.scope || '-') + '</td>' +
+            '<td class="px-2 py-1">' + esc(b.data_category || '-') + '</td>' +
+            '<td class="px-2 py-1 font-mono">' + esc(b.object_type) + '</td>' +
             '<td class="px-2 py-1 font-mono text-xs">' + esc(b.entity_set || b.path || '-') + '</td>' +
             '<td class="px-2 py-1">' + esc(b.schedule_cron || 'Manual') + '</td>' +
             '<td class="px-2 py-1">' + (b.enabled ? '<span class="text-green-600">Enabled</span>' : '<span class="text-red-500">Disabled</span>') + '</td>' +
@@ -803,7 +806,15 @@ import Layout from '../../components/layout/Layout.astro';
 
     var html = '<div id="add-binding-form-' + connId + '" class="mt-3 p-3 bg-gray-50 rounded-lg border">' +
       '<div class="text-sm font-semibold text-gray-700 mb-2">Add New Binding <span class="text-xs text-gray-400 font-normal">Connection protocol: ' + esc(protocol.toUpperCase()) + '</span></div>' +
-      '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">' +
+      '<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Scope</label>' +
+      '<select id="bind-scope-' + connId + '" class="w-full text-sm border rounded px-2 py-1">' +
+      '<option value="cleanup">CM Cleanup</option><option value="housekeeping">CM Housekeeping</option><option value="explorer">Data Explorer</option>' +
+      '</select></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">Category</label>' +
+      '<select id="bind-category-' + connId + '" class="w-full text-sm border rounded px-2 py-1">' +
+      '<option value="legacy">Legacy</option><option value="target">Target</option>' +
+      '</select></div>' +
       '<div><label class="block text-xs text-gray-500 mb-1">Object Type</label>' +
       '<select id="bind-type-' + connId + '" class="w-full text-sm border rounded px-2 py-1">' +
       OBJECT_TYPES.map(function(t) { return '<option value="' + t.value + '">' + t.label + '</option>'; }).join('') +
@@ -882,7 +893,9 @@ import Layout from '../../components/layout/Layout.astro';
     }
 
     try {
-      var body = { object_type: objectType, entity_set: entitySet };
+      var bindScope = (document.getElementById('bind-scope-' + connId) || {}).value || 'cleanup';
+      var bindCategory = (document.getElementById('bind-category-' + connId) || {}).value || 'legacy';
+      var body = { object_type: objectType, scope: bindScope, data_category: bindCategory, entity_set: entitySet };
       if (params) body.params = params;
       var res = await fetch('/api/admin/sap/' + connId + '/bindings', {
         method: 'POST', headers: jsonHdr,

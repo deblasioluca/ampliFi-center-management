@@ -10,6 +10,22 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 
+  <!-- Scope Selector -->
+  <div class="flex items-center gap-3 mb-3">
+    <label class="text-sm font-medium text-gray-700">Scope:</label>
+    <select id="scope-selector" class="input w-auto text-sm">
+      <option value="cleanup" selected>Center Management — Cleanup</option>
+      <option value="housekeeping">Center Management — Housekeeping</option>
+      <option value="explorer">Data Explorer</option>
+    </select>
+    <label class="text-sm font-medium text-gray-700 ml-4">Category:</label>
+    <select id="category-selector" class="input w-auto text-sm">
+      <option value="">All</option>
+      <option value="legacy">Legacy</option>
+      <option value="target">Target</option>
+    </select>
+  </div>
+
   <!-- Data Counts -->
   <div class="grid grid-cols-4 lg:grid-cols-7 gap-3 mb-3">
     <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
@@ -239,20 +255,28 @@ import Layout from '../../components/layout/Layout.astro';
           <h3 class="text-base font-semibold mb-1">Option A: Upload from File</h3>
           <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
           <form id="upload-form" class="space-y-4">
+            <!-- Step 1: Scope -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
-              <select id="upload-type" class="input">
-                <option value="cost_centers">Legacy Cost Centers</option>
-                <option value="profit_centers">Legacy Profit Centers</option>
-                <option value="target_cost_centers">Target Cost Centers (ampliFi)</option>
-                <option value="target_profit_centers">Target Profit Centers (ampliFi)</option>
-                <option value="center_mapping">Center Mapping (Legacy → Target)</option>
-                <option value="balances">Balances</option>
-                <option value="balances_gcr">Balances (GCR aggregated)</option>
-                <option value="entities">Entities (Company Codes)</option>
-                <option value="hierarchies">Hierarchies (SET format)</option>
-                <option value="hierarchies_flat">Hierarchies (SAP flat export)</option>
-                <option value="employees">Employees (SAP HR)</option>
+              <label class="block text-sm font-medium text-gray-700 mb-1">1. Scope</label>
+              <select id="upload-scope" class="input">
+                <option value="">— Select scope —</option>
+                <option value="cleanup">Center Management — Cleanup</option>
+                <option value="housekeeping">Center Management — Housekeeping</option>
+                <option value="explorer">Data Explorer</option>
+              </select>
+            </div>
+            <!-- Step 2: Category -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">2. Data Category</label>
+              <select id="upload-category" class="input" disabled>
+                <option value="">— Select scope first —</option>
+              </select>
+            </div>
+            <!-- Step 3: Object Type -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">3. Data Type</label>
+              <select id="upload-type" class="input" disabled>
+                <option value="">— Select category first —</option>
               </select>
             </div>
             <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
@@ -429,9 +453,19 @@ import Layout from '../../components/layout/Layout.astro';
     if (typeof loadDataBrowser === 'function') loadDataBrowser();
   }
 
-  // Load data counts
+  // Scope/category selectors
+  var scopeSel = document.getElementById('scope-selector');
+  var catSel = document.getElementById('category-selector');
+  function getScope() { return scopeSel.value; }
+  function getCategory() { return catSel.value; }
+  scopeSel.addEventListener('change', function() { refreshAllData(); });
+  catSel.addEventListener('change', function() { refreshAllData(); });
+
+  // Load data counts with scope filtering
   function loadCounts() {
-    fetch('/api/data/counts', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    var params = '?scope=' + encodeURIComponent(getScope());
+    if (getCategory()) params += '&data_category=' + encodeURIComponent(getCategory());
+    fetch('/api/data/counts' + params, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       document.getElementById('cnt-entities').textContent = fmt(d.entities);
       document.getElementById('cnt-cc').textContent = fmt(d.cost_centers);
       document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
@@ -442,6 +476,56 @@ import Layout from '../../components/layout/Layout.astro';
     }).catch(function() {});
   }
   loadCounts();
+
+  // Upload rules from backend
+  var uploadRules = {};
+  fetch('/api/admin/upload-rules', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    uploadRules = d.rules || {};
+  }).catch(function() {});
+
+  // Object display names
+  var objLabels = {
+    cost_center: 'Cost Centers', profit_center: 'Profit Centers',
+    gl_account: 'GL Accounts', entity: 'Entities',
+    hierarchy: 'Hierarchies', balance: 'Balances', employee: 'Employees'
+  };
+
+  // 3-step upload cascading
+  var uploadScopeSel = document.getElementById('upload-scope');
+  var uploadCatSel = document.getElementById('upload-category');
+  var uploadTypeSel = document.getElementById('upload-type');
+
+  uploadScopeSel.addEventListener('change', function() {
+    var scope = this.value;
+    uploadCatSel.innerHTML = '<option value="">— Select category —</option>';
+    uploadTypeSel.innerHTML = '<option value="">— Select category first —</option>';
+    uploadCatSel.disabled = true;
+    uploadTypeSel.disabled = true;
+    if (!scope || !uploadRules[scope]) return;
+    var cats = Object.keys(uploadRules[scope]);
+    cats.forEach(function(cat) {
+      var opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+      uploadCatSel.appendChild(opt);
+    });
+    uploadCatSel.disabled = false;
+  });
+
+  uploadCatSel.addEventListener('change', function() {
+    var scope = uploadScopeSel.value;
+    var cat = this.value;
+    uploadTypeSel.innerHTML = '<option value="">— Select data type —</option>';
+    uploadTypeSel.disabled = true;
+    if (!scope || !cat || !uploadRules[scope] || !uploadRules[scope][cat]) return;
+    uploadRules[scope][cat].forEach(function(obj) {
+      var opt = document.createElement('option');
+      opt.value = obj;
+      opt.textContent = objLabels[obj] || obj;
+      uploadTypeSel.appendChild(opt);
+    });
+    uploadTypeSel.disabled = false;
+  });
 
   function pagerHtml(total, page, size, loadFn) {
     var pages = Math.ceil(total / size) || 1;
@@ -1024,14 +1108,26 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('upload-form').addEventListener('submit', function(e) {
     e.preventDefault();
     var fileInput = document.getElementById('upload-file');
+    var uScope = document.getElementById('upload-scope').value;
+    var uCat = document.getElementById('upload-category').value;
     var type = document.getElementById('upload-type').value;
     var resultEl = document.getElementById('upload-result');
     var progressEl = document.getElementById('upload-progress');
     var progressBar = document.getElementById('upload-progress-bar');
     var progressText = document.getElementById('upload-progress-text');
     resultEl.classList.add('hidden');
+    if (!uScope) { alert('Please select a scope.'); return; }
+    if (!uCat) { alert('Please select a data category.'); return; }
+    if (!type) { alert('Please select a data type.'); return; }
     if (!fileInput.files[0]) return;
     if (!token) { alert('Please log in first to upload data.'); return; }
+    // Map generic object names to upload kind values
+    var kindMap = {
+      cost_center: 'cost_centers', profit_center: 'profit_centers',
+      gl_account: 'gl_accounts_ska1', entity: 'entities',
+      hierarchy: 'hierarchies', balance: 'balances', employee: 'employees'
+    };
+    var uploadKind = kindMap[type] || type;
 
     var formData = new FormData();
     formData.append('file', fileInput.files[0]);
@@ -1080,7 +1176,7 @@ import Layout from '../../components/layout/Layout.astro';
       resultEl.className = 'text-sm text-red-600';
       resultEl.classList.remove('hidden');
     });
-    xhr.open('POST', '/api/admin/uploads?kind=' + encodeURIComponent(type));
+    xhr.open('POST', '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) + '&scope=' + encodeURIComponent(uScope) + '&data_category=' + encodeURIComponent(uCat));
     xhr.setRequestHeader('Authorization', 'Bearer ' + token);
     xhr.send(formData);
   });
@@ -1091,8 +1187,9 @@ import Layout from '../../components/layout/Layout.astro';
       var items = d.items || [];
       if (!items.length) { el.textContent = 'No uploads yet.'; return; }
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Type</th>' +
-        '<th class="py-2 px-2 text-left">File</th><th class="py-2 px-2 text-left">Status</th>' +
+        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Scope</th>' +
+        '<th class="py-2 px-2 text-left">Category</th><th class="py-2 px-2 text-left">Type</th>' +
+        '<th class="py-2 px-2 text-left">Source</th><th class="py-2 px-2 text-left">Status</th>' +
         '<th class="py-2 px-2 text-right">Rows</th><th class="py-2 px-2 text-right">Valid</th>' +
         '<th class="py-2 px-2 text-right">Errors</th><th class="py-2 px-2 text-right">Loaded</th>' +
         '<th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
@@ -1116,10 +1213,14 @@ import Layout from '../../components/layout/Layout.astro';
             '<button onclick="resetUpload(' + u.id + ')" class="text-orange-600 hover:underline text-xs mr-2" title="Reset stuck batch">Reset</button>';
         }
         actions += '<button onclick="deleteUpload(' + u.id + ')" class="text-red-500 hover:underline text-xs" title="Delete this upload batch">Delete</button>';
+        var scopeLabel = { cleanup: 'CM Cleanup', housekeeping: 'CM Housekeeping', explorer: 'Data Explorer' };
+        var sourceInfo = (u.source_method || 'file') + (u.source_detail ? ': ' + u.source_detail : '');
         html += '<tr class="border-b hover:bg-gray-50">' +
           '<td class="py-1.5 px-2">' + u.id + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(scopeLabel[u.scope] || u.scope || '-') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.data_category || '-') + '</td>' +
           '<td class="py-1.5 px-2">' + esc(u.kind) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(u.filename) + '</td>' +
+          '<td class="py-1.5 px-2 text-[10px]">' + esc(sourceInfo) + '</td>' +
           '<td class="py-1.5 px-2 ' + statusColor + ' font-medium">' + esc(u.status) + '</td>' +
           '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_total) + '</td>' +
           '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_valid) + '</td>' +

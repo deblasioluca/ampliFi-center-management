@@ -22,6 +22,59 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
 
+# ---------- scope segregation constants ----------
+
+SCOPE_CLEANUP = "cleanup"
+SCOPE_HOUSEKEEPING = "housekeeping"
+SCOPE_EXPLORER = "explorer"
+ALL_SCOPES = (SCOPE_CLEANUP, SCOPE_HOUSEKEEPING, SCOPE_EXPLORER)
+
+CATEGORY_LEGACY = "legacy"
+CATEGORY_TARGET = "target"
+ALL_CATEGORIES = (CATEGORY_LEGACY, CATEGORY_TARGET)
+
+# Allowed (scope, category, object_type) combinations for uploads
+SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
+    SCOPE_CLEANUP: {
+        CATEGORY_LEGACY: [
+            "cost_center",
+            "profit_center",
+            "gl_account",
+            "entity",
+            "hierarchy",
+            "balance",
+            "employee",
+        ],
+        CATEGORY_TARGET: ["entity", "hierarchy"],
+    },
+    SCOPE_HOUSEKEEPING: {
+        CATEGORY_TARGET: [
+            "cost_center",
+            "profit_center",
+            "gl_account",
+            "balance",
+            "hierarchy",
+        ],
+    },
+    SCOPE_EXPLORER: {
+        CATEGORY_LEGACY: [
+            "cost_center",
+            "profit_center",
+            "gl_account",
+            "entity",
+            "hierarchy",
+        ],
+        CATEGORY_TARGET: [
+            "cost_center",
+            "profit_center",
+            "gl_account",
+            "entity",
+            "hierarchy",
+        ],
+    },
+}
+
+
 # ---------- reference / source data ----------
 
 
@@ -29,12 +82,18 @@ class Entity(TimestampMixin, Base):
     """Company code / entity master — aligned with SAP T001."""
 
     __tablename__ = "entity"
-    __table_args__ = {"schema": "cleanup"}
+    __table_args__ = (
+        UniqueConstraint("scope", "ccode"),
+        Index("ix_entity_scope", "scope"),
+        {"schema": "cleanup"},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     # --- key fields ---
     mandt: Mapped[str | None] = mapped_column(String(3))
-    ccode: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # BUKRS
+    ccode: Mapped[str] = mapped_column(String(10), nullable=False)  # BUKRS
     # --- T001 master fields ---
     name: Mapped[str] = mapped_column(String(200), nullable=False)  # BUTXT
     city: Mapped[str | None] = mapped_column(String(25))  # ORT01
@@ -126,7 +185,8 @@ class Employee(TimestampMixin, Base):
 
     __tablename__ = "employee"
     __table_args__ = (
-        UniqueConstraint("gpn", "refresh_batch"),
+        UniqueConstraint("scope", "gpn", "refresh_batch"),
+        Index("ix_emp_scope", "scope"),
         Index("ix_emp_user_id", "user_id_pid"),
         Index("ix_emp_ou_cd", "ou_cd"),
         Index("ix_emp_cost_pc", "local_cc_cd"),
@@ -134,6 +194,8 @@ class Employee(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     # --- key fields (ZUHL_GRD_GPF) ---
     mandt: Mapped[str | None] = mapped_column(String(3))
     gpn: Mapped[str] = mapped_column(String(20), nullable=False)  # GPN
@@ -333,13 +395,16 @@ class LegacyCostCenter(TimestampMixin, Base):
 
     __tablename__ = "legacy_cost_center"
     __table_args__ = (
-        UniqueConstraint("coarea", "cctr", "refresh_batch"),
+        UniqueConstraint("scope", "coarea", "cctr", "refresh_batch"),
+        Index("ix_lcc_scope", "scope"),
         Index("ix_lcc_ccode", "ccode"),
         Index("ix_lcc_coarea_cctr", "coarea", "cctr"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     # --- key fields (CSKS) ---
     mandt: Mapped[str | None] = mapped_column(String(3))
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
@@ -476,12 +541,15 @@ class LegacyProfitCenter(TimestampMixin, Base):
 
     __tablename__ = "legacy_profit_center"
     __table_args__ = (
-        UniqueConstraint("coarea", "pctr", "refresh_batch"),
+        UniqueConstraint("scope", "coarea", "pctr", "refresh_batch"),
+        Index("ix_lpc_scope", "scope"),
         Index("ix_lpc_ccode", "ccode"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     # --- key fields (CEPC) ---
     mandt: Mapped[str | None] = mapped_column(String(3))
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
@@ -549,12 +617,15 @@ class LegacyProfitCenter(TimestampMixin, Base):
 class Balance(TimestampMixin, Base):
     __tablename__ = "balance"
     __table_args__ = (
+        Index("ix_bal_scope", "scope"),
         Index("ix_bal_coarea_cctr", "coarea", "cctr"),
         Index("ix_bal_period", "fiscal_year", "period"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)
     cctr: Mapped[str] = mapped_column(String(20), nullable=False)
     ccode: Mapped[str | None] = mapped_column(String(10))
@@ -578,11 +649,14 @@ class Balance(TimestampMixin, Base):
 class Hierarchy(TimestampMixin, Base):
     __tablename__ = "hierarchy"
     __table_args__ = (
-        UniqueConstraint("setclass", "setname", "refresh_batch"),
+        UniqueConstraint("scope", "setclass", "setname", "refresh_batch"),
+        Index("ix_hier_scope", "scope"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     setclass: Mapped[str] = mapped_column(String(10), nullable=False)
     setname: Mapped[str] = mapped_column(String(40), nullable=False)
     label: Mapped[str | None] = mapped_column(String(200))
@@ -931,11 +1005,14 @@ class ReviewItem(TimestampMixin, Base):
 class TargetCostCenter(TimestampMixin, Base):
     __tablename__ = "target_cost_center"
     __table_args__ = (
-        UniqueConstraint("coarea", "cctr"),
+        UniqueConstraint("scope", "coarea", "cctr"),
+        Index("ix_tcc_scope", "scope"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_TARGET)
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)
     cctr: Mapped[str] = mapped_column(String(20), nullable=False)
     txtsh: Mapped[str | None] = mapped_column(String(40))
@@ -963,11 +1040,14 @@ class TargetCostCenter(TimestampMixin, Base):
 class TargetProfitCenter(TimestampMixin, Base):
     __tablename__ = "target_profit_center"
     __table_args__ = (
-        UniqueConstraint("coarea", "pctr"),
+        UniqueConstraint("scope", "coarea", "pctr"),
+        Index("ix_tpc_scope", "scope"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_TARGET)
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)
     pctr: Mapped[str] = mapped_column(String(20), nullable=False)
     txtsh: Mapped[str | None] = mapped_column(String(40))
@@ -998,16 +1078,20 @@ class CenterMapping(TimestampMixin, Base):
     __tablename__ = "center_mapping"
     __table_args__ = (
         UniqueConstraint(
+            "scope",
             "object_type",
             "legacy_coarea",
             "legacy_center",
             "target_coarea",
             "target_center",
         ),
+        Index("ix_cm_scope", "scope"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     object_type: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # cost_center | profit_center
@@ -1075,9 +1159,18 @@ class HousekeepingItem(TimestampMixin, Base):
 
 class UploadBatch(TimestampMixin, Base):
     __tablename__ = "upload_batch"
-    __table_args__ = {"schema": "cleanup"}
+    __table_args__ = (
+        Index("ix_ub_scope", "scope"),
+        {"schema": "cleanup"},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
+    source_method: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="file"
+    )  # file | sap_connection
+    source_detail: Mapped[str | None] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(
         String(30), nullable=False
     )  # cost_center|profit_center|balance|hierarchy
@@ -1194,7 +1287,8 @@ class SAPConnection(TimestampMixin, Base):
 class SAPObjectBinding(TimestampMixin, Base):
     __tablename__ = "sap_object_binding"
     __table_args__ = (
-        UniqueConstraint("connection_id", "object_type"),
+        UniqueConstraint("connection_id", "scope", "data_category", "object_type"),
+        Index("ix_sob_scope", "scope"),
         {"schema": "cleanup"},
     )
 
@@ -1202,6 +1296,8 @@ class SAPObjectBinding(TimestampMixin, Base):
     connection_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.sap_connection.id", ondelete="CASCADE"), nullable=False
     )
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     object_type: Mapped[str] = mapped_column(
         String(30), nullable=False
     )  # cost_center|profit_center|hierarchy|balance|gl_account
@@ -1463,12 +1559,15 @@ class GLAccountSKA1(TimestampMixin, Base):
 
     __tablename__ = "gl_account_ska1"
     __table_args__ = (
-        UniqueConstraint("ktopl", "saknr"),
+        UniqueConstraint("scope", "ktopl", "saknr"),
+        Index("ix_ska1_scope", "scope"),
         Index("ix_ska1_saknr", "saknr"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     mandt: Mapped[str | None] = mapped_column(String(3))
     ktopl: Mapped[str] = mapped_column(String(4), nullable=False)
     saknr: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -1504,13 +1603,16 @@ class GLAccountSKB1(TimestampMixin, Base):
 
     __tablename__ = "gl_account_skb1"
     __table_args__ = (
-        UniqueConstraint("bukrs", "saknr"),
+        UniqueConstraint("scope", "bukrs", "saknr"),
+        Index("ix_skb1_scope", "scope"),
         Index("ix_skb1_saknr", "saknr"),
         Index("ix_skb1_bukrs", "bukrs"),
         {"schema": "cleanup"},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=SCOPE_CLEANUP)
+    data_category: Mapped[str] = mapped_column(String(10), nullable=False, default=CATEGORY_LEGACY)
     mandt: Mapped[str | None] = mapped_column(String(3))
     bukrs: Mapped[str] = mapped_column(String(4), nullable=False)
     saknr: Mapped[str] = mapped_column(String(10), nullable=False)
