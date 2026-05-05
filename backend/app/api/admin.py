@@ -1124,7 +1124,9 @@ def update_hierarchy(
 
 
 @router.get("/upload-rules")
-def get_upload_rules() -> dict:
+def get_upload_rules(
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
     """Return allowed scope/category/object combinations for the upload form."""
     return {"rules": SCOPE_UPLOAD_RULES}
 

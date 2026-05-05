@@ -509,6 +509,8 @@ def explore_object_detail(
     row = db.get(model, item_id)
     if not row:
         return {"error": "Not found"}
+    if hasattr(row, "scope") and row.scope != SCOPE_EXPLORER:
+        return {"error": "Not found"}
 
     config = _get_display_config(db, object_type)
     detail_cols = config["detail_columns"]
