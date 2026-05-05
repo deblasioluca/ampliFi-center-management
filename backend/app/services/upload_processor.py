@@ -777,7 +777,7 @@ CC_HIER_EXCEL_COLUMNS: dict[str, str] = {
     "CLAS CTR": "zzstraagcd",
     "REVIEWER": "zzstrgfd",
     "CERTIFER": "zzstrfst",
-    "OWNER11": "verak",
+    "OWNER11": "responsible",
     "RES": "zzstrrepsit",
     "LOP": "logsystem",
     "BUS SEG": "zzstrugcd",
@@ -2089,13 +2089,11 @@ def _load_cc_with_hierarchy(
                     cc_kwargs[field_name] = val if val else None
             cc_kwargs["coarea"] = coarea
             cc_kwargs["cctr"] = cctr
-            # Parse date fields
-            for date_field in ("datab", "datbi"):
-                raw = cc_kwargs.get(date_field)
+            # Populate valid_from/valid_to from date fields (same as regular CC loader)
+            for sap_key, legacy_key in (("datab", "valid_from"), ("datbi", "valid_to")):
+                raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
-                    parsed = _parse_date(raw)
-                    if parsed:
-                        cc_kwargs[date_field] = parsed
+                    cc_kwargs[legacy_key] = _parse_date(raw)
             if existing:
                 for k, v in cc_kwargs.items():
                     if v is not None:
