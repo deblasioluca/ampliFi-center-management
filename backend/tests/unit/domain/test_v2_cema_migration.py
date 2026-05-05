@@ -1,6 +1,6 @@
 """Tests for V2 CEMA migration routines."""
 
-from app.domain.decision_tree.context import CenterContext, RoutineResult
+from app.domain.decision_tree.context import CenterContext
 from app.domain.decision_tree.routines.v2_cema_migration import (
     BalanceMigrateRoutine,
     CombineMigrationRoutine,
