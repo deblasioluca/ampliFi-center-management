@@ -14,7 +14,7 @@ down_revision = "phase23_column_labels"
 branch_labels = None
 depends_on = None
 
-SCHEMA = "cleanup"
+SCHEMA = None
 
 # Tables that get scope + data_category columns
 DATA_TABLES = [
@@ -56,41 +56,82 @@ CONSTRAINT_CHANGES = [
     # entity: had unique=True on ccode column directly
     ("entity", "entity_ccode_key", ["ccode"], ["scope", "ccode"]),
     # employee
-    ("employee", "employee_gpn_refresh_batch_key", ["gpn", "refresh_batch"],
-     ["scope", "gpn", "refresh_batch"]),
+    (
+        "employee",
+        "employee_gpn_refresh_batch_key",
+        ["gpn", "refresh_batch"],
+        ["scope", "gpn", "refresh_batch"],
+    ),
     # legacy_cost_center
-    ("legacy_cost_center", "legacy_cost_center_coarea_cctr_refresh_batch_key",
-     ["coarea", "cctr", "refresh_batch"],
-     ["scope", "coarea", "cctr", "refresh_batch"]),
+    (
+        "legacy_cost_center",
+        "legacy_cost_center_coarea_cctr_refresh_batch_key",
+        ["coarea", "cctr", "refresh_batch"],
+        ["scope", "coarea", "cctr", "refresh_batch"],
+    ),
     # legacy_profit_center
-    ("legacy_profit_center", "legacy_profit_center_coarea_pctr_refresh_batch_key",
-     ["coarea", "pctr", "refresh_batch"],
-     ["scope", "coarea", "pctr", "refresh_batch"]),
+    (
+        "legacy_profit_center",
+        "legacy_profit_center_coarea_pctr_refresh_batch_key",
+        ["coarea", "pctr", "refresh_batch"],
+        ["scope", "coarea", "pctr", "refresh_batch"],
+    ),
     # hierarchy
-    ("hierarchy", "hierarchy_setclass_setname_refresh_batch_key",
-     ["setclass", "setname", "refresh_batch"],
-     ["scope", "setclass", "setname", "refresh_batch"]),
+    (
+        "hierarchy",
+        "hierarchy_setclass_setname_refresh_batch_key",
+        ["setclass", "setname", "refresh_batch"],
+        ["scope", "setclass", "setname", "refresh_batch"],
+    ),
     # target_cost_center
-    ("target_cost_center", "target_cost_center_coarea_cctr_key",
-     ["coarea", "cctr"], ["scope", "coarea", "cctr"]),
+    (
+        "target_cost_center",
+        "target_cost_center_coarea_cctr_key",
+        ["coarea", "cctr"],
+        ["scope", "coarea", "cctr"],
+    ),
     # target_profit_center
-    ("target_profit_center", "target_profit_center_coarea_pctr_key",
-     ["coarea", "pctr"], ["scope", "coarea", "pctr"]),
+    (
+        "target_profit_center",
+        "target_profit_center_coarea_pctr_key",
+        ["coarea", "pctr"],
+        ["scope", "coarea", "pctr"],
+    ),
     # center_mapping
-    ("center_mapping",
-     "center_mapping_object_type_legacy_coarea_legacy_center_targe_key",
-     ["object_type", "legacy_coarea", "legacy_center", "target_coarea", "target_center"],
-     ["scope", "object_type", "legacy_coarea", "legacy_center", "target_coarea", "target_center"]),
+    (
+        "center_mapping",
+        "center_mapping_object_type_legacy_coarea_legacy_center_targe_key",
+        ["object_type", "legacy_coarea", "legacy_center", "target_coarea", "target_center"],
+        [
+            "scope",
+            "object_type",
+            "legacy_coarea",
+            "legacy_center",
+            "target_coarea",
+            "target_center",
+        ],
+    ),
     # gl_account_ska1
-    ("gl_account_ska1", "gl_account_ska1_ktopl_saknr_key",
-     ["ktopl", "saknr"], ["scope", "ktopl", "saknr"]),
+    (
+        "gl_account_ska1",
+        "gl_account_ska1_ktopl_saknr_key",
+        ["ktopl", "saknr"],
+        ["scope", "ktopl", "saknr"],
+    ),
     # gl_account_skb1
-    ("gl_account_skb1", "gl_account_skb1_bukrs_saknr_key",
-     ["bukrs", "saknr"], ["scope", "bukrs", "saknr"]),
+    (
+        "gl_account_skb1",
+        "gl_account_skb1_bukrs_saknr_key",
+        ["bukrs", "saknr"],
+        ["scope", "bukrs", "saknr"],
+    ),
     # sap_object_binding
-    ("sap_object_binding", "sap_object_binding_connection_id_object_type_key",
-     ["connection_id", "object_type"],
-     ["connection_id", "scope", "data_category", "object_type"]),
+    (
+        "sap_object_binding",
+        "sap_object_binding_connection_id_object_type_key",
+        ["connection_id", "object_type"],
+        ["connection_id", "scope", "data_category", "object_type"],
+    ),
 ]
 
 # New indexes to create
