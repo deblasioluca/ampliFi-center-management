@@ -397,6 +397,12 @@ def run_v2_analysis(
     run.status = "completed"
     run.completed_centers = total
     run.finished_at = datetime.now(UTC)
+    run.kpis = {
+        "total_centers": total,
+        "migrate_yes": migrate_count,
+        "migrate_no": retire_count,
+        "id_assignment": id_result,
+    }
     if wave and wave.status in ("draft", "analysing"):
         wave.status = "analysing"
     db.commit()
