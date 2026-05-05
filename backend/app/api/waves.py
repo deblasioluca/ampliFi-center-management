@@ -1964,6 +1964,8 @@ def activate_v2_simulation(
         wave = db.get(Wave, run.wave_id)
         if wave and "proposed" in VALID_TRANSITIONS.get(wave.status, []):
             wave.status = "proposed"
+            wave.preferred_run_id = run.id
+            wave.config = {**(wave.config or {}), "preferred_run_id": run.id}
 
     db.commit()
 
