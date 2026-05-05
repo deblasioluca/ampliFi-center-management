@@ -2297,6 +2297,8 @@ def _build_hierarchy_from_levels(
         # Create HierarchyLeaf records for leaf values
         for parent_id in sorted(leaf_parents.keys()):
             for leaf_val in sorted(leaf_parents[parent_id]):
+                if leaf_val in internal_nodes:
+                    continue
                 seq += 1
                 db.add(
                     HierarchyLeaf(
