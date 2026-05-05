@@ -223,6 +223,7 @@ def run_v2_analysis(
         status="running",
         started_at=datetime.now(UTC),
         engine_version="v2.cema_migration",
+        triggered_by=user_id,
         mode=mode,
         label=label
         or (

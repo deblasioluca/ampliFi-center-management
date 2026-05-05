@@ -1959,10 +1959,10 @@ def activate_v2_simulation(
     run.mode = "activated"
     run.label = (run.label or "V2") + " [ACTIVATED]"
 
-    # Update wave status if wave-scoped
+    # Update wave status if wave-scoped and transition is valid
     if run.wave_id:
         wave = db.get(Wave, run.wave_id)
-        if wave:
+        if wave and "proposed" in VALID_TRANSITIONS.get(wave.status, []):
             wave.status = "proposed"
 
     db.commit()
@@ -2116,7 +2116,8 @@ def get_wave_scope_coverage(
             }
         )
 
-    covered = len(covered_proposal_ids)
+    migrating_ids = {p.id for p in proposals}
+    covered = len(covered_proposal_ids & migrating_ids)
     uncovered = total_migrating - covered
 
     return {
