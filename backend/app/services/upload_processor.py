@@ -96,6 +96,31 @@ def _parse_date(raw: str) -> datetime | None:
     return None
 
 
+def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
+    """Truncate string values that exceed their column's declared length."""
+    from sqlalchemy import String as SAString
+    from sqlalchemy import inspect as sa_inspect
+
+    mapper = sa_inspect(model_cls)
+    for key, val in list(kwargs.items()):
+        if not isinstance(val, str):
+            continue
+        col_attr = mapper.columns.get(key)
+        if col_attr is None:
+            continue
+        col_type = col_attr.type
+        if isinstance(col_type, SAString) and col_type.length and len(val) > col_type.length:
+            logger.warning(
+                "Truncating %s.%s from %d to %d chars",
+                model_cls.__tablename__,
+                key,
+                len(val),
+                col_type.length,
+            )
+            kwargs[key] = val[: col_type.length]
+    return kwargs
+
+
 # Column mappings: normalize header names to model fields
 CC_COLUMNS = {
     # SAP technical names (CSKS/CSKT) — 1:1 mapping
@@ -685,74 +710,19 @@ SKB1_COLUMNS = {
 }
 _SKB1_MODEL_FIELDS = set(SKB1_COLUMNS.values())
 
+# Target tables now have identical SAP structure to legacy tables.
+# Reuse the same column mappings plus target-specific fields.
 TARGET_CC_COLUMNS = {
-    "COAREA": "coarea",
-    "KOKRS": "coarea",
-    "CCTR": "cctr",
-    "KOSTL": "cctr",
-    "TXTSH": "txtsh",
-    "KTEXT": "txtsh",
-    "TXTMI": "txtmi",
-    "LTEXT": "txtmi",
-    "RESPONSIBLE": "responsible",
-    "VERAK": "responsible",
-    "CCODE": "ccode",
-    "BUKRS": "ccode",
-    "CCTRCGY": "cctrcgy",
-    "KOSAR": "cctrcgy",
-    "CURRENCY": "currency",
-    "WAERS": "currency",
-    "PCTR": "pctr",
-    "PRCTR": "pctr",
-    "IS_ACTIVE": "is_active",
+    **CC_COLUMNS,
     "MDG_STATUS": "mdg_status",
     "MDG_CHANGE_REQUEST_ID": "mdg_change_request_id",
 }
-_TARGET_CC_MODEL_FIELDS = {
-    "coarea",
-    "cctr",
-    "txtsh",
-    "txtmi",
-    "responsible",
-    "ccode",
-    "cctrcgy",
-    "currency",
-    "pctr",
-    "is_active",
-    "mdg_status",
-    "mdg_change_request_id",
-}
+_TARGET_CC_MODEL_FIELDS = set(TARGET_CC_COLUMNS.values())
 
 TARGET_PC_COLUMNS = {
-    "COAREA": "coarea",
-    "KOKRS": "coarea",
-    "PCTR": "pctr",
-    "PRCTR": "pctr",
-    "TXTSH": "txtsh",
-    "KTEXT": "txtsh",
-    "TXTMI": "txtmi",
-    "LTEXT": "txtmi",
-    "RESPONSIBLE": "responsible",
-    "VERAK": "responsible",
-    "CCODE": "ccode",
-    "BUKRS": "ccode",
-    "DEPARTMENT": "department",
-    "ABTEI": "department",
-    "CURRENCY": "currency",
-    "WAERS": "currency",
-    "IS_ACTIVE": "is_active",
+    **PC_COLUMNS,
 }
-_TARGET_PC_MODEL_FIELDS = {
-    "coarea",
-    "pctr",
-    "txtsh",
-    "txtmi",
-    "responsible",
-    "ccode",
-    "department",
-    "currency",
-    "is_active",
-}
+_TARGET_PC_MODEL_FIELDS = set(TARGET_PC_COLUMNS.values())
 
 # ── Cost Center with Hierarchy (Excel) ────────────────────────────────────
 # Maps the user's Excel column headers to LegacyCostCenter model fields.
@@ -1434,6 +1404,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
                     cc_kwargs[legacy_key] = _parse_date(raw)
+            _truncate_to_model(LegacyCostCenter, cc_kwargs)
             if existing:
                 for k, v in cc_kwargs.items():
                     if v is not None:
@@ -1488,6 +1459,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
                     pc_kwargs[legacy_key] = _parse_date(raw)
+            _truncate_to_model(LegacyProfitCenter, pc_kwargs)
             if existing:
                 for k, v in pc_kwargs.items():
                     if v is not None:
@@ -1588,6 +1560,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     "NO",
                     "N",
                 )
+            _truncate_to_model(Entity, ent_kwargs)
             if existing:
                 for k, v in ent_kwargs.items():
                     if k != "ccode" and v is not None:
@@ -1642,6 +1615,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 if raw and isinstance(raw, str):
                     model_kwargs[dt_field] = _parse_date(raw)
             model_kwargs["refresh_batch"] = batch.id
+            _truncate_to_model(Employee, model_kwargs)
             if existing:
                 for k, v in model_kwargs.items():
                     if k != "refresh_batch" and v is not None:
@@ -1802,15 +1776,17 @@ def load_upload(batch_id: int, db: Session) -> dict:
             hier_map_flat: dict[str, Hierarchy] = {}
             for root_row in roots:
                 root_id = root_row.get("nodeid", "").strip()
-                setname = root_row.get("nodename", root_id)
+                raw_name = root_row.get("nodename", root_id)
                 description = root_row.get("nodetext", "")
                 label = None
                 hier_attrs: dict | None = None
+                setname = raw_name
                 if is_entity_hier and period_val:
-                    label = f"{setname} ({period_val})"
+                    setname = f"{raw_name}_{period_val}"
+                    label = f"{raw_name} ({period_val})"
                     hier_attrs = {"period": period_val}
                 elif is_entity_hier:
-                    label = setname
+                    label = raw_name
                 h = Hierarchy(
                     scope=batch_scope,
                     data_category=batch_category,
@@ -1898,6 +1874,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     kwargs[field_name] = val if val else None
             kwargs["ktopl"] = ktopl
             kwargs["saknr"] = saknr
+            _truncate_to_model(GLAccountSKA1, kwargs)
             if existing:
                 for k, v in kwargs.items():
                     if v is not None:
@@ -1931,6 +1908,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     kwargs_b[field_name] = val if val else None
             kwargs_b["bukrs"] = bukrs
             kwargs_b["saknr"] = saknr
+            _truncate_to_model(GLAccountSKB1, kwargs_b)
             if existing:
                 for k, v in kwargs_b.items():
                     if v is not None:
@@ -1969,6 +1947,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             tcc_kwargs["cctr"] = cctr
             if row.get("is_active"):
                 tcc_kwargs["is_active"] = is_act
+            _truncate_to_model(TargetCostCenter, tcc_kwargs)
             if existing:
                 for k, v in tcc_kwargs.items():
                     if v is not None:
@@ -2006,6 +1985,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             tpc_kwargs["pctr"] = pctr
             if row.get("is_active"):
                 tpc_kwargs["is_active"] = is_act
+            _truncate_to_model(TargetProfitCenter, tpc_kwargs)
             if existing:
                 for k, v in tpc_kwargs.items():
                     if v is not None:
@@ -2049,6 +2029,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             cm_kwargs["target_center"] = target_center
             cm_kwargs["legacy_coarea"] = legacy_co
             cm_kwargs["target_coarea"] = target_co
+            _truncate_to_model(CenterMapping, cm_kwargs)
             if existing:
                 for k, v in cm_kwargs.items():
                     if v is not None:
