@@ -2110,6 +2110,7 @@ def _load_cc_with_hierarchy(
                 raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
                     cc_kwargs[legacy_key] = _parse_date(raw)
+            _truncate_to_model(LegacyCostCenter, cc_kwargs)
             if existing:
                 for k, v in cc_kwargs.items():
                     if v is not None:
