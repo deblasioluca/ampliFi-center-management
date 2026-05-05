@@ -1068,15 +1068,18 @@ def _hier_label(h: object, labels: dict[str, str] | None = None) -> str:
 def list_hierarchies(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> list[dict]:
     """List all hierarchies with their labels."""
     from app.models.core import Hierarchy
 
-    rows = (
-        db.execute(select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname))
-        .scalars()
-        .all()
-    )
+    query = select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)
+    if scope:
+        query = query.where(Hierarchy.scope == scope)
+    if data_category:
+        query = query.where(Hierarchy.data_category == data_category)
+    rows = db.execute(query).scalars().all()
     class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
     return [
         {

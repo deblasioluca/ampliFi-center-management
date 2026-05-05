@@ -32,9 +32,17 @@ def list_entities(
     pag: PaginationParams = Depends(pagination),
     country: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(Entity).order_by(Entity.ccode)
     count_q = select(func.count(Entity.id))
+    if scope:
+        query = query.where(Entity.scope == scope)
+        count_q = count_q.where(Entity.scope == scope)
+    if data_category:
+        query = query.where(Entity.data_category == data_category)
+        count_q = count_q.where(Entity.data_category == data_category)
     if country:
         query = query.where(Entity.country == country)
         count_q = count_q.where(Entity.country == country)
@@ -77,9 +85,17 @@ def list_legacy_ccs(
     coarea: str | None = None,
     cctr: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(LegacyCostCenter).order_by(LegacyCostCenter.cctr)
     count_q = select(func.count(LegacyCostCenter.id))
+    if scope:
+        query = query.where(LegacyCostCenter.scope == scope)
+        count_q = count_q.where(LegacyCostCenter.scope == scope)
+    if data_category:
+        query = query.where(LegacyCostCenter.data_category == data_category)
+        count_q = count_q.where(LegacyCostCenter.data_category == data_category)
     if ccode:
         query = query.where(LegacyCostCenter.ccode == ccode)
         count_q = count_q.where(LegacyCostCenter.ccode == ccode)
@@ -141,9 +157,17 @@ def list_legacy_pcs(
     ccode: str | None = None,
     coarea: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(LegacyProfitCenter).order_by(LegacyProfitCenter.pctr)
     count_q = select(func.count(LegacyProfitCenter.id))
+    if scope:
+        query = query.where(LegacyProfitCenter.scope == scope)
+        count_q = count_q.where(LegacyProfitCenter.scope == scope)
+    if data_category:
+        query = query.where(LegacyProfitCenter.data_category == data_category)
+        count_q = count_q.where(LegacyProfitCenter.data_category == data_category)
     if ccode:
         query = query.where(LegacyProfitCenter.ccode == ccode)
         count_q = count_q.where(LegacyProfitCenter.ccode == ccode)
@@ -199,9 +223,17 @@ def list_target_ccs(
     ccode: str | None = None,
     coarea: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(TargetCostCenter).order_by(TargetCostCenter.cctr)
     count_q = select(func.count(TargetCostCenter.id))
+    if scope:
+        query = query.where(TargetCostCenter.scope == scope)
+        count_q = count_q.where(TargetCostCenter.scope == scope)
+    if data_category:
+        query = query.where(TargetCostCenter.data_category == data_category)
+        count_q = count_q.where(TargetCostCenter.data_category == data_category)
     if ccode:
         query = query.where(TargetCostCenter.ccode == ccode)
         count_q = count_q.where(TargetCostCenter.ccode == ccode)
@@ -254,9 +286,17 @@ def list_target_pcs(
     ccode: str | None = None,
     coarea: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(TargetProfitCenter).order_by(TargetProfitCenter.pctr)
     count_q = select(func.count(TargetProfitCenter.id))
+    if scope:
+        query = query.where(TargetProfitCenter.scope == scope)
+        count_q = count_q.where(TargetProfitCenter.scope == scope)
+    if data_category:
+        query = query.where(TargetProfitCenter.data_category == data_category)
+        count_q = count_q.where(TargetProfitCenter.data_category == data_category)
     if ccode:
         query = query.where(TargetProfitCenter.ccode == ccode)
         count_q = count_q.where(TargetProfitCenter.ccode == ccode)
@@ -305,9 +345,17 @@ def list_center_mappings(
     pag: PaginationParams = Depends(pagination),
     object_type: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(CenterMapping).order_by(CenterMapping.legacy_center)
     count_q = select(func.count(CenterMapping.id))
+    if scope:
+        query = query.where(CenterMapping.scope == scope)
+        count_q = count_q.where(CenterMapping.scope == scope)
+    if data_category:
+        query = query.where(CenterMapping.data_category == data_category)
+        count_q = count_q.where(CenterMapping.data_category == data_category)
     if object_type:
         query = query.where(CenterMapping.object_type == object_type)
         count_q = count_q.where(CenterMapping.object_type == object_type)
@@ -357,9 +405,17 @@ def list_balances(
     coarea: str | None = None,
     cctr: str | None = None,
     fiscal_year: int | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(Balance).order_by(Balance.fiscal_year.desc(), Balance.period.desc())
     count_q = select(func.count(Balance.id))
+    if scope:
+        query = query.where(Balance.scope == scope)
+        count_q = count_q.where(Balance.scope == scope)
+    if data_category:
+        query = query.where(Balance.data_category == data_category)
+        count_q = count_q.where(Balance.data_category == data_category)
     if ccode:
         query = query.where(Balance.ccode == ccode)
         count_q = count_q.where(Balance.ccode == ccode)
@@ -404,9 +460,17 @@ def list_hierarchies(
     db: Session = Depends(get_db),
     pag: PaginationParams = Depends(pagination),
     setclass: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(Hierarchy)
     count_q = select(func.count(Hierarchy.id))
+    if scope:
+        query = query.where(Hierarchy.scope == scope)
+        count_q = count_q.where(Hierarchy.scope == scope)
+    if data_category:
+        query = query.where(Hierarchy.data_category == data_category)
+        count_q = count_q.where(Hierarchy.data_category == data_category)
     if setclass:
         query = query.where(Hierarchy.setclass == setclass)
         count_q = count_q.where(Hierarchy.setclass == setclass)
@@ -577,9 +641,17 @@ def list_employees(
     search: str | None = None,
     ou_cd: str | None = None,
     cc_cd: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
 ) -> dict:
     query = select(Employee)
     count_q = select(func.count(Employee.id))
+    if scope:
+        query = query.where(Employee.scope == scope)
+        count_q = count_q.where(Employee.scope == scope)
+    if data_category:
+        query = query.where(Employee.data_category == data_category)
+        count_q = count_q.where(Employee.data_category == data_category)
     if search:
         like = f"%{search}%"
         flt = (
@@ -657,15 +729,28 @@ def get_employee(gpn: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/data/counts")
-def data_counts(db: Session = Depends(get_db)) -> dict:
+def data_counts(
+    db: Session = Depends(get_db),
+    scope: str | None = None,
+    data_category: str | None = None,
+) -> dict:
     """Aggregate counts for the data management dashboard."""
+
+    def _cnt(model: type, scope: str | None, data_category: str | None) -> int:
+        q = select(func.count(model.id))  # type: ignore[attr-defined]
+        if scope and hasattr(model, "scope"):
+            q = q.where(model.scope == scope)  # type: ignore[attr-defined]
+        if data_category and hasattr(model, "data_category"):
+            q = q.where(model.data_category == data_category)  # type: ignore[attr-defined]
+        return db.execute(q).scalar() or 0
+
     return {
-        "entities": db.execute(select(func.count(Entity.id))).scalar() or 0,
-        "cost_centers": db.execute(select(func.count(LegacyCostCenter.id))).scalar() or 0,
-        "profit_centers": db.execute(select(func.count(LegacyProfitCenter.id))).scalar() or 0,
-        "balances": db.execute(select(func.count(Balance.id))).scalar() or 0,
-        "hierarchies": db.execute(select(func.count(Hierarchy.id))).scalar() or 0,
-        "employees": db.execute(select(func.count(Employee.id))).scalar() or 0,
+        "entities": _cnt(Entity, scope, data_category),
+        "cost_centers": _cnt(LegacyCostCenter, scope, data_category),
+        "profit_centers": _cnt(LegacyProfitCenter, scope, data_category),
+        "balances": _cnt(Balance, scope, data_category),
+        "hierarchies": _cnt(Hierarchy, scope, data_category),
+        "employees": _cnt(Employee, scope, data_category),
         "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
     }
 

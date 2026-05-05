@@ -458,6 +458,11 @@ import Layout from '../../components/layout/Layout.astro';
   var catSel = document.getElementById('category-selector');
   function getScope() { return scopeSel.value; }
   function getCategory() { return catSel.value; }
+  function scopeParams() {
+    var p = '&scope=' + encodeURIComponent(getScope());
+    if (getCategory()) p += '&data_category=' + encodeURIComponent(getCategory());
+    return p;
+  }
   scopeSel.addEventListener('change', function() { refreshAllData(); });
   catSel.addEventListener('change', function() { refreshAllData(); });
 
@@ -542,7 +547,7 @@ import Layout from '../../components/layout/Layout.astro';
   window.loadEntities = function(page) {
     page = page || 1;
     var search = document.getElementById('search-entities').value;
-    var url = '/api/entities?page=' + page + '&size=50';
+    var url = '/api/entities?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('entities-table');
@@ -602,7 +607,7 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var search = document.getElementById('search-cc').value;
     var ccode = document.getElementById('filter-cc-ccode').value;
-    var url = '/api/legacy/cost-centers?page=' + page + '&size=50';
+    var url = '/api/legacy/cost-centers?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -650,7 +655,7 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var search = document.getElementById('search-pc').value;
     var ccode = document.getElementById('filter-pc-ccode').value;
-    var url = '/api/legacy/profit-centers?page=' + page + '&size=50';
+    var url = '/api/legacy/profit-centers?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -695,7 +700,7 @@ import Layout from '../../components/layout/Layout.astro';
   window.loadTargetCC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-tcc').value;
-    var url = '/api/target/cost-centers?page=' + page + '&size=50';
+    var url = '/api/target/cost-centers?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _tccData = d.items || [];
@@ -742,7 +747,7 @@ import Layout from '../../components/layout/Layout.astro';
   window.loadTargetPC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-tpc').value;
-    var url = '/api/target/profit-centers?page=' + page + '&size=50';
+    var url = '/api/target/profit-centers?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _tpcData = d.items || [];
@@ -786,7 +791,7 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var search = document.getElementById('search-mapping').value;
     var objType = document.getElementById('filter-mapping-type').value;
-    var url = '/api/center-mappings?page=' + page + '&size=50';
+    var url = '/api/center-mappings?page=' + page + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (objType) url += '&object_type=' + encodeURIComponent(objType);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -837,7 +842,7 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var cctr = document.getElementById('filter-bal-cctr').value;
     var year = document.getElementById('filter-bal-year').value;
-    var url = '/api/legacy/balances?page=' + page + '&size=50';
+    var url = '/api/legacy/balances?page=' + page + '&size=50' + scopeParams();
     if (cctr) url += '&cctr=' + encodeURIComponent(cctr);
     if (year) url += '&fiscal_year=' + year;
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
@@ -872,8 +877,8 @@ import Layout from '../../components/layout/Layout.astro';
   // --- Hierarchies ---
   function loadHierarchies() {
     // Use admin endpoint for labels, fallback to legacy endpoint
-    fetch('/api/admin/hierarchies', { headers: authHdr }).then(function(r) {
-      if (!r.ok) return fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r2) { return r2.json(); }).then(function(d) { return d.items || []; });
+    fetch('/api/admin/hierarchies?scope=' + encodeURIComponent(getScope()) + (getCategory() ? '&data_category=' + encodeURIComponent(getCategory()) : ''), { headers: authHdr }).then(function(r) {
+      if (!r.ok) return fetch('/api/legacy/hierarchies?size=100' + scopeParams(), { headers: authHdr }).then(function(r2) { return r2.json(); }).then(function(d) { return d.items || []; });
       return r.json();
     }).then(function(items) {
       var el = document.getElementById('hier-table');
@@ -1057,7 +1062,7 @@ import Layout from '../../components/layout/Layout.astro';
   window.loadEmployees = function(page) {
     empPage = page || 1;
     var search = document.getElementById('search-emp').value;
-    var url = '/api/employees?page=' + empPage + '&size=50';
+    var url = '/api/employees?page=' + empPage + '&size=50' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('emp-table');
