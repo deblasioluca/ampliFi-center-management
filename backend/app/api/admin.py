@@ -1142,10 +1142,16 @@ def create_upload(
     kind: str = Query(...),
     scope: str = Query(default=SCOPE_CLEANUP),
     data_category: str = Query(default="legacy"),
+    sheet_name: str | None = Query(default=None),
+    header_row: int | None = Query(default=None),
+    load_cc: bool = Query(default=True),
+    load_ext_hier: bool = Query(default=True),
+    load_cema_hier: bool = Query(default=True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
+    import json
     import pathlib
 
     from app.config import settings
@@ -1165,12 +1171,25 @@ def create_upload(
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)
 
+    # For cc_with_hierarchy, store options in source_detail as JSON
+    if kind == "cc_with_hierarchy":
+        source_detail = json.dumps({
+            "filename": fname,
+            "sheet_name": sheet_name or "Database",
+            "header_row": header_row or 2,
+            "load_cc": load_cc,
+            "load_ext_hier": load_ext_hier,
+            "load_cema_hier": load_cema_hier,
+        })
+    else:
+        source_detail = fname
+
     batch = UploadBatch(
         kind=kind,
         scope=scope,
         data_category=data_category,
         source_method="file",
-        source_detail=fname,
+        source_detail=source_detail,
         filename=fname,
         status="uploaded",
         uploaded_by=_user.id,

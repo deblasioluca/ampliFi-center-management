@@ -753,6 +753,82 @@ _TARGET_PC_MODEL_FIELDS = {
     "is_active",
 }
 
+# ── Cost Center with Hierarchy (Excel) ────────────────────────────────────
+# Maps the user's Excel column headers to LegacyCostCenter model fields.
+CC_HIER_EXCEL_COLUMNS: dict[str, str] = {
+    "ID": "cctr",
+    "EXTERNAL ID": "cctr",
+    "CAREA": "coarea",
+    "DESCRIPTION": "txtsh",
+    "OWNER": "responsible",
+    "CAT": "cctrcgy",
+    "START DATE": "datab",
+    "END DATE": "datbi",
+    "REP CC": "nkost",
+    "EXTERNAL PARENT": "khinr",
+    "CEMA PARENT": "zzcemapar",
+    "KOMMENTAR": "xblnr",
+    "SUB CC": "zzcuenkos",
+    "SUB AMBC": "zzcuemncfu",
+    "RESP INT": "verak_user",
+    "RESP GLOBAL": "zzstrverik",
+    "CT LEAD": "zzstrmacve",
+    "CLAS CTR": "zzstraagcd",
+    "REVIEWER": "zzstrgfd",
+    "CERTIFER": "zzstrfst",
+    "OWNER11": "verak",
+    "RES": "zzstrrepsit",
+    "LOP": "logsystem",
+    "BUS SEG": "zzstrugcd",
+    "PHDOM": "zzstrabukr",
+    "BD": "zzstrentzu",
+    "CC/OU": "zzstrentsa",
+    "ACU/DBU": "zzstrtaxarea",
+    "ACU/DBU CTR": "zzstrregcode",
+    "CLASS": "zzstrkklas",
+    "PCT": "pctr",
+    "BU": "gsber",
+    "BA": "func_area",
+    "TYPE": "zzstrkstyp",
+    "2ND CURR": "zzstrcurr2",
+    "LCC": "zzstrlccid",
+    "BMC": "zzstrmaloc",
+    "TAX": "zztax",
+    "REGION": "regio",
+    "CTRY": "land1",
+    "POSTAL CD": "pstlz",
+    "CITY": "ort01",
+    "DISTRICT": "ort02",
+    "STATE CD": "zzstate",
+    "CEMA ID": "zzcemapar",
+    "PRCTR": "pctr",
+    "CURRENCY": "currency",
+    "AMBC": "abtei",
+    "GCRS FCT": "funkt",
+    "GCRS N": "afunk",
+    "GCRS COMP": "zzstrgsm",
+    "TAX CD": "txjcd",
+    "FAREA": "func_area",
+    "SPERRK IST PRIMAER": "bkzkp",
+    "SPERRK IST SEKUNDAER": "bkzks",
+    "PLAN PRIMARY COSTS": "pkzkp",
+    "PLAN SECONDARY COSTS": "pkzks",
+    "PLAN REVENUES": "pkzer",
+    "ACTUAL REVENUES": "bkzer",
+    "PROFIT CENTER BLOCK": "bkzob",
+    "HC STAT": "zzhdstat",
+    "HC TYPE": "zzhdtype",
+    "FMD COMP": "zzfmd",
+    "FMD CC": "zzfmdcc",
+    "FMD MANAGEMENT NODE": "zzfmdnode",
+    "GEAR LED ID": "zzledger",
+    "IB-CODE S-CENTER": "zzstrentsa",
+}
+
+# Hierarchy level column prefixes
+_EXT_HIER_LEVELS = 14  # Ext_L0 .. Ext_L13
+_CEMA_HIER_LEVELS = 12  # CEMA_L0 .. CEMA_L11
+
 CENTER_MAPPING_COLUMNS = {
     "OBJECT_TYPE": "object_type",
     "TYPE": "object_type",
@@ -835,6 +911,58 @@ def _read_file(path: str) -> list[dict[str, str]]:
         return [dict(row) for row in reader]
 
 
+def _read_excel_with_options(
+    path: str,
+    sheet_name: str = "Database",
+    header_row: int = 2,
+) -> list[dict[str, str]]:
+    """Read an Excel file with configurable sheet name and header row.
+
+    Args:
+        path: Path to Excel file
+        sheet_name: Name of the sheet to read (default "Database")
+        header_row: 1-based row number where headers are (default 2)
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    if sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+    else:
+        ws = wb.active
+        logger.warning(
+            "Sheet '%s' not found, using active sheet '%s'",
+            sheet_name,
+            ws.title,
+        )
+
+    rows_iter = ws.iter_rows(values_only=True)
+    # Skip rows before header
+    for _ in range(header_row - 1):
+        try:
+            next(rows_iter)
+        except StopIteration:
+            wb.close()
+            return []
+
+    try:
+        raw_headers = next(rows_iter)
+    except StopIteration:
+        wb.close()
+        return []
+    headers = [str(h or "").strip() for h in raw_headers]
+
+    result: list[dict[str, str]] = []
+    for row in rows_iter:
+        d: dict[str, str] = {}
+        for i, val in enumerate(row):
+            if i < len(headers) and headers[i]:
+                d[headers[i]] = str(val) if val is not None else ""
+        result.append(d)
+    wb.close()
+    return result
+
+
 def _normalize_headers(rows: list[dict[str, str]], mapping: dict[str, str]) -> list[dict[str, str]]:
     """Normalize column headers using mapping."""
     result = []
@@ -888,6 +1016,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "target_cost_centers",
         "target_profit_centers",
         "center_mapping",
+        "cc_with_hierarchy",
     )
     if batch.kind not in supported:
         raise ValueError(f"Upload kind '{batch.kind}' is not yet supported")
@@ -896,8 +1025,24 @@ def validate_upload(batch_id: int, db: Session) -> dict:
     db.execute(sa_delete(UploadError).where(UploadError.batch_id == batch.id))
     db.commit()
 
+    # For cc_with_hierarchy, read with custom options
+    if batch.kind == "cc_with_hierarchy":
+        import json as _json
+
+        opts: dict = {}
+        if batch.source_detail:
+            try:
+                opts = _json.loads(batch.source_detail)
+            except (ValueError, TypeError):
+                pass
+        sheet_name = opts.get("sheet_name", "Database")
+        header_row = int(opts.get("header_row", 2))
+
     try:
-        rows = _read_file(batch.storage_uri)
+        if batch.kind == "cc_with_hierarchy":
+            rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
+        else:
+            rows = _read_file(batch.storage_uri)
     except Exception as e:
         logger.error(
             "upload.validate.file_read_error",
@@ -935,6 +1080,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "target_cost_centers": TARGET_CC_COLUMNS,
         "target_profit_centers": TARGET_PC_COLUMNS,
         "center_mapping": CENTER_MAPPING_COLUMNS,
+        "cc_with_hierarchy": CC_HIER_EXCEL_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -1208,7 +1354,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
         db.commit()
 
     try:
-        rows = _read_file(batch.storage_uri)
+        if batch.kind == "cc_with_hierarchy":
+            # cc_with_hierarchy handles its own file reading
+            rows = []
+        else:
+            rows = _read_file(batch.storage_uri)
     except Exception as e:
         batch.status = "failed"
         db.commit()
@@ -1232,6 +1382,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "target_cost_centers": TARGET_CC_COLUMNS,
         "target_profit_centers": TARGET_PC_COLUMNS,
         "center_mapping": CENTER_MAPPING_COLUMNS,
+        "cc_with_hierarchy": CC_HIER_EXCEL_COLUMNS,
     }.get(batch.kind, {})
 
     normalized = _normalize_headers(rows, mapping) if mapping else rows
@@ -1879,6 +2030,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 db.add(CenterMapping(**cm_kwargs))
             loaded += 1
 
+    elif batch.kind == "cc_with_hierarchy":
+        loaded = _load_cc_with_hierarchy(batch, db, batch_scope, batch_category)
+
     batch.rows_loaded = loaded
     batch.rows_processed = loaded
     batch.status = "loaded"
@@ -1886,6 +2040,283 @@ def load_upload(batch_id: int, db: Session) -> dict:
     db.commit()
 
     return {"status": "loaded", "rows_loaded": loaded}
+
+
+def _load_cc_with_hierarchy(
+    batch: UploadBatch,
+    db: Session,
+    batch_scope: str,
+    batch_category: str,
+) -> int:
+    """Load cost centers + hierarchies from a combined Excel file.
+
+    The batch's source_detail is a JSON string with options:
+        sheet_name, header_row, load_cc, load_ext_hier, load_cema_hier
+    """
+    import json as _json
+
+    opts: dict = {}
+    if batch.source_detail:
+        try:
+            opts = _json.loads(batch.source_detail)
+        except (ValueError, TypeError):
+            pass
+
+    sheet_name = opts.get("sheet_name", "Database")
+    header_row = int(opts.get("header_row", 2))
+    load_cc = opts.get("load_cc", True)
+    load_ext_hier = opts.get("load_ext_hier", True)
+    load_cema_hier = opts.get("load_cema_hier", True)
+
+    rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
+    _flush_progress(batch.id, 0, len(rows))
+    loaded = 0
+
+    # --- 1) Load cost center data ---
+    if load_cc:
+        cc_rows = _normalize_headers(rows, CC_HIER_EXCEL_COLUMNS)
+        for row in cc_rows:
+            cctr = (row.get("cctr") or "").strip()
+            coarea = (row.get("coarea") or "").strip()
+            if not cctr:
+                continue
+            existing = db.execute(
+                select(LegacyCostCenter).where(
+                    LegacyCostCenter.scope == batch_scope,
+                    LegacyCostCenter.coarea == coarea,
+                    LegacyCostCenter.cctr == cctr,
+                )
+            ).scalar_one_or_none()
+            cc_kwargs: dict = {}
+            for field_name in _CC_MODEL_FIELDS:
+                if field_name == "is_active":
+                    continue
+                val = row.get(field_name)
+                if val is not None:
+                    cc_kwargs[field_name] = val if val else None
+            cc_kwargs["coarea"] = coarea
+            cc_kwargs["cctr"] = cctr
+            # Parse date fields
+            for date_field in ("datab", "datbi"):
+                raw = cc_kwargs.get(date_field)
+                if raw and isinstance(raw, str):
+                    parsed = _parse_date(raw)
+                    if parsed:
+                        cc_kwargs[date_field] = parsed
+            if existing:
+                for k, v in cc_kwargs.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+            else:
+                _cc_defaults = (
+                    "txtsh", "txtmi", "responsible", "cctrcgy",
+                    "ccode", "currency", "pctr",
+                )
+                for fld in _cc_defaults:
+                    if cc_kwargs.get(fld) is None:
+                        cc_kwargs[fld] = ""
+                cc_kwargs.setdefault("is_active", True)
+                cc_kwargs["refresh_batch"] = batch.id
+                cc_kwargs["scope"] = batch_scope
+                cc_kwargs["data_category"] = batch_category
+                db.add(LegacyCostCenter(**cc_kwargs))
+            loaded += 1
+            if loaded % 100 == 0:
+                _flush_progress(batch.id, loaded)
+
+    # --- 2) Load External Hierarchy ---
+    if load_ext_hier:
+        loaded += _build_hierarchy_from_levels(
+            rows=rows,
+            db=db,
+            batch=batch,
+            batch_scope=batch_scope,
+            batch_category=batch_category,
+            hier_name_col="External_Hierarchy",
+            level_prefix="Ext_L",
+            desc_prefix="Ext_L",
+            desc_suffix="_Desc",
+            num_levels=_EXT_HIER_LEVELS,
+            setclass="0101",
+            loaded_so_far=loaded,
+        )
+
+    # --- 3) Load CEMA Hierarchy ---
+    if load_cema_hier:
+        loaded += _build_hierarchy_from_levels(
+            rows=rows,
+            db=db,
+            batch=batch,
+            batch_scope=batch_scope,
+            batch_category=batch_category,
+            hier_name_col="CEMA_Hierarchy",
+            level_prefix="CEMA_L",
+            desc_prefix="CEMA_L",
+            desc_suffix="_Desc",
+            num_levels=_CEMA_HIER_LEVELS,
+            setclass="0101",
+            loaded_so_far=loaded,
+        )
+
+    return loaded
+
+
+def _build_hierarchy_from_levels(
+    *,
+    rows: list[dict[str, str]],
+    db: Session,
+    batch: UploadBatch,
+    batch_scope: str,
+    batch_category: str,
+    hier_name_col: str,
+    level_prefix: str,
+    desc_prefix: str,
+    desc_suffix: str,
+    num_levels: int,
+    setclass: str,
+    loaded_so_far: int,
+) -> int:
+    """Build a hierarchy from flattened level columns (L0..Ln).
+
+    Each row has level columns like Ext_L0, Ext_L1, ... Ext_L13 where
+    the rightmost non-empty value is the leaf (cost center). Each level
+    value is a node ID and we build parent→child relationships from the
+    level structure.
+
+    Returns the count of records created.
+    """
+    # Collect unique hierarchy names from the name column
+    hier_names: set[str] = set()
+    for row in rows:
+        hname = (row.get(hier_name_col) or "").strip()
+        if hname:
+            hier_names.add(hname)
+
+    if not hier_names:
+        hier_names = {hier_name_col}
+
+    loaded = 0
+    for hier_setname in sorted(hier_names):
+        # Filter rows belonging to this hierarchy
+        hier_rows = [
+            r for r in rows
+            if (r.get(hier_name_col) or "").strip() == hier_setname
+            or (not r.get(hier_name_col, "").strip() and len(hier_names) == 1)
+        ]
+        if not hier_rows:
+            continue
+
+        # Create the Hierarchy header
+        hier = Hierarchy(
+            scope=batch_scope,
+            data_category=batch_category,
+            setclass=setclass,
+            setname=hier_setname,
+            label=hier_setname,
+            description=f"Hierarchy {hier_setname} (from Excel upload)",
+            coarea="",
+            refresh_batch=batch.id,
+        )
+        db.add(hier)
+        db.flush()
+        loaded += 1
+
+        # Build unique nodes and parent→child edges from level columns
+        # node_key = (level_value, level_index)
+        # We collect edges: parent_node → child_node
+        edges: dict[str, set[str]] = {}  # parent → set of children
+        node_labels: dict[str, str] = {}  # node_id → description
+        leaf_parents: dict[str, set[str]] = {}  # leaf_parent → set of leaf values
+
+        for row in hier_rows:
+            levels: list[str] = []
+            descs: list[str] = []
+            for i in range(num_levels):
+                lval = (row.get(f"{level_prefix}{i}") or "").strip()
+                dval = (row.get(f"{desc_prefix}{i}{desc_suffix}") or "").strip()
+                levels.append(lval)
+                descs.append(dval)
+
+            # Find rightmost non-empty level (this is the leaf/cost center)
+            last_idx = -1
+            for i in range(num_levels - 1, -1, -1):
+                if levels[i]:
+                    last_idx = i
+                    break
+            if last_idx < 0:
+                continue
+
+            # Build edges from level 0 down to leaf
+            for i in range(last_idx + 1):
+                node_id = levels[i]
+                if not node_id:
+                    continue
+                if descs[i]:
+                    node_labels[node_id] = descs[i]
+
+                if i < last_idx:
+                    # Find next non-empty level as child
+                    for j in range(i + 1, last_idx + 1):
+                        if levels[j]:
+                            edges.setdefault(node_id, set()).add(levels[j])
+                            break
+                elif i == last_idx:
+                    # This is a leaf — find its parent
+                    for j in range(i - 1, -1, -1):
+                        if levels[j]:
+                            leaf_parents.setdefault(levels[j], set()).add(node_id)
+                            break
+
+        # Determine which nodes are internal (have children that are also nodes)
+        all_children: set[str] = set()
+        for children in edges.values():
+            all_children.update(children)
+        all_parents = set(edges.keys())
+        all_leaf_values: set[str] = set()
+        for lvals in leaf_parents.values():
+            all_leaf_values.update(lvals)
+
+        # Internal nodes: appear as parents OR appear as children but also have children
+        internal_nodes = all_parents | (all_children - all_leaf_values)
+
+        # Create HierarchyNode records for internal edges
+        seq = 0
+        created_edges: set[tuple[str, str]] = set()
+        for parent_id in sorted(edges.keys()):
+            parent_label = node_labels.get(parent_id, parent_id)
+            for child_id in sorted(edges[parent_id]):
+                edge_key = (parent_id, child_id)
+                if edge_key in created_edges:
+                    continue
+                created_edges.add(edge_key)
+                child_label = node_labels.get(child_id, child_id)
+                if child_id in internal_nodes:
+                    seq += 1
+                    db.add(HierarchyNode(
+                        hierarchy_id=hier.id,
+                        parent_setname=parent_label,
+                        child_setname=child_label,
+                        seq=seq,
+                    ))
+                    loaded += 1
+
+        # Create HierarchyLeaf records for leaf values
+        for parent_id in sorted(leaf_parents.keys()):
+            parent_label = node_labels.get(parent_id, parent_id)
+            for leaf_val in sorted(leaf_parents[parent_id]):
+                seq += 1
+                db.add(HierarchyLeaf(
+                    hierarchy_id=hier.id,
+                    setname=parent_label,
+                    value=leaf_val,
+                    seq=seq,
+                ))
+                loaded += 1
+
+        if loaded % 100 == 0:
+            _flush_progress(batch.id, loaded_so_far + loaded)
+
+    return loaded
 
 
 def rollback_upload(batch_id: int, db: Session) -> dict:
@@ -1946,6 +2377,23 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind == "center_mapping":
         r = db.execute(sa_delete(CenterMapping).where(CenterMapping.refresh_batch == batch.id))
         deleted = r.rowcount
+    elif batch.kind == "cc_with_hierarchy":
+        # Delete both cost centers and hierarchies created by this batch
+        r = db.execute(
+            sa_delete(LegacyCostCenter).where(LegacyCostCenter.refresh_batch == batch.id)
+        )
+        deleted = r.rowcount
+        hier_ids = [
+            h.id
+            for h in db.execute(select(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+            .scalars()
+            .all()
+        ]
+        for hid in hier_ids:
+            db.execute(sa_delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
+            db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
+        r2 = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+        deleted += r2.rowcount
 
     rows_loaded = batch.rows_loaded or 0
     rows_updated = max(0, rows_loaded - deleted)

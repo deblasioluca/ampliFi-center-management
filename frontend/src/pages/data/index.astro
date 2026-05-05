@@ -279,6 +279,35 @@ import Layout from '../../components/layout/Layout.astro';
                 <option value="">— Select category first —</option>
               </select>
             </div>
+            <!-- CC with Hierarchy options (shown only for cc_with_hierarchy) -->
+            <div id="cc-hier-options" class="hidden p-3 bg-amber-50 border border-amber-200 rounded space-y-3">
+              <p class="text-xs font-medium text-amber-800">Excel Upload Options</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-gray-600 mb-1">Sheet Name</label>
+                  <input type="text" id="cc-hier-sheet" value="Database" class="input text-sm" placeholder="Database" />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-600 mb-1">Header Row</label>
+                  <input type="number" id="cc-hier-header-row" value="2" min="1" max="100" class="input text-sm" />
+                </div>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs text-gray-600 font-medium">What to import:</p>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="cc-hier-load-cc" checked class="rounded border-gray-300" />
+                  <span>Cost Center data</span>
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="cc-hier-load-ext" checked class="rounded border-gray-300" />
+                  <span>External Hierarchy</span>
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="cc-hier-load-cema" checked class="rounded border-gray-300" />
+                  <span>CEMA Hierarchy</span>
+                </label>
+              </div>
+            </div>
             <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
               <span class="font-medium">Template:</span>
               <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
@@ -485,7 +514,8 @@ import Layout from '../../components/layout/Layout.astro';
 
   // Object display names
   var objLabels = {
-    cost_center: 'Cost Centers', profit_center: 'Profit Centers',
+    cost_center: 'Cost Centers', cc_with_hierarchy: 'Cost Centers with Hierarchy (Excel)',
+    profit_center: 'Profit Centers',
     gl_account_ska1: 'GL Accounts (SKA1)', gl_account_skb1: 'GL Accounts (SKB1)',
     entity: 'Entities',
     hierarchy: 'Hierarchies (SET format)', hierarchy_flat: 'Hierarchies (SAP flat export)',
@@ -528,6 +558,15 @@ import Layout from '../../components/layout/Layout.astro';
       uploadTypeSel.appendChild(opt);
     });
     uploadTypeSel.disabled = false;
+  });
+
+  uploadTypeSel.addEventListener('change', function() {
+    var ccHierOpts = document.getElementById('cc-hier-options');
+    if (this.value === 'cc_with_hierarchy') {
+      ccHierOpts.classList.remove('hidden');
+    } else {
+      ccHierOpts.classList.add('hidden');
+    }
   });
 
   function pagerHtml(total, page, size, loadFn) {
@@ -1184,7 +1223,16 @@ import Layout from '../../components/layout/Layout.astro';
       resultEl.className = 'text-sm text-red-600';
       resultEl.classList.remove('hidden');
     });
-    xhr.open('POST', '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) + '&scope=' + encodeURIComponent(uScope) + '&data_category=' + encodeURIComponent(uCat));
+    var uploadUrl = '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) + '&scope=' + encodeURIComponent(uScope) + '&data_category=' + encodeURIComponent(uCat);
+    if (uploadKind === 'cc_with_hierarchy') {
+      var sheetName = document.getElementById('cc-hier-sheet').value || 'Database';
+      var headerRow = document.getElementById('cc-hier-header-row').value || '2';
+      var loadCc = document.getElementById('cc-hier-load-cc').checked;
+      var loadExt = document.getElementById('cc-hier-load-ext').checked;
+      var loadCema = document.getElementById('cc-hier-load-cema').checked;
+      uploadUrl += '&sheet_name=' + encodeURIComponent(sheetName) + '&header_row=' + encodeURIComponent(headerRow) + '&load_cc=' + loadCc + '&load_ext_hier=' + loadExt + '&load_cema_hier=' + loadCema;
+    }
+    xhr.open('POST', uploadUrl);
     xhr.setRequestHeader('Authorization', 'Bearer ' + token);
     xhr.send(formData);
   });

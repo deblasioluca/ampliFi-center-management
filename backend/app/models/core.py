@@ -38,6 +38,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
     SCOPE_CLEANUP: {
         CATEGORY_LEGACY: [
             "cost_center",
+            "cc_with_hierarchy",
             "profit_center",
             "gl_account_ska1",
             "gl_account_skb1",
@@ -53,6 +54,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
     SCOPE_HOUSEKEEPING: {
         CATEGORY_TARGET: [
             "cost_center",
+            "cc_with_hierarchy",
             "profit_center",
             "gl_account_ska1",
             "gl_account_skb1",
@@ -65,6 +67,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
     SCOPE_EXPLORER: {
         CATEGORY_LEGACY: [
             "cost_center",
+            "cc_with_hierarchy",
             "profit_center",
             "gl_account_ska1",
             "gl_account_skb1",
@@ -74,6 +77,7 @@ SCOPE_UPLOAD_RULES: dict[str, dict[str, list[str]]] = {
         ],
         CATEGORY_TARGET: [
             "cost_center",
+            "cc_with_hierarchy",
             "profit_center",
             "gl_account_ska1",
             "gl_account_skb1",
