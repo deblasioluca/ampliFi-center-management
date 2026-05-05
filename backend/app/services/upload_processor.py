@@ -1782,7 +1782,8 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 hier_attrs: dict | None = None
                 setname = raw_name
                 if is_entity_hier and period_val:
-                    setname = f"{raw_name}_{period_val}"[:40]
+                    max_name = 40 - len(period_val) - 1
+                    setname = f"{raw_name[:max_name]}_{period_val}"
                     label = f"{raw_name} ({period_val})"
                     hier_attrs = {"period": period_val}
                 elif is_entity_hier:
