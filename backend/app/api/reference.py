@@ -751,7 +751,7 @@ def data_counts(
         "balances": _cnt(Balance, scope, data_category),
         "hierarchies": _cnt(Hierarchy, scope, data_category),
         "employees": _cnt(Employee, scope, data_category),
-        "upload_batches": db.execute(select(func.count(UploadBatch.id))).scalar() or 0,
+        "upload_batches": _cnt(UploadBatch, scope, data_category),
     }
 
 
