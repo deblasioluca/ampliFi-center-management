@@ -350,6 +350,10 @@ def _build_where_clause(kind: str, params: dict | None) -> str:
         field = "BUKRS" if kind != "balance" else "RBUKRS"
         clauses.append(f"{field} = '{_sanitize(company_code)}'")
 
+    period = params.get("period")
+    if period and kind == "entity_hierarchy":
+        clauses.append(f"PERIOD = '{_sanitize(period)}'")
+
     return " AND ".join(clauses)
 
 

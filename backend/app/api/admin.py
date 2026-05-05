@@ -1077,7 +1077,13 @@ def list_hierarchies(
         .scalars()
         .all()
     )
-    class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+    class_labels = {
+        "0101": "Cost Center",
+        "0104": "Profit Center",
+        "0106": "Entity",
+        "GCRS": "Entity Hierarchy",
+        "FLAT": "Flat Hierarchy",
+    }
     return [
         {
             "id": h.id,
@@ -1089,6 +1095,7 @@ def list_hierarchies(
             "coarea": h.coarea,
             "is_active": h.is_active,
             "type_label": class_labels.get(h.setclass, h.setclass),
+            "attrs": h.attrs or {},
         }
         for h in rows
     ]

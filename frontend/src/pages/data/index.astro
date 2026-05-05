@@ -920,13 +920,15 @@ import Layout from '../../components/layout/Layout.astro';
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
         '<th class="py-2 px-2 text-left">Type</th><th class="py-2 px-2 text-left">Set Name</th>' +
         '<th class="py-2 px-2 text-left">Label</th><th class="py-2 px-2 text-left">Description</th>' +
+        '<th class="py-2 px-2 text-left">Period</th>' +
         '<th class="py-2 px-2 text-left">CO Area</th>' +
         '<th class="py-2 px-2 text-center">Active</th><th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
       items.forEach(function(h) {
         var typeLabel = h.type_label || h.setclass;
+        var period = (h.attrs && h.attrs.period) ? h.attrs.period : '';
         html += '<tr class="border-b hover:bg-gray-50">' +
           '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' +
-            (typeLabel === 'Cost Center' ? 'bg-blue-100 text-blue-800' : typeLabel === 'Profit Center' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700') +
+            (typeLabel === 'Cost Center' ? 'bg-blue-100 text-blue-800' : typeLabel === 'Profit Center' ? 'bg-purple-100 text-purple-800' : typeLabel === 'GCRS' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700') +
             '">' + esc(typeLabel) + '</span></td>' +
           '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
           '<td class="py-1.5 px-2">' +
@@ -934,6 +936,7 @@ import Layout from '../../components/layout/Layout.astro';
             '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" data-orig="' + escAttr(h.label || '') + '" placeholder="' + escAttr(h.display_label || '') + '" />' +
           '</td>' +
           '<td class="py-1.5 px-2 text-gray-500">' + esc(h.description || '') + '</td>' +
+          '<td class="py-1.5 px-2 font-mono">' + esc(period) + '</td>' +
           '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea || '') + '</td>' +
           '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>' +
           '<td class="py-1.5 px-2"><button class="text-blue-600 hover:underline text-[10px]" onclick="editHierLabel(' + h.id + ')">Edit Label</button></td></tr>';
@@ -1523,6 +1526,8 @@ import Layout from '../../components/layout/Layout.astro';
                       '<option value="">All CO Areas</option></select>' +
                       '<select id="' + uid + '_hier" multiple class="border rounded px-2 py-0.5 text-xs w-48" style="min-height:28px;max-height:80px" data-conn="' + c.connection_id + '">' +
                       '<option value="">Loading hierarchies...</option></select>';
+                  } else if (ot === 'entity_hierarchy') {
+                    html += '<input id="' + uid + '_period" type="text" placeholder="Period (e.g. 202605)" class="border rounded px-2 py-0.5 text-xs w-36" />';
                   } else if (ot === 'balance') {
                     html += '<select id="' + uid + '_co" class="border rounded px-2 py-0.5 text-xs w-28 mr-1" data-conn="' + c.connection_id + '">' +
                       '<option value="">All CO Areas</option></select>' +
@@ -1649,6 +1654,8 @@ import Layout from '../../components/layout/Layout.astro';
       if (ccEl && ccEl.value.trim()) params.company_code = ccEl.value.trim();
       var ledgerEl = document.getElementById(uid + '_ledger');
       if (ledgerEl && ledgerEl.value.trim()) params.ledger = ledgerEl.value.trim();
+      var periodEl = document.getElementById(uid + '_period');
+      if (periodEl && periodEl.value.trim()) params.period = periodEl.value.trim();
       try {
         var fetchHeaders = Object.assign({}, authHdr, { 'Content-Type': 'application/json' });
         var res = await fetch('/api/admin/sap/' + connId + '/bindings/' + bindingId + '/extract', {
