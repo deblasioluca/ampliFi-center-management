@@ -486,8 +486,11 @@ import Layout from '../../components/layout/Layout.astro';
   // Object display names
   var objLabels = {
     cost_center: 'Cost Centers', profit_center: 'Profit Centers',
-    gl_account: 'GL Accounts', entity: 'Entities',
-    hierarchy: 'Hierarchies', balance: 'Balances', employee: 'Employees'
+    gl_account_ska1: 'GL Accounts (SKA1)', gl_account_skb1: 'GL Accounts (SKB1)',
+    entity: 'Entities',
+    hierarchy: 'Hierarchies (SET format)', hierarchy_flat: 'Hierarchies (SAP flat export)',
+    balance: 'Balances', balance_gcr: 'Balances (GCR aggregated)',
+    employee: 'Employees'
   };
 
   // 3-step upload cascading
@@ -1121,11 +1124,14 @@ import Layout from '../../components/layout/Layout.astro';
     if (!type) { alert('Please select a data type.'); return; }
     if (!fileInput.files[0]) return;
     if (!token) { alert('Please log in first to upload data.'); return; }
-    // Map generic object names to upload kind values
+    // Map object type keys to upload kind values
     var kindMap = {
       cost_center: 'cost_centers', profit_center: 'profit_centers',
-      gl_account: 'gl_accounts_ska1', entity: 'entities',
-      hierarchy: 'hierarchies', balance: 'balances', employee: 'employees'
+      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      entity: 'entities',
+      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
+      balance: 'balances', balance_gcr: 'balances_gcr',
+      employee: 'employees'
     };
     var uploadKind = kindMap[type] || type;
     if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';

@@ -1542,7 +1542,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not hier:
                 hier = db.execute(
                     select(Hierarchy).where(
-                        Hierarchy.setclass == setclass, Hierarchy.setname == setname
+                        Hierarchy.scope == batch_scope,
+                        Hierarchy.setclass == setclass,
+                        Hierarchy.setname == setname,
                     )
                 ).scalar_one_or_none()
                 if hier:
@@ -1574,7 +1576,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not hier:
                 hier = db.execute(
                     select(Hierarchy).where(
-                        Hierarchy.setclass == setclass, Hierarchy.setname == setname
+                        Hierarchy.scope == batch_scope,
+                        Hierarchy.setclass == setclass,
+                        Hierarchy.setname == setname,
                     )
                 ).scalar_one_or_none()
                 if hier:
