@@ -1050,6 +1050,8 @@ _HIER_CLASS_LABELS = {
     "0101": "Cost Center",
     "0104": "Profit Center",
     "0106": "Entity",
+    "GCRS": "Entity Hierarchy",
+    "FLAT": "Flat Hierarchy",
 }
 
 
@@ -1080,7 +1082,13 @@ def list_hierarchies(
     if data_category:
         query = query.where(Hierarchy.data_category == data_category)
     rows = db.execute(query).scalars().all()
-    class_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
+    class_labels = {
+        "0101": "Cost Center",
+        "0104": "Profit Center",
+        "0106": "Entity",
+        "GCRS": "Entity Hierarchy",
+        "FLAT": "Flat Hierarchy",
+    }
     return [
         {
             "id": h.id,
@@ -1092,6 +1100,7 @@ def list_hierarchies(
             "coarea": h.coarea,
             "is_active": h.is_active,
             "type_label": class_labels.get(h.setclass, h.setclass),
+            "attrs": h.attrs or {},
         }
         for h in rows
     ]
@@ -1145,10 +1154,16 @@ def create_upload(
     kind: str = Query(...),
     scope: str = Query(default=SCOPE_CLEANUP),
     data_category: str = Query(default="legacy"),
+    sheet_name: str | None = Query(default=None),
+    header_row: int | None = Query(default=None),
+    load_cc: bool = Query(default=True),
+    load_ext_hier: bool = Query(default=True),
+    load_cema_hier: bool = Query(default=True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
+    import json
     import pathlib
 
     from app.config import settings
@@ -1168,12 +1183,26 @@ def create_upload(
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)
 
+    # For cc_with_hierarchy, store options in source_detail as JSON
+    if kind == "cc_with_hierarchy":
+        source_detail = json.dumps(
+            {
+                "sheet_name": sheet_name or "Database",
+                "header_row": header_row if header_row is not None else 2,
+                "load_cc": load_cc,
+                "load_ext_hier": load_ext_hier,
+                "load_cema_hier": load_cema_hier,
+            }
+        )
+    else:
+        source_detail = fname
+
     batch = UploadBatch(
         kind=kind,
         scope=scope,
         data_category=data_category,
         source_method="file",
-        source_detail=fname,
+        source_detail=source_detail,
         filename=fname,
         status="uploaded",
         uploaded_by=_user.id,
@@ -1971,6 +2000,32 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
             "00000002",
             "",
             "Total Group",
+        ],
+    },
+    "entity_hierarchy": {
+        "filename": "template_entity_hierarchy.csv",
+        "description": "Entity hierarchy upload — SAP ZUHL_GRD_GCRS_C (GCRS entity structure)",
+        "columns": [
+            "MANDT",
+            "PERIOD",
+            "NODEID",
+            "NODETYPE",
+            "NODENAME",
+            "PARENTID",
+            "CHILDID",
+            "NEXTID",
+            "NODETEXT",
+        ],
+        "sample_row": [
+            "100",
+            "202601",
+            "00000001",
+            "N",
+            "ROOT",
+            "",
+            "00000002",
+            "",
+            "Root Entity Node",
         ],
     },
     "employees": {
