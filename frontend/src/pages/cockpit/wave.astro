@@ -1217,7 +1217,9 @@ import Layout from '../../components/layout/Layout.astro';
         var rules = simSelectedNodes.map(function(n) {
           return {
             name: n.node_text || n.node_name,
-            match: { field: 'ext_l' + n.level, op: '==', value: n.node_name },
+            match_field: 'ext_l' + n.level,
+            match_op: '==',
+            match_value: n.node_name,
             approach: '1:n',
             pc_level: Math.min(n.level + 1, 3)
           };

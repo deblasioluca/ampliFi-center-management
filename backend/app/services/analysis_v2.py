@@ -196,7 +196,10 @@ def run_v2_analysis(
     else:
         # Create default V2 config
         existing = db.execute(
-            select(AnalysisConfig).where(AnalysisConfig.code == "cema_migration_v2")
+            select(AnalysisConfig)
+            .where(AnalysisConfig.code == "cema_migration_v2")
+            .order_by(AnalysisConfig.version.desc())
+            .limit(1)
         ).scalar_one_or_none()
         if existing:
             config_id = existing.id
