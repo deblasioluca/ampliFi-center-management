@@ -1478,11 +1478,14 @@ def run_v2_analysis_endpoint(
                 step["params"]["approach_rules"] = params.pc_approach_rules
         cfg["id_assignment"]["pc_start"] = params.pc_start
         cfg["id_assignment"]["cc_start"] = params.cc_start
-        max_ver = db.execute(
-            select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
-                AnalysisConfig.code == "cema_migration_v2"
-            )
-        ).scalar() or 0
+        max_ver = (
+            db.execute(
+                select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                    AnalysisConfig.code == "cema_migration_v2"
+                )
+            ).scalar()
+            or 0
+        )
         ac = AnalysisConfig(
             code="cema_migration_v2",
             version=max_ver + 1,
