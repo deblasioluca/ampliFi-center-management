@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import csv
 import io
 from datetime import UTC, datetime
@@ -1031,10 +1032,8 @@ def validate_upload(batch_id: int, db: Session) -> dict:
 
         opts: dict = {}
         if batch.source_detail:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 opts = _json.loads(batch.source_detail)
-            except (ValueError, TypeError):
-                pass
         sheet_name = opts.get("sheet_name", "Database")
         header_row = int(opts.get("header_row", 2))
 
@@ -1354,11 +1353,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         db.commit()
 
     try:
-        if batch.kind == "cc_with_hierarchy":
-            # cc_with_hierarchy handles its own file reading
-            rows = []
-        else:
-            rows = _read_file(batch.storage_uri)
+        rows = [] if batch.kind == "cc_with_hierarchy" else _read_file(batch.storage_uri)
     except Exception as e:
         batch.status = "failed"
         db.commit()
@@ -2057,10 +2052,8 @@ def _load_cc_with_hierarchy(
 
     opts: dict = {}
     if batch.source_detail:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             opts = _json.loads(batch.source_detail)
-        except (ValueError, TypeError):
-            pass
 
     sheet_name = opts.get("sheet_name", "Database")
     header_row = int(opts.get("header_row", 2))
