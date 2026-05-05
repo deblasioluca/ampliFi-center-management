@@ -731,6 +731,10 @@ def create_object_binding(
     conn = db.get(SAPConnection, conn_id)
     if not conn:
         raise HTTPException(status_code=404, detail="SAP connection not found")
+    if body.scope not in ALL_SCOPES:
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope}")
+    if body.data_category not in ALL_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid data_category: {body.data_category}")
 
     binding = SAPObjectBinding(
         connection_id=conn_id,
