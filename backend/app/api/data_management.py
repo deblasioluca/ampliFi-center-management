@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_role
 from app.infra.db.session import get_db
 from app.models.core import (
+    ALL_CATEGORIES,
+    ALL_SCOPES,
     SCOPE_CLEANUP,
     AppUser,
     Balance,
@@ -488,6 +490,10 @@ def trigger_sap_extraction(
     _user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
     """Trigger SAP OData extraction for a given data kind."""
+    if body.scope not in ALL_SCOPES:
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope}")
+    if body.data_category not in ALL_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid data_category: {body.data_category}")
     from app.services.sap_extraction import extract_from_sap
 
     try:
@@ -547,6 +553,8 @@ def data_browser(
         .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
         .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
     )
+    if data_category:
+        bal_q = bal_q.where(Balance.data_category == data_category)
     bal_rows = db.execute(bal_q).all()
     balance_map: dict[tuple[str, str], list[dict]] = {}
     for coarea, cctr, fy, per, amt, post, curr in bal_rows:
@@ -586,6 +594,8 @@ def data_browser(
         .where(Hierarchy.scope == scope, Hierarchy.is_active.is_(True))
         .order_by(Hierarchy.setclass, Hierarchy.setname)
     )
+    if data_category:
+        hier_q = hier_q.where(Hierarchy.data_category == data_category)
     hiers = db.execute(hier_q).scalars().all()
     cls_labels = {
         "0101": "Cost Center",
