@@ -311,10 +311,9 @@ _PLURAL_MAP = {
     "entity_hierarchies": "entity_hierarchy",
 }
 
-# entity_hierarchy extractions produce hierarchies_flat batches for processing
-_KIND_BATCH_MAP = {
-    "entity_hierarchy": "hierarchies_flat",
-}
+# Batch kind overrides: empty — entity_hierarchy keeps its own kind
+# so the upload processor applies GCRS setclass + period grouping.
+_KIND_BATCH_MAP: dict[str, str] = {}
 
 
 _SAFE_VALUE_RE = re.compile(r"^[A-Za-z0-9_\-./]+$")

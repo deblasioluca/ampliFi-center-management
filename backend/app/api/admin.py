@@ -1050,6 +1050,8 @@ _HIER_CLASS_LABELS = {
     "0101": "Cost Center",
     "0104": "Profit Center",
     "0106": "Entity",
+    "GCRS": "Entity Hierarchy",
+    "FLAT": "Flat Hierarchy",
 }
 
 

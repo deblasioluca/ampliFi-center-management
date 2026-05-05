@@ -1291,6 +1291,17 @@ def validate_upload(batch_id: int, db: Session) -> dict:
                     }
                 )
                 error_rows.add(i)
+        elif batch.kind == "cc_with_hierarchy":
+            if not row.get("cctr"):
+                errors.append(
+                    {
+                        "row": i,
+                        "col": "External Id",
+                        "code": "REQUIRED",
+                        "msg": "External Id (cctr) is required",
+                    }
+                )
+                error_rows.add(i)
         elif batch.kind == "gl_accounts_ska1":
             if not row.get("saknr"):
                 errors.append(
