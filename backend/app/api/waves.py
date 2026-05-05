@@ -1468,9 +1468,11 @@ def run_v2_analysis_endpoint(
     if params and params.config_id:
         config_id = params.config_id
     elif params and params.pc_approach_rules is not None:
+        import copy
+
         from app.models.core import AnalysisConfig
 
-        cfg = dict(V2_DEFAULT_CONFIG)
+        cfg = copy.deepcopy(V2_DEFAULT_CONFIG)
         for step in cfg["pipeline"]:
             if step["routine"] == "v2.pc_approach":
                 step["params"]["approach_rules"] = params.pc_approach_rules
@@ -1677,7 +1679,13 @@ def list_v2_proposals(
 
     q = select(CenterProposal).where(CenterProposal.run_id == run_id)
 
-    # Count total
+    # Apply JSONB filters at SQL level
+    if migrate:
+        q = q.where(CenterProposal.attrs["migrate"].astext == migrate)
+    if approach:
+        q = q.where(CenterProposal.attrs["approach"].astext == approach)
+
+    # Count total (after filters)
     count_q = select(func.count()).select_from(q.subquery())
     total = db.execute(count_q).scalar() or 0
 
@@ -1691,15 +1699,6 @@ def list_v2_proposals(
     items = []
     for p in proposals:
         attrs = p.attrs or {}
-        mig = attrs.get("migrate", "N")
-        appr = attrs.get("approach", "1:1")
-
-        # Apply filters
-        if migrate and mig != migrate:
-            continue
-        if approach and appr != approach:
-            continue
-
         legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
         items.append(
             {
@@ -1708,8 +1707,8 @@ def list_v2_proposals(
                 "legacy_name": legacy.txtsh if legacy else "",
                 "coarea": legacy.coarea if legacy else "",
                 "ccode": legacy.ccode if legacy else "",
-                "migrate": mig,
-                "approach": appr,
+                "migrate": attrs.get("migrate", "N"),
+                "approach": attrs.get("approach", "1:1"),
                 "pc_id": attrs.get("pc_id", ""),
                 "pc_name": attrs.get("pc_name", ""),
                 "cc_id": attrs.get("cc_id", ""),

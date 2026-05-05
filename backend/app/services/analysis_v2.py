@@ -316,11 +316,9 @@ def run_v2_analysis(
             db.add(
                 RoutineOutput(
                     run_id=run.id,
-                    proposal_id=None,
                     routine_code=r.code,
+                    legacy_cc_id=cc.id,
                     verdict=r.verdict,
-                    reason=r.reason,
-                    score=r.score,
                     payload=r.payload,
                 )
             )
