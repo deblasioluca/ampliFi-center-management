@@ -196,12 +196,25 @@ def _scope_query(wave: Wave, db: Session):
     return cc_query
 
 
-def execute_analysis(wave_id: int | None, config_id: int, user_id: int, db: Session) -> AnalysisRun:
+def execute_analysis(
+    wave_id: int | None,
+    config_id: int,
+    user_id: int,
+    db: Session,
+    *,
+    mode: str = "simulation",
+    label: str | None = None,
+    excluded_scopes: list[str] | None = None,
+) -> AnalysisRun:
     """Execute decision tree analysis.
 
     If *wave_id* is provided, only cost centers in the wave's scope are
     analysed. If *wave_id* is ``None``, **all** cost centers are analysed
     (global / full-scope analysis).
+
+    mode: 'simulation' for non-destructive preview, 'activated' for final.
+    label: optional human-readable label for this run.
+    excluded_scopes: list of wave IDs whose centers to exclude (global mode).
     """
     wave = None
     if wave_id is not None:
@@ -220,11 +233,39 @@ def execute_analysis(wave_id: int | None, config_id: int, user_id: int, db: Sess
         started_at=datetime.now(UTC),
         triggered_by=user_id,
         data_snapshot=f"snapshot_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}",
+        mode=mode,
+        label=label
+        or (
+            f"V1 {'Simulation' if mode == 'simulation' else 'Activated'}"
+            f" {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        ),
+        excluded_scopes=excluded_scopes,
     )
     db.add(run)
     db.flush()
 
     cc_query = _scope_query(wave, db) if wave is not None else select(LegacyCostCenter)
+
+    # Exclude centers from completed waves (global mode)
+    if excluded_scopes and wave is None:
+        excl_entity_ids = (
+            db.execute(
+                select(WaveEntity.entity_id).where(
+                    WaveEntity.wave_id.in_([int(w) for w in excluded_scopes])
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if excl_entity_ids:
+            excl_ccodes = (
+                db.execute(select(Entity.ccode).where(Entity.id.in_(excl_entity_ids)))
+                .scalars()
+                .all()
+            )
+            if excl_ccodes:
+                cc_query = cc_query.where(LegacyCostCenter.ccode.not_in(excl_ccodes))
+
     cost_centers = db.execute(cc_query).scalars().all()
     params = config.config.get("params", {}) if config.config else {}
     pipeline_config = config.config if config.config else {}

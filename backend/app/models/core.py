@@ -859,6 +859,12 @@ class AnalysisRun(TimestampMixin, Base):
     triggered_by: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
+    engine_version: Mapped[str | None] = mapped_column(String(30))
+    total_centers: Mapped[int] = mapped_column(Integer, default=0)
+    completed_centers: Mapped[int] = mapped_column(Integer, default=0)
+    mode: Mapped[str] = mapped_column(String(20), default="simulation")  # simulation|activated
+    label: Mapped[str | None] = mapped_column(String(100))
+    excluded_scopes: Mapped[list | None] = mapped_column(JSONB)
 
     wave: Mapped[Wave | None] = relationship(back_populates="runs", foreign_keys=[wave_id])
     config: Mapped[AnalysisConfig] = relationship()
@@ -955,6 +961,7 @@ class CenterProposal(TimestampMixin, Base):
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
     override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attrs: Mapped[dict | None] = mapped_column(JSONB)
 
     run: Mapped[AnalysisRun] = relationship(back_populates="proposals")
     legacy_cc: Mapped[LegacyCostCenter] = relationship()

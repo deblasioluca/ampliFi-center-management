@@ -1034,7 +1034,7 @@ def lookup_hierarchies(
         result.append(
             {
                 "set_name": setname,
-                "description": row.get("DESSION", "").strip(),
+                "description": row.get("DESSION", "").strip() or row.get("LTEXT", "").strip(),
                 "set_class": setclass,
                 "kind": kind,
                 "co_area": row.get("SUBCLASS", "").strip(),

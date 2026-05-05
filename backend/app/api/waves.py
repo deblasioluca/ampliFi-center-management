@@ -6,6 +6,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from app.models.core import (
     AppUser,
     CenterProposal,
     Entity,
+    HierarchyLeaf,
     LegacyCostCenter,
     ReviewItem,
     ReviewScope,
@@ -660,10 +662,17 @@ def list_wave_runs(
     }
 
 
+class V1AnalysisParams(BaseModel):
+    config_id: int | None = None
+    mode: str = "simulation"
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+
+
 @router.post("/{wave_id}/analyse")
 def run_analysis(
     wave_id: int,
-    config_id: int | None = None,
+    params: V1AnalysisParams | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
@@ -674,20 +683,38 @@ def run_analysis(
     if not wave:
         raise HTTPException(status_code=404, detail="Wave not found")
     if wave.status not in ("draft", "analysing", "proposed"):
-        raise HTTPException(status_code=409, detail=f"Cannot analyse wave in status {wave.status}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot analyse wave in status {wave.status}",
+        )
 
+    config_id = params.config_id if params else None
     if config_id is None:
         config = get_or_create_default_config(db)
         config_id = config.id
 
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
     try:
-        run = execute_analysis(wave_id, config_id, user.id, db)
+        run = execute_analysis(
+            wave_id,
+            config_id,
+            user.id,
+            db,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}") from None
 
     return {
         "run_id": run.id,
         "status": run.status,
+        "mode": run.mode,
+        "label": run.label,
         "kpis": run.kpis,
         "started_at": str(run.started_at) if run.started_at else None,
         "finished_at": str(run.finished_at) if run.finished_at else None,
@@ -882,13 +909,34 @@ def create_review_scope(
             .all()
         )
 
-        # Filter by scope filter
+        # Filter by scope filter (entity codes AND/OR hierarchy nodes)
         scope_ccodes = body.scope_filter.get("entity_ccodes", [])
+        hier_nodes = body.scope_filter.get("hierarchy_nodes", [])
+
+        # If hierarchy_nodes specified, resolve which cost centers are under those nodes
+        hier_cctrs: set[str] = set()
+        if hier_nodes:
+            for node_info in hier_nodes:
+                node_name = node_info.get("node_name", "")
+                if node_name:
+                    leaves = (
+                        db.execute(select(HierarchyLeaf).where(HierarchyLeaf.setname == node_name))
+                        .scalars()
+                        .all()
+                    )
+                    for lf in leaves:
+                        hier_cctrs.add(lf.value)
+
         for p in proposals:
-            if scope_ccodes:
-                cc = db.get(LegacyCostCenter, p.legacy_cc_id)
-                if not cc or cc.ccode not in scope_ccodes:
-                    continue
+            cc = db.get(LegacyCostCenter, p.legacy_cc_id)
+            if not cc:
+                continue
+            # Entity filter
+            if scope_ccodes and cc.ccode not in scope_ccodes:
+                continue
+            # Hierarchy filter
+            if hier_cctrs and (cc.cctr or "") not in hier_cctrs:
+                continue
             db.add(
                 ReviewItem(
                     scope_id=scope.id,
@@ -1433,4 +1481,653 @@ def auto_assign_scopes(
         "scopes": created_scopes,
         "total_items": len(proposals),
         "strategy": params.strategy,
+    }
+
+
+# ── V2 CEMA Migration endpoints ─────────────────────────────────────────
+
+
+class V2AnalysisParams(BaseModel):
+    config_id: int | None = None
+    pc_approach_rules: list[dict] | None = None
+    pc_start: int = 137
+    cc_start: int = 1
+    mode: str = "simulation"  # simulation | activated
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+
+
+@router.post("/{wave_id}/analyse-v2")
+def run_v2_analysis_endpoint(
+    wave_id: int,
+    params: V2AnalysisParams | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run V2 CEMA migration decision tree on wave's cost centers."""
+    from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("draft", "analysing", "proposed"):
+        raise HTTPException(status_code=409, detail=f"Cannot analyse wave in status {wave.status}")
+
+    # If inline params provided, build a runtime config
+    config_id = None
+    if params and params.config_id:
+        config_id = params.config_id
+    elif params and params.pc_approach_rules is not None:
+        import copy
+
+        from app.models.core import AnalysisConfig
+
+        cfg = copy.deepcopy(V2_DEFAULT_CONFIG)
+        for step in cfg["pipeline"]:
+            if step["routine"] == "v2.pc_approach":
+                step["params"]["approach_rules"] = params.pc_approach_rules
+        cfg["id_assignment"]["pc_start"] = params.pc_start
+        cfg["id_assignment"]["cc_start"] = params.cc_start
+        max_ver = (
+            db.execute(
+                select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                    AnalysisConfig.code == "cema_migration_v2"
+                )
+            ).scalar()
+            or 0
+        )
+        ac = AnalysisConfig(
+            code="cema_migration_v2",
+            version=max_ver + 1,
+            name="V2 CEMA Migration (runtime)",
+            config=cfg,
+            created_by=user.id,
+        )
+        db.add(ac)
+        db.flush()
+        config_id = ac.id
+
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
+    try:
+        result = run_v2_analysis(
+            wave_id,
+            config_id,
+            db,
+            user.id,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"V2 analysis failed: {e}") from None
+
+    return result
+
+
+@router.get("/{wave_id}/runs/{run_id}/export-v2")
+def export_v2_results(
+    wave_id: int,
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> Response:
+    """Export V2 analysis results as Excel with PC/CC templates + mapping."""
+    import io
+
+    from openpyxl import Workbook
+
+    run = db.get(AnalysisRun, run_id)
+    if not run or run.wave_id != wave_id:
+        raise HTTPException(status_code=404, detail="Run not found for this wave")
+
+    proposals = (
+        db.execute(
+            select(CenterProposal)
+            .where(CenterProposal.run_id == run_id)
+            .order_by(CenterProposal.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    wb = Workbook()
+
+    # Sheet 1: PC Template
+    ws_pc = wb.active
+    ws_pc.title = "PC_Template"  # type: ignore[union-attr]
+    pc_headers = [
+        "PC_ID",
+        "PC_Name",
+        "CO_Area",
+        "Company_Code",
+        "Currency",
+        "Responsible",
+        "Approach",
+        "Group_Key",
+        "Migrate",
+    ]
+    ws_pc.append(pc_headers)  # type: ignore[union-attr]
+
+    # Sheet 2: CC Template
+    ws_cc = wb.create_sheet("CC_Template")
+    cc_headers = [
+        "CC_ID",
+        "CC_Name",
+        "CO_Area",
+        "Company_Code",
+        "Currency",
+        "Responsible",
+        "Category",
+        "Legacy_CCTR",
+        "Migrate",
+    ]
+    ws_cc.append(cc_headers)
+
+    # Sheet 3: Mapping
+    ws_map = wb.create_sheet("Mapping")
+    map_headers = [
+        "Legacy_CCTR",
+        "Legacy_Name",
+        "CO_Area",
+        "Company_Code",
+        "Migrate",
+        "Approach",
+        "PC_ID",
+        "PC_Name",
+        "CC_ID",
+        "CC_Name",
+        "External_Hierarchy",
+        "CEMA_Hierarchy",
+    ]
+    ws_map.append(map_headers)
+
+    # Track PCs already written (for 1:n dedup)
+    pc_written: set[str] = set()
+
+    for p in proposals:
+        attrs = p.attrs or {}
+        legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
+        if not legacy:
+            continue
+
+        migrate = attrs.get("migrate", "N")
+        approach = attrs.get("approach", "1:1")
+        pc_id = attrs.get("pc_id", "")
+        pc_name = attrs.get("pc_name", "")
+        cc_id = attrs.get("cc_id", "")
+        cc_name = attrs.get("cc_name", legacy.txtsh or "")
+        group_key = attrs.get("group_key", "")
+        ext_hierarchy = attrs.get("ext_hierarchy", "")
+        cema_hierarchy = attrs.get("cema_hierarchy", "")
+
+        # Mapping row — all centers
+        ws_map.append(
+            [
+                legacy.cctr,
+                legacy.txtsh,
+                legacy.coarea,
+                legacy.ccode,
+                migrate,
+                approach,
+                pc_id,
+                pc_name,
+                cc_id,
+                cc_name,
+                ext_hierarchy,
+                cema_hierarchy,
+            ]
+        )
+
+        if migrate != "Y":
+            continue
+
+        # PC Template (deduplicated for 1:n)
+        if pc_id and pc_id not in pc_written:
+            ws_pc.append(
+                [  # type: ignore[union-attr]
+                    pc_id,
+                    pc_name,
+                    legacy.coarea,
+                    legacy.ccode,
+                    legacy.currency,
+                    legacy.responsible,
+                    approach,
+                    group_key,
+                    "Y",
+                ]
+            )
+            pc_written.add(pc_id)
+
+        # CC Template
+        if cc_id:
+            ws_cc.append(
+                [
+                    cc_id,
+                    cc_name,
+                    legacy.coarea,
+                    legacy.ccode,
+                    legacy.currency,
+                    legacy.responsible,
+                    legacy.cctrcgy,
+                    legacy.cctr,
+                    "Y",
+                ]
+            )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"v2_migration_wave{wave_id}_run{run_id}.xlsx"
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/{wave_id}/runs/{run_id}/proposals-v2")
+def list_v2_proposals(
+    wave_id: int,
+    run_id: int,
+    migrate: str | None = None,
+    approach: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """List V2 proposals with migration details."""
+    run = db.get(AnalysisRun, run_id)
+    if not run or run.wave_id != wave_id:
+        raise HTTPException(status_code=404, detail="Run not found for this wave")
+
+    q = select(CenterProposal).where(CenterProposal.run_id == run_id)
+
+    # Apply JSONB filters at SQL level
+    if migrate:
+        q = q.where(CenterProposal.attrs["migrate"].astext == migrate)
+    if approach:
+        q = q.where(CenterProposal.attrs["approach"].astext == approach)
+
+    # Count total (after filters)
+    count_q = select(func.count()).select_from(q.subquery())
+    total = db.execute(count_q).scalar() or 0
+
+    # Paginate
+    proposals = (
+        db.execute(q.order_by(CenterProposal.id).offset((page - 1) * per_page).limit(per_page))
+        .scalars()
+        .all()
+    )
+
+    items = []
+    for p in proposals:
+        attrs = p.attrs or {}
+        legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
+        items.append(
+            {
+                "id": p.id,
+                "legacy_cctr": legacy.cctr if legacy else "",
+                "legacy_name": legacy.txtsh if legacy else "",
+                "coarea": legacy.coarea if legacy else "",
+                "ccode": legacy.ccode if legacy else "",
+                "migrate": attrs.get("migrate", "N"),
+                "approach": attrs.get("approach", "1:1"),
+                "pc_id": attrs.get("pc_id", ""),
+                "pc_name": attrs.get("pc_name", ""),
+                "cc_id": attrs.get("cc_id", ""),
+                "cc_name": attrs.get("cc_name", ""),
+                "cleansing_outcome": p.cleansing_outcome,
+                "rule_path": p.rule_path,
+            }
+        )
+
+    return {
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "items": items,
+    }
+
+
+# ── Global simulation endpoint ───────────────────────────────────────────
+
+
+class GlobalSimParams(BaseModel):
+    config_id: int | None = None
+    pc_approach_rules: list[dict] | None = None
+    pc_start: int = 137
+    cc_start: int = 1
+    mode: str = "simulation"
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+
+
+@router.post("/global/simulate-v2")
+def run_global_v2_simulation(
+    params: GlobalSimParams | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run V2 decision tree on ALL centers (global mode).
+
+    Optionally exclude centers belonging to specific wave IDs.
+    """
+    from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+
+    config_id = None
+    if params and params.config_id:
+        config_id = params.config_id
+    elif params and params.pc_approach_rules is not None:
+        import copy
+
+        from app.models.core import AnalysisConfig
+
+        cfg = copy.deepcopy(V2_DEFAULT_CONFIG)
+        for step in cfg["pipeline"]:
+            if step["routine"] == "v2.pc_approach":
+                step["params"]["approach_rules"] = params.pc_approach_rules
+        cfg["id_assignment"]["pc_start"] = params.pc_start
+        cfg["id_assignment"]["cc_start"] = params.cc_start
+        max_ver = (
+            db.execute(
+                select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                    AnalysisConfig.code == "cema_migration_v2"
+                )
+            ).scalar()
+            or 0
+        )
+        ac = AnalysisConfig(
+            code="cema_migration_v2",
+            version=max_ver + 1,
+            name="V2 CEMA Migration (global runtime)",
+            config=cfg,
+            created_by=user.id,
+        )
+        db.add(ac)
+        db.flush()
+        config_id = ac.id
+
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
+    try:
+        result = run_v2_analysis(
+            None,
+            config_id,
+            db,
+            user.id,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"V2 global simulation failed: {e}") from None
+
+    return result
+
+
+# ── Simulation management ────────────────────────────────────────────────
+
+
+@router.get("/simulations/v2")
+def list_simulations(
+    wave_id: int | None = None,
+    mode: str | None = None,
+    engine: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """List simulation/activated runs (V1 and V2), optionally filtered."""
+    q = select(AnalysisRun)
+    if wave_id is not None:
+        q = q.where(AnalysisRun.wave_id == wave_id)
+    if mode:
+        q = q.where(AnalysisRun.mode == mode)
+    if engine:
+        q = q.where(AnalysisRun.engine_version == engine)
+    q = q.order_by(AnalysisRun.created_at.desc())
+
+    runs = db.execute(q).scalars().all()
+    items = []
+    for r in runs:
+        items.append(
+            {
+                "id": r.id,
+                "wave_id": r.wave_id,
+                "mode": r.mode or "simulation",
+                "label": r.label,
+                "status": r.status,
+                "engine_version": r.engine_version,
+                "total_centers": r.total_centers,
+                "completed_centers": r.completed_centers,
+                "config_id": r.config_id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "kpis": r.kpis,
+                "excluded_scopes": r.excluded_scopes,
+            }
+        )
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/simulations/{run_id}/activate")
+def activate_v2_simulation(
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Activate a simulation — re-assign real PC/CC IDs and mark as activated.
+
+    This creates final P/C IDs (instead of PT/CT temp IDs) and locks the run.
+    After activation the data manager can release for review.
+    """
+    from app.services.analysis_v2 import assign_v2_ids
+
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.engine_version != "v2.cema_migration":
+        raise HTTPException(status_code=400, detail="Not a V2 run")
+    if run.mode == "activated":
+        raise HTTPException(status_code=409, detail="Run already activated")
+    if run.status != "completed":
+        raise HTTPException(status_code=409, detail="Can only activate completed runs")
+
+    # Get config for real ID parameters
+    from app.models.core import AnalysisConfig as AnalysisCfg
+
+    ac = db.get(AnalysisCfg, run.config_id)
+    id_config = (ac.config or {}).get("id_assignment", {}) if ac else {}
+
+    # Re-assign with real prefixes
+    id_result = assign_v2_ids(
+        run_id=run.id,
+        db=db,
+        pc_prefix=id_config.get("pc_prefix", "P"),
+        cc_prefix=id_config.get("cc_prefix", "C"),
+        pc_start=id_config.get("pc_start", 137),
+        cc_start=id_config.get("cc_start", 1),
+        id_width=id_config.get("id_width", 5),
+    )
+
+    run.mode = "activated"
+    run.label = (run.label or "V2") + " [ACTIVATED]"
+
+    # Update wave status if wave-scoped and transition is valid
+    if run.wave_id:
+        wave = db.get(Wave, run.wave_id)
+        if wave and "proposed" in VALID_TRANSITIONS.get(wave.status, []):
+            wave.status = "proposed"
+            wave.preferred_run_id = run.id
+            wave.config = {**(wave.config or {}), "preferred_run_id": run.id}
+
+    db.commit()
+
+    return {
+        "run_id": run.id,
+        "mode": "activated",
+        "id_assignment": id_result,
+    }
+
+
+# ── V2 hierarchy nodes (for PC approach picker) ─────────────────────────
+
+
+@router.get("/hierarchy-nodes")
+def list_hierarchy_nodes_for_picker(
+    hierarchy_id: int | None = None,
+    setclass: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """Return hierarchy nodes in a tree structure for the PC approach node picker."""
+    from app.models.core import Hierarchy, HierarchyNode
+
+    if hierarchy_id:
+        hier = db.get(Hierarchy, hierarchy_id)
+        if not hier:
+            raise HTTPException(status_code=404, detail="Hierarchy not found")
+        nodes = (
+            db.execute(
+                select(HierarchyNode)
+                .where(HierarchyNode.hierarchy_id == hierarchy_id)
+                .order_by(HierarchyNode.seq)
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        q = select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)
+        if setclass:
+            q = q.where(Hierarchy.setclass == setclass)
+        hiers = db.execute(q).scalars().all()
+        return {
+            "hierarchies": [
+                {
+                    "id": h.id,
+                    "setclass": h.setclass,
+                    "setname": h.setname,
+                    "label": h.label or h.setname,
+                    "scope": h.scope,
+                    "data_category": h.data_category,
+                }
+                for h in hiers
+            ]
+        }
+
+    # Build tree using setname-based parent-child relationships
+    # Each HierarchyNode has parent_setname and child_setname
+    children_of: dict[str, list[dict]] = {}
+    all_children: set[str] = set()
+    all_parents: set[str] = set()
+
+    for n in nodes:
+        all_parents.add(n.parent_setname)
+        all_children.add(n.child_setname)
+        nd = {
+            "id": n.id,
+            "node_name": n.child_setname,
+            "node_text": n.child_setname,
+            "parent_name": n.parent_setname,
+            "children": [],
+        }
+        children_of.setdefault(n.parent_setname, []).append(nd)
+
+    # Root parents are those that appear as parent but never as child
+    root_parents = all_parents - all_children
+
+    # Build tree recursively
+    def _build_subtree(parent_name: str) -> list[dict]:
+        result = []
+        for nd in children_of.get(parent_name, []):
+            nd["children"] = _build_subtree(nd["node_name"])
+            result.append(nd)
+        return result
+
+    root_nodes: list[dict] = []
+    for rp in sorted(root_parents):
+        for nd in children_of.get(rp, []):
+            nd["children"] = _build_subtree(nd["node_name"])
+            root_nodes.append(nd)
+
+    return {"hierarchy_id": hierarchy_id, "nodes": root_nodes, "total_nodes": len(nodes)}
+
+
+# ── V2 scope coverage dashboard ──────────────────────────────────────────
+
+
+@router.get("/{wave_id}/scope-coverage")
+def get_wave_scope_coverage(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """Check whether all centers in a wave are covered by review scopes + reviewers."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+
+    # Get all proposal IDs for latest V2 run
+    latest_run = db.execute(
+        select(AnalysisRun)
+        .where(AnalysisRun.wave_id == wave_id, AnalysisRun.engine_version == "v2.cema_migration")
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if not latest_run:
+        return {"coverage_pct": 0, "total_proposals": 0, "covered": 0, "uncovered": 0, "scopes": []}
+
+    proposals = (
+        db.execute(
+            select(CenterProposal).where(
+                CenterProposal.run_id == latest_run.id,
+                CenterProposal.attrs["migrate"].astext == "Y",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total_migrating = len(proposals)
+
+    # Get review scopes and their items
+    from app.models.core import ReviewItem, ReviewScope
+
+    scopes = db.execute(select(ReviewScope).where(ReviewScope.wave_id == wave_id)).scalars().all()
+
+    covered_proposal_ids: set[int] = set()
+    scope_details = []
+    for s in scopes:
+        items = db.execute(select(ReviewItem).where(ReviewItem.scope_id == s.id)).scalars().all()
+        proposal_ids_in_scope = {it.proposal_id for it in items}
+        covered_proposal_ids.update(proposal_ids_in_scope)
+        scope_details.append(
+            {
+                "scope_id": s.id,
+                "scope_name": s.name,
+                "reviewer_name": s.reviewer_name,
+                "reviewer_email": s.reviewer_email,
+                "total_items": len(items),
+                "has_reviewer": bool(s.reviewer_email),
+            }
+        )
+
+    migrating_ids = {p.id for p in proposals}
+    covered = len(covered_proposal_ids & migrating_ids)
+    uncovered = total_migrating - covered
+
+    return {
+        "coverage_pct": round(covered / total_migrating * 100, 1) if total_migrating else 100,
+        "total_proposals": total_migrating,
+        "covered": covered,
+        "uncovered": uncovered,
+        "scopes": scope_details,
+        "run_id": latest_run.id,
+        "run_mode": latest_run.mode,
     }

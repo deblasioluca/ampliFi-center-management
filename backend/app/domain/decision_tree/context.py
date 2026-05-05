@@ -58,6 +58,21 @@ class CenterContext:
     ml_target_probs: dict[str, float] = field(default_factory=dict)
     ml_anomaly_score: float | None = None
 
+    # V2: CEMA hierarchy levels (from cc_with_hierarchy upload)
+    ext_levels: dict[str, str] = field(default_factory=dict)  # ext_l0..ext_l13
+    ext_descs: dict[str, str] = field(default_factory=dict)  # ext_l0_desc..ext_l13_desc
+    cema_levels: dict[str, str] = field(default_factory=dict)  # cema_l0..cema_l11
+    cema_descs: dict[str, str] = field(default_factory=dict)  # cema_l0_desc..cema_l11_desc
+    ext_hierarchy: str = ""  # full hierarchy path (External_Hierarchy column)
+    cema_hierarchy: str = ""  # full hierarchy path (CEMA_Hierarchy column)
+
+    # V2: Balance detail by GL account category
+    balance_by_category: dict[str, float] = field(default_factory=dict)
+
+    # V2: FTE info
+    has_ftes: bool = False
+    fte_count: float = 0.0
+
     # Extension attributes
     attrs: dict = field(default_factory=dict)
     flags: dict = field(default_factory=dict)
