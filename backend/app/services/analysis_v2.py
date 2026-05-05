@@ -306,6 +306,10 @@ def run_v2_analysis(
                 "group_key": group_key,
                 "ext_levels": dict(ctx.ext_levels),
                 "ext_descs": dict(ctx.ext_descs),
+                "cema_levels": dict(ctx.cema_levels),
+                "cema_descs": dict(ctx.cema_descs),
+                "ext_hierarchy": ctx.ext_hierarchy,
+                "cema_hierarchy": ctx.cema_hierarchy,
                 "engine_version": "v2",
             },
         )

@@ -1478,9 +1478,14 @@ def run_v2_analysis_endpoint(
                 step["params"]["approach_rules"] = params.pc_approach_rules
         cfg["id_assignment"]["pc_start"] = params.pc_start
         cfg["id_assignment"]["cc_start"] = params.cc_start
+        max_ver = db.execute(
+            select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                AnalysisConfig.code == "cema_migration_v2"
+            )
+        ).scalar() or 0
         ac = AnalysisConfig(
             code="cema_migration_v2",
-            version=1,
+            version=max_ver + 1,
             name="V2 CEMA Migration (runtime)",
             config=cfg,
             created_by=user.id,
@@ -1592,8 +1597,8 @@ def export_v2_results(
         cc_id = attrs.get("cc_id", "")
         cc_name = attrs.get("cc_name", legacy.txtsh or "")
         group_key = attrs.get("group_key", "")
-        ext_hierarchy = attrs.get("ext_levels", {}).get("ext_l0", "")
-        cema_hierarchy = attrs.get("ext_levels", {}).get("cema_l0", "")
+        ext_hierarchy = attrs.get("ext_hierarchy", "")
+        cema_hierarchy = attrs.get("cema_hierarchy", "")
 
         # Mapping row — all centers
         ws_map.append(
