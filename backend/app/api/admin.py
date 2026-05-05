@@ -1177,7 +1177,7 @@ def create_upload(
             {
                 "filename": fname,
                 "sheet_name": sheet_name or "Database",
-                "header_row": header_row or 2,
+                "header_row": header_row if header_row is not None else 2,
                 "load_cc": load_cc,
                 "load_ext_hier": load_ext_hier,
                 "load_cema_hier": load_cema_hier,

@@ -1391,7 +1391,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
     batch_category = getattr(batch, "data_category", None) or "legacy"
 
     # Publish total + reset progress for load phase
-    _flush_progress(batch.id, 0, len(normalized))
+    # (skip for cc_with_hierarchy — _load_cc_with_hierarchy sets its own total)
+    if batch.kind != "cc_with_hierarchy":
+        _flush_progress(batch.id, 0, len(normalized))
 
     if batch.kind in ("cost_center", "cost_centers"):
         for row in normalized:
