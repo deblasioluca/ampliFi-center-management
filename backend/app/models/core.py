@@ -854,6 +854,9 @@ class AnalysisRun(TimestampMixin, Base):
     engine_version: Mapped[str | None] = mapped_column(String(30))
     total_centers: Mapped[int] = mapped_column(Integer, default=0)
     completed_centers: Mapped[int] = mapped_column(Integer, default=0)
+    mode: Mapped[str] = mapped_column(String(20), default="simulation")  # simulation|activated
+    label: Mapped[str | None] = mapped_column(String(100))
+    excluded_scopes: Mapped[list | None] = mapped_column(JSONB)
 
     wave: Mapped[Wave | None] = relationship(back_populates="runs", foreign_keys=[wave_id])
     config: Mapped[AnalysisConfig] = relationship()

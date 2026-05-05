@@ -165,18 +165,27 @@ def _build_v2_context(
 
 
 def run_v2_analysis(
-    wave_id: int,
+    wave_id: int | None,
     config_id: int | None,
     db: Session,
     user_id: int | None = None,
+    *,
+    mode: str = "simulation",
+    label: str | None = None,
+    excluded_scopes: list[str] | None = None,
 ) -> dict:
-    """Run V2 CEMA migration analysis on all centers in a wave.
+    """Run V2 CEMA migration analysis on a wave or globally.
 
+    mode: 'simulation' uses temp CT/PT IDs, 'activated' uses real P/C IDs.
+    wave_id=None runs on all centers (global simulation).
+    excluded_scopes: list of wave IDs whose centers to exclude (for global mode).
     Returns summary with proposal counts, ID ranges, etc.
     """
-    wave = db.get(Wave, wave_id)
-    if not wave:
-        raise ValueError(f"Wave {wave_id} not found")
+    wave = None
+    if wave_id:
+        wave = db.get(Wave, wave_id)
+        if not wave:
+            raise ValueError(f"Wave {wave_id} not found")
 
     # Load or create config
     config_data = dict(V2_DEFAULT_CONFIG)
@@ -214,40 +223,62 @@ def run_v2_analysis(
         status="running",
         started_at=datetime.now(UTC),
         engine_version="v2.cema_migration",
+        mode=mode,
+        label=label
+        or (
+            f"V2 {'Simulation' if mode == 'simulation' else 'Activated'}"
+            f" {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        ),
+        excluded_scopes=excluded_scopes,
     )
     db.add(run)
     db.flush()
 
-    # Get centers: from wave entities or all legacy cost centers
-    wave_entity_ids = (
-        db.execute(select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave_id))
-        .scalars()
-        .all()
-    )
+    # Get centers: from wave entities, or all legacy cost centers for global mode
+    if wave_id:
+        wave_entity_ids = (
+            db.execute(select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave_id))
+            .scalars()
+            .all()
+        )
+    else:
+        wave_entity_ids = []
+
+    base_q = select(LegacyCostCenter).where(LegacyCostCenter.scope == "cleanup")
+
+    # Exclude centers from already-completed waves
+    if excluded_scopes:
+        from app.models.core import Entity
+
+        excl_entity_ids = (
+            db.execute(
+                select(WaveEntity.entity_id).where(
+                    WaveEntity.wave_id.in_([int(w) for w in excluded_scopes])
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if excl_entity_ids:
+            excl_ccodes = (
+                db.execute(select(Entity.ccode).where(Entity.id.in_(excl_entity_ids)))
+                .scalars()
+                .all()
+            )
+            if excl_ccodes:
+                base_q = base_q.where(LegacyCostCenter.ccode.not_in(excl_ccodes))
 
     if wave_entity_ids:
-        # Scope by wave entities
         from app.models.core import Entity
 
         entity_ccodes = (
             db.execute(select(Entity.ccode).where(Entity.id.in_(wave_entity_ids))).scalars().all()
         )
         centers = (
-            db.execute(
-                select(LegacyCostCenter).where(
-                    LegacyCostCenter.scope == "cleanup",
-                    LegacyCostCenter.ccode.in_(entity_ccodes),
-                )
-            )
-            .scalars()
-            .all()
+            db.execute(base_q.where(LegacyCostCenter.ccode.in_(entity_ccodes))).scalars().all()
         )
     else:
-        centers = (
-            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.scope == "cleanup"))
-            .scalars()
-            .all()
-        )
+        centers = db.execute(base_q).scalars().all()
 
     total = len(centers)
     run.total_centers = total
@@ -283,6 +314,9 @@ def run_v2_analysis(
                 cleansing = r.payload.get("cleansing_outcome", "RETIRE")
                 target_obj = r.payload.get("target_object", "NONE")
                 rule_path = r.payload.get("rule_path", [])
+
+        if not rule_path:
+            rule_path = [f"{r.code}:{r.verdict}" for r in results]
 
         if migrate == "Y":
             migrate_count += 1
@@ -333,26 +367,41 @@ def run_v2_analysis(
 
     db.flush()
 
-    # Assign PC/CC IDs
-    id_result = assign_v2_ids(
-        run_id=run.id,
-        db=db,
-        pc_prefix=id_config.get("pc_prefix", "P"),
-        cc_prefix=id_config.get("cc_prefix", "C"),
-        pc_start=id_config.get("pc_start", 137),
-        cc_start=id_config.get("cc_start", 1),
-        id_width=id_config.get("id_width", 5),
-    )
+    # Assign IDs — temp (CT/PT) for simulation, real (P/C) for activated
+    if mode == "simulation":
+        id_result = assign_v2_ids(
+            run_id=run.id,
+            db=db,
+            pc_prefix="PT",
+            cc_prefix="CT",
+            pc_start=1,
+            cc_start=1,
+            id_width=5,
+        )
+    else:
+        id_result = assign_v2_ids(
+            run_id=run.id,
+            db=db,
+            pc_prefix=id_config.get("pc_prefix", "P"),
+            cc_prefix=id_config.get("cc_prefix", "C"),
+            pc_start=id_config.get("pc_start", 137),
+            cc_start=id_config.get("cc_start", 1),
+            id_width=id_config.get("id_width", 5),
+        )
 
-    # Finalize run
+    # Finalize run + wave status atomically
     run.status = "completed"
     run.completed_centers = total
     run.finished_at = datetime.now(UTC)
+    if wave and wave.status in ("draft", "analysing"):
+        wave.status = "analysing"
     db.commit()
 
     return {
         "run_id": run.id,
         "wave_id": wave_id,
+        "mode": mode,
+        "label": run.label,
         "total_centers": total,
         "migrate_yes": migrate_count,
         "migrate_no": retire_count,

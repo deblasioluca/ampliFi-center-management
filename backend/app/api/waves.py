@@ -1445,6 +1445,9 @@ class V2AnalysisParams(BaseModel):
     pc_approach_rules: list[dict] | None = None
     pc_start: int = 137
     cc_start: int = 1
+    mode: str = "simulation"  # simulation | activated
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
 
 
 @router.post("/{wave_id}/analyse-v2")
@@ -1497,13 +1500,23 @@ def run_v2_analysis_endpoint(
         db.flush()
         config_id = ac.id
 
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
     try:
-        result = run_v2_analysis(wave_id, config_id, db, user.id)
+        result = run_v2_analysis(
+            wave_id,
+            config_id,
+            db,
+            user.id,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"V2 analysis failed: {e}") from None
 
-    wave.status = "analysing"
-    db.commit()
     return result
 
 
@@ -1731,4 +1744,324 @@ def list_v2_proposals(
         "page": page,
         "per_page": per_page,
         "items": items,
+    }
+
+
+# ── Global simulation endpoint ───────────────────────────────────────────
+
+
+class GlobalSimParams(BaseModel):
+    config_id: int | None = None
+    pc_approach_rules: list[dict] | None = None
+    pc_start: int = 137
+    cc_start: int = 1
+    mode: str = "simulation"
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+
+
+@router.post("/global/simulate-v2")
+def run_global_v2_simulation(
+    params: GlobalSimParams | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run V2 decision tree on ALL centers (global mode).
+
+    Optionally exclude centers belonging to specific wave IDs.
+    """
+    from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+
+    config_id = None
+    if params and params.config_id:
+        config_id = params.config_id
+    elif params and params.pc_approach_rules is not None:
+        import copy
+
+        from app.models.core import AnalysisConfig
+
+        cfg = copy.deepcopy(V2_DEFAULT_CONFIG)
+        for step in cfg["pipeline"]:
+            if step["routine"] == "v2.pc_approach":
+                step["params"]["approach_rules"] = params.pc_approach_rules
+        cfg["id_assignment"]["pc_start"] = params.pc_start
+        cfg["id_assignment"]["cc_start"] = params.cc_start
+        max_ver = (
+            db.execute(
+                select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                    AnalysisConfig.code == "cema_migration_v2"
+                )
+            ).scalar()
+            or 0
+        )
+        ac = AnalysisConfig(
+            code="cema_migration_v2",
+            version=max_ver + 1,
+            name="V2 CEMA Migration (global runtime)",
+            config=cfg,
+            created_by=user.id,
+        )
+        db.add(ac)
+        db.flush()
+        config_id = ac.id
+
+    sim_mode = params.mode if params else "simulation"
+    sim_label = params.label if params else None
+    excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+
+    try:
+        result = run_v2_analysis(
+            None,
+            config_id,
+            db,
+            user.id,
+            mode=sim_mode,
+            label=sim_label,
+            excluded_scopes=excl,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"V2 global simulation failed: {e}") from None
+
+    return result
+
+
+# ── Simulation management ────────────────────────────────────────────────
+
+
+@router.get("/simulations/v2")
+def list_v2_simulations(
+    wave_id: int | None = None,
+    mode: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """List V2 simulation/activated runs, optionally filtered by wave."""
+    q = select(AnalysisRun).where(AnalysisRun.engine_version == "v2.cema_migration")
+    if wave_id is not None:
+        q = q.where(AnalysisRun.wave_id == wave_id)
+    if mode:
+        q = q.where(AnalysisRun.mode == mode)
+    q = q.order_by(AnalysisRun.created_at.desc())
+
+    runs = db.execute(q).scalars().all()
+    items = []
+    for r in runs:
+        items.append(
+            {
+                "id": r.id,
+                "wave_id": r.wave_id,
+                "mode": r.mode or "simulation",
+                "label": r.label,
+                "status": r.status,
+                "engine_version": r.engine_version,
+                "total_centers": r.total_centers,
+                "completed_centers": r.completed_centers,
+                "config_id": r.config_id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "kpis": r.kpis,
+                "excluded_scopes": r.excluded_scopes,
+            }
+        )
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/simulations/{run_id}/activate")
+def activate_v2_simulation(
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Activate a simulation — re-assign real PC/CC IDs and mark as activated.
+
+    This creates final P/C IDs (instead of PT/CT temp IDs) and locks the run.
+    After activation the data manager can release for review.
+    """
+    from app.services.analysis_v2 import assign_v2_ids
+
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.engine_version != "v2.cema_migration":
+        raise HTTPException(status_code=400, detail="Not a V2 run")
+    if run.mode == "activated":
+        raise HTTPException(status_code=409, detail="Run already activated")
+    if run.status != "completed":
+        raise HTTPException(status_code=409, detail="Can only activate completed runs")
+
+    # Get config for real ID parameters
+    from app.models.core import AnalysisConfig as AnalysisCfg
+
+    ac = db.get(AnalysisCfg, run.config_id)
+    id_config = (ac.config or {}).get("id_assignment", {}) if ac else {}
+
+    # Re-assign with real prefixes
+    id_result = assign_v2_ids(
+        run_id=run.id,
+        db=db,
+        pc_prefix=id_config.get("pc_prefix", "P"),
+        cc_prefix=id_config.get("cc_prefix", "C"),
+        pc_start=id_config.get("pc_start", 137),
+        cc_start=id_config.get("cc_start", 1),
+        id_width=id_config.get("id_width", 5),
+    )
+
+    run.mode = "activated"
+    run.label = (run.label or "V2") + " [ACTIVATED]"
+
+    # Update wave status if wave-scoped
+    if run.wave_id:
+        wave = db.get(Wave, run.wave_id)
+        if wave:
+            wave.status = "proposed"
+
+    db.commit()
+
+    return {
+        "run_id": run.id,
+        "mode": "activated",
+        "id_assignment": id_result,
+    }
+
+
+# ── V2 hierarchy nodes (for PC approach picker) ─────────────────────────
+
+
+@router.get("/hierarchy-nodes")
+def list_hierarchy_nodes_for_picker(
+    hierarchy_id: int | None = None,
+    setclass: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """Return hierarchy nodes in a tree structure for the PC approach node picker."""
+    from app.models.core import Hierarchy, HierarchyNode
+
+    if hierarchy_id:
+        hier = db.get(Hierarchy, hierarchy_id)
+        if not hier:
+            raise HTTPException(status_code=404, detail="Hierarchy not found")
+        nodes = (
+            db.execute(
+                select(HierarchyNode)
+                .where(HierarchyNode.hierarchy_id == hierarchy_id)
+                .order_by(HierarchyNode.sort_key, HierarchyNode.node_name)
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        q = select(Hierarchy).order_by(Hierarchy.setclass, Hierarchy.setname)
+        if setclass:
+            q = q.where(Hierarchy.setclass == setclass)
+        hiers = db.execute(q).scalars().all()
+        return {
+            "hierarchies": [
+                {
+                    "id": h.id,
+                    "setclass": h.setclass,
+                    "setname": h.setname,
+                    "label": h.label or h.setname,
+                    "scope": h.scope,
+                    "data_category": h.data_category,
+                }
+                for h in hiers
+            ]
+        }
+
+    # Build tree
+    node_map: dict[int, dict] = {}
+    root_nodes: list[dict] = []
+    for n in nodes:
+        nd = {
+            "id": n.id,
+            "node_name": n.node_name,
+            "node_text": n.node_text,
+            "node_type": n.node_type,
+            "parent_id": n.parent_id,
+            "level": n.level,
+            "children": [],
+        }
+        node_map[n.id] = nd
+
+    for n in nodes:
+        nd = node_map[n.id]
+        if n.parent_id and n.parent_id in node_map:
+            node_map[n.parent_id]["children"].append(nd)
+        else:
+            root_nodes.append(nd)
+
+    return {"hierarchy_id": hierarchy_id, "nodes": root_nodes, "total_nodes": len(nodes)}
+
+
+# ── V2 scope coverage dashboard ──────────────────────────────────────────
+
+
+@router.get("/{wave_id}/scope-coverage")
+def get_wave_scope_coverage(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+) -> dict:
+    """Check whether all centers in a wave are covered by review scopes + reviewers."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+
+    # Get all proposal IDs for latest V2 run
+    latest_run = db.execute(
+        select(AnalysisRun)
+        .where(AnalysisRun.wave_id == wave_id, AnalysisRun.engine_version == "v2.cema_migration")
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if not latest_run:
+        return {"coverage_pct": 0, "total_proposals": 0, "covered": 0, "uncovered": 0, "scopes": []}
+
+    proposals = (
+        db.execute(
+            select(CenterProposal).where(
+                CenterProposal.run_id == latest_run.id,
+                CenterProposal.attrs["migrate"].astext == "Y",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total_migrating = len(proposals)
+
+    # Get review scopes and their items
+    from app.models.core import ReviewItem, ReviewScope
+
+    scopes = db.execute(select(ReviewScope).where(ReviewScope.wave_id == wave_id)).scalars().all()
+
+    covered_proposal_ids: set[int] = set()
+    scope_details = []
+    for s in scopes:
+        items = db.execute(select(ReviewItem).where(ReviewItem.scope_id == s.id)).scalars().all()
+        proposal_ids_in_scope = {it.proposal_id for it in items}
+        covered_proposal_ids.update(proposal_ids_in_scope)
+        scope_details.append(
+            {
+                "scope_id": s.id,
+                "scope_name": s.name,
+                "reviewer_name": s.reviewer_name,
+                "reviewer_email": s.reviewer_email,
+                "total_items": len(items),
+                "has_reviewer": bool(s.reviewer_email),
+            }
+        )
+
+    covered = len(covered_proposal_ids)
+    uncovered = total_migrating - covered
+
+    return {
+        "coverage_pct": round(covered / total_migrating * 100, 1) if total_migrating else 100,
+        "total_proposals": total_migrating,
+        "covered": covered,
+        "uncovered": uncovered,
+        "scopes": scope_details,
+        "run_id": latest_run.id,
+        "run_mode": latest_run.mode,
     }

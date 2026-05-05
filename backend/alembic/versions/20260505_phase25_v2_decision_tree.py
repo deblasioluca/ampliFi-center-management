@@ -39,6 +39,21 @@ def upgrade() -> None:
         sa.Column("completed_centers", sa.Integer(), nullable=True, server_default="0"),
         schema="cleanup",
     )
+    op.add_column(
+        "analysis_run",
+        sa.Column("mode", sa.String(20), nullable=True, server_default="simulation"),
+        schema="cleanup",
+    )
+    op.add_column(
+        "analysis_run",
+        sa.Column("label", sa.String(100), nullable=True),
+        schema="cleanup",
+    )
+    op.add_column(
+        "analysis_run",
+        sa.Column("excluded_scopes", postgresql.JSONB(), nullable=True),
+        schema="cleanup",
+    )
 
 
 def downgrade() -> None:
@@ -46,3 +61,6 @@ def downgrade() -> None:
     op.drop_column("analysis_run", "engine_version", schema="cleanup")
     op.drop_column("analysis_run", "total_centers", schema="cleanup")
     op.drop_column("analysis_run", "completed_centers", schema="cleanup")
+    op.drop_column("analysis_run", "mode", schema="cleanup")
+    op.drop_column("analysis_run", "label", schema="cleanup")
+    op.drop_column("analysis_run", "excluded_scopes", schema="cleanup")
