@@ -268,7 +268,13 @@ import Layout from '../../components/layout/Layout.astro';
                 var wcode = this.getAttribute('data-wave-code');
                 if (!confirm('Delete wave "' + wcode + '"? This will permanently remove the wave and all its proposals, runs, and scopes.')) return;
                 fetch('/api/waves/' + wid, { method: 'DELETE', headers: headers })
-                  .then(function(r) { if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); }); loadWaves(); loadCoverage(); })
+                  .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) {
+                      try { var e = JSON.parse(t); throw new Error(e.detail || 'Failed'); }
+                      catch(pe) { if (pe instanceof SyntaxError) throw new Error('Server error: ' + r.status); throw pe; }
+                    });
+                    loadWaves(); loadCoverage();
+                  })
                   .catch(function(err) { alert('Error: ' + err.message); });
               });
               wrapper.appendChild(delBtn);

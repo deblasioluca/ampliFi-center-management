@@ -130,10 +130,18 @@ def list_waves(
 ) -> dict:
     query = select(Wave).order_by(Wave.created_at.desc())
     if status:
-        query = query.where(Wave.status == status)
+        status_list = [s.strip() for s in status.split(",") if s.strip()]
+        if len(status_list) == 1:
+            query = query.where(Wave.status == status_list[0])
+        else:
+            query = query.where(Wave.status.in_(status_list))
     total_q = select(func.count(Wave.id))
     if status:
-        total_q = total_q.where(Wave.status == status)
+        status_list = [s.strip() for s in status.split(",") if s.strip()]
+        if len(status_list) == 1:
+            total_q = total_q.where(Wave.status == status_list[0])
+        else:
+            total_q = total_q.where(Wave.status.in_(status_list))
     total = db.execute(total_q).scalar() or 0
     waves = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     items = []
@@ -831,6 +839,7 @@ def delete_wave(
     for p in proposals:
         release_proposal_ids(p.id, db)
 
+    wave_code = wave.code
     db.delete(wave)
     from app.domain.audit import write_audit
 
@@ -841,7 +850,7 @@ def delete_wave(
         entity_id=wave_id,
         actor_id=user.id,
         actor_email=user.email or user.username,
-        after={"wave_code": wave.code},
+        after={"wave_code": wave_code},
     )
     db.commit()
     return {"status": "deleted"}

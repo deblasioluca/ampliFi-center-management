@@ -274,16 +274,23 @@ def run_v2_analysis(
             if excl_ccodes:
                 base_q = base_q.where(LegacyCostCenter.ccode.not_in(excl_ccodes))
 
-    if wave_entity_ids:
+    if wave_id is not None:
+        # Wave-scoped: only include centers from wave entities (empty wave = 0 centers)
         from app.models.core import Entity
 
-        entity_ccodes = (
-            db.execute(select(Entity.ccode).where(Entity.id.in_(wave_entity_ids))).scalars().all()
-        )
-        centers = (
-            db.execute(base_q.where(LegacyCostCenter.ccode.in_(entity_ccodes))).scalars().all()
-        )
+        if wave_entity_ids:
+            entity_ccodes = (
+                db.execute(select(Entity.ccode).where(Entity.id.in_(wave_entity_ids)))
+                .scalars()
+                .all()
+            )
+            centers = (
+                db.execute(base_q.where(LegacyCostCenter.ccode.in_(entity_ccodes))).scalars().all()
+            )
+        else:
+            centers = []
     else:
+        # Global mode: all centers
         centers = db.execute(base_q).scalars().all()
 
     total = len(centers)

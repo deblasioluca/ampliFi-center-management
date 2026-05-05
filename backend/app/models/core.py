@@ -750,12 +750,21 @@ class Wave(TimestampMixin, Base):
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
 
-    entities: Mapped[list[WaveEntity]] = relationship(back_populates="wave")
-    hierarchy_scopes: Mapped[list[WaveHierarchyScope]] = relationship(back_populates="wave")
-    runs: Mapped[list[AnalysisRun]] = relationship(
-        back_populates="wave", foreign_keys="[AnalysisRun.wave_id]"
+    entities: Mapped[list[WaveEntity]] = relationship(
+        back_populates="wave", cascade="all, delete-orphan", passive_deletes=True
     )
-    scopes: Mapped[list[ReviewScope]] = relationship(back_populates="wave")
+    hierarchy_scopes: Mapped[list[WaveHierarchyScope]] = relationship(
+        back_populates="wave", cascade="all, delete-orphan", passive_deletes=True
+    )
+    runs: Mapped[list[AnalysisRun]] = relationship(
+        back_populates="wave",
+        foreign_keys="[AnalysisRun.wave_id]",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    scopes: Mapped[list[ReviewScope]] = relationship(
+        back_populates="wave", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class WaveEntity(Base):
@@ -868,9 +877,15 @@ class AnalysisRun(TimestampMixin, Base):
 
     wave: Mapped[Wave | None] = relationship(back_populates="runs", foreign_keys=[wave_id])
     config: Mapped[AnalysisConfig] = relationship()
-    outputs: Mapped[list[RoutineOutput]] = relationship(back_populates="run")
-    proposals: Mapped[list[CenterProposal]] = relationship(back_populates="run")
-    llm_passes: Mapped[list[LLMReviewPass]] = relationship(back_populates="run")
+    outputs: Mapped[list[RoutineOutput]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", passive_deletes=True
+    )
+    proposals: Mapped[list[CenterProposal]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", passive_deletes=True
+    )
+    llm_passes: Mapped[list[LLMReviewPass]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class RoutineOutput(Base):
@@ -996,7 +1011,9 @@ class ReviewScope(TimestampMixin, Base):
     reviewer_email: Mapped[str | None] = mapped_column(String(320))
 
     wave: Mapped[Wave] = relationship(back_populates="scopes")
-    items: Mapped[list[ReviewItem]] = relationship(back_populates="scope")
+    items: Mapped[list[ReviewItem]] = relationship(
+        back_populates="scope", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class ReviewItem(TimestampMixin, Base):

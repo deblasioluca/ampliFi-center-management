@@ -62,7 +62,11 @@ import Layout from '../../components/layout/Layout.astro';
     <div id="tab-analysis" class="hidden">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-base font-semibold">Analysis Runs</h3>
-        <div class="flex gap-2">
+        <div class="flex items-center gap-2">
+          <select id="analysis-engine" class="input text-sm" style="width:200px">
+            <option value="v1">V1 — Standard Cleansing</option>
+            <option value="v2">V2 — CEMA Migration</option>
+          </select>
           <a id="link-compare-runs" href="#" class="btn-secondary text-sm hidden">Compare Runs</a>
           <button id="btn-run-analysis" class="btn-amplifi text-sm">Run Analysis</button>
         </div>
@@ -295,11 +299,20 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <!-- Add Entities Modal -->
-  <div id="entities-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-      <h2 class="text-lg font-semibold mb-4">Add Entities to Wave</h2>
-      <div id="available-entities" class="max-h-60 overflow-y-auto text-sm mb-4">Loading...</div>
-      <div class="flex justify-end gap-2">
+  <div id="entities-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-16">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-semibold mb-3">Add Entities to Wave</h2>
+      <div class="flex items-center gap-2 mb-3">
+        <input id="entity-search" class="input text-sm flex-1" placeholder="Search by code or name..." />
+        <button id="btn-entity-all" class="btn-secondary text-xs whitespace-nowrap">Select All</button>
+        <button id="btn-entity-none" class="btn-secondary text-xs whitespace-nowrap">Deselect All</button>
+      </div>
+      <div class="flex items-center justify-between mb-2">
+        <span id="entity-count" class="text-xs text-gray-500">0 entities</span>
+        <span id="entity-selected-count" class="text-xs font-medium text-blue-600">0 selected</span>
+      </div>
+      <div id="available-entities" class="max-h-72 overflow-y-auto text-sm border rounded p-1">Loading...</div>
+      <div class="flex justify-end gap-2 mt-4">
         <button onclick="document.getElementById('entities-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
         <button id="btn-confirm-add" class="btn-amplifi">Add Selected</button>
       </div>
@@ -363,15 +376,54 @@ import Layout from '../../components/layout/Layout.astro';
   if (!waveId) { document.getElementById('wave-header').textContent = 'No wave ID provided. Go to Cockpit.'; return; }
 
   var allTabs = ['scope','analysis','simulation','proposals','review','progress'];
+  var activeTab = 'scope';
+
+  function getEnabledTabs() {
+    if (!wave) return allTabs;
+    var step = statusToStep(wave.status, wave.entity_count || 0);
+    // step 0: defining wave -> only scope
+    // step 1: defining scope -> scope, analysis, simulation
+    // step 2: running analysis -> scope, analysis, simulation
+    // step 3+: all tabs
+    if (step <= 0) return ['scope'];
+    if (step <= 2) return ['scope', 'analysis', 'simulation'];
+    return allTabs;
+  }
+
+  function updateTabStates() {
+    var enabled = getEnabledTabs();
+    document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
+      var tab = btn.getAttribute('data-tab');
+      var isEnabled = enabled.indexOf(tab) >= 0;
+      btn.disabled = !isEnabled;
+      if (!isEnabled) {
+        btn.className = 'tab px-4 py-3 opacity-40 cursor-not-allowed';
+      } else if (tab === activeTab) {
+        btn.className = 'tab-active px-4 py-3';
+      } else {
+        btn.className = 'tab px-4 py-3';
+      }
+    });
+  }
+
+  function switchTab(tab) {
+    var enabled = getEnabledTabs();
+    if (enabled.indexOf(tab) < 0) return;
+    activeTab = tab;
+    document.querySelectorAll('#wave-tabs button').forEach(function(b) {
+      var t = b.getAttribute('data-tab');
+      b.className = t === tab ? 'tab-active px-4 py-3' : (enabled.indexOf(t) < 0 ? 'tab px-4 py-3 opacity-40 cursor-not-allowed' : 'tab px-4 py-3');
+    });
+    allTabs.forEach(function(t) {
+      var el = document.getElementById('tab-' + t);
+      if (el) el.classList.toggle('hidden', t !== tab);
+    });
+  }
+
   document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var tab = this.getAttribute('data-tab');
-      document.querySelectorAll('#wave-tabs button').forEach(function(b) { b.className = 'tab px-4 py-3'; });
-      this.className = 'tab-active px-4 py-3';
-      allTabs.forEach(function(t) {
-        var el = document.getElementById('tab-' + t);
-        if (el) el.classList.toggle('hidden', t !== tab);
-      });
+      if (this.disabled) return;
+      switchTab(this.getAttribute('data-tab'));
     });
   });
 
@@ -476,6 +528,7 @@ import Layout from '../../components/layout/Layout.astro';
 
       preferredRunId = (w.config || {}).preferred_run_id;
       if (typeof loadHierScope === 'function') loadHierScope();
+      updateTabStates();
     });
 
     // Load progress + update pipeline review %
@@ -510,21 +563,63 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadScope();
 
+  var allEntities = [];
+  function updateEntityCounts() {
+    var visible = document.querySelectorAll('.entity-row:not(.hidden)');
+    var selected = document.querySelectorAll('.entity-cb:checked');
+    document.getElementById('entity-count').textContent = allEntities.length + ' entities' + (visible.length < allEntities.length ? ' (' + visible.length + ' shown)' : '');
+    document.getElementById('entity-selected-count').textContent = selected.length + ' selected';
+  }
+
+  function filterEntities() {
+    var q = (document.getElementById('entity-search').value || '').toLowerCase();
+    document.querySelectorAll('.entity-row').forEach(function(row) {
+      var text = row.getAttribute('data-search') || '';
+      row.classList.toggle('hidden', q && text.indexOf(q) < 0);
+    });
+    updateEntityCounts();
+  }
+
   document.getElementById('btn-add-entities').addEventListener('click', function() {
     document.getElementById('entities-overlay').classList.remove('hidden');
-    fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    document.getElementById('entity-search').value = '';
+    fetch('/api/entities?size=1000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      allEntities = d.items || [];
       var html = '';
-      (d.items || []).forEach(function(e) {
-        html += '<label class="flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded"><input type="checkbox" value="' + esc(e.ccode) + '" class="entity-cb" /><span class="font-mono text-xs">' + esc(e.ccode) + '</span> <span>' + esc(e.name) + '</span></label>';
+      allEntities.forEach(function(e) {
+        var searchText = ((e.ccode || '') + ' ' + (e.name || '') + ' ' + (e.country || '') + ' ' + (e.region || '')).toLowerCase();
+        html += '<label class="entity-row flex items-center gap-2 py-1 hover:bg-gray-50 px-2 rounded cursor-pointer" data-search="' + esc(searchText) + '">' +
+          '<input type="checkbox" value="' + esc(e.ccode) + '" class="entity-cb" />' +
+          '<span class="font-mono text-xs w-12 shrink-0">' + esc(e.ccode) + '</span>' +
+          '<span class="text-sm truncate">' + esc(e.name) + '</span>' +
+          (e.region ? '<span class="text-xs text-gray-400 ml-auto shrink-0">' + esc(e.region) + '</span>' : '') +
+          '</label>';
       });
-      document.getElementById('available-entities').innerHTML = html || 'No entities available.';
+      document.getElementById('available-entities').innerHTML = html || '<p class="text-gray-400 p-2">No entities available.</p>';
+      updateEntityCounts();
+      // Bind checkbox change events
+      document.querySelectorAll('.entity-cb').forEach(function(cb) {
+        cb.addEventListener('change', updateEntityCounts);
+      });
     });
+  });
+
+  document.getElementById('entity-search').addEventListener('input', filterEntities);
+
+  document.getElementById('btn-entity-all').addEventListener('click', function() {
+    document.querySelectorAll('.entity-row:not(.hidden) .entity-cb').forEach(function(cb) { cb.checked = true; });
+    updateEntityCounts();
+  });
+
+  document.getElementById('btn-entity-none').addEventListener('click', function() {
+    document.querySelectorAll('.entity-cb').forEach(function(cb) { cb.checked = false; });
+    updateEntityCounts();
   });
 
   document.getElementById('btn-confirm-add').addEventListener('click', async function() {
     var cbs = document.querySelectorAll('.entity-cb:checked');
     var ccodes = []; cbs.forEach(function(cb) { ccodes.push(cb.value); });
-    if (!ccodes.length) return;
+    if (!ccodes.length) { alert('No entities selected.'); return; }
     await fetch('/api/waves/' + waveId + '/entities', {
       method: 'POST', headers: jsonHdr, body: JSON.stringify({ ccodes: ccodes })
     });
@@ -643,10 +738,14 @@ import Layout from '../../components/layout/Layout.astro';
   loadRuns();
 
   window.runAnalysis = async function() {
+    var engine = document.getElementById('analysis-engine').value;
     document.getElementById('btn-run-analysis').disabled = true;
     document.getElementById('btn-run-analysis').textContent = 'Running...';
     try {
-      var res = await fetch('/api/waves/' + waveId + '/analyse', { method: 'POST', headers: authHdr });
+      var url = engine === 'v2'
+        ? '/api/waves/' + waveId + '/analyse-v2'
+        : '/api/waves/' + waveId + '/analyse';
+      var res = await fetch(url, { method: 'POST', headers: authHdr });
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Analysis failed');
       loadRuns(); loadWave();
