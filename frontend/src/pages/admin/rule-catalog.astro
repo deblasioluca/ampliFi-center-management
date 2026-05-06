@@ -55,6 +55,45 @@ import Layout from '../../components/layout/Layout.astro';
     <div class="text-gray-400 text-center py-12">Loading Katalog…</div>
   </div>
 
+  <!-- LLM Q&A panel — read-only assistant grounded on the catalog -->
+  <section class="mt-8 border-t pt-6">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Ask the assistant</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          Read-only Q&amp;A grounded on the rule catalog above. Does not modify
+          anything. Each question incurs a small LLM cost.
+        </p>
+      </div>
+      <button id="qa-clear" type="button"
+              class="text-xs text-gray-500 hover:text-gray-700 underline">
+        Clear conversation
+      </button>
+    </div>
+
+    <div id="qa-history" class="space-y-3 mb-3 max-h-80 overflow-y-auto"></div>
+
+    <form id="qa-form" class="flex flex-col gap-2">
+      <div class="flex items-center gap-2 text-xs text-gray-600">
+        <label for="qa-scope">Scope:</label>
+        <select id="qa-scope" class="input text-xs w-72">
+          <option value="">All rules in the catalog</option>
+          <!-- Currently-open rule code appended dynamically when the drawer opens -->
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <textarea id="qa-input" rows="2" required
+                  class="input text-sm flex-1 resize-y"
+                  placeholder="Ask anything about the catalog — e.g. &quot;Which rule decides whether a center should be retired?&quot; or &quot;What's the difference between v1 cleansing and v2 CEMA migration?&quot;"></textarea>
+        <button type="submit" id="qa-submit"
+                class="btn-primary text-sm whitespace-nowrap self-end">
+          Ask
+        </button>
+      </div>
+      <div id="qa-status" class="text-xs text-gray-400 min-h-[1em]"></div>
+    </form>
+  </section>
+
   <!-- Detail modal (slides in) -->
   <div id="detail-drawer" class="fixed inset-y-0 right-0 w-full md:w-[640px] bg-white shadow-2xl border-l border-gray-200 transform translate-x-full transition-transform duration-200 z-50 overflow-y-auto">
     <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
@@ -216,6 +255,8 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('drawer-title').textContent = entry.business_label;
     document.getElementById('drawer-content').innerHTML = renderDetail(entry);
     document.getElementById('detail-drawer').classList.remove('translate-x-full');
+    // Make this rule selectable as Q&A scope
+    syncQAScope(entry);
   }
 
   function renderDetail(entry) {
@@ -308,6 +349,109 @@ import Layout from '../../components/layout/Layout.astro';
   });
   document.getElementById('close-drawer').addEventListener('click', () => {
     document.getElementById('detail-drawer').classList.add('translate-x-full');
+  });
+
+  // ── LLM Q&A panel ─────────────────────────────────────────────
+  // Stateless server-side; client tracks history within this page session.
+  const qa = {
+    history: [],   // [{role: 'user'|'assistant', content: string}]
+  };
+
+  function syncQAScope(entry) {
+    // When a rule drawer opens, add (or update) its option in the scope select.
+    const sel = document.getElementById('qa-scope');
+    if (!sel) return;
+    let opt = sel.querySelector(`option[data-rule-code]`);
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.dataset.ruleCode = '1';
+      sel.appendChild(opt);
+    }
+    opt.value = entry.code;
+    opt.textContent = `This rule (${entry.code} – ${entry.business_label})`;
+    sel.value = entry.code;
+  }
+
+  function renderQATurn(role, content, opts) {
+    const div = document.createElement('div');
+    const meta = opts && opts.meta ? `<div class="text-[10px] text-gray-400 mt-1">${escapeHtml(opts.meta)}</div>` : '';
+    if (role === 'user') {
+      div.className = 'bg-amplifi-50 border border-amplifi-200 rounded-lg px-3 py-2 text-sm';
+      div.innerHTML = `<div class="text-[10px] text-amplifi-700 font-semibold mb-1">You</div><div class="whitespace-pre-wrap">${escapeHtml(content)}</div>`;
+    } else {
+      div.className = 'bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm';
+      // Light formatting: keep <code>...</code> spans rendered, escape everything else
+      const safe = escapeHtml(content)
+        .replace(/`([^`]+)`/g, '<code class="bg-white px-1 py-0.5 rounded text-[12px] border border-gray-200">$1</code>');
+      div.innerHTML = `<div class="text-[10px] text-gray-500 font-semibold mb-1">Assistant</div><div class="whitespace-pre-wrap">${safe}</div>${meta}`;
+    }
+    document.getElementById('qa-history').appendChild(div);
+    div.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }
+
+  document.getElementById('qa-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('qa-input');
+    const submit = document.getElementById('qa-submit');
+    const status = document.getElementById('qa-status');
+    const scope = document.getElementById('qa-scope').value || null;
+    const question = (input.value || '').trim();
+    if (!question) return;
+
+    submit.disabled = true;
+    submit.textContent = 'Asking…';
+    status.textContent = 'The assistant is thinking…';
+
+    // Optimistic render
+    renderQATurn('user', question);
+    qa.history.push({role: 'user', content: question});
+    input.value = '';
+
+    try {
+      const res = await fetch('/api/admin/rule-catalog/qa', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + TOKEN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question,
+          rule_code: scope,
+          // Pass everything except the just-added user message — server prepends its own
+          history: qa.history.slice(0, -1),
+        }),
+      });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      const data = await res.json();
+      if (!data.available) {
+        status.textContent = '';
+        const reason = data.reason || 'LLM provider not configured';
+        renderQATurn('assistant',
+          `LLM is not available: ${reason}. Configure Azure OpenAI or SAP BTP credentials in App Config to enable Q&A.`);
+        // Don't push assistant turn into history when no real answer
+      } else {
+        const meta = `Model: ${data.model || '?'} · ${data.tokens_in || 0} in / ${data.tokens_out || 0} out tokens` +
+                     (data.scoped_to ? ` · scoped to \`${data.scoped_to}\`` : '');
+        renderQATurn('assistant', data.answer || '(empty response)', {meta});
+        qa.history.push({role: 'assistant', content: data.answer || ''});
+        status.textContent = '';
+      }
+    } catch (err) {
+      status.textContent = 'Request failed: ' + (err && err.message || err);
+    } finally {
+      submit.disabled = false;
+      submit.textContent = 'Ask';
+      input.focus();
+    }
+  });
+
+  document.getElementById('qa-clear').addEventListener('click', () => {
+    qa.history = [];
+    document.getElementById('qa-history').innerHTML = '';
+    document.getElementById('qa-status').textContent = '';
   });
 
   // Boot

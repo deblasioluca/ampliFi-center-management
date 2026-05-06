@@ -2795,3 +2795,172 @@ def get_application_logs(
 
     entries = get_recent_logs(limit=limit, level=level, since=since, search=search)
     return {"total": len(entries), "items": entries}
+
+
+# --- Rule Catalog Q&A (LLM-powered, read-only) ---
+
+
+class RuleCatalogQARequest(BaseModel):
+    """Body for /rule-catalog/qa.
+
+    ``question`` is the user prompt.
+    ``rule_code`` (optional) narrows the LLM's grounding context to a single
+    catalog entry — useful when the user has clicked into a specific rule and
+    wants to ask follow-ups about it.
+    ``history`` (optional) is a list of prior user/assistant turns from the
+    same UI session, so multi-turn follow-ups make sense without server-side
+    persistence. Server is stateless: the client tracks the history.
+    """
+
+    question: str
+    rule_code: str | None = None
+    history: list[dict] = []
+
+
+def _build_rule_catalog_grounding(rule_code: str | None) -> str:
+    """Return a compact string description of the rule catalog used as
+    grounding for the LLM. Two modes:
+
+    * ``rule_code is None`` — short index of every rule (code, label, tree, kind)
+    * ``rule_code`` set      — full metadata for that one rule, plus the same
+      short index so the LLM can refer to siblings if useful
+    """
+    from app.domain.decision_tree.rule_catalog import (
+        get_rule_metadata,
+        list_rule_catalog,
+    )
+
+    catalog = list_rule_catalog()
+    short_lines = []
+    for entry in catalog:
+        tree = entry.get("tree") or "any"
+        kind = entry.get("kind") or "rule"
+        short_lines.append(
+            f"- {entry['code']} ({tree}/{kind}): {entry.get('business_label') or entry['name']}"
+        )
+    short_index = "\n".join(short_lines)
+
+    if rule_code is None:
+        return f"## Rule catalog (index)\n{short_index}"
+
+    meta = get_rule_metadata(rule_code) or {}
+    detail_lines = [f"## Rule in focus: {rule_code}"]
+    if meta.get("business_label"):
+        detail_lines.append(f"Label: {meta['business_label']}")
+    if meta.get("description"):
+        detail_lines.append(f"Description: {meta['description']}")
+    if meta.get("decides"):
+        detail_lines.append(f"Decides: {', '.join(meta['decides'])}")
+    if meta.get("verdict_meanings"):
+        vm = "; ".join(f"{k}={v}" for k, v in meta["verdict_meanings"].items())
+        detail_lines.append(f"Verdict meanings: {vm}")
+    if meta.get("params"):
+        # params is a dict of {param_name: {default, ...}} — keep terse
+        params_summary = ", ".join(meta["params"].keys())
+        detail_lines.append(f"Tunable params: {params_summary}")
+    detail = "\n".join(detail_lines)
+
+    return f"{detail}\n\n## Other rules in the catalog (for reference)\n{short_index}"
+
+
+def _build_qa_system_prompt(grounding: str) -> str:
+    return (
+        "You are an expert assistant for the ampliFi cost-center cleanup tool. "
+        "Your role is to answer questions about the built-in decision-tree rule "
+        "catalog so analysts and admins can understand what each rule does, what "
+        "verdicts it produces, and how to combine rules into pipelines.\n\n"
+        "Rules below are read-only — they are defined in Python code. The user "
+        "cannot edit them here; they can tune parameters per pipeline variant on "
+        "the Decision Tree Variants page (/admin/configs) and build custom "
+        "no-code rules on the Rule Builder page (/admin/rules).\n\n"
+        "Ground every answer in the catalog provided. If asked about a rule "
+        "that isn't in the catalog, say so — do not invent rule codes or "
+        "behaviors. Cite specific rule codes (in backticks) when referring to "
+        "them. Keep answers concise: 2-5 short paragraphs maximum, plain prose, "
+        "no markdown headers.\n\n"
+        f"{grounding}"
+    )
+
+
+@router.post("/rule-catalog/qa")
+def rule_catalog_qa(
+    body: RuleCatalogQARequest,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """LLM-grounded Q&A over the built-in rule catalog (read-only).
+
+    Stateless — the client passes prior turns in ``history`` if multi-turn
+    context is needed. Returns ``{available: false, reason: ...}`` when the
+    LLM provider is not configured, so the frontend can show a clear message.
+    """
+    from app.infra.llm.provider import (
+        AzureOpenAIProvider,
+        Message,
+        SapBtpProvider,
+    )
+
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "llm")).scalar_one_or_none()
+    if not cfg or not cfg.value:
+        return {
+            "available": False,
+            "reason": "LLM provider not configured",
+            "answer": None,
+        }
+
+    llm_config = cfg.value
+    provider_type = llm_config.get("provider", "azure")
+    try:
+        if provider_type == "azure":
+            provider = AzureOpenAIProvider(llm_config)
+        elif provider_type == "btp":
+            provider = SapBtpProvider(llm_config)
+        else:
+            return {
+                "available": False,
+                "reason": f"Unknown provider type: {provider_type}",
+                "answer": None,
+            }
+    except Exception as exc:  # pragma: no cover — defensive
+        return {
+            "available": False,
+            "reason": f"Provider init failed: {type(exc).__name__}",
+            "answer": None,
+        }
+
+    grounding = _build_rule_catalog_grounding(body.rule_code)
+    messages: list[Message] = [
+        Message(role="system", content=_build_qa_system_prompt(grounding)),
+    ]
+    # Replay prior turns from this UI session (best-effort sanitization)
+    for turn in body.history[-10:]:  # cap to last 10 turns to bound prompt size
+        role = turn.get("role")
+        content = turn.get("content")
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            messages.append(Message(role=role, content=content[:4000]))
+    messages.append(Message(role="user", content=body.question[:4000]))
+
+    model = llm_config.get("model", "gpt-4o")
+    try:
+        completion = provider.complete(
+            model=model,
+            messages=messages,
+            temperature=float(llm_config.get("qa_temperature", 0.2)),
+            max_tokens=int(llm_config.get("qa_max_tokens", 600)),
+            metadata={"feature": "rule_catalog_qa", "rule_code": body.rule_code},
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"LLM call failed: {type(exc).__name__}",
+            "answer": None,
+        }
+
+    return {
+        "available": True,
+        "answer": completion.text,
+        "scoped_to": body.rule_code,
+        "model": model,
+        "tokens_in": getattr(completion, "tokens_in", 0),
+        "tokens_out": getattr(completion, "tokens_out", 0),
+    }
