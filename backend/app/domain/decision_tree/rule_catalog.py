@@ -301,30 +301,34 @@ CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     "v2.balance_migrate": {
-        "business_label": "Balance sheet migration (V2)",
+        "business_label": "Balance sheet migration check",
         "description": (
-            "V2: Determines whether a center must be migrated due to its "
-            "balance sheet character (vs. PC-only migration)."
+            "Looks at the center's balance sheet activity. Centers with "
+            "real balance-sheet movements must be migrated to the new "
+            "model — otherwise reporting integrity breaks."
         ),
-        "decides": ["MIGRATE", "PASS"],
+        "decides": ["MIGRATE_YES", "MIGRATE_NO"],
         "verdict_meanings": {
-            "MIGRATE": "B/S relevant — must be migrated",
-            "PASS": "No mandatory B/S migration",
+            "MIGRATE_YES": "Has balance sheet activity → must be migrated",
+            "MIGRATE_NO": "No balance sheet activity → safe to skip migration",
+            "MIGRATE": "Has balance sheet activity → must be migrated",
+            "PASS": "No balance sheet activity → safe to skip migration",
         },
         "params": {},
     },
     "v2.pc_approach": {
-        "business_label": "PC grouping strategy (V2)",
+        "business_label": "Profit center grouping strategy",
         "description": (
-            "V2 — CORE LOGIC: For each center, determines whether it migrates "
-            "1:1 (its own PC) or 1:n (multiple CCs share one PC). Grouping "
-            "rules access hierarchy levels (e.g. 'all centers under L3 "
-            "ROOT/EUROPE/DACH share a common PC')."
+            "Decides how this center maps into a profit center: each "
+            "center keeps its own PC (1:1), or several centers share one "
+            "PC (1:n, the canonical SAP many-to-one migration)."
         ),
         "decides": ["1:1", "1:n"],
         "verdict_meanings": {
-            "1:1": "Own PC per center (classic)",
-            "1:n": "Multiple CCs share one PC (canonical SAP m:1)",
+            "1:1": "Keeps its own profit center (classic)",
+            "1:n": "Shares a profit center with peer centers (m:1 migration)",
+            "1_1": "Keeps its own profit center (classic)",
+            "1_N": "Shares a profit center with peer centers (m:1 migration)",
         },
         "params": {
             "approach_rules": {

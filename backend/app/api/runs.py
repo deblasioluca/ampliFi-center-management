@@ -273,16 +273,40 @@ def list_proposals(
 
 @router.get("/{run_id}/proposals/{proposal_id}/why")
 def why_panel(run_id: int, proposal_id: int, db: Session = Depends(get_db)) -> dict:
+    """Decision-reasoning data for a single proposal.
+
+    Returns both the raw stored fields (rule_path, ml_scores, llm_commentary)
+    AND a business-friendly translation layer that the frontend can render
+    without knowing routine codes:
+
+      outcome_friendly: {label, sentence}
+      target_friendly:  short sentence
+      rule_path_translated: list of {code, verdict, label, verdict_meaning, description}
+    """
+    from app.services.reasoning_translation import (
+        translate_outcome,
+        translate_rule_path,
+        translate_target,
+    )
+
     proposal = db.get(CenterProposal, proposal_id)
     if not proposal or proposal.run_id != run_id:
         raise HTTPException(status_code=404, detail="Proposal not found")
+
+    outcome = proposal.override_outcome or proposal.cleansing_outcome
+    target = proposal.override_target or proposal.target_object
+
     return {
         "proposal_id": proposal.id,
         "cleansing_outcome": proposal.cleansing_outcome,
         "target_object": proposal.target_object,
+        "outcome_friendly": translate_outcome(outcome),
+        "target_friendly": translate_target(target),
         "rule_path": proposal.rule_path,
+        "rule_path_translated": translate_rule_path(proposal.rule_path),
         "ml_scores": proposal.ml_scores,
         "llm_commentary": proposal.llm_commentary,
+        "confidence": float(proposal.confidence) if proposal.confidence is not None else None,
         "override": {
             "outcome": proposal.override_outcome,
             "target": proposal.override_target,
@@ -290,6 +314,102 @@ def why_panel(run_id: int, proposal_id: int, db: Session = Depends(get_db)) -> d
         }
         if proposal.override_outcome
         else None,
+    }
+
+
+@router.get("/{run_id}/proposals/{proposal_id}/ml-opinion")
+def proposal_ml_opinion(
+    run_id: int,
+    proposal_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "data_manager", "reviewer")),
+) -> dict:
+    """Run the ML predictor on this proposal's center and return its opinion.
+
+    Read-only: does not persist anything. Lets reviewers see what the ML
+    routine would say even when the active analysis pipeline didn't include
+    it. Useful as a 'second opinion' next to the rule tree's verdict.
+    """
+    from app.domain.decision_tree.registry import boot_registry, get_registry
+    from app.models.core import LegacyCostCenter
+    from app.services.analysis import _build_context
+
+    proposal = db.get(CenterProposal, proposal_id)
+    if not proposal or proposal.run_id != run_id:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    cc = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="Cost center not found")
+
+    registry = get_registry()
+    if not registry.codes():
+        boot_registry()
+    routine = registry.get("ml.outcome_predictor")
+    if routine is None:
+        raise HTTPException(status_code=503, detail="ML routine not registered")
+
+    ctx = _build_context(cc, db)
+    result = routine.run(ctx, {})
+    probs = result.payload.get("probs") or {}
+    return {
+        "proposal_id": proposal.id,
+        "verdict": result.verdict,
+        "confidence": float(result.score) if result.score is not None else None,
+        "probs": probs,
+        "anomaly_score": result.payload.get("anomaly"),
+        "contributors": result.payload.get("contributors", []),
+        "tree_verdict": proposal.cleansing_outcome,
+        "agrees_with_tree": result.verdict == proposal.cleansing_outcome,
+    }
+
+
+@router.get("/{run_id}/proposals/{proposal_id}/llm-opinion")
+def proposal_llm_opinion(
+    run_id: int,
+    proposal_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "data_manager", "reviewer")),
+) -> dict:
+    """Ask the LLM advisor for an independent opinion on this proposal.
+
+    Read-only: does not persist anything. Can incur LLM cost — gated by
+    role. Returns ``{available: false, reason: ...}`` when no LLM is
+    configured so the frontend can show a clear message instead of a
+    cryptic error.
+    """
+    from app.domain.decision_tree.registry import boot_registry, get_registry
+    from app.models.core import LegacyCostCenter
+    from app.services.analysis import _build_context
+
+    proposal = db.get(CenterProposal, proposal_id)
+    if not proposal or proposal.run_id != run_id:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    cc = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="Cost center not found")
+
+    registry = get_registry()
+    if not registry.codes():
+        boot_registry()
+    routine = registry.get("llm.advisor")
+    if routine is None:
+        raise HTTPException(status_code=503, detail="LLM routine not registered")
+
+    ctx = _build_context(cc, db)
+    result = routine.run(ctx, {})
+    available = bool(result.payload.get("available"))
+    return {
+        "proposal_id": proposal.id,
+        "available": available,
+        "verdict": result.verdict if available else None,
+        "confidence": float(result.score) if (available and result.score is not None) else None,
+        "reasoning": result.comment,
+        "reason": result.reason,
+        "tree_verdict": proposal.cleansing_outcome,
+        "agrees_with_tree": (available and result.verdict == proposal.cleansing_outcome),
+        "model": result.payload.get("model"),
+        "tokens_in": result.payload.get("tokens_in", 0),
+        "tokens_out": result.payload.get("tokens_out", 0),
     }
 
 
