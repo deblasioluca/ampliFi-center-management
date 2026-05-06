@@ -363,6 +363,123 @@ CATALOG: dict[str, dict[str, Any]] = {
         },
         "params": {},
     },
+    # ── ML routines ──────────────────────────────────────────────────────
+    "ml.outcome_predictor": {
+        "business_label": "ML outcome predictor",
+        "description": (
+            "Probabilistic alternative to the rule tree. Each numeric/boolean "
+            "feature of a center contributes a weighted signal toward each "
+            "possible outcome (KEEP / RETIRE / MERGE_MAP / REDESIGN). Returns "
+            "a continuous confidence score per outcome instead of a hard "
+            "verdict, which makes it useful as a 'second opinion' alongside "
+            "the deterministic rules. Also computes a per-center anomaly "
+            "score so unusual cases bubble up."
+        ),
+        "decides": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
+        "verdict_meanings": {
+            "KEEP": "Most likely outcome: stay",
+            "RETIRE": "Most likely outcome: retire",
+            "MERGE_MAP": "Most likely outcome: merge into another center",
+            "REDESIGN": "Most likely outcome: reconceptualise",
+        },
+        "params": {
+            "inactivity_threshold_months": {
+                "friendly_label": "Inactivity midpoint",
+                "type": "number",
+                "default": 12,
+                "min": 1,
+                "max": 60,
+                "unit": "months",
+                "help_text": (
+                    "Months past which inactivity strongly suggests RETIRE. "
+                    "Used as the steepness midpoint of the activity sigmoid."
+                ),
+            },
+            "balance_significance_threshold": {
+                "friendly_label": "Material balance threshold",
+                "type": "number",
+                "default": 10000.0,
+                "min": 0,
+                "max": 1_000_000,
+                "unit": "EUR",
+                "help_text": (
+                    "Above this value a balance is considered 'material' for "
+                    "the model and pushes confidence toward KEEP."
+                ),
+            },
+            "compute_anomaly": {
+                "friendly_label": "Compute anomaly score",
+                "type": "boolean",
+                "default": True,
+                "help_text": (
+                    "Also produce a per-center anomaly score in [0,1]. Useful "
+                    "for sorting reviewer queues by 'most unusual first'."
+                ),
+            },
+        },
+    },
+    # ── LLM routines ─────────────────────────────────────────────────────
+    "llm.advisor": {
+        "business_label": "LLM advisor",
+        "description": (
+            "Asks a configured LLM (e.g. Azure OpenAI) for an independent "
+            "opinion on a single center. The LLM sees the same facts as the "
+            "rule tree — it does NOT see what the rule tree decided — so its "
+            "vote is genuinely independent. Used in comparison mode: where "
+            "the rules, the ML model, and the LLM all agree, confidence is "
+            "high; where they disagree, the case deserves human review. "
+            "Falls back to PASS when no LLM is configured."
+        ),
+        "decides": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
+        "verdict_meanings": {
+            "KEEP": "LLM advises: keep",
+            "RETIRE": "LLM advises: retire",
+            "MERGE_MAP": "LLM advises: merge",
+            "REDESIGN": "LLM advises: redesign",
+            "PASS": "LLM not available or could not parse response",
+        },
+        "params": {
+            "model": {
+                "friendly_label": "Model",
+                "type": "string",
+                "default": "gpt-4o-mini",
+                "help_text": "Provider-specific model identifier.",
+            },
+            "temperature": {
+                "friendly_label": "Temperature",
+                "type": "number",
+                "default": 0.0,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.1,
+                "help_text": (
+                    "0.0 = deterministic. Raise to inject creativity; "
+                    "leave at 0 for reproducible verdicts."
+                ),
+            },
+            "max_tokens": {
+                "friendly_label": "Max tokens",
+                "type": "integer",
+                "default": 250,
+                "min": 50,
+                "max": 2000,
+                "unit": "tokens",
+                "help_text": "Cap response length — verdicts are short.",
+            },
+            "skip_if_high_confidence": {
+                "friendly_label": "Skip if ML confident ≥",
+                "type": "number",
+                "default": 0.0,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+                "help_text": (
+                    "Cost-saver: skip the LLM call entirely if the ML routine "
+                    "is already this confident. 0.0 = always call the LLM."
+                ),
+            },
+        },
+    },
 }
 
 

@@ -1048,3 +1048,54 @@ def run_decisions_by_hierarchy(
         ],
         "unassigned_total": len(unassigned),
     }
+
+
+# ── Multi-engine comparison (rule tree vs ML vs LLM) ─────────────────────
+
+
+@router.get("/compare/wave/{wave_id}")
+def compare_engines(
+    wave_id: int,
+    engines: str = "tree,ml,llm",
+    sample_size: int | None = 100,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Run all requested engines (rule tree, ML, LLM) on a wave's centers.
+
+    Read-only diagnostic — does NOT persist proposals. Useful to see where
+    the deterministic rule tree, the ML predictor and the LLM advisor agree
+    or disagree before committing to a production engine for the wave.
+
+    Query params:
+    - engines: comma-separated subset of {tree,ml,llm}
+    - sample_size: cap the population to keep the comparison fast.
+                   Pass 0 (or omit) to use the default 100; pass -1 to run
+                   against the whole wave.
+    """
+    from app.services.engine_comparison import compare_engines_on_wave
+
+    engine_list = [e.strip() for e in engines.split(",") if e.strip()]
+    if not engine_list:
+        engine_list = ["tree", "ml", "llm"]
+    invalid = [e for e in engine_list if e not in {"tree", "ml", "llm"}]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown engine(s): {invalid}. Pick from tree, ml, llm.",
+        )
+
+    effective_sample = None if sample_size == -1 else (sample_size or 100)
+    if effective_sample is not None and effective_sample > 1000:
+        # Hard cap: comparison is meant for diagnostics, not full reanalysis.
+        effective_sample = 1000
+
+    try:
+        return compare_engines_on_wave(
+            wave_id=wave_id,
+            db=db,
+            engines=engine_list,
+            sample_size=effective_sample,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
