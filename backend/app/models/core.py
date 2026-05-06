@@ -440,6 +440,15 @@ class LegacyCostCenter(TimestampMixin, Base):
     cctrcgy: Mapped[str | None] = mapped_column(String(20))  # KOSAR
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
     verak_user: Mapped[str | None] = mapped_column(String(12))
+    # FK to the actual employee record. Populated by the sample-data
+    # generator and (eventually) by the SAP loader once the HR feed is
+    # wired up. Nullable because legacy CCs from earlier uploads predate
+    # the link; ON DELETE SET NULL so a terminated employee doesn't break
+    # the row.
+    responsible_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.employee.id", ondelete="SET NULL"),
+        index=True,
+    )
     currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
     kalsm: Mapped[str | None] = mapped_column(String(6))
     txjcd: Mapped[str | None] = mapped_column(String(15))
@@ -584,6 +593,13 @@ class LegacyProfitCenter(TimestampMixin, Base):
     department: Mapped[str | None] = mapped_column(String(20))  # ABTEI
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
     verak_user: Mapped[str | None] = mapped_column(String(12))
+    # FK to the actual employee record. Same semantics as on
+    # legacy_cost_center: ``ON DELETE SET NULL`` so a terminated employee
+    # does not break the PC row.
+    responsible_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.employee.id", ondelete="SET NULL"),
+        index=True,
+    )
     currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
     nprctr: Mapped[str | None] = mapped_column(String(10))
     land1: Mapped[str | None] = mapped_column(String(3))

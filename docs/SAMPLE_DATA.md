@@ -11,8 +11,9 @@ responsible owners are all generated — no internal UBS data is reproduced.
 | Object                   | Count    | Notes |
 |--------------------------|----------|-------|
 | Legal entities           | 600      | Across 26 countries, biased toward Switzerland and the US to match real UBS concentration. Real UBS legal-entity names (UBS AG, UBS Switzerland AG, UBS Europe SE, UBS Securities LLC, UBS AG London Branch, etc.) are used where known; the rest are filled synthetically. |
-| Cost centers             | 130,000  | Distributed across the 5 business divisions per the Q1 2026 operating-expense split (GWM ~50%, IB ~26%, P&C ~14%, AM ~5%, NCL ~3%, Group Items ~2%). |
-| Profit centers           | ~95,000  | Includes ~14,000 shared-PC groups for the m:1 migration case. |
+| Employees                | 60,000   | Distributed across the 600 entities (heavy concentration in UBS AG / UBS Switzerland AG / UBS Americas Inc, sparse in small foreign branches). Rank pyramid: ~30% Analyst → ~22% Associate → ~16% AVP → ~18% VP → ~8% ED → ~5% MD → ~1% GMD. ~18% are flagged as managers; non-managers carry a `manager_gpn` pointing at a real manager in the same (entity, division) bucket. |
+| Cost centers             | 130,000  | Distributed across the 5 business divisions per the Q1 2026 operating-expense split (GWM ~50%, IB ~26%, P&C ~14%, AM ~5%, NCL ~3%, Group Items ~2%). Each cost center's `responsible_employee_id` points at a real employee row, biased toward higher ranks (VP / ED / MD). |
+| Profit centers           | ~95,000  | Includes ~14,000 shared-PC groups for the m:1 migration case. Same `responsible_employee_id` linkage. |
 | Balances                 | ~1.56 M  | 12 months × 130k cost centers. Active centers have noisy monthly trends; retired centers have zero-or-near-zero amounts; non-USD currencies translated to USD. |
 | Entity hierarchy         | 5 levels | Group → Region → Country → Type → Entity. |
 | Cost-center hierarchy    | 6 levels | Bank → Division → Function → Department → Team → CC. |
@@ -92,6 +93,7 @@ last (so cascade deletes downstream wave_entity rows automatically).
 |---------------------|-------------|---------|
 | `--centers`         | 130000      | Number of legacy cost centers |
 | `--entities`        | 600         | Number of legal entities |
+| `--employees`       | 60000       | Number of employees, distributed across entities |
 | `--months`          | 12          | Months of historical balances |
 | `--retire-pct`      | 0.30        | Target share of retire candidates |
 | `--sharing-pct`     | 0.40        | Target share of CCs in 1:n PC groups |
