@@ -58,7 +58,7 @@ if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 # These come after sys.path adjustment.
-from sqlalchemy import delete  # noqa: E402
+from sqlalchemy import delete, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.infra.db.session import SessionLocal  # noqa: E402
@@ -457,6 +457,29 @@ class GeneratedEntity:
 
 
 @dataclass
+class GeneratedEmployee:
+    """A synthetic employee, anchored to one entity.
+
+    Mirrors the ``cleanup.employee`` table's most-used columns. The full
+    SAP HR schema has many more fields, but the rest are left null in
+    sample data — the loader will fill them when a real HR feed is wired.
+    """
+
+    gpn: str  # Global Personnel Number — primary external key
+    first_name: str
+    last_name: str
+    user_id: str  # 6-char SAP user id
+    email: str
+    entity: GeneratedEntity
+    division: Division
+    rank_code: str  # e.g. ED, MD, AD, VP, AVP, ASSOC, ANALYST, INTERN
+    rank_text: str
+    is_manager: bool
+    manager_gpn: str | None  # set after generation when org-tree is wired
+    db_id: int = 0  # filled after DB insert so CC/PC FKs can reference it
+
+
+@dataclass
 class GeneratedCC:
     cctr: str
     pctr: str
@@ -467,12 +490,155 @@ class GeneratedCC:
     function: str
     department: str
     team: str
-    responsible_name: str
-    responsible_user: str
+    responsible_employee: GeneratedEmployee  # FK target
     will_retire: bool
     pc_group_key: str  # cost centers sharing the same key share a PC (1:n migration)
     is_pc_group_leader: bool
     activity_level: float  # 0 (dead) … 1 (very active)
+
+
+def _division_for_type(type_code: str, rng: random.Random) -> Division:
+    """Map an entity type to a likely dominant division."""
+    lookup: dict[str, str] = {
+        "Wealth": "GWM",
+        "InvestmentBank": "IB",
+        "AssetMgmt": "AM",
+        "Service": "CC",
+        "Operating": "PC",
+    }
+    target_code = lookup.get(type_code, "PC")
+    return next(d for d in DIVISIONS if d.code == target_code)
+
+
+# UBS-style rank ladder. Used to weight cost-center responsibility — most
+# cost centers are owned by a Director or VP, fewer by an MD or higher.
+RANK_LADDER: tuple[tuple[str, str, float, float], ...] = (
+    # (code, text, share, manager_probability)
+    ("ANALYST", "Analyst", 0.30, 0.0),
+    ("ASSOC", "Associate", 0.22, 0.0),
+    ("AVP", "Associate Vice President", 0.16, 0.10),
+    ("VP", "Vice President", 0.18, 0.50),
+    ("ED", "Executive Director", 0.08, 0.85),
+    ("MD", "Managing Director", 0.05, 0.95),
+    ("GMD", "Group Managing Director", 0.01, 1.00),
+)
+
+
+def build_employees(
+    rng: random.Random,
+    entities: list[GeneratedEntity],
+    target: int,
+) -> list[GeneratedEmployee]:
+    """Generate ``target`` employees distributed across the entities.
+
+    Distribution:
+      * Each employee belongs to exactly one entity (= one company code).
+      * Entity headcount weights match real UBS concentration — UBS AG +
+        UBS Switzerland AG + UBS Americas Inc dominate; small branches
+        get a handful each.
+      * Within each entity, rank distribution follows ``RANK_LADDER``:
+        bottom-heavy (lots of analysts/associates, very few MDs).
+      * Roughly 18% of employees end up flagged as managers (rank
+        determines manager probability — every MD is, no analyst is).
+
+    Manager linkage (``manager_gpn``) is wired in a second pass, after
+    all GPNs are minted, so we can point each non-manager at a real
+    manager in the same entity + division.
+    """
+    # Step 1: entity headcount. The real UBS legal entities (UBS AG, UBS
+    # Switzerland AG, UBS Americas Inc, etc.) host the bulk of FTEs. Use
+    # the same exponential-with-real-boost shape we use for cost centers.
+    weights = []
+    for ent in entities:
+        is_real = any(ent.name == real_name for _, _, real_name in REAL_ENTITIES)
+        # Bigger spread for headcount than for CCs — UBS AG alone has
+        # tens of thousands of FTEs while a small foreign branch has 50-200.
+        base = 1.0 + rng.expovariate(0.5)
+        weights.append(base * (8.0 if is_real else 1.0))
+
+    total_weight = sum(weights)
+    # Cap the per-entity floor so the floor times entity count never
+    # exceeds the target — otherwise the rebalance loop below would spin
+    # forever trying to decrement all-at-floor quotas.
+    floor = max(1, min(5, target // max(1, len(entities))))
+    quotas = [max(floor, int(target * w / total_weight)) for w in weights]
+    while sum(quotas) < target:
+        quotas[rng.randrange(len(quotas))] += 1
+    while sum(quotas) > target:
+        idx = rng.randrange(len(quotas))
+        if quotas[idx] > floor:
+            quotas[idx] -= 1
+
+    # Step 2: mint employees per entity.
+    employees: list[GeneratedEmployee] = []
+    gpn_counter = 100_000  # GPNs look like 8-digit numbers in real UBS HR
+    for ent, quota in zip(entities, quotas, strict=True):
+        for _ in range(quota):
+            gpn_counter += 1
+            gpn = f"{gpn_counter:08d}"
+            first = rng.choice(FIRST_NAMES)
+            last = rng.choice(LAST_NAMES)
+            user_id = make_user_id(f"{first} {last}", rng)[:6]
+            # Rank — sample from RANK_LADDER weighted distribution
+            rank = _weighted_choice(rng, [(r, r[2]) for r in RANK_LADDER])
+            rank_code, rank_text, _, mgr_prob = rank
+            is_manager = rng.random() < mgr_prob
+            # Email pattern: firstname.lastname@ubs.com (lowercase, no
+            # special chars). Real UBS uses ubs.com; this is sample data
+            # so the domain is harmless.
+            email = (
+                f"{first.lower()}.{last.lower()}@ubs.com".replace("é", "e")
+                .replace("ü", "u")
+                .replace("ö", "o")
+                .replace("ä", "a")
+                .replace(" ", "")
+            )
+            # Pick a division the employee primarily works in. Heavy bias
+            # toward the entity's dominant division (employees in UBS
+            # Securities LLC are almost all IB).
+            if rng.random() < 0.75:
+                division = ent.division
+            else:
+                division = _weighted_choice(rng, [(d, d.weight) for d in DIVISIONS])
+            employees.append(
+                GeneratedEmployee(
+                    gpn=gpn,
+                    first_name=first,
+                    last_name=last,
+                    user_id=user_id,
+                    email=email,
+                    entity=ent,
+                    division=division,
+                    rank_code=rank_code,
+                    rank_text=rank_text,
+                    is_manager=is_manager,
+                    manager_gpn=None,
+                )
+            )
+
+    # Step 3: wire manager_gpn — point each non-manager at a manager in
+    # the same (entity, division) bucket. If no manager available, fall
+    # back to any manager in the entity. If the entity has no managers,
+    # the employee is unmanaged (harmless null FK in real systems too).
+    by_bucket: dict[tuple[str, str], list[GeneratedEmployee]] = {}
+    for emp in employees:
+        if emp.is_manager:
+            by_bucket.setdefault((emp.entity.ccode, emp.division.code), []).append(emp)
+    by_entity: dict[str, list[GeneratedEmployee]] = {}
+    for emp in employees:
+        if emp.is_manager:
+            by_entity.setdefault(emp.entity.ccode, []).append(emp)
+
+    for emp in employees:
+        if emp.is_manager:
+            continue
+        candidates = by_bucket.get((emp.entity.ccode, emp.division.code), [])
+        if not candidates:
+            candidates = by_entity.get(emp.entity.ccode, [])
+        if candidates:
+            emp.manager_gpn = rng.choice(candidates).gpn
+
+    return employees
 
 
 def build_entities(rng: random.Random, target: int) -> list[GeneratedEntity]:
@@ -533,27 +699,10 @@ def build_entities(rng: random.Random, target: int) -> list[GeneratedEntity]:
     return ents
 
 
-def _division_for_type(type_code: str, rng: random.Random) -> Division:
-    """Map an entity type to a likely dominant division.
-
-    A WM legal entity hosts mostly GWM cost centers. An InvestmentBank entity
-    hosts IB cost centers. Operating banks host a mix. Service entities host
-    Corporate Center.
-    """
-    lookup: dict[str, str] = {
-        "Wealth": "GWM",
-        "InvestmentBank": "IB",
-        "AssetMgmt": "AM",
-        "Service": "CC",
-        "Operating": "PC",  # default — actual mix decided per CC later
-    }
-    target_code = lookup.get(type_code, "PC")
-    return next(d for d in DIVISIONS if d.code == target_code)
-
-
 def build_cost_centers(
     rng: random.Random,
     entities: list[GeneratedEntity],
+    employees: list[GeneratedEmployee],
     target: int,
     retire_pct: float,
     sharing_pct: float,
@@ -573,10 +722,49 @@ def build_cost_centers(
     the canonical SAP m:1 migration shape (a small handful of cost centers
     rolled into a single profit center). Larger groups would be unrealistic;
     a group of 1 isn't actually shared.
+
+    Owner selection: each cost center's responsible owner is picked from
+    the ``employees`` pool, biased toward employees in the same (entity,
+    division) bucket and weighted toward higher ranks (Director / VP /
+    Executive Director). MD-and-up are rare and reserved for the most
+    active cost centers.
     """
     # Convert sharing_pct (total share) into the conditional probability we
     # check against rng.random() inside the per-CC loop.
     share_among_alive = min(0.99, sharing_pct / (1 - retire_pct)) if retire_pct < 1 else 0.0
+
+    # Pre-build owner-candidate pools by (entity, division). Lookup is O(1)
+    # per cost center, no full-list scans inside the inner loop.
+    owner_pool: dict[tuple[str, str], list[GeneratedEmployee]] = {}
+    owner_pool_by_entity: dict[str, list[GeneratedEmployee]] = {}
+    for emp in employees:
+        owner_pool.setdefault((emp.entity.ccode, emp.division.code), []).append(emp)
+        owner_pool_by_entity.setdefault(emp.entity.ccode, []).append(emp)
+
+    # Rank-weighted preference inside the pool: higher-rank candidates
+    # are more likely to be picked, since cost-center responsibility
+    # typically falls to managers, not interns.
+    rank_weight: dict[str, float] = {
+        "ANALYST": 0.05,
+        "ASSOC": 0.15,
+        "AVP": 0.40,
+        "VP": 0.55,
+        "ED": 0.30,
+        "MD": 0.15,
+        "GMD": 0.05,
+    }
+
+    def pick_owner(ent_code: str, div_code: str) -> GeneratedEmployee:
+        """Pick a plausible owner for a CC in (entity, division)."""
+        candidates = owner_pool.get((ent_code, div_code))
+        if not candidates:
+            candidates = owner_pool_by_entity.get(ent_code, [])
+        if not candidates:
+            # No employee at this entity at all — fall back to ANY employee.
+            return rng.choice(employees)
+        # Rank-weighted pick.
+        weighted = [(c, rank_weight.get(c.rank_code, 0.1)) for c in candidates]
+        return _weighted_choice(rng, weighted)
 
     # Step 1: decide how many CCs each entity hosts. Real UBS concentration
     # is heavy on a few large entities (UBS AG, UBS Switzerland AG, UBS
@@ -626,8 +814,7 @@ def build_cost_centers(
             function = rng.choice(FUNCTIONS[div.code])
             department = rng.choice(DEPARTMENTS)
             team = rng.choice(TEAM_SUFFIXES)
-            resp_name = make_full_name(rng)
-            resp_user = make_user_id(resp_name, rng)
+            owner = pick_owner(ent.ccode, div.code)
 
             # Retire decision — div bias on top of base rate.
             retire_p = retire_pct + div.retire_bias
@@ -662,8 +849,7 @@ def build_cost_centers(
                     function=function,
                     department=department,
                     team=team,
-                    responsible_name=resp_name,
-                    responsible_user=resp_user,
+                    responsible_employee=owner,
                     will_retire=will_retire,
                     pc_group_key="",
                     is_pc_group_leader=False,
@@ -882,6 +1068,63 @@ def insert_entities(session: Session, entities: list[GeneratedEntity]) -> None:
     session.commit()
 
 
+def insert_employees(session: Session, employees: list[GeneratedEmployee]) -> None:
+    """Bulk insert employees and stamp the FK target id back onto each
+    generated employee object so cost-center inserts can reference it."""
+    from app.models.core import Employee  # noqa: PLC0415 — script-local
+
+    started = time.monotonic()
+    rows = [
+        {
+            "scope": SCOPE,
+            "data_category": DATA_CATEGORY,
+            "gpn": emp.gpn,
+            "name": emp.last_name,
+            "vorname": emp.first_name,
+            "userid": emp.user_id,
+            "sap_bukrs": emp.entity.ccode,
+            "sap_bukrs_text": emp.entity.name[:25],
+            "rang_code": emp.rank_code,
+            "rang_text": emp.rank_text,
+            "gpn_vg_ma": emp.manager_gpn,
+            "oe_text": emp.division.name[:40],
+            "ubs_funk": emp.division.code,
+            "ubs_funk_text": emp.division.name[:50],
+            "eintrittsdatum": "20200101",
+            "ersda": "20200101",
+            "usnam": "GENSCRIPT",
+        }
+        for emp in employees
+    ]
+
+    n = 0
+    total = len(rows)
+    for chunk in chunked(rows, 2000):
+        session.bulk_insert_mappings(Employee, chunk)
+        n += len(chunk)
+        progress("employees", n, total, started)
+    session.commit()
+
+    # Step 2: hydrate the GeneratedEmployee.db_id field so CC/PC inserts
+    # can reference the FK. We can't get RETURNING from bulk_insert_mappings,
+    # so we re-query by gpn (which is unique within scope).
+    started = time.monotonic()
+    gpn_to_id: dict[str, int] = dict(
+        session.execute(select(Employee.gpn, Employee.id).where(Employee.scope == SCOPE)).all()
+    )
+    for emp in employees:
+        emp.db_id = gpn_to_id.get(emp.gpn, 0)
+    print(
+        f"  employee FK lookup: {len(gpn_to_id):,} ids resolved in "
+        f"{time.monotonic() - started:.1f}s"
+    )
+
+
+def _full_name(emp: GeneratedEmployee) -> str:
+    """Concatenate first + last name; small helper to keep insert dicts readable."""
+    return f"{emp.first_name} {emp.last_name}"
+
+
 def insert_cost_centers(session: Session, ccs: list[GeneratedCC], today: date) -> None:
     """Bulk insert legacy_cost_center."""
     started = time.monotonic()
@@ -908,12 +1151,13 @@ def insert_cost_centers(session: Session, ccs: list[GeneratedCC], today: date) -
                 "datab": "20200101",
                 "datbi": datbi,
                 "ccode": cc.entity.ccode,
-                "responsible": cc.responsible_name,
-                "verak_user": cc.responsible_user,
+                "responsible": _full_name(cc.responsible_employee),
+                "verak_user": cc.responsible_employee.user_id,
+                "responsible_employee_id": cc.responsible_employee.db_id or None,
                 "currency": cc.entity.country.currency,
                 "pctr": cc.pctr,
                 "land1": cc.entity.country.code,
-                "name1": cc.responsible_name,
+                "name1": _full_name(cc.responsible_employee),
                 "ort01": cc.entity.city,
                 "ersda": "20200101",
                 "usnam": "GENSCRIPT",
@@ -954,12 +1198,13 @@ def insert_profit_centers(session: Session, ccs: list[GeneratedCC]) -> None:
                 "datab": "20200101",
                 "datbi": "99991231",
                 "ccode": cc.entity.ccode,
-                "responsible": cc.responsible_name,
-                "verak_user": cc.responsible_user,
+                "responsible": _full_name(cc.responsible_employee),
+                "verak_user": cc.responsible_employee.user_id,
+                "responsible_employee_id": cc.responsible_employee.db_id or None,
                 "currency": cc.entity.country.currency,
                 "department": cc.department,
                 "land1": cc.entity.country.code,
-                "name1": cc.responsible_name,
+                "name1": _full_name(cc.responsible_employee),
                 "ort01": cc.entity.city,
                 "ersda": "20200101",
                 "usnam": "GENSCRIPT",
@@ -1292,6 +1537,12 @@ def main() -> int:
         "--entities", type=int, default=600, help="Number of legal entities (default: 600)"
     )
     parser.add_argument(
+        "--employees",
+        type=int,
+        default=60_000,
+        help="Number of employees to generate, distributed across entities (default: 60000)",
+    )
+    parser.add_argument(
         "--months", type=int, default=12, help="Months of historical balances (default: 12)"
     )
     parser.add_argument(
@@ -1345,6 +1596,7 @@ def main() -> int:
     print("ampliFi sample-data generator")
     print(f"  centers   : {args.centers:>10,}")
     print(f"  entities  : {args.entities:>10,}")
+    print(f"  employees : {args.employees:>10,}")
     print(f"  months    : {args.months:>10}")
     print(f"  retire    : {args.retire_pct:>10.1%}")
     print(f"  sharing   : {args.sharing_pct:>10.1%}")
@@ -1359,13 +1611,25 @@ def main() -> int:
 
     # Phase 1: build in-memory plan
     t_start = time.monotonic()
-    print("\n[1/5] Planning entities...")
+    print("\n[1/6] Planning entities...")
     entities = build_entities(rng, args.entities)
     n_countries = len({e.country.code for e in entities})
     print(f"  generated {len(entities)} entities across {n_countries} countries")
 
-    print("\n[2/5] Planning cost centers...")
-    ccs = build_cost_centers(rng, entities, args.centers, args.retire_pct, args.sharing_pct)
+    print("\n[2/6] Planning employees...")
+    employees = build_employees(rng, entities, args.employees)
+    n_managers = sum(1 for e in employees if e.is_manager)
+    print(f"  generated {len(employees):,} employees ({n_managers:,} managers)")
+    rank_hist: dict[str, int] = {}
+    for e in employees:
+        rank_hist[e.rank_code] = rank_hist.get(e.rank_code, 0) + 1
+    rank_summary = ", ".join(f"{code}:{rank_hist.get(code, 0):,}" for code, _, _, _ in RANK_LADDER)
+    print(f"  rank mix: {rank_summary}")
+
+    print("\n[3/6] Planning cost centers...")
+    ccs = build_cost_centers(
+        rng, entities, employees, args.centers, args.retire_pct, args.sharing_pct
+    )
     n_retire = sum(1 for c in ccs if c.will_retire)
     n_share = sum(1 for c in ccs if c.pc_group_key)
     n_unique_pc = len({c.pctr for c in ccs})
@@ -1385,14 +1649,19 @@ def main() -> int:
         if args.reset:
             reset_scope(session, purge_waves=args.purge)
 
-        print("\n[3/5] Inserting entities...")
+        print("\n[4/6] Inserting entities + employees...")
         insert_entities(session, entities)
+        # Employees MUST be inserted before cost centers because the CC
+        # responsible_employee_id FK references the now-real employee row
+        # ids. insert_employees() also mutates each GeneratedEmployee's
+        # db_id field so the CC inserts can pick it up.
+        insert_employees(session, employees)
 
-        print("\n[4/5] Inserting cost centers + profit centers...")
+        print("\n[5/6] Inserting cost centers + profit centers...")
         insert_cost_centers(session, ccs, today)
         insert_profit_centers(session, ccs)
 
-        print("\n[5/5] Inserting balances + hierarchies...")
+        print("\n[6/6] Inserting balances + hierarchies...")
         insert_balances(session, rng, ccs, args.months, today)
         build_entity_hierarchy(session, entities)
         build_cc_hierarchy(session, ccs)

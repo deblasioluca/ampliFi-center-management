@@ -100,7 +100,9 @@ def test_build_entities_geographic_concentration() -> None:
 def test_build_cost_centers_hits_target_count() -> None:
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 5000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 1000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5000, retire_pct=0.30, sharing_pct=0.40)
     assert len(ccs) == 5000
 
 
@@ -108,7 +110,9 @@ def test_retire_rate_is_within_tolerance() -> None:
     """User asked for ~30% retire; allow ±5pp because of NCL bias."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 10_000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 2000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 10_000, retire_pct=0.30, sharing_pct=0.40)
     n_retire = sum(1 for c in ccs if c.will_retire)
     rate = n_retire / len(ccs)
     assert 0.25 <= rate <= 0.40, f"retire rate {rate:.1%} outside 25-40% band"
@@ -120,7 +124,9 @@ def test_sharing_rate_at_scale_is_realistic() -> None:
     important shape: more than a quarter share."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 10_000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 2000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 10_000, retire_pct=0.30, sharing_pct=0.40)
     n_share = sum(1 for c in ccs if c.pc_group_key)
     rate = n_share / len(ccs)
     # We don't need to hit 40% at this scale, but it must be substantial.
@@ -133,7 +139,9 @@ def test_pc_groups_have_2_to_6_members() -> None:
     non-shared (their own PC)."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 10_000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 2000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 10_000, retire_pct=0.30, sharing_pct=0.40)
     by_group: dict[str, int] = {}
     for cc in ccs:
         if cc.pc_group_key:
@@ -147,7 +155,9 @@ def test_pc_groups_have_2_to_6_members() -> None:
 def test_pc_group_has_exactly_one_leader() -> None:
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 5000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 1000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5000, retire_pct=0.30, sharing_pct=0.40)
     leaders_by_group: dict[str, int] = {}
     for cc in ccs:
         if cc.pc_group_key and cc.is_pc_group_leader:
@@ -161,7 +171,9 @@ def test_legacy_cs_entities_produce_mostly_ncl_centers() -> None:
     (matching the Q1 2026 report's Non-core wind-down portfolio)."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 200)
-    ccs = GEN.build_cost_centers(rng, ents, 10_000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 2000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 10_000, retire_pct=0.30, sharing_pct=0.40)
     cs_ccs = [c for c in ccs if c.entity.is_legacy_cs]
     if not cs_ccs:
         return  # statistically possible but unlikely with this seed
@@ -174,7 +186,9 @@ def test_distinct_pc_count_reflects_grouping() -> None:
     """If sharing is working, distinct PCs < total CCs by a meaningful margin."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 5000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 1000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5000, retire_pct=0.30, sharing_pct=0.40)
     distinct_pcs = len({c.pctr for c in ccs})
     # With ~30% retire and groups of 2-6 averaging 3, distinct PCs should be
     # at least 5% below total CCs at this scale (more at 130k scale).
@@ -187,7 +201,9 @@ def test_every_cc_has_a_profit_center() -> None:
     """No CC should be left without a pctr — that would crash the V2 routines."""
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 5000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 1000)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5000, retire_pct=0.30, sharing_pct=0.40)
     missing = [c for c in ccs if not c.pctr]
     assert not missing, f"{len(missing)} CCs missing pctr"
 
@@ -195,9 +211,122 @@ def test_every_cc_has_a_profit_center() -> None:
 def test_activity_levels_are_in_unit_interval() -> None:
     rng = random.Random(42)
     ents = GEN.build_entities(rng, 100)
-    ccs = GEN.build_cost_centers(rng, ents, 2000, retire_pct=0.30, sharing_pct=0.40)
+    emps = GEN.build_employees(rng, ents, 400)
+
+    ccs = GEN.build_cost_centers(rng, ents, emps, 2000, retire_pct=0.30, sharing_pct=0.40)
     for cc in ccs:
         assert 0.0 <= cc.activity_level <= 1.0, f"activity {cc.activity_level} OOB on {cc.cctr}"
+
+
+# ── Employees ──────────────────────────────────────────────────────────────
+
+
+def test_build_employees_hits_target_count() -> None:
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 5_000)
+    assert len(emps) == 5_000
+
+
+def test_build_employees_assigns_unique_gpns() -> None:
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 5_000)
+    gpns = [e.gpn for e in emps]
+    assert len(gpns) == len(set(gpns)), "duplicate GPNs"
+
+
+def test_employee_rank_distribution_is_pyramid() -> None:
+    """Bottom-heavy: more analysts than associates than VPs than MDs."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 10_000)
+    counts: dict[str, int] = {}
+    for e in emps:
+        counts[e.rank_code] = counts.get(e.rank_code, 0) + 1
+    # Pyramid invariants
+    assert counts.get("ANALYST", 0) > counts.get("VP", 0), "analysts should outnumber VPs"
+    assert counts.get("VP", 0) > counts.get("MD", 0), "VPs should outnumber MDs"
+    assert counts.get("MD", 0) > counts.get("GMD", 0), "MDs should outnumber GMDs"
+
+
+def test_employees_are_distributed_across_entities() -> None:
+    """No entity should starve and the largest entity should not host more
+    than ~30% of all employees (UBS AG itself doesn't have that)."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 200)
+    emps = GEN.build_employees(rng, ents, 5_000)
+    by_entity: dict[str, int] = {}
+    for e in emps:
+        by_entity[e.entity.ccode] = by_entity.get(e.entity.ccode, 0) + 1
+    # Every entity has at least the floor (5)
+    assert min(by_entity.values()) >= 5
+    # No single entity has more than 30% of headcount
+    largest_share = max(by_entity.values()) / len(emps)
+    assert largest_share < 0.30, f"top entity holds {largest_share:.1%} of FTEs"
+
+
+def test_managers_have_no_manager_assignment() -> None:
+    """Managers' manager_gpn stays None — they're the leaf of the chain
+    in this sample model. Real UBS has nested management but for sample
+    data a single manager-tier suffices."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 2_000)
+    managers = [e for e in emps if e.is_manager]
+    assert managers, "no managers generated"
+    for m in managers:
+        assert m.manager_gpn is None
+
+
+def test_non_managers_mostly_have_a_manager() -> None:
+    """Most non-managers should have a manager_gpn pointed at a real
+    employee. A few may be unmanaged if their (entity, division) bucket
+    happens to have no managers — that's fine."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 5_000)
+    non_managers = [e for e in emps if not e.is_manager]
+    with_mgr = sum(1 for e in non_managers if e.manager_gpn is not None)
+    rate = with_mgr / len(non_managers)
+    assert rate >= 0.85, f"only {rate:.1%} of non-managers have a manager"
+    # And those manager_gpns must reference real employees.
+    all_gpns = {e.gpn for e in emps}
+    for e in non_managers:
+        if e.manager_gpn:
+            assert e.manager_gpn in all_gpns, f"dangling manager_gpn={e.manager_gpn}"
+
+
+def test_cc_owners_come_from_employee_pool() -> None:
+    """Every cost center's responsible_employee must be a real GeneratedEmployee
+    instance from the pool — not a freshly minted name."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 2_000)
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5_000, retire_pct=0.30, sharing_pct=0.40)
+    pool_ids = {id(e) for e in emps}
+    for cc in ccs:
+        assert id(cc.responsible_employee) in pool_ids, (
+            f"CC {cc.cctr} has owner not in employee pool"
+        )
+
+
+def test_cc_owner_rank_is_seniority_weighted() -> None:
+    """Owners should skew toward VP / ED / MD ranks. Not strict — but the
+    median owner rank must not be ANALYST."""
+    rng = random.Random(42)
+    ents = GEN.build_entities(rng, 100)
+    emps = GEN.build_employees(rng, ents, 5_000)
+    ccs = GEN.build_cost_centers(rng, ents, emps, 5_000, retire_pct=0.30, sharing_pct=0.40)
+    counts: dict[str, int] = {}
+    for cc in ccs:
+        rc = cc.responsible_employee.rank_code
+        counts[rc] = counts.get(rc, 0) + 1
+    # Senior ranks (AVP+) should hold the majority of CCs.
+    senior_count = sum(counts.get(r, 0) for r in ("AVP", "VP", "ED", "MD", "GMD"))
+    assert senior_count / len(ccs) >= 0.55, (
+        f"only {senior_count / len(ccs):.1%} of CCs owned by senior staff"
+    )
 
 
 # ── Reproducibility ────────────────────────────────────────────────────────
@@ -207,12 +336,17 @@ def test_same_seed_produces_same_output() -> None:
     """The script's whole value for demos is reproducibility."""
     rng1 = random.Random(7)
     ents1 = GEN.build_entities(rng1, 50)
-    ccs1 = GEN.build_cost_centers(rng1, ents1, 1000, retire_pct=0.30, sharing_pct=0.40)
+    emps1 = GEN.build_employees(rng1, ents1, 200)
+    ccs1 = GEN.build_cost_centers(rng1, ents1, emps1, 1000, retire_pct=0.30, sharing_pct=0.40)
 
     rng2 = random.Random(7)
     ents2 = GEN.build_entities(rng2, 50)
-    ccs2 = GEN.build_cost_centers(rng2, ents2, 1000, retire_pct=0.30, sharing_pct=0.40)
+    emps2 = GEN.build_employees(rng2, ents2, 200)
+    ccs2 = GEN.build_cost_centers(rng2, ents2, emps2, 1000, retire_pct=0.30, sharing_pct=0.40)
 
     assert [e.ccode for e in ents1] == [e.ccode for e in ents2]
+    assert [e.gpn for e in emps1] == [e.gpn for e in emps2]
     assert [c.cctr for c in ccs1] == [c.cctr for c in ccs2]
     assert [c.pctr for c in ccs1] == [c.pctr for c in ccs2]
+    # Owner linkage must also be deterministic.
+    assert [c.responsible_employee.gpn for c in ccs1] == [c.responsible_employee.gpn for c in ccs2]
