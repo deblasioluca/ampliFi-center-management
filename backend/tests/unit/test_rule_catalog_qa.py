@@ -26,7 +26,6 @@ from app.api.admin import (
     rule_catalog_qa,
 )
 
-
 # ── Grounding helper ────────────────────────────────────────────────
 
 
@@ -186,8 +185,7 @@ def test_qa_history_capped_at_ten_turns() -> None:
             return r
 
     long_history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"}
-        for i in range(25)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"} for i in range(25)
     ]
 
     body = RuleCatalogQARequest(question="newest", history=long_history)

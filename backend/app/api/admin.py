@@ -2964,3 +2964,425 @@ def rule_catalog_qa(
         "tokens_in": getattr(completion, "tokens_in", 0),
         "tokens_out": getattr(completion, "tokens_out", 0),
     }
+
+
+# --- LLM-powered Config Drafter & Configurator (PR #72) ---
+
+
+class ConfigDrafterRequest(BaseModel):
+    """Body for /configs/draft-from-description.
+
+    ``description`` — user's plain-language description of the desired
+    pipeline goal.
+    ``engine`` — 'v1' (cleansing) or 'v2' (CEMA migration). Determines
+    which routines the LLM is allowed to choose from.
+    """
+
+    description: str
+    engine: str = "v1"
+
+
+class ConfigConfiguratorRequest(BaseModel):
+    """Body for /configs/configure-stepwise.
+
+    ``step``:
+    - 'clarify' — ask the LLM for clarifying questions about the user's goal
+    - 'propose' — produce a draft based on description + clarifications
+    - 'refine' — adjust an existing draft based on user feedback
+
+    ``description`` is required for clarify and propose.
+    ``clarifications`` (Q/A pairs from the clarify step) feed into propose.
+    ``draft`` and ``user_feedback`` are required for refine.
+    """
+
+    step: str  # 'clarify' | 'propose' | 'refine'
+    engine: str = "v1"
+    description: str | None = None
+    clarifications: list[dict] = []  # [{question, answer}, ...]
+    draft: dict | None = None
+    user_feedback: str | None = None
+
+
+def _build_pipeline_grounding(engine: str) -> str:
+    """Catalog grounding tailored for pipeline drafting — emphasizes the
+    routines available in the chosen engine and their tunable params."""
+    from app.domain.decision_tree.rule_catalog import list_rule_catalog
+
+    tree_filter = engine.lower()
+    catalog = list_rule_catalog()
+    if tree_filter == "v1":
+        catalog = [e for e in catalog if not e["code"].startswith("v2.")]
+    elif tree_filter == "v2":
+        catalog = [e for e in catalog if e["code"].startswith("v2.")]
+
+    blocks = []
+    for e in catalog:
+        params = e.get("params") or {}
+        param_lines = []
+        for pname, pmeta in params.items():
+            default = pmeta.get("default") if isinstance(pmeta, dict) else None
+            help_text = pmeta.get("help") if isinstance(pmeta, dict) else None
+            param_lines.append(
+                f"    - {pname}: default={default}" + (f" ({help_text})" if help_text else "")
+            )
+        param_block = "\n".join(param_lines) if param_lines else "    (no tunable parameters)"
+        decides = ", ".join(e.get("decides") or []) or "—"
+        blocks.append(
+            f"### {e['code']} — {e.get('business_label') or e['name']}\n"
+            f"{e.get('description', '').strip()}\n"
+            f"  Decides: {decides}\n"
+            f"  Tunable params:\n{param_block}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _build_drafter_system_prompt(engine: str, grounding: str) -> str:
+    return (
+        "You are an expert assistant for the ampliFi cost-center cleanup tool. "
+        "Your job is to draft an analysis pipeline configuration based on the "
+        "user's plain-language description.\n\n"
+        f"Engine: {engine.upper()}. You may ONLY pick routines from the catalog "
+        "below — every routine code in your output MUST appear in the catalog "
+        "exactly. Inventing codes is a hard error.\n\n"
+        "Output format — return a single JSON object with this exact shape and "
+        "nothing else (no prose, no markdown fences):\n"
+        "{\n"
+        '  "rationale": "<2-4 sentence plain-prose explanation '
+        'of why this pipeline matches the goal>",\n'
+        '  "config": {\n'
+        '    "pipeline": [\n'
+        '      {"routine": "<code>", "enabled": true, "params": {<key>: <value>, ...}},\n'
+        "      ...\n"
+        "    ],\n"
+        '    "params": {<top-level params if relevant>}\n'
+        "  },\n"
+        '  "warnings": ["<any caveats or assumptions you made>"]\n'
+        "}\n\n"
+        "Choose routines that are actually relevant to the goal. Don't pad. "
+        "Use param defaults unless the user's description implies a different "
+        "value (e.g. 'aggressively retire' → tighten thresholds; 'be conservative' "
+        "→ loosen them). For V1 pipelines, ALWAYS include "
+        "'aggregate.combine_outcomes' as the last routine — it's the combiner.\n\n"
+        "## Available routines\n"
+        f"{grounding}"
+    )
+
+
+def _build_configurator_clarify_prompt(engine: str, grounding: str) -> str:
+    return (
+        "You are an expert assistant for the ampliFi cost-center cleanup tool. "
+        "The user has described a goal for a pipeline configuration but the "
+        "description may be ambiguous. Before drafting, ask 1-3 SHORT clarifying "
+        "questions that would meaningfully change the resulting pipeline.\n\n"
+        "Return a single JSON object with this exact shape and nothing else:\n"
+        "{\n"
+        '  "questions": [\n'
+        '    {"key": "<short_snake_case_id>", "question": "<plain question>", '
+        '"options": ["<short answer 1>", "<short answer 2>", ...]},\n'
+        "    ...\n"
+        "  ]\n"
+        "}\n\n"
+        "If the user's description is clear enough that no clarification helps, "
+        "return an empty questions list. Don't ask trivia. Each option must be "
+        "a short phrase (≤4 words) the user can tap.\n\n"
+        f"Engine: {engine.upper()}. Available routines:\n{grounding}"
+    )
+
+
+def _build_configurator_refine_prompt(engine: str, grounding: str) -> str:
+    return (
+        "You are an expert assistant for the ampliFi cost-center cleanup tool. "
+        "You previously drafted a pipeline configuration. The user has provided "
+        "feedback. Produce a REVISED config that addresses the feedback while "
+        "keeping the parts they didn't object to.\n\n"
+        f"Engine: {engine.upper()}. Output format — same JSON shape as the "
+        "drafter (rationale, config, warnings). Routine codes must come from "
+        "the catalog below.\n\n"
+        "## Available routines\n"
+        f"{grounding}"
+    )
+
+
+def _call_llm_json(
+    db: Session,
+    system_prompt: str,
+    user_message: str,
+    metadata: dict,
+    history: list | None = None,
+    max_tokens: int = 1500,
+    temperature: float = 0.1,
+) -> dict:
+    """Shared helper: call the configured LLM, parse a JSON response,
+    return ``{available, parsed?, raw?, model, tokens_in, tokens_out, reason?}``.
+
+    Robust to: no LLM config, unknown provider, init failure, network
+    failure, malformed JSON. All collapse to ``available: false``.
+    """
+    import json
+    import re
+
+    from app.infra.llm.provider import (
+        AzureOpenAIProvider,
+        Message,
+        SapBtpProvider,
+    )
+
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == "llm")).scalar_one_or_none()
+    if not cfg or not cfg.value:
+        return {"available": False, "reason": "LLM provider not configured"}
+
+    llm_config = cfg.value
+    provider_type = llm_config.get("provider", "azure")
+    try:
+        if provider_type == "azure":
+            provider = AzureOpenAIProvider(llm_config)
+        elif provider_type == "btp":
+            provider = SapBtpProvider(llm_config)
+        else:
+            return {
+                "available": False,
+                "reason": f"Unknown provider type: {provider_type}",
+            }
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"Provider init failed: {type(exc).__name__}",
+        }
+
+    messages: list[Message] = [Message(role="system", content=system_prompt)]
+    for turn in (history or [])[-10:]:
+        role = turn.get("role")
+        content = turn.get("content")
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            messages.append(Message(role=role, content=content[:6000]))
+    messages.append(Message(role="user", content=user_message[:8000]))
+
+    model = llm_config.get("model", "gpt-4o")
+    try:
+        completion = provider.complete(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            metadata=metadata,
+        )
+    except Exception as exc:
+        return {"available": False, "reason": f"LLM call failed: {type(exc).__name__}"}
+
+    raw = completion.text or ""
+    # Strip markdown code fences if present
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        return {
+            "available": False,
+            "reason": f"LLM returned non-JSON: {type(exc).__name__}",
+            "raw": raw,
+            "model": model,
+            "tokens_in": getattr(completion, "tokens_in", 0),
+            "tokens_out": getattr(completion, "tokens_out", 0),
+        }
+
+    return {
+        "available": True,
+        "parsed": parsed,
+        "raw": raw,
+        "model": model,
+        "tokens_in": getattr(completion, "tokens_in", 0),
+        "tokens_out": getattr(completion, "tokens_out", 0),
+    }
+
+
+def _validate_pipeline_config(parsed: dict, engine: str) -> dict:
+    """Validate that every routine code in the proposed config exists in
+    the rule catalog. Returns ``{ok, invalid_codes, valid_codes}``."""
+    from app.domain.decision_tree.rule_catalog import list_rule_catalog
+
+    tree_filter = engine.lower()
+    catalog = list_rule_catalog()
+    if tree_filter == "v1":
+        valid = {e["code"] for e in catalog if not e["code"].startswith("v2.")}
+    elif tree_filter == "v2":
+        valid = {e["code"] for e in catalog if e["code"].startswith("v2.")}
+    else:
+        valid = {e["code"] for e in catalog}
+
+    config = parsed.get("config") or {}
+    pipeline = config.get("pipeline") or []
+    proposed_codes = [step.get("routine") for step in pipeline if isinstance(step, dict)]
+    invalid = [c for c in proposed_codes if c and c not in valid]
+    return {
+        "ok": not invalid,
+        "invalid_codes": invalid,
+        "valid_codes": [c for c in proposed_codes if c in valid],
+    }
+
+
+@router.post("/configs/draft-from-description")
+def llm_draft_config(
+    body: ConfigDrafterRequest,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Drafter (single-shot): plain-language description → editable config draft.
+
+    Read-only — never persists. Returns the draft so the frontend can show
+    it for review before the user saves it through the regular config-create
+    endpoint.
+    """
+    if body.engine.lower() not in ("v1", "v2"):
+        raise HTTPException(status_code=400, detail="engine must be 'v1' or 'v2'")
+
+    grounding = _build_pipeline_grounding(body.engine)
+    system_prompt = _build_drafter_system_prompt(body.engine, grounding)
+    result = _call_llm_json(
+        db,
+        system_prompt=system_prompt,
+        user_message=body.description,
+        metadata={"feature": "config_drafter", "engine": body.engine},
+        max_tokens=2000,
+    )
+    if not result.get("available"):
+        return {
+            "available": False,
+            "reason": result.get("reason"),
+            "raw": result.get("raw"),
+            "draft": None,
+        }
+
+    parsed = result["parsed"]
+    validation = _validate_pipeline_config(parsed, body.engine)
+    return {
+        "available": True,
+        "draft": parsed.get("config"),
+        "rationale": parsed.get("rationale"),
+        "warnings": parsed.get("warnings", []),
+        "validation": validation,
+        "model": result["model"],
+        "tokens_in": result["tokens_in"],
+        "tokens_out": result["tokens_out"],
+    }
+
+
+@router.post("/configs/configure-stepwise")
+def llm_configure_stepwise(
+    body: ConfigConfiguratorRequest,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Configurator (multi-step): clarify → propose → refine.
+
+    Stateless — the client carries clarifications/draft between steps.
+    Read-only. The propose step ends with an editable draft, same shape
+    as the drafter endpoint.
+    """
+    if body.engine.lower() not in ("v1", "v2"):
+        raise HTTPException(status_code=400, detail="engine must be 'v1' or 'v2'")
+    if body.step not in ("clarify", "propose", "refine"):
+        raise HTTPException(status_code=400, detail="step must be clarify|propose|refine")
+
+    grounding = _build_pipeline_grounding(body.engine)
+
+    if body.step == "clarify":
+        if not body.description:
+            raise HTTPException(status_code=400, detail="description required for clarify")
+        result = _call_llm_json(
+            db,
+            system_prompt=_build_configurator_clarify_prompt(body.engine, grounding),
+            user_message=body.description,
+            metadata={"feature": "config_configurator", "step": "clarify"},
+            max_tokens=600,
+        )
+        if not result.get("available"):
+            return {
+                "available": False,
+                "reason": result.get("reason"),
+                "raw": result.get("raw"),
+                "questions": [],
+            }
+        return {
+            "available": True,
+            "step": "clarify",
+            "questions": result["parsed"].get("questions", []),
+            "model": result["model"],
+            "tokens_in": result["tokens_in"],
+            "tokens_out": result["tokens_out"],
+        }
+
+    if body.step == "propose":
+        if not body.description:
+            raise HTTPException(status_code=400, detail="description required for propose")
+        # Fold clarifications into the user message
+        clar_lines = "\n".join(
+            f"Q: {c.get('question')}\nA: {c.get('answer')}"
+            for c in body.clarifications or []
+            if isinstance(c, dict) and c.get("question") and c.get("answer")
+        )
+        user_msg = body.description + ("\n\nClarifications:\n" + clar_lines if clar_lines else "")
+        result = _call_llm_json(
+            db,
+            system_prompt=_build_drafter_system_prompt(body.engine, grounding),
+            user_message=user_msg,
+            metadata={"feature": "config_configurator", "step": "propose"},
+            max_tokens=2000,
+        )
+        if not result.get("available"):
+            return {
+                "available": False,
+                "reason": result.get("reason"),
+                "raw": result.get("raw"),
+                "draft": None,
+            }
+        parsed = result["parsed"]
+        validation = _validate_pipeline_config(parsed, body.engine)
+        return {
+            "available": True,
+            "step": "propose",
+            "draft": parsed.get("config"),
+            "rationale": parsed.get("rationale"),
+            "warnings": parsed.get("warnings", []),
+            "validation": validation,
+            "model": result["model"],
+            "tokens_in": result["tokens_in"],
+            "tokens_out": result["tokens_out"],
+        }
+
+    # refine
+    if not body.draft or not body.user_feedback:
+        raise HTTPException(status_code=400, detail="draft and user_feedback required for refine")
+    import json as _json
+
+    user_msg = (
+        "Current draft (JSON):\n"
+        + _json.dumps(body.draft)
+        + "\n\nUser feedback:\n"
+        + body.user_feedback
+    )
+    result = _call_llm_json(
+        db,
+        system_prompt=_build_configurator_refine_prompt(body.engine, grounding),
+        user_message=user_msg,
+        metadata={"feature": "config_configurator", "step": "refine"},
+        max_tokens=2000,
+    )
+    if not result.get("available"):
+        return {
+            "available": False,
+            "reason": result.get("reason"),
+            "raw": result.get("raw"),
+            "draft": None,
+        }
+    parsed = result["parsed"]
+    validation = _validate_pipeline_config(parsed, body.engine)
+    return {
+        "available": True,
+        "step": "refine",
+        "draft": parsed.get("config"),
+        "rationale": parsed.get("rationale"),
+        "warnings": parsed.get("warnings", []),
+        "validation": validation,
+        "model": result["model"],
+        "tokens_in": result["tokens_in"],
+        "tokens_out": result["tokens_out"],
+    }
