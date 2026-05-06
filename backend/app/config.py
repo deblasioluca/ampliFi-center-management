@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     feature_mdg_api: bool = False
     feature_datasphere: bool = False
     feature_entraid: bool = False
+    # When true, explorer endpoints serving sensitive PII (employees) or
+    # financial data (balances) require an authenticated user with the
+    # 'analyst' or 'admin' role. Default false to preserve the legacy
+    # public read-only behaviour during development; flip to true in
+    # production deployments.
+    explorer_require_auth: bool = False
 
 
 settings = Settings()
