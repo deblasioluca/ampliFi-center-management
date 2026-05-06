@@ -81,6 +81,42 @@ def get_effective_outcome(proposal: CenterProposal) -> tuple[str, str | None]:
     return outcome, target
 
 
+def _proposal_engine(proposal: CenterProposal) -> str:
+    """Return the engine version that produced this proposal ("v1" or "v2").
+
+    V2 stores ``engine_version=v2`` and grouping data (pc_id, cc_id, pc_name,
+    cc_name, group_key, approach) in ``CenterProposal.attrs``. V1 has no attrs
+    grouping data and historically left the field empty.
+    """
+    attrs = proposal.attrs or {}
+    return str(attrs.get("engine_version", "v1")).lower()
+
+
+def _resolve_target_ids(
+    proposal: CenterProposal,
+    legacy: LegacyCostCenter,
+) -> tuple[str, str, str | None, str | None]:
+    """Resolve (cctr, pctr, cc_name, pc_name) for the target objects.
+
+    For V2 proposals, this uses the IDs assigned by ``assign_v2_ids`` which
+    implement the canonical SAP m:1 model — a single ``pc_id`` is shared by
+    all centers in the same ``group_key``. For V1 proposals (and any proposal
+    without V2 attrs), the legacy 1:1 mapping is preserved as a fallback.
+    """
+    attrs = proposal.attrs or {}
+    if _proposal_engine(proposal) == "v2":
+        # V2: use the assigned grouping IDs/names. cc_id/pc_id are *required*
+        # for V2 — if missing, the V2 ID assignment step did not run.
+        cc_id = attrs.get("cc_id") or legacy.cctr
+        pc_id = attrs.get("pc_id") or legacy.pctr or legacy.cctr
+        cc_name = attrs.get("cc_name") or legacy.txtsh
+        pc_name = attrs.get("pc_name") or legacy.txtsh
+        return cc_id, pc_id, cc_name, pc_name
+
+    # V1 fallback: legacy 1:1 behaviour
+    return legacy.cctr, (legacy.pctr or legacy.cctr), legacy.txtsh, legacy.txtsh
+
+
 def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     """Lock proposals and create target object drafts (§06.6).
 
@@ -88,6 +124,11 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
     For each KEEP or REDESIGN proposal, a target CC and/or PC is created
     (REDESIGN targets are created when the user overrides target to CC/PC).
     RETIRE and MERGE_MAP proposals are skipped (no target objects).
+
+    For V2 (CEMA migration) proposals, the assigned ``pc_id`` is shared by all
+    centers in the same ``group_key`` — the existing-row check on
+    ``(coarea, pctr)`` ensures only ONE TargetProfitCenter is created per
+    group, implementing the canonical m:1 model.
     """
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -106,6 +147,7 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
 
     created_cc = 0
     created_pc = 0
+    pc_groups_seen: set[tuple[str, str]] = set()  # (coarea, pc_id) for telemetry
 
     for proposal in proposals:
         outcome, target = get_effective_outcome(proposal)
@@ -117,6 +159,8 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
         if not legacy:
             continue
 
+        cc_id, pc_id, cc_name, pc_name = _resolve_target_ids(proposal, legacy)
+
         # Resolve owner as "GPN Name" from Employee table
         owner = resolve_owner_display(legacy.responsible, db)
 
@@ -125,21 +169,21 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
             existing = db.execute(
                 select(TargetCostCenter).where(
                     TargetCostCenter.coarea == legacy.coarea,
-                    TargetCostCenter.cctr == legacy.cctr,
+                    TargetCostCenter.cctr == cc_id,
                 )
             ).scalar_one_or_none()
 
             if not existing:
                 tcc = TargetCostCenter(
                     coarea=legacy.coarea,
-                    cctr=legacy.cctr,
-                    txtsh=legacy.txtsh,
+                    cctr=cc_id,
+                    txtsh=cc_name or legacy.txtsh,
                     txtmi=legacy.txtmi,
                     responsible=owner or legacy.responsible,
                     ccode=legacy.ccode,
                     cctrcgy=legacy.cctrcgy,
                     currency=legacy.currency,
-                    pctr=legacy.pctr,
+                    pctr=pc_id,
                     is_active=True,
                     source_proposal_id=proposal.id,
                     approved_in_wave=wave_id,
@@ -148,19 +192,22 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
                 created_cc += 1
 
         # Create target profit center if target includes PC
+        # For V2 m:1: same pc_id across multiple proposals → only first one
+        # creates the row, the existing-check dedups the rest.
         if target in ("PC", "PC_ONLY", "CC_AND_PC"):
+            pc_groups_seen.add((legacy.coarea, pc_id))
             existing_pc = db.execute(
                 select(TargetProfitCenter).where(
                     TargetProfitCenter.coarea == legacy.coarea,
-                    TargetProfitCenter.pctr == (legacy.pctr or legacy.cctr),
+                    TargetProfitCenter.pctr == pc_id,
                 )
             ).scalar_one_or_none()
 
             if not existing_pc:
                 tpc = TargetProfitCenter(
                     coarea=legacy.coarea,
-                    pctr=legacy.pctr or legacy.cctr,
-                    txtsh=legacy.txtsh,
+                    pctr=pc_id,
+                    txtsh=pc_name or legacy.txtsh,
                     txtmi=legacy.txtmi,
                     responsible=owner or legacy.responsible,
                     ccode=legacy.ccode,
@@ -184,6 +231,8 @@ def lock_proposals(wave_id: int, run_id: int, db: Session) -> dict:
         "proposals_processed": len(proposals),
         "target_cc_created": created_cc,
         "target_pc_created": created_pc,
+        "pc_groups": len(pc_groups_seen),
+        "engine_version": run.engine_version or "v1",
     }
 
     logger.info("proposal.locked", **result)

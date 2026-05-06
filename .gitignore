@@ -59,3 +59,4 @@ mlartifacts/
 .amplifi*.pid
 amplifi-backend.log
 amplifi-frontend.log
+.venv-test/

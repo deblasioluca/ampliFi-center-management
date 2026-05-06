@@ -206,7 +206,12 @@ def execute_analysis(
     label: str | None = None,
     excluded_scopes: list[str] | None = None,
 ) -> AnalysisRun:
-    """Execute decision tree analysis.
+    """Execute decision tree analysis (synchronous — creates run + runs it).
+
+    Kept for backward compatibility with existing callers. New callers should
+    use the queued pattern: create the run as 'queued' via the API, then
+    dispatch app.workers.tasks.run_analysis which calls
+    ``execute_analysis_for_run`` on the existing row.
 
     If *wave_id* is provided, only cost centers in the wave's scope are
     analysed. If *wave_id* is ``None``, **all** cost centers are analysed
@@ -240,9 +245,55 @@ def execute_analysis(
             f" {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
         ),
         excluded_scopes=excluded_scopes,
+        engine_version="v1",
     )
     db.add(run)
     db.flush()
+
+    return execute_analysis_for_run(
+        run=run,
+        wave_id=wave_id,
+        config_id=config_id,
+        user_id=user_id,
+        mode=mode,
+        label=label,
+        excluded_scopes=excluded_scopes,
+        db=db,
+    )
+
+
+def execute_analysis_for_run(
+    *,
+    run: AnalysisRun,
+    wave_id: int | None,
+    config_id: int,
+    user_id: int,
+    mode: str,
+    label: str | None,
+    excluded_scopes: list[str] | None,
+    db: Session,
+) -> AnalysisRun:
+    """Run the V1 pipeline against an *existing* AnalysisRun row.
+
+    Used both by the synchronous ``execute_analysis`` flow and by the Celery
+    task ``run_analysis``. Updates the run row in place — caller is
+    responsible for committing.
+    """
+    wave = None
+    if wave_id is not None:
+        wave = db.get(Wave, wave_id)
+        if not wave:
+            raise ValueError(f"Wave {wave_id} not found")
+
+    config = db.get(AnalysisConfig, config_id)
+    if not config:
+        raise ValueError(f"Config {config_id} not found")
+
+    # Mark as running if not already
+    if run.status not in ("running",):
+        run.status = "running"
+        run.started_at = run.started_at or datetime.now(UTC)
+        db.flush()
 
     cc_query = _scope_query(wave, db) if wave is not None else select(LegacyCostCenter)
 

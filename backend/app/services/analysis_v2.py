@@ -174,7 +174,12 @@ def run_v2_analysis(
     label: str | None = None,
     excluded_scopes: list[str] | None = None,
 ) -> dict:
-    """Run V2 CEMA migration analysis on a wave or globally.
+    """Run V2 CEMA migration analysis on a wave or globally (synchronous).
+
+    Kept for backward compatibility with existing callers. New callers
+    should use the queued pattern: create the run as 'queued' via the API,
+    dispatch ``app.workers.tasks.run_v2_analysis`` which calls
+    ``execute_v2_analysis_for_run`` on the existing row.
 
     mode: 'simulation' uses temp CT/PT IDs, 'activated' uses real P/C IDs.
     wave_id=None runs on all centers (global simulation).
@@ -188,36 +193,7 @@ def run_v2_analysis(
             raise ValueError(f"Wave {wave_id} not found")
 
     # Load or create config
-    config_data = dict(V2_DEFAULT_CONFIG)
-    if config_id:
-        ac = db.get(AnalysisConfig, config_id)
-        if not ac:
-            raise ValueError(f"Config {config_id} not found")
-        if ac.config:
-            config_data = ac.config
-    else:
-        # Create default V2 config
-        existing = db.execute(
-            select(AnalysisConfig)
-            .where(AnalysisConfig.code == "cema_migration_v2")
-            .order_by(AnalysisConfig.version.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        if existing:
-            config_id = existing.id
-            config_data = existing.config or config_data
-        else:
-            ac = AnalysisConfig(
-                code="cema_migration_v2",
-                version=1,
-                name="V2 CEMA Migration (default)",
-                config=config_data,
-                created_by=user_id,
-            )
-            db.add(ac)
-            db.flush()
-            config_id = ac.id
-
+    config_data, config_id = _load_or_create_v2_config(config_id, user_id, db)
     pipeline_config = {"pipeline": config_data.get("pipeline", V2_DEFAULT_CONFIG["pipeline"])}
     id_config = config_data.get("id_assignment", V2_DEFAULT_CONFIG["id_assignment"])
 
@@ -239,6 +215,105 @@ def run_v2_analysis(
     )
     db.add(run)
     db.flush()
+
+    return _execute_v2_pipeline(
+        run=run,
+        wave=wave,
+        wave_id=wave_id,
+        pipeline_config=pipeline_config,
+        id_config=id_config,
+        mode=mode,
+        db=db,
+    )
+
+
+def execute_v2_analysis_for_run(
+    *,
+    run: AnalysisRun,
+    wave_id: int | None,
+    config_id: int,
+    mode: str,
+    id_config: dict | None,
+    db: Session,
+) -> dict:
+    """Run V2 pipeline against an *existing* AnalysisRun row (for Celery)."""
+    wave = None
+    if wave_id:
+        wave = db.get(Wave, wave_id)
+        if not wave:
+            raise ValueError(f"Wave {wave_id} not found")
+
+    ac = db.get(AnalysisConfig, config_id)
+    if not ac:
+        raise ValueError(f"Config {config_id} not found")
+    config_data = ac.config or V2_DEFAULT_CONFIG
+    pipeline_config = {"pipeline": config_data.get("pipeline", V2_DEFAULT_CONFIG["pipeline"])}
+    if not id_config:
+        id_config = config_data.get("id_assignment", V2_DEFAULT_CONFIG["id_assignment"])
+
+    if run.status not in ("running",):
+        run.status = "running"
+        run.started_at = run.started_at or datetime.now(UTC)
+        db.flush()
+
+    return _execute_v2_pipeline(
+        run=run,
+        wave=wave,
+        wave_id=wave_id,
+        pipeline_config=pipeline_config,
+        id_config=id_config,
+        mode=mode,
+        db=db,
+    )
+
+
+def _load_or_create_v2_config(
+    config_id: int | None, user_id: int | None, db: Session
+) -> tuple[dict, int]:
+    """Resolve a V2 config — load by id, or get the default, or create the default."""
+    config_data = dict(V2_DEFAULT_CONFIG)
+    if config_id:
+        ac = db.get(AnalysisConfig, config_id)
+        if not ac:
+            raise ValueError(f"Config {config_id} not found")
+        if ac.config:
+            config_data = ac.config
+        return config_data, ac.id
+
+    existing = db.execute(
+        select(AnalysisConfig)
+        .where(AnalysisConfig.code == "cema_migration_v2")
+        .order_by(AnalysisConfig.version.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if existing:
+        return existing.config or config_data, existing.id
+
+    ac = AnalysisConfig(
+        code="cema_migration_v2",
+        version=1,
+        name="V2 CEMA Migration (default)",
+        config=config_data,
+        created_by=user_id,
+    )
+    db.add(ac)
+    db.flush()
+    return config_data, ac.id
+
+
+def _execute_v2_pipeline(
+    *,
+    run: AnalysisRun,
+    wave: Wave | None,
+    wave_id: int | None,
+    pipeline_config: dict,
+    id_config: dict,
+    mode: str,
+    db: Session,
+) -> dict:
+    """Inner pipeline execution — extracted so both the synchronous and
+    Celery-dispatched paths share the same body. Caller is responsible for
+    persisting the run row (commit happens at the end here)."""
 
     # Get centers: from wave entities, or all legacy cost centers for global mode
     if wave_id:

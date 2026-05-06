@@ -1,0 +1,458 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Decision Tree Konfiguration" requireAuth={true} adminOnly={true}>
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Admin</a>
+      <h2 class="text-xl font-bold mt-2">Decision Tree Varianten</h2>
+      <p class="text-sm text-gray-500 mt-1">
+        Erstelle und verwalte Varianten des Entscheidungsbaums. Wähle eine
+        Vorlage zum Starten und passe die Parameter an deine Anforderungen an.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <button id="new-from-preset" class="btn btn-primary">+ Neue Variante aus Vorlage</button>
+    </div>
+  </div>
+
+  <!-- Engine selector -->
+  <div class="card mb-4 flex items-center gap-3">
+    <label class="text-sm text-gray-600">Engine:</label>
+    <button id="engine-v1" class="btn btn-sm btn-primary">V1 — Standard Cleansing</button>
+    <button id="engine-v2" class="btn btn-sm btn-ghost">V2 — CEMA Migration</button>
+    <span class="ml-3 text-xs text-gray-500" id="engine-help">
+      V1 ist der klassische Cleansing-Tree. V2 ist die CEMA-Migration mit m:1 PC-Gruppierung.
+    </span>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- ── LEFT: Configs list ──────────────────────────────── -->
+    <aside class="card lg:col-span-1">
+      <h3 class="text-sm font-semibold mb-3">Bestehende Varianten</h3>
+      <div id="configs-list" class="space-y-1 text-sm max-h-96 overflow-y-auto">
+        <div class="text-gray-400 text-xs">Lädt…</div>
+      </div>
+    </aside>
+
+    <!-- ── RIGHT: Editor ────────────────────────────────────── -->
+    <main class="card lg:col-span-2">
+      <div id="editor-empty" class="text-center py-12 text-gray-400">
+        <div class="text-sm">Wähle eine Variante links, oder erstelle eine neue aus einer Vorlage.</div>
+      </div>
+
+      <div id="editor-form" class="hidden space-y-4">
+        <div class="flex items-start justify-between border-b pb-3">
+          <div>
+            <h3 class="font-semibold" id="editor-title">—</h3>
+            <p class="text-xs text-gray-500 mt-1" id="editor-subtitle">—</p>
+            <span id="preset-badge" class="hidden inline-block mt-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+              Aus Vorlage erstellt
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <button id="btn-fork" class="btn btn-sm btn-ghost" title="Forken in neue Version">⎘ Forken</button>
+            <button id="btn-amend" class="btn btn-sm btn-primary">Speichern</button>
+          </div>
+        </div>
+
+        <!-- Pipeline editor — driven by rule-catalog -->
+        <div id="pipeline-editor" class="space-y-3">
+          <div class="text-gray-400 text-sm">Lädt Regelkatalog…</div>
+        </div>
+
+        <!-- Apply to wave -->
+        <div class="border-t pt-4">
+          <h4 class="text-sm font-semibold mb-2">Diese Variante auf einen Wave anwenden</h4>
+          <div class="flex items-center gap-3">
+            <select id="apply-wave" class="input text-sm w-64"><option>– wähle Wave –</option></select>
+            <select id="apply-mode" class="input text-sm w-40">
+              <option value="simulation">Simulation (kein Save)</option>
+              <option value="activated">Aktiviert (commit)</option>
+            </select>
+            <button id="btn-apply" class="btn btn-sm btn-primary" disabled>▶ Run starten</button>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            Tipp: Erst <strong>Simulation</strong> laufen lassen, Ergebnisse auf der Decisions-Seite
+            checken, und erst danach <strong>Aktiviert</strong> starten.
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ── Preset picker modal ──────────────────────────────────────── -->
+  <div id="preset-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full m-4 max-h-[80vh] overflow-y-auto">
+      <div class="px-5 py-3 border-b flex items-center justify-between">
+        <h3 class="font-semibold">Neue Variante aus Vorlage</h3>
+        <button id="close-modal" class="text-gray-400 hover:text-gray-700">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <p class="text-sm text-gray-600">
+          Eine Vorlage ist ein vorkonfigurierter Decision Tree. Du kannst sie nach dem Erstellen
+          beliebig anpassen — die Vorlage selbst wird dabei nicht verändert.
+        </p>
+        <div id="presets-list" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  const state = {
+    engine: 'v1',
+    catalog: null,
+    presets: null,
+    configs: [],
+    currentConfigId: null,
+    currentConfig: null,
+    waves: [],
+  };
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opts });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  }
+
+  // ── Boot: fetch catalog + presets + configs + waves ───────────────
+  async function boot() {
+    const [cat, pre, cfgs, waves] = await Promise.all([
+      api(`/api/configs/rule-catalog`),
+      api(`/api/configs/presets?engine=${state.engine}`),
+      api(`/api/configs?status=active`),
+      api(`/api/waves?status=draft,analysing,proposed`).catch(() => ({ items: [] })),
+    ]);
+    state.catalog = cat.entries;
+    state.presets = pre.presets;
+    state.configs = cfgs.items || [];
+    state.waves = waves.items || [];
+    renderConfigsList();
+    renderPresetsList();
+    renderWaveDropdown();
+  }
+
+  function renderConfigsList() {
+    const container = document.getElementById('configs-list');
+    if (!state.configs.length) {
+      container.innerHTML = `<div class="text-gray-400 text-xs italic py-3">Keine Varianten — erstelle eine neue.</div>`;
+      return;
+    }
+    container.innerHTML = state.configs.map(c => `
+      <div class="px-2 py-2 hover:bg-gray-50 rounded cursor-pointer config-item" data-config-id="${c.id}">
+        <div class="font-medium text-sm">${c.name}</div>
+        <div class="text-xs text-gray-500">${c.code} · v${c.version}</div>
+      </div>
+    `).join('');
+    container.querySelectorAll('.config-item').forEach(el => {
+      el.addEventListener('click', () => loadConfig(el.getAttribute('data-config-id')));
+    });
+  }
+
+  function renderPresetsList() {
+    const list = document.getElementById('presets-list');
+    list.innerHTML = state.presets.map(p => `
+      <div class="border rounded-lg p-3 hover:bg-amplifi-50 cursor-pointer preset-card" data-preset="${p.name}">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="font-medium text-sm">${p.label}</div>
+            <div class="text-xs text-gray-500 mt-1">${p.description}</div>
+          </div>
+          <button class="btn btn-sm btn-primary use-preset" data-preset="${p.name}">Wählen</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.use-preset').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        instantiatePreset(btn.getAttribute('data-preset'));
+      });
+    });
+  }
+
+  function renderWaveDropdown() {
+    const sel = document.getElementById('apply-wave');
+    sel.innerHTML = '<option value="">– wähle Wave –</option>' +
+      state.waves.map(w => `<option value="${w.id}">${w.name} (${w.status})</option>`).join('');
+    sel.addEventListener('change', () => {
+      document.getElementById('btn-apply').disabled = !sel.value || !state.currentConfigId;
+    });
+  }
+
+  // ── Preset instantiation ─────────────────────────────────────────
+  async function instantiatePreset(presetName) {
+    const friendlyName = prompt(
+      `Name für die neue Variante (basierend auf '${presetName}'):`,
+      `${presetName} ${new Date().toISOString().slice(0, 10)}`
+    );
+    if (!friendlyName) return;
+    try {
+      const result = await api(
+        `/api/configs/presets/${state.engine}/${presetName}/instantiate`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: friendlyName }),
+        }
+      );
+      document.getElementById('preset-modal').classList.add('hidden');
+      document.getElementById('preset-modal').classList.remove('flex');
+      // Reload list and select the new config
+      const cfgs = await api(`/api/configs?status=active`);
+      state.configs = cfgs.items || [];
+      renderConfigsList();
+      loadConfig(result.id);
+    } catch (err) {
+      alert('Fehler: ' + err.message);
+    }
+  }
+
+  // ── Config editor ────────────────────────────────────────────────
+  async function loadConfig(configId) {
+    state.currentConfigId = configId;
+    const cfg = await api(`/api/configs/${configId}`).catch(async () => {
+      // Try by-code lookup
+      const list = await api(`/api/configs`);
+      return list.items?.find(x => x.id == configId);
+    });
+    state.currentConfig = cfg;
+    document.getElementById('editor-empty').classList.add('hidden');
+    document.getElementById('editor-form').classList.remove('hidden');
+    document.getElementById('editor-title').textContent = cfg.name || cfg.code;
+    document.getElementById('editor-subtitle').textContent =
+      `${cfg.code} · Version ${cfg.version} · ${cfg.description || ''}`;
+    const presetBadge = document.getElementById('preset-badge');
+    if (cfg.config?._preset_origin) {
+      presetBadge.textContent = `Aus Vorlage: ${cfg.config._preset_origin}`;
+      presetBadge.classList.remove('hidden');
+    } else {
+      presetBadge.classList.add('hidden');
+    }
+    renderPipelineEditor(cfg.config);
+    document.getElementById('btn-apply').disabled =
+      !document.getElementById('apply-wave').value;
+  }
+
+  function renderPipelineEditor(configData) {
+    const container = document.getElementById('pipeline-editor');
+    const pipeline = configData?.pipeline || [];
+    if (!pipeline.length) {
+      container.innerHTML = `<div class="text-gray-400 text-sm">Pipeline ist leer.</div>`;
+      return;
+    }
+    container.innerHTML = pipeline.map((step, idx) => {
+      const meta = state.catalog?.find(c => c.code === step.routine);
+      if (!meta) {
+        return `<div class="border rounded p-2 text-xs text-gray-400">${step.routine} (kein Catalog-Eintrag)</div>`;
+      }
+      return renderPipelineStep(step, meta, idx);
+    }).join('');
+    bindPipelineHandlers();
+  }
+
+  function renderPipelineStep(step, meta, idx) {
+    const decidesBadges = (meta.decides || []).map(d => {
+      const colors = {
+        KEEP: 'green', RETIRE: 'red', MERGE_MAP: 'orange', REDESIGN: 'blue',
+        CC: 'indigo', PC_ONLY: 'purple', CC_AND_PC: 'pink',
+        WBS_REAL: 'teal', WBS_STAT: 'cyan', '1:1': 'gray', '1:n': 'purple',
+        MIGRATE: 'emerald', PASS: 'gray',
+      };
+      const c = colors[d] || 'gray';
+      return `<span class="text-[10px] bg-${c}-100 text-${c}-700 px-1.5 py-0.5 rounded mr-1">${d}</span>`;
+    }).join('');
+
+    const paramsHtml = Object.entries(meta.params || {}).map(([pname, pmeta]) => {
+      const value = step.params?.[pname] ?? pmeta.default;
+      return renderParamControl(idx, pname, pmeta, value);
+    }).join('');
+
+    return `
+      <div class="border rounded-lg overflow-hidden" data-step-idx="${idx}">
+        <div class="bg-gray-50 px-3 py-2 flex items-center gap-2">
+          <input type="checkbox" ${step.enabled !== false ? 'checked' : ''}
+                 class="step-enabled" data-step-idx="${idx}" />
+          <div class="flex-1">
+            <div class="font-medium text-sm">${meta.business_label}</div>
+            <div class="text-xs text-gray-500 font-mono">${meta.code}</div>
+          </div>
+          <div>${decidesBadges}</div>
+        </div>
+        <div class="p-3 text-sm">
+          <p class="text-xs text-gray-600 mb-3 leading-relaxed">${meta.description}</p>
+          ${paramsHtml ? `<div class="space-y-3">${paramsHtml}</div>` : '<div class="text-xs text-gray-400 italic">Keine Parameter</div>'}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderParamControl(stepIdx, pname, pmeta, value) {
+    const help = pmeta.help_text || '';
+    const label = pmeta.friendly_label || pname;
+    const unit = pmeta.unit || '';
+
+    if (pmeta.type === 'boolean') {
+      return `
+        <label class="flex items-start gap-2">
+          <input type="checkbox" class="param-input mt-0.5" data-step="${stepIdx}" data-param="${pname}" data-type="boolean" ${value ? 'checked' : ''} />
+          <div class="flex-1">
+            <span class="text-sm font-medium">${label}</span>
+            <p class="text-xs text-gray-500 mt-0.5">${help}</p>
+          </div>
+        </label>
+      `;
+    }
+
+    if (pmeta.type === 'integer' || pmeta.type === 'number') {
+      const step = pmeta.step || (pmeta.type === 'integer' ? 1 : 0.01);
+      return `
+        <div>
+          <label class="flex items-center justify-between">
+            <span class="text-sm font-medium">${label}</span>
+            <span class="text-xs text-gray-500">${value} ${unit}</span>
+          </label>
+          <input type="range" class="param-input w-full mt-1"
+                 min="${pmeta.min}" max="${pmeta.max}" step="${step}" value="${value}"
+                 data-step="${stepIdx}" data-param="${pname}" data-type="${pmeta.type}"
+                 oninput="this.parentElement.querySelector('span:last-of-type').textContent = this.value + ' ${unit}'" />
+          <p class="text-xs text-gray-500 mt-1">${help}</p>
+        </div>
+      `;
+    }
+
+    if (pmeta.enum) {
+      return `
+        <div>
+          <label class="text-sm font-medium">${label}</label>
+          <select class="param-input input text-sm w-full mt-1"
+                  data-step="${stepIdx}" data-param="${pname}" data-type="enum">
+            ${pmeta.enum.map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('')}
+          </select>
+          <p class="text-xs text-gray-500 mt-1">${help}</p>
+        </div>
+      `;
+    }
+
+    // Default: text input
+    return `
+      <div>
+        <label class="text-sm font-medium">${label}</label>
+        <input type="text" class="param-input input text-sm w-full mt-1"
+               value="${value || ''}"
+               data-step="${stepIdx}" data-param="${pname}" data-type="string" />
+        <p class="text-xs text-gray-500 mt-1">${help}</p>
+      </div>
+    `;
+  }
+
+  function bindPipelineHandlers() {
+    // Collect changes into state.currentConfig
+    document.querySelectorAll('.step-enabled').forEach(el => {
+      el.addEventListener('change', e => {
+        const idx = parseInt(e.target.getAttribute('data-step-idx'), 10);
+        state.currentConfig.config.pipeline[idx].enabled = e.target.checked;
+      });
+    });
+    document.querySelectorAll('.param-input').forEach(el => {
+      el.addEventListener('change', e => {
+        const t = e.target;
+        const stepIdx = parseInt(t.getAttribute('data-step'), 10);
+        const pname = t.getAttribute('data-param');
+        const ptype = t.getAttribute('data-type');
+        const step = state.currentConfig.config.pipeline[stepIdx];
+        step.params = step.params || {};
+        if (ptype === 'boolean') step.params[pname] = t.checked;
+        else if (ptype === 'integer') step.params[pname] = parseInt(t.value, 10);
+        else if (ptype === 'number') step.params[pname] = parseFloat(t.value);
+        else step.params[pname] = t.value;
+      });
+    });
+  }
+
+  // ── Save / Apply ─────────────────────────────────────────────────
+  document.getElementById('btn-amend').addEventListener('click', async () => {
+    if (!state.currentConfigId) return;
+    try {
+      await api(`/api/configs/${state.currentConfig.code}/amend`, {
+        method: 'POST',
+        body: JSON.stringify({ config: state.currentConfig.config }),
+      });
+      alert('Variante gespeichert (neue Version erstellt).');
+      boot();
+    } catch (err) {
+      alert('Fehler: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-fork').addEventListener('click', async () => {
+    if (!state.currentConfigId) return;
+    const newCode = prompt('Neuer Code für den Fork:', state.currentConfig.code + '-copy');
+    if (!newCode) return;
+    try {
+      await api(`/api/configs/${state.currentConfig.code}/fork`, {
+        method: 'POST',
+        body: JSON.stringify({ new_code: newCode, name: state.currentConfig.name + ' (Fork)' }),
+      });
+      alert('Fork erstellt.');
+      boot();
+    } catch (err) {
+      alert('Fehler: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-apply').addEventListener('click', async () => {
+    const waveId = document.getElementById('apply-wave').value;
+    const mode = document.getElementById('apply-mode').value;
+    if (!waveId || !state.currentConfigId) return;
+    try {
+      const result = await api(`/api/waves/${waveId}/analyse-with-engine`, {
+        method: 'POST',
+        body: JSON.stringify({
+          engine: state.engine,
+          config_id: state.currentConfigId,
+          mode,
+        }),
+      });
+      const url = `/cockpit/decisions?run_id=${result.run_id || result.id}`;
+      if (confirm(`Run gestartet (#${result.run_id || result.id}). Zur Ergebnis-Seite?`)) {
+        window.location.href = url;
+      }
+    } catch (err) {
+      alert('Fehler: ' + err.message);
+    }
+  });
+
+  // ── UI controls ──────────────────────────────────────────────────
+  document.getElementById('engine-v1').addEventListener('click', () => switchEngine('v1'));
+  document.getElementById('engine-v2').addEventListener('click', () => switchEngine('v2'));
+  document.getElementById('new-from-preset').addEventListener('click', () => {
+    document.getElementById('preset-modal').classList.remove('hidden');
+    document.getElementById('preset-modal').classList.add('flex');
+  });
+  document.getElementById('close-modal').addEventListener('click', () => {
+    document.getElementById('preset-modal').classList.add('hidden');
+    document.getElementById('preset-modal').classList.remove('flex');
+  });
+
+  function switchEngine(v) {
+    state.engine = v;
+    document.getElementById('engine-v1').classList.toggle('btn-primary', v === 'v1');
+    document.getElementById('engine-v1').classList.toggle('btn-ghost', v !== 'v1');
+    document.getElementById('engine-v2').classList.toggle('btn-primary', v === 'v2');
+    document.getElementById('engine-v2').classList.toggle('btn-ghost', v !== 'v2');
+    document.getElementById('engine-help').textContent = v === 'v1'
+      ? 'V1 ist der klassische Cleansing-Tree.'
+      : 'V2 ist die CEMA-Migration mit m:1 PC-Gruppierung.';
+    boot();
+  }
+
+  // Boot
+  boot().catch(err => {
+    document.getElementById('configs-list').innerHTML =
+      `<div class="text-red-600 text-xs">Fehler beim Laden: ${err.message}</div>`;
+  });
+</script>

@@ -1,13 +1,23 @@
-"""Public explore / visualization endpoints — no authentication required.
+"""Public explore / visualization endpoints.
 
-Provides read-only access to legacy data, analysis results (ampliFi), and
-mapping views for the public data visualization page.
+Provides read access to legacy data, analysis results (ampliFi), and target
+mapping views for the data visualization / browsing page (Use Case C of the
+business specification: side-by-side compare of legacy vs target objects).
 
-Now supports:
-- Dynamic column selection via ExplorerDisplayConfig
-- GL Accounts (SKA1/SKB1)
-- Excel/CSV export
-- Detail view data
+Auth model:
+- Most endpoints are PUBLIC by default for the data-browsing UX.
+- Sensitive object types (``employees``, ``balances``) are gated behind
+  ``settings.explorer_require_auth``. When that flag is true (production),
+  these endpoints require an authenticated analyst/admin user.
+
+Datasphere note:
+- The data domains queried here (``legacy_*``, ``target_*``, ``balance``,
+  ``hierarchy``, ``entity``, ``employee``) may be routed to SAP Datasphere
+  in the future via the ``infra/datasphere/storage`` layer.
+- Current implementation queries SQLAlchemy directly — same pattern as the
+  rest of the codebase. When the storage abstraction is integrated into
+  reads, the queries here will need to dispatch through the routing layer.
+- All SQL used in this module is portable (no PG-specific constructs).
 """
 
 from __future__ import annotations
@@ -16,15 +26,18 @@ import csv
 import io
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
+from app.config import settings
 from app.infra.db.session import get_db
 from app.models.core import (
     SCOPE_EXPLORER,
     AnalysisRun,
+    AppUser,
     Balance,
     CenterMapping,
     CenterProposal,
@@ -43,6 +56,39 @@ from app.models.core import (
     TargetProfitCenter,
 )
 
+
+# get_current_user already returns None when no/invalid auth — alias for clarity
+get_current_user_optional = get_current_user
+
+
+def _check_sensitive_access(object_type: str, user: AppUser | None) -> None:
+    """Enforce auth for sensitive object types when the feature is enabled.
+
+    Called at the top of any endpoint that exposes ``employees`` or
+    ``balances``. When the ``explorer_require_auth`` setting is false
+    (default), this is a no-op so the existing public-explorer UX
+    continues to work in development.
+    """
+    if not settings.explorer_require_auth:
+        return
+    if object_type in _SENSITIVE_OBJECT_TYPES and user is None:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                f"Authentication required for object type '{object_type}'. "
+                "Sign in as an analyst or admin to access this data."
+            ),
+        )
+    if object_type in _SENSITIVE_OBJECT_TYPES and user is not None:
+        if user.role not in ("analyst", "admin", "data_manager"):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Role '{user.role}' is not permitted to access "
+                    f"'{object_type}'. Contact an admin if you need access."
+                ),
+            )
+
 router = APIRouter()
 
 # ── Object type → model mapping ──────────────────────────────────────────
@@ -50,6 +96,8 @@ router = APIRouter()
 _OBJECT_MODELS: dict[str, Any] = {
     "cost-centers": LegacyCostCenter,
     "profit-centers": LegacyProfitCenter,
+    "target-cost-centers": TargetCostCenter,
+    "target-profit-centers": TargetProfitCenter,
     "entities": Entity,
     "employees": Employee,
     "gl-accounts-ska1": GLAccountSKA1,
@@ -58,6 +106,12 @@ _OBJECT_MODELS: dict[str, Any] = {
     "hierarchies": Hierarchy,
     "gl-accounts": GLAccountClassRange,
 }
+
+# Object types that contain potentially sensitive HR/financial data and
+# require an authenticated user when EXPLORER_REQUIRE_AUTH is enabled.
+_SENSITIVE_OBJECT_TYPES: frozenset[str] = frozenset(
+    {"employees", "balances"}
+)
 
 # Default columns per object type (when no ExplorerDisplayConfig exists)
 _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
@@ -81,6 +135,28 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
         "department",
         "currency",
         "is_active",
+    ],
+    "target-cost-centers": [
+        "cctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "pctr",
+        "responsible",
+        "cctrcgy",
+        "currency",
+        "is_active",
+        "approved_in_wave",
+    ],
+    "target-profit-centers": [
+        "pctr",
+        "txtsh",
+        "ccode",
+        "coarea",
+        "responsible",
+        "currency",
+        "is_active",
+        "approved_in_wave",
     ],
     "entities": [
         "ccode",
@@ -377,7 +453,9 @@ def explore_balances_agg(
     coarea: str | None = None,
     cctr: str | None = None,
     max_rows: int = Query(50000, ge=1, le=200000),
+    current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> dict:
+    _check_sensitive_access("balances", current_user)
     query = (
         select(
             Balance.coarea,
@@ -424,8 +502,10 @@ def explore_object(
     size: int = Query(500, ge=1, le=10000),
     sort: str | None = None,
     sort_dir: str | None = None,
+    current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> dict:
     """Generic endpoint: fetch data for any object type with dynamic columns."""
+    _check_sensitive_access(object_type, current_user)
     # Special case: hierarchies have their own endpoint
     if object_type == "hierarchies":
         return _explore_hierarchies(db, search)
@@ -500,8 +580,10 @@ def explore_object_detail(
     object_type: str,
     item_id: int,
     db: Session = Depends(get_db),
+    current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> dict:
     """Get full detail for a single item."""
+    _check_sensitive_access(object_type, current_user)
     model = _OBJECT_MODELS.get(object_type)
     if not model:
         return {"error": f"Unknown object type: {object_type}"}
@@ -594,8 +676,10 @@ def export_object(
     db: Session = Depends(get_db),
     export_format: str = Query("csv", alias="format"),
     search: str | None = None,
+    current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> StreamingResponse:
     """Export object data as CSV or Excel."""
+    _check_sensitive_access(object_type, current_user)
     model = _OBJECT_MODELS.get(object_type)
     if not model:
         return StreamingResponse(
@@ -873,3 +957,151 @@ def explore_source_config(db: Session = Depends(get_db)) -> dict:
         else:
             legacy.append(item)
     return {"legacy": legacy, "amplifi": amplifi}
+
+
+# ── Compare view (Use Case C: side-by-side legacy vs target) ─────────────
+
+
+@router.get("/compare")
+def compare_objects(
+    db: Session = Depends(get_db),
+    legacy_cctr: str | None = None,
+    target_cctr: str | None = None,
+    coarea: str | None = None,
+    current_user: AppUser | None = Depends(get_current_user_optional),
+) -> dict:
+    """Side-by-side compare of a legacy CC and the target object(s) it mapped to.
+
+    One of ``legacy_cctr`` or ``target_cctr`` must be provided. The endpoint
+    returns the matching legacy row, all proposals across waves that
+    referenced it, and the target CC + target PC that the proposals
+    eventually produced.
+
+    Datasphere note: queries the legacy_*, center_proposal, and target_*
+    domains directly via SQLAlchemy — same pattern as the rest of the
+    explorer. When these domains are routed to Datasphere via the
+    ``infra/datasphere/storage`` layer, this endpoint will need to dispatch
+    through the routing layer.
+    """
+    if not legacy_cctr and not target_cctr:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either legacy_cctr or target_cctr",
+        )
+
+    # Resolve legacy CC. Either: looked up directly, OR derived from target
+    # via the source_proposal_id chain.
+    legacy: LegacyCostCenter | None = None
+    target_cc: TargetCostCenter | None = None
+    target_pc: TargetProfitCenter | None = None
+
+    if legacy_cctr:
+        q = select(LegacyCostCenter).where(LegacyCostCenter.cctr == legacy_cctr)
+        if coarea:
+            q = q.where(LegacyCostCenter.coarea == coarea)
+        legacy = db.execute(q.limit(1)).scalar_one_or_none()
+    elif target_cctr:
+        q = select(TargetCostCenter).where(TargetCostCenter.cctr == target_cctr)
+        if coarea:
+            q = q.where(TargetCostCenter.coarea == coarea)
+        target_cc = db.execute(q.limit(1)).scalar_one_or_none()
+        if target_cc and target_cc.source_proposal_id:
+            prop = db.get(CenterProposal, target_cc.source_proposal_id)
+            if prop:
+                legacy = db.get(LegacyCostCenter, prop.legacy_cc_id)
+
+    if not legacy and not target_cc:
+        raise HTTPException(status_code=404, detail="No matching legacy or target object")
+
+    # Fetch all proposals for this legacy CC across runs (V1 + V2)
+    proposals: list[dict] = []
+    if legacy:
+        prop_rows = (
+            db.execute(
+                select(CenterProposal, AnalysisRun)
+                .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
+                .where(CenterProposal.legacy_cc_id == legacy.id)
+                .order_by(AnalysisRun.created_at.desc())
+            ).all()
+        )
+        for prop, run in prop_rows:
+            attrs = prop.attrs or {}
+            proposals.append(
+                {
+                    "proposal_id": prop.id,
+                    "run_id": run.id,
+                    "wave_id": run.wave_id,
+                    "engine_version": run.engine_version,
+                    "engine_label": "V2" if str(run.engine_version or "").startswith("v2") else "V1",
+                    "mode": run.mode,
+                    "outcome": prop.cleansing_outcome,
+                    "target_object": prop.target_object,
+                    "override_outcome": prop.override_outcome,
+                    "override_target": prop.override_target,
+                    "v2": {
+                        "cc_id": attrs.get("cc_id"),
+                        "pc_id": attrs.get("pc_id"),
+                        "group_key": attrs.get("group_key"),
+                        "approach": attrs.get("approach"),
+                    } if str(run.engine_version or "").startswith("v2") else None,
+                }
+            )
+
+        # Resolve target objects from proposals (any approved/locked)
+        if not target_cc:
+            target_cc = (
+                db.execute(
+                    select(TargetCostCenter).where(
+                        TargetCostCenter.coarea == legacy.coarea,
+                        TargetCostCenter.cctr == legacy.cctr,
+                    )
+                ).scalar_one_or_none()
+            )
+        # If V2 produced a different cc_id, look that up too
+        if not target_cc:
+            for p in proposals:
+                cc_from_attrs = (p.get("v2") or {}).get("cc_id")
+                if cc_from_attrs:
+                    target_cc = (
+                        db.execute(
+                            select(TargetCostCenter).where(
+                                TargetCostCenter.cctr == cc_from_attrs,
+                                TargetCostCenter.coarea == legacy.coarea,
+                            )
+                        ).scalar_one_or_none()
+                    )
+                    if target_cc:
+                        break
+
+    if target_cc:
+        # Resolve the PC the target CC points to
+        target_pc = (
+            db.execute(
+                select(TargetProfitCenter).where(
+                    TargetProfitCenter.coarea == target_cc.coarea,
+                    TargetProfitCenter.pctr == target_cc.pctr,
+                )
+            ).scalar_one_or_none()
+        )
+
+    def _serialize(obj: Any | None) -> dict | None:
+        if obj is None:
+            return None
+        return {
+            c.key: getattr(obj, c.key)
+            for c in inspect(obj.__class__).column_attrs
+        }
+
+    return {
+        "legacy_cc": _serialize(legacy),
+        "target_cc": _serialize(target_cc),
+        "target_pc": _serialize(target_pc),
+        "proposals": proposals,
+        "summary": {
+            "has_legacy": legacy is not None,
+            "has_target_cc": target_cc is not None,
+            "has_target_pc": target_pc is not None,
+            "proposal_count": len(proposals),
+            "engines_used": sorted({p["engine_label"] for p in proposals}),
+        },
+    }

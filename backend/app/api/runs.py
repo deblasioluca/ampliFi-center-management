@@ -693,3 +693,374 @@ def batch_compute_features(
         )
 
     return {"count": len(features_list), "features": features_list}
+
+
+# ── Decision visibility (which rule decided?) + Hierarchical view ────────
+
+
+def _extract_deciding_rule(
+    rule_path: dict | list | None,
+    cleansing_outcome: str,
+) -> dict[str, str | None]:
+    """Extract the single rule that drove the final outcome.
+
+    The decision tree fires multiple rules per center; ``rule_path`` records
+    them in order. The "deciding" rule is the one whose verdict matched the
+    final cleansing_outcome — typically the one that short-circuited the
+    pipeline. Returns a dict with the rule code, its verdict, and a
+    business-friendly label so the frontend can render a single line per
+    proposal: "Inaktiv seit 18 Monaten — RETIRE".
+    """
+    if not rule_path:
+        return {
+            "code": None,
+            "verdict": None,
+            "label": "Aggregate (kein einzelner Auslöser)",
+        }
+
+    # Normalize: rule_path is sometimes {"steps": [...]} (V1) or a list (V2)
+    steps_raw: list = []
+    if isinstance(rule_path, dict):
+        steps_raw = list(rule_path.get("steps") or [])
+    elif isinstance(rule_path, list):
+        steps_raw = rule_path
+    else:
+        return {"code": None, "verdict": None, "label": str(rule_path)[:80]}
+
+    if not steps_raw:
+        return {"code": None, "verdict": None, "label": "Aggregate"}
+
+    # Normalize each step to (code, verdict). Steps come in various shapes:
+    # - "rule.posting_activity:RETIRE" (V2 string format)
+    # - {"code": "...", "verdict": "..."} (dict format)
+    # - "rule.ownership" (just code, no verdict)
+    parsed: list[tuple[str, str | None]] = []
+    for step in steps_raw:
+        if isinstance(step, str):
+            if ":" in step:
+                code, verdict = step.split(":", 1)
+                parsed.append((code, verdict))
+            else:
+                parsed.append((step, None))
+        elif isinstance(step, dict):
+            parsed.append((str(step.get("code", "")), step.get("verdict")))
+
+    # Heuristic: the deciding rule is the LAST step whose verdict matches
+    # the cleansing_outcome. If none match, return the last step (it's
+    # typically the aggregate that produced the final answer).
+    deciding: tuple[str, str | None] | None = None
+    for code, verdict in reversed(parsed):
+        if verdict and verdict.upper() == cleansing_outcome.upper():
+            deciding = (code, verdict)
+            break
+    if deciding is None:
+        deciding = parsed[-1]
+
+    code, verdict = deciding
+    # Lookup business label from the catalog
+    from app.domain.decision_tree.rule_catalog import get_rule_metadata
+
+    meta = get_rule_metadata(code) or {}
+    business_label = meta.get("business_label") or code
+    verdict_meaning = (meta.get("verdict_meanings", {}) or {}).get(verdict or "", "")
+    label = (
+        f"{business_label} → {verdict_meaning}"
+        if verdict_meaning
+        else f"{business_label} → {verdict or cleansing_outcome}"
+    )
+
+    return {"code": code, "verdict": verdict, "label": label}
+
+
+@router.get("/{run_id}/decisions")
+def run_decisions_table(
+    run_id: int,
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    outcome: str | None = None,
+) -> dict:
+    """Streamlined per-proposal decision table for the simulation results page.
+
+    For each proposal returns a single row:
+      - legacy CC identity (cctr, txtsh, ccode, coarea, responsible)
+      - The deciding rule (code + verdict + business-friendly label)
+      - Final outcome (cleansing_outcome + target_object)
+      - Target identity if available (target_cctr, target_pctr) — produced by
+        V2 group assignment or V1 1:1 mapping
+      - Confidence
+
+    This is the primary data source for the flat-table view of simulation
+    results. Reviewers see "what decided?" at a glance.
+    """
+    from app.models.core import LegacyCostCenter
+
+    base_q = select(CenterProposal).where(CenterProposal.run_id == run_id)
+    if outcome:
+        base_q = base_q.where(CenterProposal.cleansing_outcome == outcome)
+    total_q = select(func.count(CenterProposal.id)).where(CenterProposal.run_id == run_id)
+    if outcome:
+        total_q = total_q.where(CenterProposal.cleansing_outcome == outcome)
+    total = db.execute(total_q).scalar() or 0
+
+    proposals = (
+        db.execute(
+            base_q.order_by(CenterProposal.id)
+            .offset((pag.page - 1) * pag.size)
+            .limit(pag.size)
+        )
+        .scalars()
+        .all()
+    )
+
+    cc_ids = [p.legacy_cc_id for p in proposals]
+    cc_map: dict[int, LegacyCostCenter] = {}
+    if cc_ids:
+        ccs = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids)))
+            .scalars()
+            .all()
+        )
+        cc_map = {c.id: c for c in ccs}
+
+    items = []
+    for p in proposals:
+        cc = cc_map.get(p.legacy_cc_id)
+        attrs = p.attrs or {}
+        deciding = _extract_deciding_rule(p.rule_path, p.cleansing_outcome)
+        # V2 attrs carry the assigned target IDs; V1 falls back to legacy IDs
+        target_cctr = attrs.get("cc_id") or (cc.cctr if cc else None)
+        target_pctr = attrs.get("pc_id") or (cc.pctr if cc else None)
+        items.append(
+            {
+                "proposal_id": p.id,
+                "legacy_cctr": cc.cctr if cc else None,
+                "txtsh": cc.txtsh if cc else None,
+                "ccode": cc.ccode if cc else None,
+                "coarea": cc.coarea if cc else None,
+                "responsible": cc.responsible if cc else None,
+                "decision": {
+                    "outcome": p.override_outcome or p.cleansing_outcome,
+                    "target_object": p.override_target or p.target_object,
+                    "is_overridden": bool(p.override_outcome),
+                    "confidence": float(p.confidence) if p.confidence else None,
+                },
+                "deciding_rule": deciding,
+                "target": {
+                    "cctr": target_cctr,
+                    "pctr": target_pctr,
+                    "pc_name": attrs.get("pc_name"),
+                    "approach": attrs.get("approach"),
+                    "engine": "v2" if attrs.get("engine_version") == "v2" else "v1",
+                },
+            }
+        )
+
+    # Aggregate counters per outcome for the page header
+    summary_rows = db.execute(
+        select(CenterProposal.cleansing_outcome, func.count(CenterProposal.id))
+        .where(CenterProposal.run_id == run_id)
+        .group_by(CenterProposal.cleansing_outcome)
+    ).all()
+    summary = {row[0]: int(row[1]) for row in summary_rows}
+
+    return {
+        "run_id": run_id,
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "summary_by_outcome": summary,
+        "items": items,
+    }
+
+
+@router.get("/{run_id}/decisions/by-hierarchy")
+def run_decisions_by_hierarchy(
+    run_id: int,
+    db: Session = Depends(get_db),
+    hierarchy_code: str | None = None,
+    max_depth: int = 4,
+) -> dict:
+    """Hierarchical (tree) view of proposals.
+
+    Groups proposals by their position in the configured hierarchy, so
+    reviewers can drill down: ROOT → EUROPE → DACH → CH00 → individual CCs
+    with their decisions.
+
+    Each tree node carries:
+      - label, code, depth
+      - aggregate counts (children, total proposals, proposals_by_outcome)
+      - direct child node IDs
+      - direct proposals (only at leaf level — non-leaf nodes report counts only)
+
+    Datasphere note: queries Hierarchy + HierarchyNode + HierarchyLeaf via
+    SQLAlchemy. These are candidates for Datasphere migration but the
+    queries here use only standard SQL.
+    """
+    from app.models.core import (
+        Hierarchy,
+        HierarchyLeaf,
+        HierarchyNode,
+        LegacyCostCenter,
+    )
+
+    # Resolve the hierarchy to traverse. If not specified, use the first
+    # active "cema" or "standard" hierarchy.
+    h_query = select(Hierarchy).where(Hierarchy.is_active.is_(True))
+    if hierarchy_code:
+        h_query = h_query.where(Hierarchy.code == hierarchy_code)
+    hierarchy = db.execute(h_query.limit(1)).scalar_one_or_none()
+    if not hierarchy:
+        return {
+            "run_id": run_id,
+            "hierarchy": None,
+            "message": "No active hierarchy found — falling back to flat view",
+            "tree": [],
+        }
+
+    nodes = (
+        db.execute(
+            select(HierarchyNode).where(HierarchyNode.hierarchy_id == hierarchy.id)
+        )
+        .scalars()
+        .all()
+    )
+    nodes_by_id: dict[int, HierarchyNode] = {n.id: n for n in nodes}
+    children_of: dict[int | None, list[HierarchyNode]] = {}
+    for n in nodes:
+        children_of.setdefault(n.parent_id, []).append(n)
+
+    # Leaves map a node to a set of legacy CC IDs
+    leaves = (
+        db.execute(
+            select(HierarchyLeaf).where(
+                HierarchyLeaf.hierarchy_id == hierarchy.id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cctr_to_node_id: dict[str, int] = {ll.cctr: ll.node_id for ll in leaves if ll.cctr}
+
+    # Load all proposals + their legacy CCs in two queries
+    proposals = (
+        db.execute(
+            select(CenterProposal).where(CenterProposal.run_id == run_id)
+        )
+        .scalars()
+        .all()
+    )
+    cc_ids = [p.legacy_cc_id for p in proposals]
+    cc_map: dict[int, LegacyCostCenter] = {}
+    if cc_ids:
+        cc_map = {
+            c.id: c
+            for c in db.execute(
+                select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))
+            )
+            .scalars()
+            .all()
+        }
+
+    # Bucket proposals into their leaf node by legacy.cctr → node_id
+    proposals_at_node: dict[int, list[CenterProposal]] = {}
+    unassigned: list[CenterProposal] = []
+    for p in proposals:
+        cc = cc_map.get(p.legacy_cc_id)
+        if not cc:
+            unassigned.append(p)
+            continue
+        node_id = cctr_to_node_id.get(cc.cctr)
+        if node_id is None:
+            unassigned.append(p)
+            continue
+        proposals_at_node.setdefault(node_id, []).append(p)
+
+    # Aggregate counts per node up the tree
+    def _outcome_counts(props: list[CenterProposal]) -> dict[str, int]:
+        c: dict[str, int] = {}
+        for p in props:
+            o = p.override_outcome or p.cleansing_outcome
+            c[o] = c.get(o, 0) + 1
+        return c
+
+    # Build tree recursively
+    def _serialize_node(
+        node: HierarchyNode, depth: int = 0
+    ) -> dict[str, Any]:
+        direct_props = proposals_at_node.get(node.id, [])
+        child_nodes = children_of.get(node.id, [])
+        # Recurse into children up to max_depth — beyond that, return only
+        # aggregate counts (the UI loads deeper levels lazily on click)
+        children_serialized: list[dict] = []
+        descendant_props: list[CenterProposal] = list(direct_props)
+        for child in child_nodes:
+            child_data = _serialize_node(child, depth + 1)
+            descendant_props.extend(child_data.get("_descendant_props", []))
+            children_serialized.append(child_data)
+
+        result = {
+            "node_id": node.id,
+            "code": node.node_code,
+            "label": node.node_name or node.node_code,
+            "depth": depth,
+            "level": node.level,
+            "child_count": len(child_nodes),
+            "proposal_count_direct": len(direct_props),
+            "proposal_count_total": len(descendant_props),
+            "outcome_counts_total": _outcome_counts(descendant_props),
+            "children": children_serialized if depth < max_depth else [],
+            "has_more_children": depth >= max_depth and len(child_nodes) > 0,
+            # Direct proposals at this node only (leaf level usually)
+            "proposals": [
+                {
+                    "proposal_id": p.id,
+                    "legacy_cctr": cc_map[p.legacy_cc_id].cctr
+                    if p.legacy_cc_id in cc_map
+                    else None,
+                    "txtsh": cc_map[p.legacy_cc_id].txtsh
+                    if p.legacy_cc_id in cc_map
+                    else None,
+                    "outcome": p.override_outcome or p.cleansing_outcome,
+                    "target_object": p.override_target or p.target_object,
+                    "deciding_rule": _extract_deciding_rule(
+                        p.rule_path, p.cleansing_outcome
+                    ),
+                }
+                for p in direct_props
+            ],
+            # Internal: used during recursion to avoid double-walking
+            "_descendant_props": descendant_props,
+        }
+        return result
+
+    # Roots = nodes with parent_id == None
+    roots = children_of.get(None, [])
+    tree = [_serialize_node(r) for r in roots]
+
+    # Strip the internal _descendant_props field from the serialized output
+    def _clean(node: dict) -> dict:
+        node.pop("_descendant_props", None)
+        node["children"] = [_clean(c) for c in node["children"]]
+        return node
+
+    tree = [_clean(n) for n in tree]
+
+    return {
+        "run_id": run_id,
+        "hierarchy": {
+            "id": hierarchy.id,
+            "code": hierarchy.code,
+            "label": hierarchy.label or hierarchy.code,
+        },
+        "max_depth_loaded": max_depth,
+        "tree": tree,
+        "unassigned": [
+            {
+                "proposal_id": p.id,
+                "legacy_cctr": cc_map.get(p.legacy_cc_id, type("x", (), {"cctr": None})()).cctr,
+                "outcome": p.override_outcome or p.cleansing_outcome,
+            }
+            for p in unassigned[:100]  # cap so the response stays bounded
+        ],
+        "unassigned_total": len(unassigned),
+    }
