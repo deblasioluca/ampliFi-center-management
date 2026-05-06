@@ -28,6 +28,7 @@ import Layout from '../../components/layout/Layout.astro';
         <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="config">App Config</button>
 
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 px-2">Analysis</p>
+        <button class="admin-tab w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50" data-tab="dtree">Decision Trees</button>
         <a href="/admin/rules" class="block w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50">Rule Builder</a>
         <a href="/admin/templates" class="block w-full text-left px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-50">Wave Templates</a>
 
@@ -55,6 +56,14 @@ import Layout from '../../components/layout/Layout.astro';
         <!-- New user form -->
         <div id="new-user-form" class="hidden mb-4 p-4 bg-gray-50 rounded-lg">
           <h3 class="text-sm font-semibold mb-3">Create User</h3>
+          <!-- Employee search -->
+          <div class="mb-3 p-3 border rounded bg-white">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Search Employee (optional — auto-fills name &amp; email)</label>
+            <div class="relative">
+              <input type="text" id="emp-search" class="input text-sm w-full" placeholder="Type name or email to search employees..." autocomplete="off" />
+              <div id="emp-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-gray-500 mb-1">Username</label>
@@ -230,6 +239,57 @@ import Layout from '../../components/layout/Layout.astro';
         </details>
       </div>
 
+      <!-- Decision Trees Tab -->
+      <div id="panel-dtree" class="card hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold">Decision Tree Configurations</h2>
+          <button id="btn-new-dtree" class="btn-amplifi text-xs">+ New Configuration</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">Define and version analysis configurations. Each configuration specifies which routines to run, in what order, and with what parameters. Select a configuration version when running analysis or simulation.</p>
+
+        <!-- New/Edit Config Form -->
+        <div id="dtree-form" class="hidden mb-4 p-4 bg-gray-50 rounded-lg border">
+          <h3 id="dtree-form-title" class="text-sm font-semibold mb-3">New Decision Tree Configuration</h3>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Code</label>
+              <input type="text" id="dt-code" class="input text-sm" placeholder="e.g. v2_cema_migration" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Name</label>
+              <input type="text" id="dt-name" class="input text-sm" placeholder="V2 — CEMA Migration" />
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Description</label>
+            <textarea id="dt-desc" class="input text-sm w-full" rows="2" placeholder="What this configuration does..."></textarea>
+          </div>
+
+          <h4 class="text-xs font-semibold text-gray-600 mb-2">Routines (drag to reorder)</h4>
+          <div id="dt-routines" class="space-y-1 mb-3 max-h-48 overflow-y-auto"></div>
+
+          <h4 class="text-xs font-semibold text-gray-600 mb-2">Parameters (JSON)</h4>
+          <textarea id="dt-params" class="input text-xs w-full font-mono" rows="6" placeholder='{"inactivity_threshold_months": 24, "pc_start_id": 137}'></textarea>
+
+          <div class="flex gap-2 mt-3">
+            <button id="btn-save-dtree" class="btn-amplifi text-xs">Save</button>
+            <button id="btn-cancel-dtree" class="btn-secondary text-xs">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Config List -->
+        <div id="dtree-list" class="text-sm">Loading...</div>
+
+        <!-- Version History (shown when expanding a config) -->
+        <div id="dtree-versions" class="hidden mt-4 border rounded-lg p-4 bg-gray-50">
+          <div class="flex items-center justify-between mb-3">
+            <h3 id="dtree-versions-title" class="text-sm font-semibold">Version History</h3>
+            <button id="btn-close-versions" class="text-xs text-gray-400 hover:text-gray-600">Close</button>
+          </div>
+          <div id="dtree-versions-list" class="text-sm"></div>
+        </div>
+      </div>
+
       <!-- Routines Tab -->
       <div id="panel-routines" class="card hidden">
         <h2 class="text-lg font-semibold mb-4">Analysis Routines</h2>
@@ -268,9 +328,10 @@ import Layout from '../../components/layout/Layout.astro';
       div.textContent = text || '';
       return div.innerHTML;
     }
+    function escapeAttr(text) { return escapeHtml(text).replace(/"/g, '&quot;'); }
 
     // Sidebar tab switching
-    var allTabs = ['users', 'sap', 'llm', 'config', 'routines', 'jobs', 'audit', 'health'];
+    var allTabs = ['users', 'sap', 'llm', 'config', 'dtree', 'routines', 'jobs', 'audit', 'health'];
     document.querySelectorAll('.admin-tab').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var tab = this.getAttribute('data-tab');
@@ -350,6 +411,55 @@ import Layout from '../../components/layout/Layout.astro';
     });
     document.getElementById('cancel-user-btn').addEventListener('click', function() {
       document.getElementById('new-user-form').classList.add('hidden');
+    });
+
+    // Employee typeahead search for auto-filling user creation form
+    var empSearchTimer = null;
+    document.getElementById('emp-search').addEventListener('input', function() {
+      var q = this.value.trim();
+      var resultsEl = document.getElementById('emp-results');
+      clearTimeout(empSearchTimer);
+      if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
+      empSearchTimer = setTimeout(function() {
+        fetch('/api/employees?search=' + encodeURIComponent(q) + '&size=10', { headers: authHdr })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var items = data.items || [];
+            if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No employees found</div>'; resultsEl.classList.remove('hidden'); return; }
+            var html = '';
+            items.forEach(function(e) {
+              html += '<div class="emp-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
+                'data-fname="' + escapeAttr(e.bs_firstname || '') + '" ' +
+                'data-lname="' + escapeAttr(e.bs_lastname || '') + '" ' +
+                'data-name="' + escapeAttr(e.display_name || ((e.bs_firstname || '') + ' ' + (e.bs_lastname || '')).trim()) + '" ' +
+                'data-email="' + escapeAttr(e.email_address || '') + '" ' +
+                'data-gpn="' + escapeAttr(e.gpn || '') + '">' +
+                '<span class="font-medium">' + escapeHtml((e.bs_firstname || '') + ' ' + (e.bs_lastname || '')) + '</span>' +
+                (e.email_address ? ' <span class="text-gray-400">' + escapeHtml(e.email_address) + '</span>' : '') +
+                (e.ou_desc ? ' <span class="text-gray-300">| ' + escapeHtml(e.ou_desc) + '</span>' : '') +
+                '</div>';
+            });
+            resultsEl.innerHTML = html;
+            resultsEl.classList.remove('hidden');
+            resultsEl.querySelectorAll('.emp-pick').forEach(function(el) {
+              el.addEventListener('click', function() {
+                document.getElementById('nu-name').value = this.getAttribute('data-name');
+                document.getElementById('nu-email').value = this.getAttribute('data-email');
+                var gpn = this.getAttribute('data-gpn');
+                if (gpn && !document.getElementById('nu-username').value) {
+                  document.getElementById('nu-username').value = gpn.toLowerCase();
+                }
+                document.getElementById('emp-search').value = this.getAttribute('data-name');
+                resultsEl.classList.add('hidden');
+              });
+            });
+          });
+      }, 300);
+    });
+    document.addEventListener('click', function(e) {
+      if (!document.getElementById('emp-search').contains(e.target) && !document.getElementById('emp-results').contains(e.target)) {
+        document.getElementById('emp-results').classList.add('hidden');
+      }
     });
     document.getElementById('save-user-btn').addEventListener('click', async function() {
       var errEl = document.getElementById('user-form-error');
@@ -558,6 +668,190 @@ import Layout from '../../components/layout/Layout.astro';
     });
 
     document.getElementById('load-all-cfg-btn').addEventListener('click', function() { loadAllPresets(); });
+
+    // ---- Decision Trees ----
+    var dtreeEditCode = null; // null = new, string = amend existing
+
+    function loadDtreeList() {
+      fetch('/api/configs', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var el = document.getElementById('dtree-list');
+          var items = Array.isArray(data) ? data : (data.items || []);
+          if (!items.length) { el.innerHTML = '<p class="text-gray-400 text-xs">No decision tree configurations found. Click "+ New Configuration" to create one.</p>'; return; }
+          // Group by code, show latest version
+          var byCode = {};
+          items.forEach(function(c) {
+            if (!byCode[c.code] || c.version > byCode[c.code].version) byCode[c.code] = c;
+          });
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-2 px-2">Code</th><th class="text-left py-2 px-2">Name</th>' +
+            '<th class="text-left py-2 px-2">Version</th><th class="text-left py-2 px-2">Status</th>' +
+            '<th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
+          for (var code in byCode) {
+            var c = byCode[code];
+            html += '<tr class="border-b border-gray-100">' +
+              '<td class="py-2 px-2 font-mono">' + escapeHtml(c.code) + '</td>' +
+              '<td class="py-2 px-2">' + escapeHtml(c.name) + '</td>' +
+              '<td class="py-2 px-2">v' + c.version + '</td>' +
+              '<td class="py-2 px-2"><span class="' + (c.status === 'active' ? 'text-green-600' : 'text-gray-400') + '">' + escapeHtml(c.status) + '</span></td>' +
+              '<td class="py-2 px-2 space-x-2">' +
+                '<button class="text-blue-600 hover:underline dt-edit" data-code="' + escapeAttr(c.code) + '">Edit</button>' +
+                '<button class="text-blue-600 hover:underline dt-versions" data-code="' + escapeAttr(c.code) + '">Versions</button>' +
+                '<button class="text-blue-600 hover:underline dt-clone" data-code="' + escapeAttr(c.code) + '">Clone</button>' +
+              '</td></tr>';
+          }
+          html += '</tbody></table>';
+          el.innerHTML = html;
+
+          el.querySelectorAll('.dt-edit').forEach(function(btn) {
+            btn.addEventListener('click', function() { openDtreeEdit(this.getAttribute('data-code')); });
+          });
+          el.querySelectorAll('.dt-versions').forEach(function(btn) {
+            btn.addEventListener('click', function() { showDtreeVersions(this.getAttribute('data-code')); });
+          });
+          el.querySelectorAll('.dt-clone').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var code = this.getAttribute('data-code');
+              var newCode = prompt('New code for the cloned config:', code + '_copy');
+              if (!newCode) return;
+              fetch('/api/configs/' + encodeURIComponent(code) + '/fork?new_code=' + encodeURIComponent(newCode), {
+                method: 'POST', headers: authHdr
+              }).then(function(r) { if (r.ok) loadDtreeList(); else r.json().then(function(e) { alert(e.detail || 'Clone failed'); }); });
+            });
+          });
+        })
+        .catch(function() { document.getElementById('dtree-list').textContent = 'Unable to load configurations.'; });
+    }
+
+    function openDtreeEdit(code) {
+      dtreeEditCode = code || null;
+      var formEl = document.getElementById('dtree-form');
+      document.getElementById('dtree-form-title').textContent = code ? 'Edit Configuration: ' + code : 'New Decision Tree Configuration';
+      formEl.classList.remove('hidden');
+      document.getElementById('dt-code').value = '';
+      document.getElementById('dt-name').value = '';
+      document.getElementById('dt-desc').value = '';
+      document.getElementById('dt-params').value = '{}';
+      document.getElementById('dt-code').disabled = false;
+
+      // Load routines for checkboxes
+      fetch('/api/admin/routines', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var routines = Array.isArray(data) ? data : (data.items || []);
+          var rEl = document.getElementById('dt-routines');
+          rEl.innerHTML = '';
+          routines.forEach(function(r, i) {
+            rEl.innerHTML += '<label class="flex items-center gap-2 px-2 py-1.5 bg-white border rounded text-xs cursor-pointer hover:bg-gray-50">' +
+              '<input type="checkbox" class="dt-routine-chk" data-code="' + escapeHtml(r.code) + '" data-order="' + (i + 1) + '" checked />' +
+              '<span class="font-mono text-gray-600">' + escapeHtml(r.code) + '</span>' +
+              '<span class="text-gray-400">' + escapeHtml(r.name || '') + '</span>' +
+              '<span class="text-gray-300 ml-auto">' + escapeHtml(r.tree || '') + '</span></label>';
+          });
+        });
+
+      if (code) {
+        document.getElementById('dt-code').disabled = true;
+        fetch('/api/configs/' + encodeURIComponent(code), { headers: authHdr })
+          .then(function(r) { return r.json(); })
+          .then(function(c) {
+            document.getElementById('dt-code').value = c.code;
+            document.getElementById('dt-name').value = c.name;
+            document.getElementById('dt-desc').value = c.description || '';
+            document.getElementById('dt-params').value = JSON.stringify(c.config || {}, null, 2);
+            // Check/uncheck routines based on config
+            var activeRoutines = (c.config && c.config.routines) || [];
+            setTimeout(function() {
+              document.querySelectorAll('.dt-routine-chk').forEach(function(chk) {
+                if (activeRoutines.length) {
+                  chk.checked = activeRoutines.indexOf(chk.getAttribute('data-code')) >= 0;
+                }
+              });
+            }, 300);
+          });
+      }
+    }
+
+    function showDtreeVersions(code) {
+      var vEl = document.getElementById('dtree-versions');
+      vEl.classList.remove('hidden');
+      document.getElementById('dtree-versions-title').textContent = 'Version History: ' + code;
+      var listEl = document.getElementById('dtree-versions-list');
+      listEl.innerHTML = 'Loading...';
+      fetch('/api/configs/' + encodeURIComponent(code) + '/versions', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var items = Array.isArray(data) ? data : (data.items || []);
+          if (!items.length) { listEl.innerHTML = '<p class="text-gray-400 text-xs">No versions found.</p>'; return; }
+          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+            '<th class="text-left py-1 px-2">Version</th><th class="text-left py-1 px-2">Name</th>' +
+            '<th class="text-left py-1 px-2">Status</th><th class="text-left py-1 px-2">Description</th></tr></thead><tbody>';
+          items.forEach(function(v) {
+            html += '<tr class="border-b border-gray-100">' +
+              '<td class="py-1 px-2 font-mono">v' + v.version + '</td>' +
+              '<td class="py-1 px-2">' + escapeHtml(v.name) + '</td>' +
+              '<td class="py-1 px-2">' + escapeHtml(v.status) + '</td>' +
+              '<td class="py-1 px-2 text-gray-500">' + escapeHtml(v.description || '-') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          listEl.innerHTML = html;
+        });
+    }
+
+    document.getElementById('btn-new-dtree').addEventListener('click', function() { openDtreeEdit(null); });
+    document.getElementById('btn-cancel-dtree').addEventListener('click', function() {
+      document.getElementById('dtree-form').classList.add('hidden');
+    });
+    document.getElementById('btn-close-versions').addEventListener('click', function() {
+      document.getElementById('dtree-versions').classList.add('hidden');
+    });
+
+    document.getElementById('btn-save-dtree').addEventListener('click', function() {
+      var code = document.getElementById('dt-code').value.trim();
+      var name = document.getElementById('dt-name').value.trim();
+      var desc = document.getElementById('dt-desc').value.trim();
+      if (!code || !name) { alert('Code and Name are required.'); return; }
+
+      var configJson = {};
+      try { configJson = JSON.parse(document.getElementById('dt-params').value || '{}'); } catch(e) { alert('Invalid JSON in parameters.'); return; }
+
+      // Gather selected routines
+      var selectedRoutines = [];
+      document.querySelectorAll('.dt-routine-chk:checked').forEach(function(chk) {
+        selectedRoutines.push(chk.getAttribute('data-code'));
+      });
+      configJson.routines = selectedRoutines;
+
+      var url, method;
+      if (dtreeEditCode) {
+        url = '/api/configs/' + encodeURIComponent(dtreeEditCode) + '/amend';
+        method = 'POST';
+      } else {
+        url = '/api/configs';
+        method = 'POST';
+      }
+
+      fetch(url, {
+        method: method,
+        headers: jsonHdr,
+        body: JSON.stringify({ code: code, name: name, description: desc || null, config: configJson })
+      }).then(function(r) {
+        if (r.ok) {
+          document.getElementById('dtree-form').classList.add('hidden');
+          loadDtreeList();
+        } else {
+          r.json().then(function(e) { alert(e.detail || 'Save failed'); });
+        }
+      });
+    });
+
+    // Load on tab switch
+    document.querySelectorAll('.admin-tab').forEach(function(btn) {
+      if (btn.getAttribute('data-tab') === 'dtree') {
+        btn.addEventListener('click', function() { loadDtreeList(); });
+      }
+    });
 
     // ---- Routines ----
     fetch('/api/admin/routines', { headers: authHdr })

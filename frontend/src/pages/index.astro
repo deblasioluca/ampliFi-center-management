@@ -136,6 +136,7 @@ import Layout from '../components/layout/Layout.astro';
   var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
   var isAdmin = false;
   function fmt(n) { return (n || 0).toLocaleString(); }
+  function chk(r) { if (r.status === 401) { localStorage.removeItem('amplifi_token'); localStorage.removeItem('amplifi_user'); window.location.href = '/login'; throw new Error('expired'); } return r; }
 
   try {
     var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
@@ -162,7 +163,7 @@ import Layout from '../components/layout/Layout.astro';
   });
 
   // Global stats (KPIs)
-  fetch('/api/stats/global', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+  fetch('/api/stats/global', { headers: headers }).then(chk).then(function(r) { return r.json(); }).then(function(d) {
     var u = d.universe || {};
     document.getElementById('kpi-entities').textContent = fmt(u.entities_total);
     document.getElementById('kpi-cc').textContent = fmt(u.legacy_cc_total);
@@ -191,7 +192,7 @@ import Layout from '../components/layout/Layout.astro';
 
   // Recent waves (activity feed)
   if (isAdmin) {
-    fetch('/api/waves?size=5', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/waves?size=5', { headers: headers }).then(chk).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('recent-waves');
       if (!d.items || !d.items.length) { el.textContent = 'No waves yet.'; return; }
       var statusColors = {

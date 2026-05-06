@@ -85,12 +85,20 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
     # Entities covered: distinct entity_ids across all wave_entity rows
     covered_entities = db.execute(select(func.count(distinct(WaveEntity.entity_id)))).scalar() or 0
 
-    # CCs covered: distinct legacy_cc_ids that appear in any completed run's proposals
+    # CCs covered: distinct legacy_cc_ids from completed run proposals
+    # Only count CCs that are still active to avoid >100%
     covered_cc = (
         db.execute(
             select(func.count(distinct(CenterProposal.legacy_cc_id)))
             .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
-            .where(AnalysisRun.status == "completed")
+            .join(
+                LegacyCostCenter,
+                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+            )
+            .where(
+                AnalysisRun.status == "completed",
+                LegacyCostCenter.is_active.is_(True),
+            )
         ).scalar()
         or 0
     )
@@ -107,9 +115,14 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
             db.execute(
                 select(func.count(distinct(CenterProposal.legacy_cc_id)))
                 .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
+                .join(
+                    LegacyCostCenter,
+                    CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+                )
                 .where(
                     AnalysisRun.wave_id == w.id,
                     AnalysisRun.status == "completed",
+                    LegacyCostCenter.is_active.is_(True),
                 )
             ).scalar()
             or 0
@@ -122,6 +135,35 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
                 "entities_covered": w_entity_count,
                 "cc_covered": w_cc_count,
                 "is_full_scope": w.is_full_scope,
+            }
+        )
+
+    # Unassigned runs (wave_id IS NULL) — include so numbers add up
+    unassigned_cc = (
+        db.execute(
+            select(func.count(distinct(CenterProposal.legacy_cc_id)))
+            .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
+            .join(
+                LegacyCostCenter,
+                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+            )
+            .where(
+                AnalysisRun.status == "completed",
+                AnalysisRun.wave_id.is_(None),
+                LegacyCostCenter.is_active.is_(True),
+            )
+        ).scalar()
+        or 0
+    )
+    if unassigned_cc > 0:
+        wave_details.append(
+            {
+                "id": None,
+                "code": "Unassigned",
+                "status": "n/a",
+                "entities_covered": 0,
+                "cc_covered": unassigned_cc,
+                "is_full_scope": False,
             }
         )
 
