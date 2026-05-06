@@ -82,6 +82,11 @@ make seed           # Full seed: admin user + sample data + built-in routines
 ## Deployment Guides
 
 - **[RHEL / CentOS / Rocky Linux](docs/DEPLOYMENT-RHEL.md)** — Full guide for Red Hat Enterprise Linux 8/9 including proxy configuration, PostgreSQL setup, systemd services, firewall, and nginx reverse proxy.
+- **[Generic upgrade guide](docs/DEPLOYMENT.md)** — Tiered upgrade paths for existing deployments (PR #60 → current, including database migrations).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a record of notable changes.
 
 ## Default Credentials
 
