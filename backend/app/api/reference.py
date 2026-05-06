@@ -264,9 +264,7 @@ def list_legacy_gl_accounts(
         )
 
     total = db.execute(count_q).scalar() or 0
-    accounts = db.execute(
-        query.offset((pag.page - 1) * pag.size).limit(pag.size)
-    ).scalars().all()
+    accounts = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
     # Optional SKB1 description lookup, scoped consistently with SKA1 query.
     skb1_q = select(GLAccountSKB1)
@@ -304,7 +302,9 @@ def list_legacy_gl_accounts(
                 "main_saknr": a.main_saknr,
                 # SKB1-derived (best-effort, may be None)
                 "bukrs": (skb1_by_saknr.get(a.saknr).bukrs if skb1_by_saknr.get(a.saknr) else None),
-                "stext_skb1": (skb1_by_saknr.get(a.saknr).stext if skb1_by_saknr.get(a.saknr) else None),
+                "stext_skb1": (
+                    skb1_by_saknr.get(a.saknr).stext if skb1_by_saknr.get(a.saknr) else None
+                ),
                 "waers": (skb1_by_saknr.get(a.saknr).waers if skb1_by_saknr.get(a.saknr) else None),
             }
             for a in accounts

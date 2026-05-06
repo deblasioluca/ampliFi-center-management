@@ -13,6 +13,9 @@ import Layout from '../../components/layout/Layout.astro';
       </p>
     </div>
     <div class="flex gap-2">
+      <button id="btn-ai-assistant" class="btn btn-sm btn-ghost" title="Use the LLM assistant to draft a variant">
+        ✨ AI Assistant
+      </button>
       <button id="new-from-preset" class="btn btn-primary">+ New variant from preset</button>
     </div>
   </div>
@@ -95,6 +98,99 @@ import Layout from '../../components/layout/Layout.astro';
           creation — the preset itself is not modified.
         </p>
         <div id="presets-list" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LLM Assistant modal ──────────────────────────────────────── -->
+  <div id="ai-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-2xl max-w-3xl w-full m-4 max-h-[90vh] overflow-y-auto">
+      <div class="px-5 py-3 border-b flex items-center justify-between">
+        <h3 class="font-semibold">✨ AI Assistant — draft a variant</h3>
+        <button id="ai-close" class="text-gray-400 hover:text-gray-700">✕</button>
+      </div>
+
+      <div class="p-5 space-y-4 text-sm">
+        <!-- Mode picker -->
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-gray-600">Mode:</span>
+          <div class="inline-flex rounded-md border border-gray-300 overflow-hidden">
+            <button id="ai-mode-quick" type="button"
+                    class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium">
+              Quick draft
+            </button>
+            <button id="ai-mode-guided" type="button"
+                    class="px-3 py-1.5 text-gray-600 hover:bg-gray-50">
+              Guided (clarify → propose → refine)
+            </button>
+          </div>
+          <span class="ml-auto text-xs text-gray-500" id="ai-engine-label">Engine: V1</span>
+        </div>
+
+        <p class="text-xs text-gray-500">
+          Read-only — the assistant proposes an editable draft. Nothing is saved
+          until you load it into the editor and hit Save.
+        </p>
+
+        <!-- Step 1: description (always visible) -->
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Describe the goal of the variant</label>
+          <textarea id="ai-description" rows="3" class="input text-sm w-full resize-y"
+                    placeholder="e.g. A conservative cleansing config that flags only clearly unused centers — keeps everything else."></textarea>
+        </div>
+
+        <!-- Step 2: clarifying questions (guided mode only, after Ask) -->
+        <div id="ai-clarify-block" class="hidden border-t pt-3">
+          <h4 class="text-sm font-semibold mb-2">Clarifying questions</h4>
+          <div id="ai-clarify-questions" class="space-y-3"></div>
+        </div>
+
+        <!-- Step 3: draft preview -->
+        <div id="ai-draft-block" class="hidden border-t pt-3">
+          <h4 class="text-sm font-semibold mb-2">Proposed draft</h4>
+          <div id="ai-rationale" class="text-xs text-gray-700 italic mb-2"></div>
+          <div id="ai-warnings" class="hidden text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1.5 mb-2"></div>
+          <div id="ai-validation" class="hidden text-xs bg-red-50 border border-red-200 text-red-800 rounded px-2 py-1.5 mb-2"></div>
+          <div id="ai-pipeline-preview" class="space-y-1 text-xs"></div>
+
+          <!-- Refine controls (guided mode) -->
+          <div id="ai-refine-block" class="hidden mt-3 pt-3 border-t border-dashed">
+            <label class="block text-xs text-gray-600 mb-1">Refine — what should change?</label>
+            <textarea id="ai-refine-feedback" rows="2" class="input text-sm w-full resize-y"
+                      placeholder="e.g. Drop the redundancy rule. Use a tighter inactivity threshold."></textarea>
+            <button id="ai-refine-btn" type="button" class="btn btn-sm btn-ghost mt-2">Refine draft</button>
+          </div>
+        </div>
+
+        <!-- Save -->
+        <div id="ai-save-block" class="hidden border-t pt-3">
+          <h4 class="text-sm font-semibold mb-2">Save as new variant</h4>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">Code (unique)</label>
+              <input id="ai-save-code" type="text" class="input text-sm w-full"
+                     placeholder="e.g. v1-conservative-ai" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">Display name</label>
+              <input id="ai-save-name" type="text" class="input text-sm w-full"
+                     placeholder="e.g. Conservative cleansing (AI-drafted)" />
+            </div>
+          </div>
+          <button id="ai-save-btn" type="button" class="btn btn-sm btn-primary mt-2">
+            Save variant
+          </button>
+          <span id="ai-save-status" class="ml-2 text-xs text-gray-500"></span>
+        </div>
+
+        <!-- Action bar (varies by mode + step) -->
+        <div class="flex items-center justify-between border-t pt-3">
+          <div id="ai-status" class="text-xs text-gray-500 min-h-[1em]"></div>
+          <div class="flex gap-2">
+            <button id="ai-reset" type="button" class="btn btn-sm btn-ghost">Reset</button>
+            <button id="ai-go-btn" type="button" class="btn btn-sm btn-primary">Ask the assistant</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -512,6 +608,335 @@ import Layout from '../../components/layout/Layout.astro';
       : 'V2 is CEMA migration with m:1 PC grouping.';
     boot();
   }
+
+  // ── LLM AI Assistant — Drafter (single-shot) + Configurator (guided) ──
+  const ai = {
+    mode: 'quick',
+    currentDraft: null,
+    rationale: null,
+    clarifications: [],   // [{question, answer}]
+    questions: [],        // staged questions from clarify step
+  };
+
+  function aiSetMode(mode) {
+    ai.mode = mode;
+    const quick = document.getElementById('ai-mode-quick');
+    const guided = document.getElementById('ai-mode-guided');
+    const onCls = 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium';
+    const offCls = 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
+    quick.className = mode === 'quick' ? onCls : offCls;
+    guided.className = mode === 'guided' ? onCls : offCls;
+    document.getElementById('ai-go-btn').textContent =
+      mode === 'guided' ? 'Ask clarifying questions' : 'Draft variant';
+  }
+
+  function aiResetUI() {
+    ai.currentDraft = null;
+    ai.rationale = null;
+    ai.clarifications = [];
+    ai.questions = [];
+    document.getElementById('ai-clarify-block').classList.add('hidden');
+    document.getElementById('ai-clarify-questions').innerHTML = '';
+    document.getElementById('ai-draft-block').classList.add('hidden');
+    document.getElementById('ai-refine-block').classList.add('hidden');
+    document.getElementById('ai-save-block').classList.add('hidden');
+    document.getElementById('ai-save-status').textContent = '';
+    document.getElementById('ai-save-code').value = '';
+    document.getElementById('ai-save-name').value = '';
+    document.getElementById('ai-status').textContent = '';
+    document.getElementById('ai-go-btn').disabled = false;
+  }
+
+  function aiOpenModal() {
+    aiResetUI();
+    document.getElementById('ai-engine-label').textContent =
+      'Engine: ' + (state.engine || 'v1').toUpperCase();
+    document.getElementById('ai-modal').classList.remove('hidden');
+    document.getElementById('ai-modal').classList.add('flex');
+  }
+
+  function aiCloseModal() {
+    document.getElementById('ai-modal').classList.add('hidden');
+    document.getElementById('ai-modal').classList.remove('flex');
+  }
+
+  function aiEscape(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function aiRenderClarifyQuestions(questions) {
+    const wrap = document.getElementById('ai-clarify-questions');
+    wrap.innerHTML = '';
+    if (!questions || !questions.length) {
+      wrap.innerHTML = '<p class="text-xs text-gray-500">The assistant didn\'t need clarification — proposing draft directly.</p>';
+      return false;
+    }
+    questions.forEach((q, idx) => {
+      const opts = (q.options || []).map((o, oi) =>
+        `<button type="button" data-q="${idx}" data-opt="${aiEscape(o)}"
+                 class="ai-clarify-opt btn btn-sm btn-ghost text-xs">${aiEscape(o)}</button>`
+      ).join('');
+      const div = document.createElement('div');
+      div.className = 'border rounded p-2 bg-gray-50';
+      div.innerHTML =
+        `<div class="text-xs font-medium mb-1">${aiEscape(q.question)}</div>` +
+        `<div class="flex flex-wrap gap-1 mb-1">${opts}</div>` +
+        `<input type="text" class="ai-clarify-input input text-xs w-full" data-q="${idx}"
+                placeholder="Or type your own answer…" />`;
+      wrap.appendChild(div);
+    });
+    // Click handlers for option buttons
+    wrap.querySelectorAll('.ai-clarify-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = btn.getAttribute('data-q');
+        const opt = btn.getAttribute('data-opt');
+        wrap.querySelector(`input.ai-clarify-input[data-q="${idx}"]`).value = opt;
+        // Highlight selection
+        wrap.querySelectorAll(`.ai-clarify-opt[data-q="${idx}"]`).forEach(b =>
+          b.classList.remove('bg-amplifi-100', 'text-amplifi-800', 'font-medium'));
+        btn.classList.add('bg-amplifi-100', 'text-amplifi-800', 'font-medium');
+      });
+    });
+    return true;
+  }
+
+  function aiRenderDraft(draft, rationale, warnings, validation) {
+    ai.currentDraft = draft;
+    ai.rationale = rationale;
+    document.getElementById('ai-rationale').textContent = rationale || '';
+    const warnEl = document.getElementById('ai-warnings');
+    if (warnings && warnings.length) {
+      warnEl.innerHTML = '<strong>Caveats:</strong> ' +
+        warnings.map(aiEscape).join(' · ');
+      warnEl.classList.remove('hidden');
+    } else {
+      warnEl.classList.add('hidden');
+    }
+    const valEl = document.getElementById('ai-validation');
+    if (validation && !validation.ok && validation.invalid_codes && validation.invalid_codes.length) {
+      valEl.innerHTML = '<strong>Validation issues:</strong> the LLM proposed unknown routine codes: ' +
+        validation.invalid_codes.map(c => `<code>${aiEscape(c)}</code>`).join(', ') +
+        '. These will be ignored on save.';
+      valEl.classList.remove('hidden');
+    } else {
+      valEl.classList.add('hidden');
+    }
+    const pipeline = (draft && draft.pipeline) || [];
+    const rows = pipeline.map((step, i) => {
+      const params = step.params || {};
+      const paramStr = Object.keys(params).length
+        ? ' · ' + Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')
+        : '';
+      return `<div class="border-l-2 ${step.enabled === false ? 'border-gray-300 opacity-60' : 'border-amplifi-400'} pl-2 py-0.5">
+        <span class="text-gray-400">${i + 1}.</span>
+        <code class="font-mono">${aiEscape(step.routine)}</code>
+        ${step.enabled === false ? '<span class="text-[10px] text-gray-400">disabled</span>' : ''}
+        <span class="text-[10px] text-gray-500">${aiEscape(paramStr)}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('ai-pipeline-preview').innerHTML = rows ||
+      '<div class="text-xs text-gray-400">(empty pipeline)</div>';
+    document.getElementById('ai-draft-block').classList.remove('hidden');
+    document.getElementById('ai-save-block').classList.remove('hidden');
+    if (ai.mode === 'guided') {
+      document.getElementById('ai-refine-block').classList.remove('hidden');
+    }
+    // Default save code based on engine + first routine
+    const codeInput = document.getElementById('ai-save-code');
+    if (!codeInput.value) {
+      codeInput.value = `${state.engine}-ai-${Date.now().toString().slice(-6)}`;
+    }
+  }
+
+  async function aiHandleGo() {
+    const desc = document.getElementById('ai-description').value.trim();
+    if (!desc) {
+      document.getElementById('ai-status').textContent = 'Please describe the goal first.';
+      return;
+    }
+    const goBtn = document.getElementById('ai-go-btn');
+    goBtn.disabled = true;
+    document.getElementById('ai-status').textContent = 'Asking the assistant…';
+    try {
+      if (ai.mode === 'quick') {
+        // Single-shot drafter
+        const data = await api('/api/admin/configs/draft-from-description', {
+          method: 'POST',
+          body: JSON.stringify({ description: desc, engine: state.engine }),
+        });
+        if (!data.available) {
+          document.getElementById('ai-status').textContent =
+            'Assistant unavailable: ' + (data.reason || 'unknown');
+          return;
+        }
+        aiRenderDraft(data.draft, data.rationale, data.warnings, data.validation);
+        document.getElementById('ai-status').textContent =
+          `Draft ready · ${data.model || '?'} · ${data.tokens_in || 0} in / ${data.tokens_out || 0} out tokens`;
+      } else {
+        // Guided — first call: clarify
+        if (!ai.questions.length && ai.clarifications.length === 0 &&
+            document.getElementById('ai-clarify-block').classList.contains('hidden')) {
+          const data = await api('/api/admin/configs/configure-stepwise', {
+            method: 'POST',
+            body: JSON.stringify({
+              step: 'clarify', description: desc, engine: state.engine,
+            }),
+          });
+          if (!data.available) {
+            document.getElementById('ai-status').textContent =
+              'Assistant unavailable: ' + (data.reason || 'unknown');
+            return;
+          }
+          ai.questions = data.questions || [];
+          const hasQuestions = aiRenderClarifyQuestions(ai.questions);
+          document.getElementById('ai-clarify-block').classList.remove('hidden');
+          if (hasQuestions) {
+            document.getElementById('ai-status').textContent =
+              'Answer the questions, then click "Propose draft".';
+            document.getElementById('ai-go-btn').textContent = 'Propose draft';
+          } else {
+            // No questions → go straight to propose with empty clarifications
+            document.getElementById('ai-go-btn').textContent = 'Propose draft';
+            await aiProposeStep(desc);
+          }
+        } else if (!ai.currentDraft) {
+          // We have questions answered → propose
+          // Collect answers
+          ai.clarifications = ai.questions.map((q, idx) => {
+            const inp = document.querySelector(
+              `#ai-clarify-questions input.ai-clarify-input[data-q="${idx}"]`);
+            return { question: q.question, answer: (inp && inp.value || '').trim() };
+          }).filter(c => c.answer);
+          await aiProposeStep(desc);
+        } else {
+          document.getElementById('ai-status').textContent =
+            'Use "Refine draft" below to iterate, or save the variant.';
+        }
+      }
+    } catch (err) {
+      document.getElementById('ai-status').textContent =
+        'Request failed: ' + (err && err.message || err);
+    } finally {
+      goBtn.disabled = false;
+    }
+  }
+
+  async function aiProposeStep(desc) {
+    const data = await api('/api/admin/configs/configure-stepwise', {
+      method: 'POST',
+      body: JSON.stringify({
+        step: 'propose',
+        description: desc,
+        engine: state.engine,
+        clarifications: ai.clarifications,
+      }),
+    });
+    if (!data.available) {
+      document.getElementById('ai-status').textContent =
+        'Assistant unavailable: ' + (data.reason || 'unknown');
+      return;
+    }
+    aiRenderDraft(data.draft, data.rationale, data.warnings, data.validation);
+    document.getElementById('ai-status').textContent =
+      `Draft ready · ${data.model || '?'} · ${data.tokens_in || 0} in / ${data.tokens_out || 0} out tokens`;
+    document.getElementById('ai-go-btn').textContent = 'Done — save below';
+    document.getElementById('ai-go-btn').disabled = true;
+  }
+
+  async function aiHandleRefine() {
+    const feedback = document.getElementById('ai-refine-feedback').value.trim();
+    if (!feedback) {
+      document.getElementById('ai-status').textContent = 'Please describe what to change.';
+      return;
+    }
+    if (!ai.currentDraft) {
+      document.getElementById('ai-status').textContent = 'No draft to refine yet.';
+      return;
+    }
+    const btn = document.getElementById('ai-refine-btn');
+    btn.disabled = true;
+    document.getElementById('ai-status').textContent = 'Refining…';
+    try {
+      const data = await api('/api/admin/configs/configure-stepwise', {
+        method: 'POST',
+        body: JSON.stringify({
+          step: 'refine',
+          engine: state.engine,
+          draft: ai.currentDraft,
+          user_feedback: feedback,
+        }),
+      });
+      if (!data.available) {
+        document.getElementById('ai-status').textContent =
+          'Refine failed: ' + (data.reason || 'unknown');
+        return;
+      }
+      aiRenderDraft(data.draft, data.rationale, data.warnings, data.validation);
+      document.getElementById('ai-refine-feedback').value = '';
+      document.getElementById('ai-status').textContent =
+        `Refined · ${data.model || '?'} · ${data.tokens_in || 0} in / ${data.tokens_out || 0} out tokens`;
+    } catch (err) {
+      document.getElementById('ai-status').textContent =
+        'Refine failed: ' + (err && err.message || err);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function aiHandleSave() {
+    const code = document.getElementById('ai-save-code').value.trim();
+    const name = document.getElementById('ai-save-name').value.trim();
+    if (!code || !name) {
+      document.getElementById('ai-save-status').textContent = 'Code and name are required.';
+      return;
+    }
+    if (!ai.currentDraft) {
+      document.getElementById('ai-save-status').textContent = 'No draft to save.';
+      return;
+    }
+    const btn = document.getElementById('ai-save-btn');
+    btn.disabled = true;
+    document.getElementById('ai-save-status').textContent = 'Saving…';
+    try {
+      await api('/api/configs', {
+        method: 'POST',
+        body: JSON.stringify({
+          code,
+          name,
+          description: ai.rationale ? `AI-drafted: ${ai.rationale}` : 'AI-drafted variant',
+          config: ai.currentDraft,
+        }),
+      });
+      document.getElementById('ai-save-status').textContent = 'Saved! Refreshing list…';
+      // Refresh the configs list via existing boot, then close
+      await boot();
+      setTimeout(aiCloseModal, 600);
+    } catch (err) {
+      document.getElementById('ai-save-status').textContent =
+        'Save failed: ' + (err && err.message || err);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Wire up AI Assistant
+  document.getElementById('btn-ai-assistant').addEventListener('click', aiOpenModal);
+  document.getElementById('ai-close').addEventListener('click', aiCloseModal);
+  document.getElementById('ai-reset').addEventListener('click', () => {
+    document.getElementById('ai-description').value = '';
+    aiResetUI();
+  });
+  document.getElementById('ai-mode-quick').addEventListener('click', () => {
+    aiSetMode('quick'); aiResetUI();
+  });
+  document.getElementById('ai-mode-guided').addEventListener('click', () => {
+    aiSetMode('guided'); aiResetUI();
+  });
+  document.getElementById('ai-go-btn').addEventListener('click', aiHandleGo);
+  document.getElementById('ai-refine-btn').addEventListener('click', aiHandleRefine);
+  document.getElementById('ai-save-btn').addEventListener('click', aiHandleSave);
 
   // Boot
   boot().catch(err => {
