@@ -135,6 +135,36 @@ class OwnerDecision(BaseModel):
     comment: str | None = None
 
 
+@router.post("/admin/housekeeping/cycles/{cycle_id}/remind")
+def remind_owners(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Send reminder emails to owners who haven't decided yet."""
+    from app.services.housekeeping import send_reminders
+
+    try:
+        return send_reminders(cycle_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.post("/admin/housekeeping/cycles/{cycle_id}/auto-close")
+def auto_close(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Auto-DEFER items whose owners have not responded within the configured window."""
+    from app.services.housekeeping import auto_close_overdue
+
+    try:
+        return auto_close_overdue(cycle_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
 @router.get("/housekeeping/{cycle_id}/owner/{token}")
 def owner_view(cycle_id: int, token: str, db: Session = Depends(get_db)) -> dict:
     items = (
@@ -152,7 +182,15 @@ def owner_view(cycle_id: int, token: str, db: Session = Depends(get_db)) -> dict
     return {
         "cycle_id": cycle_id,
         "items": [
-            {"id": i.id, "flag": i.flag, "decision": i.decision, "target_cc_id": i.target_cc_id}
+            {
+                "id": i.id,
+                "flag": i.flag,
+                "decision": i.decision,
+                "entity_type": i.entity_type,
+                "target_cc_id": i.target_cc_id,
+                "target_pc_id": i.target_pc_id,
+                "details": i.details or {},
+            }
             for i in items
         ],
     }

@@ -1344,7 +1344,10 @@ class HousekeepingCycle(TimestampMixin, Base):
 class HousekeepingItem(TimestampMixin, Base):
     __tablename__ = "housekeeping_item"
     __table_args__ = (
-        UniqueConstraint("cycle_id", "target_cc_id", "flag"),
+        # Each (cycle, entity, flag) tuple is unique. The functional-equivalent
+        # nullability handling is done at the application layer because not all
+        # backends (e.g. SAP Datasphere) treat NULL the same in unique indexes.
+        UniqueConstraint("cycle_id", "entity_type", "target_cc_id", "target_pc_id", "flag"),
         {"schema": "cleanup"},
     )
 
@@ -1352,8 +1355,14 @@ class HousekeepingItem(TimestampMixin, Base):
     cycle_id: Mapped[int] = mapped_column(
         ForeignKey("cleanup.housekeeping_cycle.id", ondelete="CASCADE"), nullable=False
     )
-    target_cc_id: Mapped[int] = mapped_column(
-        ForeignKey("cleanup.target_cost_center.id", ondelete="CASCADE"), nullable=False
+    entity_type: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="CC"
+    )  # CC | PC — discriminator for which target table this item points to
+    target_cc_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.target_cost_center.id", ondelete="CASCADE"), nullable=True
+    )
+    target_pc_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.target_profit_center.id", ondelete="CASCADE"), nullable=True
     )
     flag: Mapped[str] = mapped_column(
         String(20), nullable=False
