@@ -276,6 +276,7 @@ def run_v2_analysis(
 
     if wave_id is not None:
         # Wave-scoped: only include centers from wave entities (empty wave = 0 centers)
+        # But full-scope waves should include all centers
         from app.models.core import Entity
 
         if wave_entity_ids:
@@ -287,6 +288,8 @@ def run_v2_analysis(
             centers = (
                 db.execute(base_q.where(LegacyCostCenter.ccode.in_(entity_ccodes))).scalars().all()
             )
+        elif wave and wave.is_full_scope:
+            centers = db.execute(base_q).scalars().all()
         else:
             centers = []
     else:
