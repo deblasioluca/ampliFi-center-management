@@ -31,8 +31,7 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="bg-white border-b border-gray-200 rounded-t-lg mb-0">
     <div class="flex space-x-0" id="wave-tabs">
       <button class="tab-active px-4 py-3" data-tab="scope">Scope</button>
-      <button class="tab px-4 py-3" data-tab="analysis">Analysis</button>
-      <button class="tab px-4 py-3" data-tab="simulation">Simulation</button>
+      <button class="tab px-4 py-3" data-tab="simulation">Decision Tree</button>
       <button class="tab px-4 py-3" data-tab="proposals">Proposals</button>
       <button class="tab px-4 py-3" data-tab="review">Review Scopes</button>
       <button class="tab px-4 py-3" data-tab="progress">Progress</button>
@@ -58,7 +57,13 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
     </div>
 
-    <!-- Analysis Tab -->
+    <!-- Analysis Tab — hidden, kept for backward JS compatibility.
+         The Analysis tab and Simulation tab were doing essentially the same
+         thing (both create AnalysisRun rows in 'simulation' mode by default).
+         The Decision Tree tab below is now the single entry point. The DOM
+         here is kept so the existing analysis-related JS (loadRuns, runAnalysis,
+         loadConfigVersions, proposeRun) continues to work without modification.
+         The Tab BUTTON for it has been removed from the tab strip above. -->
     <div id="tab-analysis" class="hidden">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-base font-semibold">Analysis Runs</h3>
@@ -77,15 +82,15 @@ import Layout from '../../components/layout/Layout.astro';
       <div id="analysis-runs" class="text-sm">Loading...</div>
     </div>
 
-    <!-- V2 Simulation Tab -->
+    <!-- Decision Tree Tab (was: 'Simulation' — consolidated UX) -->
     <div id="tab-simulation" class="hidden">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-base font-semibold">Decision Tree — Simulation</h3>
+        <h3 class="text-base font-semibold">Decision Tree</h3>
         <div class="flex gap-2">
-          <button id="btn-run-sim" class="btn-amplifi text-sm">Run Simulation</button>
+          <button id="btn-run-sim" class="btn-amplifi text-sm">Run</button>
         </div>
       </div>
-      <p class="text-xs text-gray-500 mb-4">Run analysis in simulation mode (V1 cleansing or V2 CEMA migration). Simulations are versioned and can be compared. Once satisfied, activate a simulation to commit the results.</p>
+      <p class="text-xs text-gray-500 mb-4">Run the decision tree on this wave's scope. Default mode is <strong>Simulation</strong> — non-destructive, versioned, can be compared. Use the <strong>Activate</strong> button on a completed simulation to commit its proposals.</p>
 
       <!-- Simulation Config Panel -->
       <div id="sim-config-panel" class="border rounded-lg p-4 mb-4 bg-gray-50 hidden">
@@ -381,18 +386,18 @@ import Layout from '../../components/layout/Layout.astro';
   var waveId = params.get('id');
   if (!waveId) { document.getElementById('wave-header').textContent = 'No wave ID provided. Go to Cockpit.'; return; }
 
-  var allTabs = ['scope','analysis','simulation','proposals','review','progress'];
+  var allTabs = ['scope','simulation','proposals','review','progress'];
   var activeTab = 'scope';
 
   function getEnabledTabs() {
     if (!wave) return allTabs;
     var step = statusToStep(wave.status, wave.entity_count || 0);
     // step 0: defining wave -> only scope
-    // step 1: defining scope -> scope, analysis, simulation
-    // step 2: running analysis -> scope, analysis, simulation
+    // step 1: defining scope -> scope, simulation
+    // step 2: running analysis -> scope, simulation
     // step 3+: all tabs
     if (step <= 0) return ['scope'];
-    if (step <= 2) return ['scope', 'analysis', 'simulation'];
+    if (step <= 2) return ['scope', 'simulation'];
     return allTabs;
   }
 

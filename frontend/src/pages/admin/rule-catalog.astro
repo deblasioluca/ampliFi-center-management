@@ -1,0 +1,304 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Built-in Rule Katalog" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="mb-4">
+    <h1 class="text-2xl font-bold text-gray-900">Built-in Rule Katalog</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Komplette Übersicht aller im Code definierten Decision-Tree-Regeln. Jeder Eintrag zeigt
+      was die Regel prüft, welche Verdikte sie liefert und welche Parameter konfigurierbar sind.
+    </p>
+  </div>
+
+  <!-- Help banner: where to do what -->
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-900">
+    <p class="font-semibold mb-2">Wo mache ich was?</p>
+    <ul class="space-y-1 text-blue-800">
+      <li>
+        <strong>Diese Seite (Katalog):</strong> nur lesen — built-in Regeln sind im Python-Code
+        definiert und können <em>nicht gelöscht</em> werden.
+      </li>
+      <li>
+        <strong>Parameter pro Variante anpassen:</strong>
+        <a href="/admin/configs" class="underline font-medium">Decision Tree Varianten</a>
+        — dort wählst du Regeln in eine Pipeline und stellst Parameter ein.
+      </li>
+      <li>
+        <strong>Eigene Regeln bauen (No-Code DSL):</strong>
+        <a href="/admin/rules" class="underline font-medium">Rule Builder</a>
+        — dort kannst du custom Regeln erstellen, anpassen und löschen.
+      </li>
+    </ul>
+  </div>
+
+  <!-- Filters -->
+  <div class="card mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <label class="text-gray-600">Tree:</label>
+    <select id="filter-tree" class="input text-sm w-48">
+      <option value="">Alle (built-in + V2)</option>
+      <option value="cleansing">V1 Cleansing (KEEP/RETIRE/MERGE/REDESIGN)</option>
+      <option value="mapping">V1 Mapping (CC/PC-Strategie)</option>
+      <option value="v2">V2 CEMA Migration</option>
+    </select>
+
+    <label class="text-gray-600 ml-3">Suche:</label>
+    <input id="filter-search" type="text" class="input text-sm w-72"
+           placeholder="Name, Code, Beschreibung, Parameter..." />
+
+    <span class="ml-auto text-xs text-gray-500" id="result-count">— Regeln</span>
+  </div>
+
+  <!-- Rule list -->
+  <div id="rules-container" class="space-y-3">
+    <div class="text-gray-400 text-center py-12">Lädt Katalog…</div>
+  </div>
+
+  <!-- Detail modal (slides in) -->
+  <div id="detail-drawer" class="fixed inset-y-0 right-0 w-full md:w-[640px] bg-white shadow-2xl border-l border-gray-200 transform translate-x-full transition-transform duration-200 z-50 overflow-y-auto">
+    <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
+      <h3 class="font-semibold" id="drawer-title">Regel-Detail</h3>
+      <button id="close-drawer" class="text-gray-400 hover:text-gray-700 text-xl">✕</button>
+    </div>
+    <div id="drawer-content" class="p-5 space-y-5 text-sm"></div>
+  </div>
+</Layout>
+
+<script>
+  // ── State ─────────────────────────────────────────────────────
+  const state = {
+    catalog: [],
+    filteredCount: 0,
+    filterTree: '',
+    filterSearch: '',
+  };
+
+  // Verdict color palette — must match the simulation results page
+  const VERDICT_COLORS = {
+    KEEP: 'green', RETIRE: 'red', MERGE_MAP: 'orange', REDESIGN: 'blue',
+    CC: 'indigo', PC_ONLY: 'purple', PC: 'purple', CC_AND_PC: 'pink',
+    WBS_REAL: 'teal', WBS_STAT: 'cyan',
+    '1:1': 'gray', '1:n': 'purple',
+    MIGRATE: 'emerald', PASS: 'gray', BS_RELEVANT: 'amber',
+  };
+
+  function verdictBadge(v) {
+    const c = VERDICT_COLORS[v] || 'gray';
+    return `<span class="inline-block px-2 py-0.5 rounded text-xs bg-${c}-100 text-${c}-800 font-medium font-mono">${v}</span>`;
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ── API ───────────────────────────────────────────────────────
+  async function api(path) {
+    const r = await fetch(path, { credentials: 'include' });
+    if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+    return r.json();
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────
+  async function boot() {
+    try {
+      const data = await api('/api/configs/rule-catalog');
+      state.catalog = data.entries || [];
+      render();
+    } catch (err) {
+      document.getElementById('rules-container').innerHTML =
+        `<div class="card text-red-600">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ── Filtering & Rendering ─────────────────────────────────────
+  function filteredEntries() {
+    const term = state.filterSearch.toLowerCase().trim();
+    return state.catalog.filter(entry => {
+      // Tree filter
+      if (state.filterTree) {
+        const tree = entry.tree || (entry.code.startsWith('v2.') ? 'v2' : '');
+        if (tree !== state.filterTree) return false;
+      }
+      // Search filter — fuzzy across multiple fields
+      if (!term) return true;
+      const haystack = [
+        entry.code,
+        entry.business_label,
+        entry.description,
+        entry.name,
+        ...(entry.decides || []),
+        ...Object.values(entry.verdict_meanings || {}),
+        ...Object.keys(entry.params || {}),
+        ...Object.values(entry.params || {}).map(p => p.friendly_label || ''),
+        ...Object.values(entry.params || {}).map(p => p.help_text || ''),
+      ].join(' ').toLowerCase();
+      return haystack.includes(term);
+    });
+  }
+
+  function render() {
+    const entries = filteredEntries();
+    state.filteredCount = entries.length;
+    document.getElementById('result-count').textContent =
+      `${entries.length} von ${state.catalog.length} Regeln`;
+
+    const container = document.getElementById('rules-container');
+    if (!entries.length) {
+      container.innerHTML = `<div class="card text-gray-400 text-center py-8">Keine Regeln passen zum Filter</div>`;
+      return;
+    }
+
+    container.innerHTML = entries.map(renderRuleCard).join('');
+    container.querySelectorAll('[data-rule-code]').forEach(el => {
+      el.addEventListener('click', () => openDetail(el.getAttribute('data-rule-code')));
+    });
+  }
+
+  function renderRuleCard(entry) {
+    const tree = entry.tree || (entry.code.startsWith('v2.') ? 'v2' : 'aggregate');
+    const treeBadgeColor = tree === 'cleansing' ? 'red' : tree === 'mapping' ? 'blue' : tree === 'v2' ? 'purple' : 'gray';
+    const treeLabel = tree === 'cleansing' ? 'V1 Cleansing' : tree === 'mapping' ? 'V1 Mapping' : tree === 'v2' ? 'V2 CEMA' : 'Aggregate';
+
+    const decidesBadges = (entry.decides || []).map(verdictBadge).join(' ');
+
+    const paramCount = Object.keys(entry.params || {}).length;
+    const paramHint = paramCount === 0
+      ? '<span class="text-xs text-gray-400">Keine Parameter</span>'
+      : `<span class="text-xs text-gray-600">${paramCount} Parameter</span>`;
+
+    return `
+      <div class="card hover:shadow-md cursor-pointer transition" data-rule-code="${escapeHtml(entry.code)}">
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <h3 class="font-semibold text-base">${escapeHtml(entry.business_label)}</h3>
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-${treeBadgeColor}-100 text-${treeBadgeColor}-800 font-medium">
+                ${treeLabel}
+              </span>
+            </div>
+            <code class="text-xs text-gray-500 font-mono">${escapeHtml(entry.code)}</code>
+            <p class="text-sm text-gray-700 mt-2 leading-relaxed">${escapeHtml(entry.description || '(keine Beschreibung)')}</p>
+            <div class="flex items-center gap-3 mt-3 flex-wrap">
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-gray-500">Verdikte:</span>
+                ${decidesBadges || '<span class="text-xs text-gray-400">—</span>'}
+              </div>
+              <span class="text-gray-300">·</span>
+              ${paramHint}
+              <span class="text-gray-300">·</span>
+              <span class="text-xs text-amplifi-600">Details &rarr;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Detail Drawer ──────────────────────────────────────────────
+  function openDetail(code) {
+    const entry = state.catalog.find(e => e.code === code);
+    if (!entry) return;
+
+    document.getElementById('drawer-title').textContent = entry.business_label;
+    document.getElementById('drawer-content').innerHTML = renderDetail(entry);
+    document.getElementById('detail-drawer').classList.remove('translate-x-full');
+  }
+
+  function renderDetail(entry) {
+    const decidesBadges = (entry.decides || []).map(verdictBadge).join(' ');
+
+    const verdictExplanations = Object.entries(entry.verdict_meanings || {}).map(([v, meaning]) => `
+      <li class="flex items-start gap-2">
+        ${verdictBadge(v)}
+        <span class="text-gray-700">${escapeHtml(meaning)}</span>
+      </li>
+    `).join('');
+
+    const paramCards = Object.entries(entry.params || {}).map(([pname, pmeta]) => {
+      const type = pmeta.type || 'string';
+      const defaultStr = pmeta.default !== undefined ? JSON.stringify(pmeta.default) : '—';
+      const range = (type === 'integer' || type === 'number')
+        ? `${pmeta.min ?? '?'} – ${pmeta.max ?? '?'}${pmeta.unit ? ' ' + pmeta.unit : ''}`
+        : pmeta.enum ? pmeta.enum.join(' | ') : '—';
+
+      return `
+        <div class="border rounded p-3 bg-gray-50">
+          <div class="flex items-baseline justify-between mb-1">
+            <strong class="text-sm">${escapeHtml(pmeta.friendly_label || pname)}</strong>
+            <code class="text-xs text-gray-500 font-mono">${escapeHtml(pname)}</code>
+          </div>
+          <div class="text-xs text-gray-600 mb-2">${escapeHtml(pmeta.help_text || '')}</div>
+          <div class="flex items-center gap-3 text-xs flex-wrap">
+            <span><span class="text-gray-400">Typ:</span> <code>${type}</code></span>
+            <span><span class="text-gray-400">Default:</span> <code>${escapeHtml(defaultStr)}</code></span>
+            <span><span class="text-gray-400">Bereich:</span> ${escapeHtml(range)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <section>
+        <code class="text-xs text-gray-500 font-mono">${escapeHtml(entry.code)}</code>
+        <p class="text-sm text-gray-700 mt-3 leading-relaxed">${escapeHtml(entry.description || '')}</p>
+      </section>
+
+      <section>
+        <h4 class="text-sm font-semibold mb-2">Mögliche Verdikte</h4>
+        ${verdictExplanations
+          ? `<ul class="space-y-2">${verdictExplanations}</ul>`
+          : '<div class="text-xs text-gray-400">Diese Regel emittiert keine direkten Verdikte (Aggregator).</div>'}
+      </section>
+
+      <section>
+        <h4 class="text-sm font-semibold mb-2">Parameter (${Object.keys(entry.params || {}).length})</h4>
+        ${paramCards
+          ? `<div class="space-y-2">${paramCards}</div>`
+          : '<div class="text-xs text-gray-400">Diese Regel hat keine konfigurierbaren Parameter.</div>'}
+      </section>
+
+      <section class="border-t pt-4">
+        <h4 class="text-sm font-semibold mb-2">Anpassen / Verwenden</h4>
+        <p class="text-xs text-gray-600 mb-3">
+          Built-in Regeln sind im Code definiert und können nicht gelöscht werden.
+          Um sie in einer Analyse zu verwenden:
+        </p>
+        <ol class="text-xs text-gray-700 space-y-1 list-decimal list-inside">
+          <li>Gehe zu <a href="/admin/configs" class="text-amplifi-600 underline">Decision Tree Varianten</a></li>
+          <li>Erstelle eine neue Variante aus einer Vorlage oder forke eine bestehende</li>
+          <li>Wähle diese Regel in die Pipeline, stelle die Parameter ein und speichere</li>
+          <li>Wende die Variante auf einen Wave an (Simulation oder Aktiviert)</li>
+        </ol>
+      </section>
+
+      <section class="border-t pt-4">
+        <h4 class="text-sm font-semibold mb-2">Dieser Regel-Eintrag</h4>
+        <ul class="text-xs text-gray-600 space-y-1">
+          <li><span class="text-gray-400">Tree:</span> ${escapeHtml(entry.tree || (entry.code.startsWith('v2.') ? 'v2' : '—'))}</li>
+          <li><span class="text-gray-400">Kind:</span> ${escapeHtml(entry.kind || '—')}</li>
+          <li><span class="text-gray-400">Code-Datei:</span> <code class="text-xs">backend/app/domain/decision_tree/routines/</code></li>
+          <li><span class="text-gray-400">Metadata:</span> <code class="text-xs">backend/app/domain/decision_tree/rule_catalog.py</code></li>
+        </ul>
+      </section>
+    `;
+  }
+
+  // ── Wire up ───────────────────────────────────────────────────
+  document.getElementById('filter-tree').addEventListener('change', e => {
+    state.filterTree = e.target.value;
+    render();
+  });
+  document.getElementById('filter-search').addEventListener('input', e => {
+    state.filterSearch = e.target.value;
+    render();
+  });
+  document.getElementById('close-drawer').addEventListener('click', () => {
+    document.getElementById('detail-drawer').classList.add('translate-x-full');
+  });
+
+  // Boot
+  boot();
+</script>
