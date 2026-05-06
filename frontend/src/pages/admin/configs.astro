@@ -147,8 +147,10 @@ import Layout from '../../components/layout/Layout.astro';
     ]);
     state.catalog = cat.entries;
     state.presets = pre.presets;
-    state.configs = cfgs.items || [];
-    state.waves = waves.items || [];
+    // /api/configs returns a plain list[ConfigOut] (not wrapped in {items}).
+    // /api/waves returns {items: [...], total, page, size}. Be defensive about both.
+    state.configs = Array.isArray(cfgs) ? cfgs : (cfgs.items || []);
+    state.waves = Array.isArray(waves) ? waves : (waves.items || []);
     renderConfigsList();
     renderPresetsList();
     renderWaveDropdown();
@@ -157,7 +159,7 @@ import Layout from '../../components/layout/Layout.astro';
   function renderConfigsList() {
     const container = document.getElementById('configs-list');
     if (!state.configs.length) {
-      container.innerHTML = `<div class="text-gray-400 text-xs italic py-3">Keine Varianten — erstelle eine neue.</div>`;
+      container.innerHTML = `<div class="text-gray-400 text-xs italic py-3">No variants — create a new one.</div>`;
       return;
     }
     container.innerHTML = state.configs.map(c => `
@@ -224,25 +226,47 @@ import Layout from '../../components/layout/Layout.astro';
       );
       document.getElementById('preset-modal').classList.add('hidden');
       document.getElementById('preset-modal').classList.remove('flex');
-      // Reload list and select the new config
+      // Reload list and select the new config.
+      // /api/configs returns a plain list, not wrapped in {items}.
       const cfgs = await api(`/api/configs?status=active`);
-      state.configs = cfgs.items || [];
+      state.configs = Array.isArray(cfgs) ? cfgs : (cfgs.items || []);
       renderConfigsList();
-      loadConfig(result.id);
+      // Pass the CODE, not the numeric id — /api/configs/{code} expects a code string.
+      loadConfig(result.code);
     } catch (err) {
       uiAlert('Error: ' + err.message);
     }
   }
 
   // ── Config editor ────────────────────────────────────────────────
-  async function loadConfig(configId) {
-    state.currentConfigId = configId;
-    const cfg = await api(`/api/configs/${configId}`).catch(async () => {
-      // Try by-code lookup
-      const list = await api(`/api/configs`);
-      return list.items?.find(x => x.id == configId);
-    });
+  async function loadConfig(configIdOrCode) {
+    // Accept either a numeric id (from list-click data-config-id) or a code
+    // string (from instantiatePreset). Resolve to code via the in-memory
+    // list, then GET /api/configs/{code}.
+    let code = String(configIdOrCode);
+    if (/^\d+$/.test(code)) {
+      const fromList = state.configs.find(c => String(c.id) === code);
+      if (fromList) {
+        code = fromList.code;
+      } else {
+        // The list might be stale (just-instantiated config). Refresh once.
+        const cfgs = await api(`/api/configs`);
+        state.configs = Array.isArray(cfgs) ? cfgs : (cfgs.items || []);
+        const found = state.configs.find(c => String(c.id) === String(configIdOrCode));
+        if (!found) {
+          alert(`Config not found (id=${configIdOrCode})`);
+          return;
+        }
+        code = found.code;
+      }
+    }
+    const cfg = await api(`/api/configs/${encodeURIComponent(code)}`);
+    if (!cfg || !cfg.code) {
+      alert('Config could not be loaded.');
+      return;
+    }
     state.currentConfig = cfg;
+    state.currentConfigId = cfg.id;
     document.getElementById('editor-empty').classList.add('hidden');
     document.getElementById('editor-form').classList.remove('hidden');
     document.getElementById('editor-title').textContent = cfg.name || cfg.code;
