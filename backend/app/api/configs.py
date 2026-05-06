@@ -298,9 +298,7 @@ def list_config_presets(engine: str = "v1") -> dict:
     presets = list_presets(engine)
     return {
         "engine": engine.lower(),
-        "presets": [
-            {"name": k, **v} for k, v in presets.items()
-        ],
+        "presets": [{"name": k, **v} for k, v in presets.items()],
     }
 
 
@@ -362,8 +360,7 @@ def instantiate_preset(
         code=code,
         version=1,
         name=body.name,
-        description=body.description
-        or f"Instantiated from preset '{preset_name}' ({engine})",
+        description=body.description or f"Instantiated from preset '{preset_name}' ({engine})",
         status="active",
         config=config_data,
         created_by=user.id,

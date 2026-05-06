@@ -11,8 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.api.explore import _check_sensitive_access, _SENSITIVE_OBJECT_TYPES
-
+from app.api.explore import _SENSITIVE_OBJECT_TYPES, _check_sensitive_access
 
 # ── Sensitive types catalogue ───────────────────────────────────────────
 
@@ -108,6 +107,4 @@ def test_target_models_have_default_columns() -> None:
     for key in ("target-cost-centers", "target-profit-centers"):
         cols = _DEFAULT_TABLE_COLUMNS.get(key)
         assert cols, f"{key} must have default columns defined"
-        assert "approved_in_wave" in cols, (
-            f"{key} default columns must surface approved_in_wave"
-        )
+        assert "approved_in_wave" in cols, f"{key} default columns must surface approved_in_wave"

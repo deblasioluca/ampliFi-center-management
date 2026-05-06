@@ -178,9 +178,7 @@ def housekeeping_send_reminders(self) -> dict[str, Any]:  # type: ignore[no-unty
     db = _task_session()
     try:
         cycles = (
-            db.execute(
-                select(HousekeepingCycle).where(HousekeepingCycle.status == "review_open")
-            )
+            db.execute(select(HousekeepingCycle).where(HousekeepingCycle.status == "review_open"))
             .scalars()
             .all()
         )
@@ -222,9 +220,7 @@ def review_send_reminders(self) -> dict[str, Any]:  # type: ignore[no-untyped-de
 
     db = _task_session()
     try:
-        cfg_row = (
-            db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
-        )
+        cfg_row = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
         cfg = cfg_row.value if cfg_row else {}
         if not cfg:
             return {"sent": 0, "reason": "no_email_config"}
@@ -294,9 +290,7 @@ def review_send_reminders(self) -> dict[str, Any]:  # type: ignore[no-untyped-de
                         "reviewed_count": decided,
                         "total_count": total,
                         "deadline": (
-                            str(scope.token_expires_at)[:10]
-                            if scope.token_expires_at
-                            else "soon"
+                            str(scope.token_expires_at)[:10] if scope.token_expires_at else "soon"
                         ),
                     },
                 )
@@ -357,9 +351,7 @@ def send_email_batch(  # type: ignore[no-untyped-def]
 
     db = _task_session()
     try:
-        cfg_row = (
-            db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
-        )
+        cfg_row = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
         cfg = cfg_row.value if cfg_row else {}
         if not cfg:
             return {"template": template, "sent": 0, "reason": "no_email_config"}
@@ -392,9 +384,7 @@ def sap_pull(self, connection_id: int, binding_id: int) -> dict:  # type: ignore
         try:
             from app.services.sap_extraction import extract_from_binding
 
-            result = extract_from_binding(
-                connection_id=connection_id, binding_id=binding_id, db=db
-            )
+            result = extract_from_binding(connection_id=connection_id, binding_id=binding_id, db=db)
         except (ImportError, AttributeError):
             result = {"warning": "extract_from_binding not available"}
         db.commit()

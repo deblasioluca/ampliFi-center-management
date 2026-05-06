@@ -15,7 +15,6 @@ from app.domain.decision_tree.rule_catalog import (
     list_presets,
 )
 
-
 # ── Catalog completeness ────────────────────────────────────────────────
 
 
@@ -74,9 +73,7 @@ def test_param_metadata_has_help_text() -> None:
             assert pmeta.get("help_text"), (
                 f"{code}.{pname}: missing help_text — business user needs this"
             )
-            assert pmeta.get("friendly_label"), (
-                f"{code}.{pname}: missing friendly_label"
-            )
+            assert pmeta.get("friendly_label"), f"{code}.{pname}: missing friendly_label"
 
 
 def test_numeric_params_have_min_max() -> None:
