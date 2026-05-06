@@ -33,8 +33,17 @@ router = APIRouter()
 logger = __import__("structlog").get_logger()
 
 
-def _send_scope_invitation(scope: ReviewScope, wave: Wave, db: Session) -> None:
-    """Best-effort email invitation to reviewer."""
+def _send_scope_invitation(
+    scope: ReviewScope, wave: Wave, db: Session, *, is_reminder: bool = False
+) -> None:
+    """Best-effort email invitation to reviewer.
+
+    When ``is_reminder=True``, sends the ``review_reminder`` template (with
+    progress counters) instead of the initial ``review_invitation``. The
+    reminder template explicitly tells reviewers how many items they've
+    decided already, so they don't read it as a duplicate of the first
+    invitation.
+    """
     from app.models.core import AppConfig
 
     try:
@@ -58,19 +67,52 @@ def _send_scope_invitation(scope: ReviewScope, wave: Wave, db: Session) -> None:
             ).scalar()
             or 0
         )
-        engine.send(
-            to=scope.reviewer_email,
-            template_name="review_invitation",
-            context={
-                "reviewer_name": scope.reviewer_name or scope.reviewer_email,
-                "wave_name": wave.name,
-                "review_url": f"/review/{scope.token}",
-                "expires_at": str(scope.token_expires_at)[:10] if scope.token_expires_at else "N/A",
-                "scope_name": scope.name,
-                "item_count": item_count,
-            },
-        )
-        logger.info("email.invitation_sent", scope_id=scope.id, to=scope.reviewer_email)
+
+        if is_reminder:
+            decided_count = (
+                db.execute(
+                    select(func.count(ReviewItem.id)).where(
+                        ReviewItem.scope_id == scope.id,
+                        ReviewItem.decision != "PENDING",
+                    )
+                ).scalar()
+                or 0
+            )
+            engine.send(
+                to=scope.reviewer_email,
+                template_name="review_reminder",
+                context={
+                    "reviewer_name": scope.reviewer_name or scope.reviewer_email,
+                    "wave_name": wave.name,
+                    "review_url": f"/review/{scope.token}",
+                    "reviewed_count": decided_count,
+                    "total_count": item_count,
+                    "deadline": (
+                        str(scope.token_expires_at)[:10]
+                        if scope.token_expires_at
+                        else "soon"
+                    ),
+                },
+            )
+            logger.info("email.reminder_sent", scope_id=scope.id, to=scope.reviewer_email)
+        else:
+            engine.send(
+                to=scope.reviewer_email,
+                template_name="review_invitation",
+                context={
+                    "reviewer_name": scope.reviewer_name or scope.reviewer_email,
+                    "wave_name": wave.name,
+                    "review_url": f"/review/{scope.token}",
+                    "expires_at": (
+                        str(scope.token_expires_at)[:10]
+                        if scope.token_expires_at
+                        else "N/A"
+                    ),
+                    "scope_name": scope.name,
+                    "item_count": item_count,
+                },
+            )
+            logger.info("email.invitation_sent", scope_id=scope.id, to=scope.reviewer_email)
     except Exception:
         logger.warning("email.invitation_failed", scope_id=scope.id, exc_info=True)
 
@@ -1058,7 +1100,7 @@ def remind_reviewer(
             detail=f"Cannot send reminder for scope in status {scope.status}",
         )
     wave = db.get(Wave, scope.wave_id)
-    _send_scope_invitation(scope, wave, db)
+    _send_scope_invitation(scope, wave, db, is_reminder=True)
     return {"status": "reminder_sent", "scope_id": scope_id}
 
 
@@ -2140,3 +2182,141 @@ def get_wave_scope_coverage(
         "run_id": latest_run.id,
         "run_mode": latest_run.mode,
     }
+
+
+# ── Unified analyse endpoint with engine selector ────────────────────────
+
+
+class UnifiedAnalysisParams(BaseModel):
+    """Variant-aware analysis parameters.
+
+    The decision tree exists in two intentional variants (engines):
+    - 'v1': legacy cleansing pipeline with 1:1 PC mapping
+    - 'v2': CEMA migration with canonical m:1 PC grouping
+
+    Both are configurable via ``config_id``. Inline overrides are accepted
+    for V2 (pc_approach_rules / pc_start / cc_start). For V1, override the
+    config via the analysis_config CRUD endpoints (fork/amend) before
+    calling this endpoint.
+    """
+
+    engine: str = "v1"  # "v1" | "v2"
+    config_id: int | None = None
+    mode: str = "simulation"  # simulation | activated
+    label: str | None = None
+    excluded_scopes: list[int] | None = None
+    # V2-only overrides (ignored for V1)
+    pc_approach_rules: list[dict] | None = None
+    pc_start: int | None = None
+    cc_start: int | None = None
+
+
+@router.post("/{wave_id}/analyse-with-engine")
+def run_analyse_with_engine(
+    wave_id: int,
+    params: UnifiedAnalysisParams,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Run the configured decision-tree variant on a wave.
+
+    This is the canonical entry point — the existing /analyse and
+    /analyse-v2 endpoints stay for backward compatibility but new clients
+    should use this one. Picking the engine is a deliberate choice the
+    user makes per run.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("draft", "analysing", "proposed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot analyse wave in status {wave.status}",
+        )
+
+    engine = (params.engine or "v1").lower()
+
+    if engine == "v1":
+        from app.services.analysis import execute_analysis, get_or_create_default_config
+
+        config_id = params.config_id
+        if config_id is None:
+            config = get_or_create_default_config(db)
+            config_id = config.id
+        excl = [str(x) for x in (params.excluded_scopes or [])] or None
+        try:
+            run = execute_analysis(
+                wave_id,
+                config_id,
+                user.id,
+                db,
+                mode=params.mode,
+                label=params.label,
+                excluded_scopes=excl,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"V1 analysis failed: {e}") from None
+        return {
+            "engine": "v1",
+            "run_id": run.id,
+            "status": run.status,
+            "kpis": run.kpis,
+            "engine_version": run.engine_version,
+        }
+
+    if engine == "v2":
+        import copy
+
+        from app.models.core import AnalysisConfig
+        from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+
+        config_id = params.config_id
+        # If inline V2 overrides provided, fork a runtime config
+        if params.pc_approach_rules is not None or params.pc_start or params.cc_start:
+            cfg = copy.deepcopy(V2_DEFAULT_CONFIG)
+            if params.pc_approach_rules is not None:
+                for step in cfg["pipeline"]:
+                    if step["routine"] == "v2.pc_approach":
+                        step["params"]["approach_rules"] = params.pc_approach_rules
+            if params.pc_start is not None:
+                cfg["id_assignment"]["pc_start"] = params.pc_start
+            if params.cc_start is not None:
+                cfg["id_assignment"]["cc_start"] = params.cc_start
+            max_ver = (
+                db.execute(
+                    select(func.coalesce(func.max(AnalysisConfig.version), 0)).where(
+                        AnalysisConfig.code == "cema_migration_v2"
+                    )
+                ).scalar()
+                or 0
+            )
+            ac = AnalysisConfig(
+                code="cema_migration_v2",
+                version=max_ver + 1,
+                name="V2 CEMA Migration (runtime)",
+                config=cfg,
+                created_by=user.id,
+            )
+            db.add(ac)
+            db.flush()
+            config_id = ac.id
+
+        excl = [str(x) for x in (params.excluded_scopes or [])] or None
+        try:
+            result = run_v2_analysis(
+                wave_id,
+                config_id,
+                db,
+                user_id=user.id,
+                mode=params.mode,
+                label=params.label,
+                excluded_scopes=excl,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"V2 analysis failed: {e}") from None
+        return {"engine": "v2", **result}
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unknown engine '{params.engine}'. Use 'v1' or 'v2'.",
+    )
