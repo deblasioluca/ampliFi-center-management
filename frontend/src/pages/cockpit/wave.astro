@@ -351,7 +351,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   <!-- Create Scope Modal -->
   <div id="scope-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
       <h2 class="text-lg font-semibold mb-4">Create Review Scope</h2>
       <form id="scope-form" class="space-y-3">
         <div><label class="block text-xs font-medium mb-1">Scope Name</label><input id="sf-name" class="input text-sm" required /></div>
@@ -363,9 +363,16 @@ import Layout from '../../components/layout/Layout.astro';
           </select>
           <p id="sf-type-help" class="text-[11px] text-gray-500 mt-1"></p>
         </div>
-        <div><label class="block text-xs font-medium mb-1">Reviewer Name</label><input id="sf-reviewer" class="input text-sm" /></div>
-        <div><label class="block text-xs font-medium mb-1">Reviewer Email</label><input id="sf-email" type="email" class="input text-sm" /></div>
-        <div id="sf-entity-wrap"><label class="block text-xs font-medium mb-1">Entity Filter (comma-separated ccodes)</label><input id="sf-ccodes" class="input text-sm" placeholder="1000,2000" /></div>
+        <div>
+          <label class="block text-xs font-medium mb-1">Reviewer</label>
+          <div id="sf-reviewer-picker"></div>
+          <input type="hidden" id="sf-reviewer" />
+          <input type="hidden" id="sf-email" />
+        </div>
+        <div id="sf-entity-wrap">
+          <label class="block text-xs font-medium mb-1">Entity Filter</label>
+          <div id="sf-entity-picker"></div>
+        </div>
         <div id="sf-hier-wrap" class="hidden">
           <label class="block text-xs font-medium mb-1">Hierarchy Node</label>
           <div class="flex gap-2">
@@ -387,6 +394,8 @@ import Layout from '../../components/layout/Layout.astro';
 </Layout>
 
 <script src="/ui-prompts.js" is:inline></script>
+<script src="/entity-picker.js" is:inline></script>
+<script src="/employee-picker.js" is:inline></script>
 <script is:inline>
 (function() {
   var token = localStorage.getItem('amplifi_token');
@@ -925,9 +934,22 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadScopes();
 
+  // ── Mount pickers for the create-scope modal ─────────────────────
+  var scopeReviewerPicker = window.mountEmployeePicker('sf-reviewer-picker', {
+    placeholder: 'Search reviewer by name, GPN, or email…',
+    onChange: function(emp) {
+      document.getElementById('sf-reviewer').value = emp ? (emp.display_name || emp.bs_name || '') : '';
+      document.getElementById('sf-email').value = emp ? (emp.email_address || '') : '';
+    },
+  });
+  var scopeEntityPicker = window.mountEntityPicker('sf-entity-picker', {
+    multi: true,
+    placeholder: 'Pick entities…',
+  });
+
   // ── Scope-form context-sensitive UX ──────────────────────────────
   // The fields a reviewer needs to fill depend on scope_type:
-  //   entity, list  → Entity filter is relevant; hierarchy block is hidden
+  //   entity, list  → Entity picker is relevant; hierarchy block is hidden
   //   hierarchy_node → Hierarchy + node pickers are relevant; entity hidden
   // We also show a one-line help text per type so the user knows what
   // each scope means before filling the form.
@@ -1013,10 +1035,9 @@ import Layout from '../../components/layout/Layout.astro';
       body.scope_filter.hierarchy_id = parseInt(hierId, 10);
       if (nodeSetname) body.scope_filter.node_setname = nodeSetname;
     } else {
-      // entity / list — entity ccodes filter
-      var ccodesInput = document.getElementById('sf-ccodes');
-      var ccodes = ccodesInput ? ccodesInput.value : '';
-      if (ccodes) body.scope_filter.entity_ccodes = ccodes.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      // entity / list — read ccodes from the picker (PR #61)
+      var ccodes = scopeEntityPicker.getCcodes();
+      if (ccodes.length) body.scope_filter.entity_ccodes = ccodes;
     }
     var res = await fetch('/api/waves/' + waveId + '/scopes', {
       method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
