@@ -287,8 +287,8 @@ import Layout from '../../components/layout/Layout.astro';
     var same = treeVerdict === otherVerdict;
     var cls = same ? 'bg-green-50 text-green-800 border-green-200' : 'bg-amber-50 text-amber-800 border-amber-200';
     var msg = same
-      ? otherEngineLabel + ' agrees with the rule tree.'
-      : otherEngineLabel + ' disagrees: rule tree said ' + esc(treeVerdict) + ', ' + otherEngineLabel + ' says ' + esc(otherVerdict) + '. Worth a closer look.';
+      ? otherEngineLabel + ' agrees with the decision tree.'
+      : otherEngineLabel + ' disagrees: decision tree said ' + esc(treeVerdict) + ', ' + otherEngineLabel + ' says ' + esc(otherVerdict) + '. Worth a closer look.';
     return '<div class="mt-2 px-2 py-1 border rounded text-[11px] ' + cls + '">' + msg + '</div>';
   }
 

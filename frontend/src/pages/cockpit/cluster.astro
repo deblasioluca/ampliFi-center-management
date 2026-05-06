@@ -56,7 +56,7 @@ import Layout from '../../components/layout/Layout.astro';
     countEl.textContent = '';
 
     try {
-      var url = '/api/legacy/data/duplicate-check?threshold=' + threshold + '&limit=' + limit;
+      var url = '/api/data/duplicate-check?threshold=' + threshold + '&limit=' + limit;
       if (coarea) url += '&coarea=' + encodeURIComponent(coarea);
       var resp = await fetch(url, { method: 'POST', headers: headers });
       if (!resp.ok) throw new Error('Failed: ' + resp.status);

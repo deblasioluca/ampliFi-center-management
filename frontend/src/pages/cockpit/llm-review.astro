@@ -52,7 +52,9 @@ import Layout from '../../components/layout/Layout.astro';
     const token = localStorage.getItem('amplifi_token');
     const headers = { Authorization: `Bearer ${token}` };
 
-    // Load runs into selector
+    // Load runs into selector. The wave detail endpoint doesn't include
+    // runs in its response, so we hit the dedicated /api/waves/{id}/runs
+    // endpoint per wave.
     async function loadRuns() {
       try {
         const resp = await fetch('/api/waves', { headers });
@@ -60,9 +62,10 @@ import Layout from '../../components/layout/Layout.astro';
         const waves = data.items || data;
         const sel = document.getElementById('sel-run');
         for (const w of waves) {
-          const runsResp = await fetch(`/api/waves/${w.id}`, { headers });
-          const wave = await runsResp.json();
-          const runs = wave.runs || [];
+          const runsResp = await fetch(`/api/waves/${w.id}/runs`, { headers });
+          if (!runsResp.ok) continue;
+          const runsData = await runsResp.json();
+          const runs = runsData.items || runsData || [];
           for (const r of runs) {
             const opt = document.createElement('option');
             opt.value = r.id;
@@ -70,8 +73,18 @@ import Layout from '../../components/layout/Layout.astro';
             sel.appendChild(opt);
           }
         }
+        if (sel.options.length <= 1) {
+          // Add a hint option so the user knows the dropdown is working.
+          const opt = document.createElement('option');
+          opt.disabled = true;
+          opt.textContent = '(no runs found — start an analysis first)';
+          sel.appendChild(opt);
+        }
       } catch (e) { console.error('Failed to load runs:', e); }
     }
+
+    loadRuns();
+    document.getElementById('btn-load').addEventListener('click', loadTranscripts);
 
     async function loadTranscripts() {
       const runId = document.getElementById('sel-run').value;
@@ -141,8 +154,5 @@ import Layout from '../../components/layout/Layout.astro';
         container.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded">${e.message}</div>`;
       }
     }
-
-    document.getElementById('btn-load')?.addEventListener('click', loadTranscripts);
-    loadRuns();
   </script>
 </Layout>
