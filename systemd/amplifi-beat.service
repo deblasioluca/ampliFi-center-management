@@ -1,0 +1,22 @@
+[Unit]
+Description=ampliFi Cleanup Celery Beat Scheduler
+After=network.target redis.service postgresql.service amplifi-worker.service
+Requires=amplifi-worker.service
+
+[Service]
+Type=simple
+User=macan
+Group=macan
+WorkingDirectory=/home/macan/Development/ampliFi-center-management/backend
+EnvironmentFile=/home/macan/Development/ampliFi-center-management/.env
+# Beat reads its schedule from app.workers.celery_app.celery.conf.beat_schedule
+# Schedule overrides via env vars (HOUSEKEEPING_CRON_*, REVIEW_CRON_*) take
+# effect on restart. Beat MUST run as a singleton — only one beat per cluster.
+ExecStart=/home/macan/Development/ampliFi-center-management/backend/.venv/bin/celery -A app.workers.celery_app:celery beat -l info --schedule=/home/macan/Development/ampliFi-center-management/celerybeat-schedule
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
