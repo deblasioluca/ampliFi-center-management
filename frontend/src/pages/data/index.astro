@@ -27,7 +27,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <!-- Data Counts -->
-  <div class="grid grid-cols-4 lg:grid-cols-7 gap-3 mb-3">
+  <div class="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-3">
     <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Entities</span>
       <p id="cnt-entities" class="text-lg font-bold text-gray-900">--</p>
@@ -39,6 +39,10 @@ import Layout from '../../components/layout/Layout.astro';
     <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Profit Centers</span>
       <p id="cnt-pc" class="text-lg font-bold text-gray-900">--</p>
+    </div>
+    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">GL Accounts</span>
+      <p id="cnt-gl" class="text-lg font-bold text-gray-900">--</p>
     </div>
     <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Balances</span>
@@ -65,6 +69,7 @@ import Layout from '../../components/layout/Layout.astro';
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="entities">Entities</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="cost-centers">Cost Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="gl-accounts">GL Accounts</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="mapping">Mapping</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
@@ -97,17 +102,38 @@ import Layout from '../../components/layout/Layout.astro';
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
         <div class="flex items-center gap-2">
+          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+            <button id="entities-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchEntitiesView('tabular')">Tabular</button>
+            <button id="entities-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchEntitiesView('hierarchy')">Hierarchical</button>
+          </div>
           <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48" />
           <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
         </div>
       </div>
-      <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <!-- Tabular -->
+      <div id="entities-table-wrap">
+        <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+        <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+      <!-- Hierarchical -->
+      <div id="entities-hier-wrap" class="hidden">
+        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Country &rarr; Region &rarr; Entity</span>. Click rows to expand.</p>
+        <div id="entities-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+      </div>
     </div>
 
     <!-- Cost Centers Tab -->
     <div id="tab-cost-centers" class="hidden">
+      <!-- View toggle (applies to both Legacy and Target) -->
+      <div class="flex items-center justify-end mb-2">
+        <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+          <button id="cc-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchCCView('tabular')">Tabular</button>
+          <button id="cc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchCCView('hierarchy')">Hierarchical</button>
+        </div>
+      </div>
+      <!-- Tabular wrap -->
+      <div id="cc-tabular-wrap">
       <!-- Legacy Section -->
       <div class="mb-6">
         <div class="flex items-center justify-between mb-3">
@@ -135,10 +161,25 @@ import Layout from '../../components/layout/Layout.astro';
         <div id="tcc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
         <div id="tcc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
       </div>
+      </div><!-- /cc-tabular-wrap -->
+      <!-- Hierarchical -->
+      <div id="cc-hier-wrap" class="hidden">
+        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Entity (ccode) &rarr; Category &rarr; Cost Center</span>. Click rows to expand. Shows Legacy cost centers; switch to Tabular view to see Target side-by-side.</p>
+        <div id="cc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+      </div>
     </div>
 
     <!-- Profit Centers Tab -->
     <div id="tab-profit-centers" class="hidden">
+      <!-- View toggle -->
+      <div class="flex items-center justify-end mb-2">
+        <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+          <button id="pc-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchPCView('tabular')">Tabular</button>
+          <button id="pc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchPCView('hierarchy')">Hierarchical</button>
+        </div>
+      </div>
+      <!-- Tabular wrap -->
+      <div id="pc-tabular-wrap">
       <!-- Legacy Section -->
       <div class="mb-6">
         <div class="flex items-center justify-between mb-3">
@@ -165,6 +206,37 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
         <div id="tpc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
         <div id="tpc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+      </div><!-- /pc-tabular-wrap -->
+      <!-- Hierarchical -->
+      <div id="pc-hier-wrap" class="hidden">
+        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Entity (ccode) &rarr; Segment &rarr; Profit Center</span>. Click rows to expand. Shows Legacy profit centers; switch to Tabular view to see Target side-by-side.</p>
+        <div id="pc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- GL Accounts Tab -->
+    <div id="tab-gl-accounts" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold">GL Accounts <span class="text-xs font-normal text-gray-500">(SKA1 chart-of-accounts)</span></h3>
+        <div class="flex items-center gap-2">
+          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+            <button id="gl-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchGLView('tabular')">Tabular</button>
+            <button id="gl-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchGLView('hierarchy')">Hierarchical</button>
+          </div>
+          <input id="search-gl" type="text" placeholder="Search saknr / text..." class="input text-sm w-48" />
+          <button onclick="downloadTableCSV('gl-table','gl_accounts.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
+        </div>
+      </div>
+      <!-- Tabular -->
+      <div id="gl-tabular-wrap">
+        <div id="gl-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+        <div id="gl-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+      <!-- Hierarchical -->
+      <div id="gl-hier-wrap" class="hidden">
+        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">first digit (Account class) &rarr; first 5 digits (Group) &rarr; full saknr</span>. Click rows to expand.</p>
+        <div id="gl-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
       </div>
     </div>
 
@@ -452,7 +524,7 @@ import Layout from '../../components/layout/Layout.astro';
     if (el) sortObserver.observe(el, { childList: true });
   });
 
-  var allTabs = ['data-browser','entities','cost-centers','profit-centers','mapping','balances','hierarchies','employees','upload','sample-data'];
+  var allTabs = ['data-browser','entities','cost-centers','profit-centers','gl-accounts','mapping','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -472,6 +544,7 @@ import Layout from '../../components/layout/Layout.astro';
     loadCounts();
     if (typeof loadCC === 'function') loadCC(1);
     if (typeof loadPC === 'function') loadPC(1);
+    if (typeof loadGL === 'function') loadGL(1);
     if (typeof loadTargetCC === 'function') loadTargetCC(1);
     if (typeof loadTargetPC === 'function') loadTargetPC(1);
     if (typeof loadMapping === 'function') loadMapping(1);
@@ -503,6 +576,7 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('cnt-entities').textContent = fmt(d.entities);
       document.getElementById('cnt-cc').textContent = fmt(d.cost_centers);
       document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
+      document.getElementById('cnt-gl').textContent = fmt(d.gl_accounts || 0);
       document.getElementById('cnt-balances').textContent = fmt(d.balances);
       document.getElementById('cnt-hierarchies').textContent = fmt(d.hierarchies);
       document.getElementById('cnt-employees').textContent = fmt(d.employees || 0);
@@ -586,9 +660,11 @@ import Layout from '../../components/layout/Layout.astro';
   window.loadEntities = function(page) {
     page = page || 1;
     var search = document.getElementById('search-entities').value;
-    var url = '/api/entities?page=' + page + '&size=50' + scopeParams();
+    // Larger page size so hierarchy view sees the full set; tabular still paginates the rendered table
+    var url = '/api/entities?page=' + page + '&size=500' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      window._entityData = d.items || [];
       var el = document.getElementById('entities-table');
       if (!d.items || !d.items.length) { el.textContent = 'No entities found.'; return; }
       var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
@@ -606,6 +682,11 @@ import Layout from '../../components/layout/Layout.astro';
       });
       el.innerHTML = html + '</tbody></table>';
       document.getElementById('entities-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadEntities');
+      // If hierarchy view is active, re-render with fresh data
+      var hierWrap = document.getElementById('entities-hier-wrap');
+      if (hierWrap && !hierWrap.classList.contains('hidden') && typeof _renderEntityHierarchy === 'function') {
+        _renderEntityHierarchy();
+      }
     }).catch(function(e) { document.getElementById('entities-table').textContent = 'Error: ' + e.message; });
   };
   loadEntities(1);
@@ -646,13 +727,18 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var search = document.getElementById('search-cc').value;
     var ccode = document.getElementById('filter-cc-ccode').value;
-    var url = '/api/legacy/cost-centers?page=' + page + '&size=50' + scopeParams();
+    var url = '/api/legacy/cost-centers?page=' + page + '&size=500' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _ccData = d.items || [];
+      window._ccData = _ccData;
       _renderCCTable();
       document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
+      var ccHierWrap = document.getElementById('cc-hier-wrap');
+      if (ccHierWrap && !ccHierWrap.classList.contains('hidden') && typeof _renderCCHierarchy === 'function') {
+        _renderCCHierarchy();
+      }
     }).catch(function(e) { document.getElementById('cc-table').textContent = 'Error: ' + e.message; });
   };
   window._renderCCTable = function() {
@@ -694,13 +780,18 @@ import Layout from '../../components/layout/Layout.astro';
     page = page || 1;
     var search = document.getElementById('search-pc').value;
     var ccode = document.getElementById('filter-pc-ccode').value;
-    var url = '/api/legacy/profit-centers?page=' + page + '&size=50' + scopeParams();
+    var url = '/api/legacy/profit-centers?page=' + page + '&size=500' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _pcData = d.items || [];
+      window._pcData = _pcData;
       _renderPCTable();
       document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
+      var pcHierWrap = document.getElementById('pc-hier-wrap');
+      if (pcHierWrap && !pcHierWrap.classList.contains('hidden') && typeof _renderPCHierarchy === 'function') {
+        _renderPCHierarchy();
+      }
     }).catch(function(e) { document.getElementById('pc-table').textContent = 'Error: ' + e.message; });
   };
   window._renderPCTable = function() {
@@ -823,6 +914,266 @@ import Layout from '../../components/layout/Layout.astro';
   };
   loadTargetPC(1);
   document.getElementById('search-tpc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetPC(1); }, 300); });
+
+  // --- GL Accounts ---
+  var _glData = [];
+  window.loadGL = function(page) {
+    page = page || 1;
+    var search = (document.getElementById('search-gl') || {}).value || '';
+    var url = '/api/legacy/gl-accounts?page=' + page + '&size=500' + scopeParams();
+    if (search) url += '&search=' + encodeURIComponent(search);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      _glData = d.items || [];
+      _renderGLTable();
+      _renderGLHierarchy();
+      var pager = document.getElementById('gl-pager');
+      if (pager) pager.innerHTML = pagerHtml(d.total, d.page, d.size, 'loadGL');
+    }).catch(function(e) {
+      var el = document.getElementById('gl-table');
+      if (el) el.textContent = 'Error: ' + e.message;
+    });
+  };
+  window._renderGLTable = function() {
+    var el = document.getElementById('gl-table');
+    if (!el) return;
+    if (!_glData.length) { el.textContent = 'No GL accounts found.'; return; }
+    var items = sortTableData('gl', _glData);
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      sortTh('gl','saknr','GL Account','_renderGLTable') +
+      sortTh('gl','txt20','Short Text','_renderGLTable') +
+      sortTh('gl','txt50','Long Text','_renderGLTable') +
+      sortTh('gl','ktopl','Chart','_renderGLTable') +
+      sortTh('gl','glaccount_type','Type','_renderGLTable') +
+      sortTh('gl','func_area','Func. Area','_renderGLTable') +
+      sortTh('gl','bukrs','Bukrs','_renderGLTable') +
+      sortTh('gl','waers','Curr','_renderGLTable') +
+      '</tr></thead><tbody>';
+    items.forEach(function(g) {
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(g.saknr) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(g.txt20) + '</td>' +
+        '<td class="py-1.5 px-2 max-w-md truncate">' + esc(g.txt50) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(g.ktopl) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(g.glaccount_type) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(g.func_area) + '</td>' +
+        '<td class="py-1.5 px-2 font-mono">' + esc(g.bukrs) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(g.waers) + '</td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  };
+
+  // --- Generic hierarchy rendering helper ---
+  // Buckets items by an array of key-extractor fns. Renders an expandable tree.
+  // levelDefs: [{ keyFn, labelFn, sublabelFn? }, ...]; last level renders leaves via leafRenderer(item).
+  // containerId: the DOM element id to render into.
+  function renderHierTree(containerId, items, levelDefs, leafRenderer, emptyMsg) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    if (!items || !items.length) {
+      el.textContent = emptyMsg || 'No data.';
+      return;
+    }
+    // Build nested map
+    function bucketize(arr, depth) {
+      if (depth >= levelDefs.length) return arr;
+      var def = levelDefs[depth];
+      var groups = {};
+      var order = [];
+      arr.forEach(function(it) {
+        var k = def.keyFn(it);
+        if (k == null || k === '') k = '(blank)';
+        if (!(k in groups)) { groups[k] = []; order.push(k); }
+        groups[k].push(it);
+      });
+      order.sort();
+      var nested = {};
+      order.forEach(function(k) { nested[k] = bucketize(groups[k], depth + 1); });
+      return { __order: order, __children: nested };
+    }
+    var tree = bucketize(items, 0);
+
+    // Stable id helper for collapsibles
+    var nodeIdSeq = 0;
+    function nextId() { return containerId + '-n' + (++nodeIdSeq); }
+
+    function countDescLeaves(subtree, depth) {
+      if (depth >= levelDefs.length) return subtree.length;
+      var sum = 0;
+      subtree.__order.forEach(function(k) {
+        sum += countDescLeaves(subtree.__children[k], depth + 1);
+      });
+      return sum;
+    }
+
+    function renderNode(subtree, depth) {
+      if (depth >= levelDefs.length) {
+        // Leaves
+        var rows = subtree.map(leafRenderer).join('');
+        return '<div class="ml-6 mt-1 mb-2"><table class="w-full text-xs border border-gray-200 rounded">' + rows + '</table></div>';
+      }
+      var def = levelDefs[depth];
+      var html = '';
+      subtree.__order.forEach(function(k) {
+        var child = subtree.__children[k];
+        var nid = nextId();
+        var leafCount = countDescLeaves(child, depth + 1);
+        // Resolve label/sublabel using the first item in this bucket so labelFn can read whole-item fields
+        var firstItem = (function dive(s, d) {
+          if (d >= levelDefs.length) return s[0];
+          return dive(s.__children[s.__order[0]], d + 1);
+        })(child, depth + 1);
+        var label = def.labelFn ? def.labelFn(k, firstItem) : k;
+        var sub = def.sublabelFn ? def.sublabelFn(k, firstItem) : '';
+        var indentClass = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
+        html += '<div class="' + indentClass + ' my-1">' +
+          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-gray-50 px-2 py-1 rounded" ' +
+                 'onclick="(function(b){var t=document.getElementById(\'' + nid + '\');if(!t)return;var open=t.classList.toggle(\'hidden\');b.querySelector(\'.hier-caret\').textContent=open?\'\\u25B6\':\'\\u25BC\';})(this)">' +
+            '<span class="hier-caret text-gray-400">\u25B6</span>' +
+            '<span class="font-mono font-medium text-gray-800">' + esc(label) + '</span>' +
+            (sub ? '<span class="text-xs text-gray-500">' + esc(sub) + '</span>' : '') +
+            '<span class="ml-auto text-[10px] text-gray-400">' + leafCount + ' record' + (leafCount === 1 ? '' : 's') + '</span>' +
+          '</button>' +
+          '<div id="' + nid + '" class="hidden">' + renderNode(child, depth + 1) + '</div>' +
+          '</div>';
+      });
+      return html;
+    }
+    el.innerHTML = renderNode(tree, 0);
+  }
+
+  // --- GL hierarchy: char[0] -> char[0:5] -> full saknr ---
+  window._renderGLHierarchy = function() {
+    var pad = function(s) { return (s || '').toString(); };
+    renderHierTree('gl-hier', _glData, [
+      {
+        keyFn: function(g) { return pad(g.saknr).charAt(0) || '?'; },
+        labelFn: function(k) { return k + 'xxxxxxxxx'; },
+        sublabelFn: function(k) { return 'Account class'; }
+      },
+      {
+        keyFn: function(g) { return pad(g.saknr).substring(0, 5) || '?'; },
+        labelFn: function(k) { return k + 'xxxxx'; },
+        sublabelFn: function(k) { return 'Account group'; }
+      }
+    ], function(g) {
+      return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono w-32">' + esc(g.saknr) + '</td>' +
+        '<td class="py-1 px-2">' + esc(g.txt20) + '</td>' +
+        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(g.txt50) + '</td>' +
+        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(g.glaccount_type || '') + '</td>' +
+        '</tr>';
+    }, 'No GL accounts loaded.');
+  };
+
+  // --- CC hierarchy: ccode -> cctrcgy -> cctr ---
+  window._renderCCHierarchy = function() {
+    renderHierTree('cc-hier', _ccData || [], [
+      {
+        keyFn: function(c) { return c.ccode || '(no entity)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Entity'; }
+      },
+      {
+        keyFn: function(c) { return c.cctrcgy || '(no category)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Category'; }
+      }
+    ], function(c) {
+      return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono w-32">' + esc(c.cctr) + '</td>' +
+        '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>' +
+        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(c.txtmi) + '</td>' +
+        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(c.responsible || '') + '</td>' +
+        '</tr>';
+    }, 'No cost centers loaded.');
+  };
+
+  // --- PC hierarchy: ccode -> segment -> pctr ---
+  window._renderPCHierarchy = function() {
+    renderHierTree('pc-hier', _pcData || [], [
+      {
+        keyFn: function(p) { return p.ccode || '(no entity)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Entity'; }
+      },
+      {
+        keyFn: function(p) { return p.segment || '(no segment)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Segment'; }
+      }
+    ], function(p) {
+      return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono w-32">' + esc(p.pctr) + '</td>' +
+        '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>' +
+        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(p.txtmi) + '</td>' +
+        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(p.responsible || '') + '</td>' +
+        '</tr>';
+    }, 'No profit centers loaded.');
+  };
+
+  // --- Entity hierarchy: country -> region -> ccode ---
+  // Note: _entityData is populated by loadEntities (set on window so this fn picks it up)
+  window._renderEntityHierarchy = function() {
+    var data = window._entityData || [];
+    renderHierTree('entities-hier', data, [
+      {
+        keyFn: function(e) { return e.country || '(no country)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Country'; }
+      },
+      {
+        keyFn: function(e) { return e.region || '(no region)'; },
+        labelFn: function(k) { return k; },
+        sublabelFn: function(k) { return 'Region'; }
+      }
+    ], function(e) {
+      return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono w-24">' + esc(e.ccode) + '</td>' +
+        '<td class="py-1 px-2">' + esc(e.name) + '</td>' +
+        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(e.city || '') + '</td>' +
+        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(e.currency || '') + '</td>' +
+        '</tr>';
+    }, 'No entities loaded.');
+  };
+
+  // --- View switchers (Tabular / Hierarchical) ---
+  function setToggleClasses(tabBtnId, hierBtnId, view) {
+    var on = 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium';
+    var off = 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
+    var tab = document.getElementById(tabBtnId);
+    var hier = document.getElementById(hierBtnId);
+    if (tab) tab.className = view === 'tabular' ? on : off;
+    if (hier) hier.className = view === 'hierarchy' ? on : off;
+  }
+  function showHide(showId, hideId) {
+    var s = document.getElementById(showId);
+    var h = document.getElementById(hideId);
+    if (s) s.classList.remove('hidden');
+    if (h) h.classList.add('hidden');
+  }
+  window.switchEntitiesView = function(view) {
+    setToggleClasses('entities-view-tabular', 'entities-view-hierarchy', view);
+    if (view === 'hierarchy') { showHide('entities-hier-wrap', 'entities-table-wrap'); _renderEntityHierarchy(); }
+    else { showHide('entities-table-wrap', 'entities-hier-wrap'); }
+  };
+  window.switchCCView = function(view) {
+    setToggleClasses('cc-view-tabular', 'cc-view-hierarchy', view);
+    if (view === 'hierarchy') { showHide('cc-hier-wrap', 'cc-tabular-wrap'); _renderCCHierarchy(); }
+    else { showHide('cc-tabular-wrap', 'cc-hier-wrap'); }
+  };
+  window.switchPCView = function(view) {
+    setToggleClasses('pc-view-tabular', 'pc-view-hierarchy', view);
+    if (view === 'hierarchy') { showHide('pc-hier-wrap', 'pc-tabular-wrap'); _renderPCHierarchy(); }
+    else { showHide('pc-tabular-wrap', 'pc-hier-wrap'); }
+  };
+  window.switchGLView = function(view) {
+    setToggleClasses('gl-view-tabular', 'gl-view-hierarchy', view);
+    if (view === 'hierarchy') { showHide('gl-hier-wrap', 'gl-tabular-wrap'); _renderGLHierarchy(); }
+    else { showHide('gl-tabular-wrap', 'gl-hier-wrap'); }
+  };
+  loadGL(1);
+  var _glSearch = document.getElementById('search-gl');
+  if (_glSearch) _glSearch.addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadGL(1); }, 300); });
 
   // --- Center Mapping ---
   var _mappingData = [];

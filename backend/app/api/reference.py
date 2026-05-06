@@ -13,6 +13,8 @@ from app.models.core import (
     CenterMapping,
     Employee,
     Entity,
+    GLAccountSKA1,
+    GLAccountSKB1,
     Hierarchy,
     HierarchyLeaf,
     HierarchyNode,
@@ -212,6 +214,100 @@ def list_legacy_pcs(
                 "is_active": p.is_active,
             }
             for p in pcs
+        ],
+    }
+
+
+@router.get("/legacy/gl-accounts")
+def list_legacy_gl_accounts(
+    db: Session = Depends(get_db),
+    pag: PaginationParams = Depends(pagination),
+    ktopl: str | None = None,
+    bukrs: str | None = None,
+    saknr: str | None = None,
+    search: str | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
+) -> dict:
+    """List GL accounts (chart-of-accounts level — SAP SKA1).
+
+    Returns the master record from SKA1 with optional company-code-level
+    description from SKB1 joined in (as ``stext_skb1`` and ``bukrs``) when
+    available. The hierarchical view in the frontend derives buckets from
+    the leading characters of ``saknr`` (1-char and 5-char prefixes).
+    """
+    query = select(GLAccountSKA1).order_by(GLAccountSKA1.saknr)
+    count_q = select(func.count(GLAccountSKA1.id))
+    if scope:
+        query = query.where(GLAccountSKA1.scope == scope)
+        count_q = count_q.where(GLAccountSKA1.scope == scope)
+    if data_category:
+        query = query.where(GLAccountSKA1.data_category == data_category)
+        count_q = count_q.where(GLAccountSKA1.data_category == data_category)
+    if ktopl:
+        query = query.where(GLAccountSKA1.ktopl == ktopl)
+        count_q = count_q.where(GLAccountSKA1.ktopl == ktopl)
+    if saknr:
+        query = query.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))
+        count_q = count_q.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            GLAccountSKA1.saknr.ilike(pattern)
+            | GLAccountSKA1.txt20.ilike(pattern)
+            | GLAccountSKA1.txt50.ilike(pattern)
+        )
+        count_q = count_q.where(
+            GLAccountSKA1.saknr.ilike(pattern)
+            | GLAccountSKA1.txt20.ilike(pattern)
+            | GLAccountSKA1.txt50.ilike(pattern)
+        )
+
+    total = db.execute(count_q).scalar() or 0
+    accounts = db.execute(
+        query.offset((pag.page - 1) * pag.size).limit(pag.size)
+    ).scalars().all()
+
+    # Optional SKB1 description lookup, scoped consistently with SKA1 query.
+    skb1_q = select(GLAccountSKB1)
+    if scope:
+        skb1_q = skb1_q.where(GLAccountSKB1.scope == scope)
+    if data_category:
+        skb1_q = skb1_q.where(GLAccountSKB1.data_category == data_category)
+    if bukrs:
+        skb1_q = skb1_q.where(GLAccountSKB1.bukrs == bukrs)
+    skb1_rows = db.execute(skb1_q).scalars().all()
+    # Index by saknr — first hit wins (frontend doesn't need every company-code)
+    skb1_by_saknr: dict[str, GLAccountSKB1] = {}
+    for r in skb1_rows:
+        if r.saknr not in skb1_by_saknr:
+            skb1_by_saknr[r.saknr] = r
+
+    return {
+        "total": total,
+        "page": pag.page,
+        "size": pag.size,
+        "items": [
+            {
+                "id": a.id,
+                "mandt": a.mandt,
+                "ktopl": a.ktopl,
+                "saknr": a.saknr,
+                "txt20": a.txt20,
+                "txt50": a.txt50,
+                "glaccount_type": a.glaccount_type,
+                "glaccount_subtype": a.glaccount_subtype,
+                "func_area": a.func_area,
+                "ktoks": a.ktoks,
+                "xbilk": a.xbilk,
+                "xloev": a.xloev,
+                "main_saknr": a.main_saknr,
+                # SKB1-derived (best-effort, may be None)
+                "bukrs": (skb1_by_saknr.get(a.saknr).bukrs if skb1_by_saknr.get(a.saknr) else None),
+                "stext_skb1": (skb1_by_saknr.get(a.saknr).stext if skb1_by_saknr.get(a.saknr) else None),
+                "waers": (skb1_by_saknr.get(a.saknr).waers if skb1_by_saknr.get(a.saknr) else None),
+            }
+            for a in accounts
         ],
     }
 
