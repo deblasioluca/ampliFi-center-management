@@ -1,0 +1,1312 @@
+#!/usr/bin/env python3
+# ruff: noqa: T201 S311
+"""Generate UBS-flavored sample data for ampliFi.
+
+Produces a realistic-looking corpus matching the user-requested defaults:
+  * 130k cost centers (configurable)
+  * 600 entities across ~20 countries (configurable)
+  * 12 months of historical balance data
+  * Entity hierarchy, 5 levels (Group → Region → Country → BU/Type → Entity)
+  * Cost center hierarchy, 6 levels (Bank → Division → Function → Dept → Team → CC)
+  * ~30% retire candidates, ~40% in 1:n PC migration groups, ~30% one-CC-one-PC
+
+The data is shaped after UBS AG's actual structure as documented in public
+filings (Q1 2026 report, US Resolution Plans, corporate governance pages):
+  - Five business divisions: GWM, P&C, Asset Mgmt, Investment Bank, Non-core/Legacy
+  - Real legal-entity names where they exist (UBS AG, UBS Switzerland AG,
+    UBS Europe SE, UBS Americas Inc, UBS Securities LLC, etc.) plus
+    plausible-but-fictional country branches to fill out the 600.
+  - Real city/country mix: Zurich/Basel/Geneva for CH; New York/Weehawken/
+    Stamford/Chicago/Nashville/Raleigh for US; London/Frankfurt/Luxembourg
+    for EMEA; HK/Singapore/Tokyo/Mumbai for APAC.
+  - Cost weights per division match the Q1 2026 operating-expense split:
+    GWM 50%, IB 26%, P&C 14%, AM 5%, NCL 3%, Group Items 2%.
+
+This is SAMPLE DATA. It is structurally inspired by UBS public disclosures
+but the cost centers, balance amounts, responsible owners and posting
+patterns are all generated. No internal UBS data is reproduced here.
+
+Usage
+-----
+    cd backend
+    python scripts/generate_sample_data.py            # 130k CCs default
+    python scripts/generate_sample_data.py --centers 5000  # smaller for testing
+    python scripts/generate_sample_data.py --reset    # wipe scope first
+    python scripts/generate_sample_data.py --seed 42  # reproducible
+
+The script writes everything to scope='cleanup' (the default app scope) using
+bulk inserts. On a Pi 5 with Postgres locally, expect ~3-5 minutes for the
+default 130k centers; on SQLite, expect ~10 minutes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import random
+import sys
+import time
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+# Make `app.*` imports work when run as a script.
+_HERE = Path(__file__).resolve().parent
+_BACKEND = _HERE.parent
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+
+# These come after sys.path adjustment.
+from sqlalchemy import delete  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
+
+from app.infra.db.session import SessionLocal  # noqa: E402
+from app.models.core import (  # noqa: E402
+    Balance,
+    Entity,
+    Hierarchy,
+    HierarchyLeaf,
+    HierarchyNode,
+    LegacyCostCenter,
+    LegacyProfitCenter,
+)
+
+SCOPE = "cleanup"
+DATA_CATEGORY = "legacy"
+COAREA = "UBS1"  # synthetic controlling area (CO area) for the whole UBS group
+
+
+# ── Domain knowledge: real UBS structure (from public filings) ────────────
+
+
+@dataclass(frozen=True)
+class Country:
+    code: str  # ISO 2-letter — used as SAP LAND1
+    name: str
+    currency: str
+    region: str  # one of: CH, EMEA, AMS, APAC
+    cities: tuple[str, ...]
+    weight: float  # relative count of entities (Switzerland and US dominate)
+
+
+COUNTRIES: tuple[Country, ...] = (
+    # Switzerland — heaviest concentration (head office + branches + UBS Switzerland AG)
+    Country(
+        "CH",
+        "Switzerland",
+        "CHF",
+        "CH",
+        ("Zurich", "Basel", "Geneva", "Lugano", "Lausanne", "Bern", "St. Gallen"),
+        80,
+    ),
+    # United States — second heaviest (UBS Americas Holding + many state subs)
+    Country(
+        "US",
+        "United States",
+        "USD",
+        "AMS",
+        ("New York", "Weehawken", "Stamford", "Chicago", "Nashville", "Raleigh"),
+        120,
+    ),
+    # United Kingdom
+    Country("GB", "United Kingdom", "GBP", "EMEA", ("London",), 40),
+    # Germany — UBS Europe SE headquarters
+    Country("DE", "Germany", "EUR", "EMEA", ("Frankfurt", "Munich", "Hamburg"), 30),
+    # Other EMEA
+    Country("LU", "Luxembourg", "EUR", "EMEA", ("Luxembourg",), 18),
+    Country("FR", "France", "EUR", "EMEA", ("Paris",), 14),
+    Country("IT", "Italy", "EUR", "EMEA", ("Milan", "Rome"), 12),
+    Country("ES", "Spain", "EUR", "EMEA", ("Madrid", "Barcelona"), 10),
+    Country("NL", "Netherlands", "EUR", "EMEA", ("Amsterdam",), 8),
+    Country("AT", "Austria", "EUR", "EMEA", ("Vienna",), 6),
+    Country("MC", "Monaco", "EUR", "EMEA", ("Monaco",), 4),
+    Country("JE", "Jersey", "GBP", "EMEA", ("Saint Helier",), 4),
+    Country("IE", "Ireland", "EUR", "EMEA", ("Dublin",), 6),
+    # APAC
+    Country("HK", "Hong Kong SAR", "HKD", "APAC", ("Hong Kong",), 35),
+    Country("SG", "Singapore", "SGD", "APAC", ("Singapore",), 30),
+    Country("JP", "Japan", "JPY", "APAC", ("Tokyo",), 22),
+    Country("AU", "Australia", "AUD", "APAC", ("Sydney", "Melbourne"), 12),
+    Country("IN", "India", "INR", "APAC", ("Mumbai", "Pune", "Hyderabad"), 18),
+    Country("CN", "China", "CNY", "APAC", ("Shanghai", "Beijing"), 10),
+    # Americas non-US
+    Country("BR", "Brazil", "BRL", "AMS", ("Sao Paulo",), 14),
+    Country("CA", "Canada", "CAD", "AMS", ("Toronto",), 10),
+    Country("MX", "Mexico", "MXN", "AMS", ("Mexico City",), 6),
+    Country("BM", "Bermuda", "USD", "AMS", ("Hamilton",), 4),
+    Country("KY", "Cayman Islands", "USD", "AMS", ("George Town",), 4),
+    # Middle East
+    Country("AE", "United Arab Emirates", "AED", "EMEA", ("Dubai", "Abu Dhabi"), 8),
+    Country("IL", "Israel", "ILS", "EMEA", ("Tel Aviv",), 5),
+)
+
+
+# Entity-name templates. These produce the real legal-entity name when one
+# exists, and a plausible synthetic name otherwise. The label after the
+# template is the "type" that drives the L4 of the entity hierarchy.
+ENTITY_TYPES: tuple[tuple[str, str], ...] = (
+    ("Operating", "{country_name} Operating Bank"),
+    ("Wealth", "Wealth Management {country_name}"),
+    ("AssetMgmt", "Asset Management ({country_name})"),
+    ("InvestmentBank", "Securities ({country_name})"),
+    ("Service", "Business Solutions ({country_name})"),
+)
+
+# A small registry of REAL UBS legal entities that should appear with their
+# official names. Picked from public filings. The rest are filled
+# synthetically.
+REAL_ENTITIES: tuple[tuple[str, str, str], ...] = (
+    # (country_code, type, real_name)
+    ("CH", "Operating", "UBS AG"),
+    ("CH", "Operating", "UBS Switzerland AG"),
+    ("CH", "AssetMgmt", "UBS Asset Management AG"),
+    ("CH", "AssetMgmt", "UBS Fund Management (Switzerland) AG"),
+    ("CH", "Service", "UBS Business Solutions AG"),
+    ("DE", "Operating", "UBS Europe SE"),
+    ("LU", "AssetMgmt", "UBS Fund Administration Services Luxembourg S.A."),
+    ("LU", "Operating", "UBS Europe SE, Luxembourg branch"),
+    ("US", "Operating", "UBS Americas Holding LLC"),
+    ("US", "Operating", "UBS Americas Inc."),
+    ("US", "InvestmentBank", "UBS Securities LLC"),
+    ("US", "Wealth", "UBS Financial Services Inc."),
+    ("US", "AssetMgmt", "UBS Asset Management (Americas) LLC"),
+    ("GB", "Operating", "UBS AG London Branch"),
+    ("GB", "AssetMgmt", "UBS Asset Management (UK) Ltd."),
+    ("HK", "Operating", "UBS AG Hong Kong Branch"),
+    ("HK", "InvestmentBank", "UBS Securities Hong Kong Ltd."),
+    ("HK", "AssetMgmt", "UBS Asset Management (Hong Kong) Ltd."),
+    ("SG", "Operating", "UBS AG Singapore Branch"),
+    ("SG", "InvestmentBank", "UBS Securities Pte. Ltd."),
+    ("SG", "AssetMgmt", "UBS Asset Management (Singapore) Ltd."),
+    ("JP", "Operating", "UBS AG Tokyo Branch"),
+    ("JP", "InvestmentBank", "UBS Securities Japan Co. Ltd."),
+    ("AU", "AssetMgmt", "UBS Asset Management (Australia) Ltd."),
+    # Former Credit Suisse entities — these are the natural retire candidates
+    # because the Q1 2026 report shows them being run off in Non-core & Legacy.
+    ("CH", "Operating", "Credit Suisse Services AG"),
+    ("SG", "Wealth", "Credit Suisse Trust Limited"),
+    ("BM", "Wealth", "Credit Suisse Life (Bermuda) Ltd."),
+    ("US", "InvestmentBank", "DLJ Mortgage Capital Inc."),
+)
+
+
+# Business divisions and their share of the cost-center population, taken
+# from the Q1 2026 operating-expense split (USD m): GWM 5,349 / IB 2,817 /
+# P&C 1,477 / AM 556 / NCL 319 / Group Items 260.
+@dataclass(frozen=True)
+class Division:
+    code: str
+    name: str
+    weight: float  # share of total CCs
+    retire_bias: float  # extra retire probability (0 = baseline 30%)
+    sharing_bias: float  # extra 1:n PC-sharing probability
+
+
+DIVISIONS: tuple[Division, ...] = (
+    Division("GWM", "Global Wealth Management", 50.0, 0.0, 0.0),
+    Division("IB", "Investment Bank", 26.0, 0.0, 0.10),  # IB has more shared infra
+    Division("PC", "Personal & Corporate Banking", 14.0, 0.0, 0.0),
+    Division("AM", "Asset Management", 5.0, 0.0, -0.10),
+    Division("NCL", "Non-core and Legacy", 3.0, 0.55, 0.0),  # mostly retired
+    Division("CC", "Group Items / Corporate Center", 2.0, 0.10, 0.20),  # support → shared PCs
+)
+
+
+# Function names by division — used as L3 of the CC hierarchy. Real UBS
+# functional taxonomy from annual reports.
+FUNCTIONS: dict[str, tuple[str, ...]] = {
+    "GWM": (
+        "Switzerland",
+        "EMEA",
+        "Americas",
+        "APAC",
+        "Mandates",
+        "Lending",
+        "Banking Products",
+        "Family Office",
+    ),
+    "IB": (
+        "Equities",
+        "FICC",
+        "Banking",
+        "Research",
+        "Capital Markets",
+        "Prime Services",
+        "Global Markets",
+    ),
+    "PC": (
+        "Retail Banking",
+        "Affluent",
+        "SME",
+        "Large Corporates",
+        "Real Estate Financing",
+        "Mortgages",
+        "Commodity Trade Finance",
+    ),
+    "AM": (
+        "Equities",
+        "Fixed Income",
+        "Multi-Asset",
+        "Hedge Funds",
+        "Real Estate",
+        "Sustainable Investing",
+        "Indexed Strategies",
+    ),
+    "NCL": ("Legacy IB", "Legacy WM", "Legacy P&C", "Run-off Portfolios", "Litigation Provisions"),
+    "CC": (
+        "Group Treasury",
+        "Group Risk Control",
+        "Group Compliance",
+        "Group Finance",
+        "Group Operations",
+        "Group Technology",
+        "Group HR",
+        "Group Internal Audit",
+        "Group Legal",
+    ),
+}
+
+# Sub-functions / department types. Used as L4 of the CC hierarchy.
+DEPARTMENTS: tuple[str, ...] = (
+    "Front Office",
+    "Middle Office",
+    "Back Office",
+    "Operations",
+    "Technology",
+    "Product Management",
+    "Sales",
+    "Trading",
+    "Advisory",
+    "Coverage",
+    "Structuring",
+    "Origination",
+    "Risk",
+    "Compliance",
+    "Finance",
+    "HR",
+    "Legal",
+    "Client Service",
+    "Reporting",
+    "Analytics",
+    "Project Office",
+)
+
+# Plausible team / desk names. L5 in the CC hierarchy.
+TEAM_SUFFIXES: tuple[str, ...] = (
+    "Team Alpha",
+    "Team Beta",
+    "Team Gamma",
+    "Team Delta",
+    "Team Epsilon",
+    "Desk 1",
+    "Desk 2",
+    "Desk 3",
+    "Desk 4",
+    "Desk 5",
+    "North",
+    "South",
+    "East",
+    "West",
+    "Central",
+    "Strategic",
+    "Tactical",
+    "Specialist",
+    "Generalist",
+    "Coverage",
+)
+
+
+# Sample person names for "responsible" owners. Mix of common Swiss-German,
+# Anglo, French, Italian and Asian names — UBS is multinational.
+FIRST_NAMES: tuple[str, ...] = (
+    "Anna",
+    "Marco",
+    "Sophie",
+    "Lukas",
+    "Elena",
+    "Jan",
+    "Mia",
+    "Felix",
+    "Léa",
+    "Antoine",
+    "Clara",
+    "Luca",
+    "Giulia",
+    "Matteo",
+    "Sofia",
+    "James",
+    "Sarah",
+    "Michael",
+    "Emma",
+    "David",
+    "Olivia",
+    "Wei",
+    "Mei",
+    "Hiroshi",
+    "Aiko",
+    "Priya",
+    "Arjun",
+    "Rohan",
+    "Ahmed",
+    "Fatima",
+    "Rafael",
+    "Camila",
+    "Lucas",
+    "Isabela",
+)
+LAST_NAMES: tuple[str, ...] = (
+    "Müller",
+    "Meier",
+    "Schmid",
+    "Weber",
+    "Fischer",
+    "Keller",
+    "Brunner",
+    "Steiner",
+    "Huber",
+    "Bachmann",
+    "Furrer",
+    "Stocker",
+    "Smith",
+    "Jones",
+    "Brown",
+    "Wilson",
+    "Taylor",
+    "Anderson",
+    "Dubois",
+    "Laurent",
+    "Martin",
+    "Bernard",
+    "Petit",
+    "Rossi",
+    "Bianchi",
+    "Conti",
+    "Ricci",
+    "Marino",
+    "Tanaka",
+    "Suzuki",
+    "Sato",
+    "Watanabe",
+    "Yamamoto",
+    "Wang",
+    "Li",
+    "Zhang",
+    "Liu",
+    "Chen",
+    "Patel",
+    "Sharma",
+    "Kumar",
+    "Singh",
+)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def make_full_name(rng: random.Random) -> str:
+    return f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}"
+
+
+def make_user_id(name: str, rng: random.Random) -> str:
+    """Plausible 8-char SAP user ID (e.g. 'amueller', 'jsmith42')."""
+    parts = name.lower().split()
+    initial = parts[0][0] if parts else "x"
+    last = parts[-1] if len(parts) > 1 else "user"
+    last_clean = "".join(c for c in last if c.isalpha())[:6]
+    suffix = "" if rng.random() < 0.4 else str(rng.randint(1, 99))
+    return f"{initial}{last_clean}{suffix}"[:12]
+
+
+def chunked(seq: list, size: int):
+    """Yield successive chunks of ``seq``."""
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
+def progress(label: str, n: int, total: int, started: float) -> None:
+    if total <= 0:
+        return
+    pct = n / total
+    elapsed = time.monotonic() - started
+    eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
+    bar_w = 32
+    filled = int(bar_w * pct)
+    bar = "█" * filled + "░" * (bar_w - filled)
+    sys.stdout.write(
+        f"\r  {label:24s} [{bar}] {n:>9,}/{total:<9,} ({pct * 100:5.1f}%)  "
+        f"elapsed {elapsed:5.1f}s  eta {eta:5.1f}s"
+    )
+    sys.stdout.flush()
+    if n >= total:
+        sys.stdout.write("\n")
+
+
+# ── Generation ────────────────────────────────────────────────────────────
+
+
+@dataclass
+class GeneratedEntity:
+    ccode: str
+    name: str
+    country: Country
+    city: str
+    type: str  # one of ENTITY_TYPES keys
+    division: Division  # which division dominates this entity (for CC distribution)
+    is_legacy_cs: bool
+
+
+@dataclass
+class GeneratedCC:
+    cctr: str
+    pctr: str
+    name: str
+    description: str
+    entity: GeneratedEntity
+    division: Division
+    function: str
+    department: str
+    team: str
+    responsible_name: str
+    responsible_user: str
+    will_retire: bool
+    pc_group_key: str  # cost centers sharing the same key share a PC (1:n migration)
+    is_pc_group_leader: bool
+    activity_level: float  # 0 (dead) … 1 (very active)
+
+
+def build_entities(rng: random.Random, target: int) -> list[GeneratedEntity]:
+    """Build the entity master, biased toward UBS's real geographic concentration."""
+    ents: list[GeneratedEntity] = []
+
+    # Step 1: seed the catalogue with real UBS legal entities first.
+    real_used: set[tuple[str, str, str]] = set()
+    for cc, ty, name in REAL_ENTITIES:
+        country = next(c for c in COUNTRIES if c.code == cc)
+        city = country.cities[0]
+        ents.append(
+            GeneratedEntity(
+                ccode="",  # filled below
+                name=name,
+                country=country,
+                city=city,
+                type=ty,
+                division=_division_for_type(ty, rng),
+                is_legacy_cs=name.startswith(("Credit Suisse", "DLJ")),
+            )
+        )
+        real_used.add((cc, ty, name))
+
+    # Step 2: fill the rest synthetically until we hit `target`.
+    pool: list[Country] = []
+    for c in COUNTRIES:
+        pool.extend([c] * int(c.weight))
+
+    while len(ents) < target:
+        country = rng.choice(pool)
+        type_code, template = rng.choice(ENTITY_TYPES)
+        # Avoid generating duplicate (country, type, generic-name) triples.
+        suffix = rng.randint(1, 9999)
+        name = template.format(country_name=country.name) + f" #{suffix:04d}"
+        city = rng.choice(country.cities)
+        ents.append(
+            GeneratedEntity(
+                ccode="",
+                name=name,
+                country=country,
+                city=city,
+                type=type_code,
+                division=_division_for_type(type_code, rng),
+                is_legacy_cs=False,
+            )
+        )
+
+    # Step 3: assign company codes (BUKRS) — 4-digit per country, sequential.
+    by_country: dict[str, int] = {}
+    for ent in ents:
+        seq = by_country.get(ent.country.code, 0) + 1
+        by_country[ent.country.code] = seq
+        # ccode pattern: 2-letter country + 2-digit running number — stable for re-runs given seed
+        ent.ccode = f"{ent.country.code}{seq:02d}"
+
+    rng.shuffle(ents)  # break clustering before downstream sampling
+    return ents
+
+
+def _division_for_type(type_code: str, rng: random.Random) -> Division:
+    """Map an entity type to a likely dominant division.
+
+    A WM legal entity hosts mostly GWM cost centers. An InvestmentBank entity
+    hosts IB cost centers. Operating banks host a mix. Service entities host
+    Corporate Center.
+    """
+    lookup: dict[str, str] = {
+        "Wealth": "GWM",
+        "InvestmentBank": "IB",
+        "AssetMgmt": "AM",
+        "Service": "CC",
+        "Operating": "PC",  # default — actual mix decided per CC later
+    }
+    target_code = lookup.get(type_code, "PC")
+    return next(d for d in DIVISIONS if d.code == target_code)
+
+
+def build_cost_centers(
+    rng: random.Random,
+    entities: list[GeneratedEntity],
+    target: int,
+    retire_pct: float,
+    sharing_pct: float,
+) -> list[GeneratedCC]:
+    """Generate `target` cost centers spread across the entities.
+
+    Distribution is weighted by division cost-share AND by entity dominant
+    division — entities classified as Wealth/IB/AM see most of their cost
+    centers from that division.
+
+    The ``retire_pct`` and ``sharing_pct`` parameters are interpreted as
+    TOTAL shares of the cost-center population (not conditional). Internally
+    we convert ``sharing_pct`` to a per-non-retire probability so the math
+    works out:  share_among_alive = sharing_pct / (1 - retire_pct).
+
+    The shared cost centers end up in PC groups of 2–6 members each — that's
+    the canonical SAP m:1 migration shape (a small handful of cost centers
+    rolled into a single profit center). Larger groups would be unrealistic;
+    a group of 1 isn't actually shared.
+    """
+    # Convert sharing_pct (total share) into the conditional probability we
+    # check against rng.random() inside the per-CC loop.
+    share_among_alive = min(0.99, sharing_pct / (1 - retire_pct)) if retire_pct < 1 else 0.0
+
+    # Step 1: decide how many CCs each entity hosts. Real UBS concentration
+    # is heavy on a few large entities (UBS AG, UBS Switzerland AG, UBS
+    # Americas Inc, UBS Europe SE) so we use a power-law instead of uniform.
+    weights = []
+    for ent in entities:
+        # Real entities get a 5x boost — UBS AG alone hosts thousands of CCs.
+        is_real = any(ent.name == real_name for _, _, real_name in REAL_ENTITIES)
+        base = 1.0 + rng.expovariate(1.0)  # exponential tail
+        weights.append(base * (5.0 if is_real else 1.0))
+
+    total_weight = sum(weights)
+    quotas = [max(1, int(target * w / total_weight)) for w in weights]
+    # Adjust to hit target exactly.
+    while sum(quotas) < target:
+        quotas[rng.randrange(len(quotas))] += 1
+    while sum(quotas) > target:
+        idx = rng.randrange(len(quotas))
+        if quotas[idx] > 1:
+            quotas[idx] -= 1
+
+    # Step 2: walk each entity, mint cost centers.
+    ccs: list[GeneratedCC] = []
+    cctr_counter = 1000
+
+    for ent, quota in zip(entities, quotas, strict=True):
+        # Decide division mix per CC. The Q1 2026 expense split gives the
+        # global target shares (GWM 50, IB 26, P&C 14, AM 5, NCL 3, CC 2).
+        # We respect that as the primary driver, then add a 30% entity-flavour
+        # bias — an entity classified as Wealth still hosts mostly GWM CCs,
+        # but real UBS shows that Operating-bank entities (UBS AG, UBS
+        # Switzerland AG) host every division simultaneously.
+        for _ in range(quota):
+            if rng.random() < 0.15:
+                # Entity-flavour pick — biased toward the entity's "type"
+                # but only 15% of the time, so the global mix survives.
+                div = ent.division
+            else:
+                # Global-share pick — sample by Q1 2026 expense share.
+                div = _weighted_choice(rng, [(d, d.weight) for d in DIVISIONS])
+
+            # Legacy CS entities should host mostly NCL — they ARE the
+            # legacy book per the Q1 2026 report.
+            if ent.is_legacy_cs and rng.random() < 0.85:
+                div = next(d for d in DIVISIONS if d.code == "NCL")
+
+            function = rng.choice(FUNCTIONS[div.code])
+            department = rng.choice(DEPARTMENTS)
+            team = rng.choice(TEAM_SUFFIXES)
+            resp_name = make_full_name(rng)
+            resp_user = make_user_id(resp_name, rng)
+
+            # Retire decision — div bias on top of base rate.
+            retire_p = retire_pct + div.retire_bias
+            will_retire = rng.random() < retire_p
+
+            # PC sharing decision is made post-hoc in step 3 below,
+            # using the same retire flag and a deterministic offshoot RNG
+            # so we can later assemble groups bucket by bucket.
+
+            # Activity level shapes posting counts and balance amounts.
+            if will_retire:
+                activity = rng.uniform(0.0, 0.05)  # near-dead
+            elif div.code == "NCL":
+                activity = rng.uniform(0.0, 0.2)  # winding down
+            else:
+                activity = max(0.05, min(1.0, rng.gauss(0.55, 0.22)))
+
+            cctr_counter += 1
+            cctr_code = f"{cctr_counter:08d}"
+
+            description = f"{div.name} / {function} / {department} / {team}"
+            short_name = f"{div.code}-{function[:8]}-{team[:8]}"[:40]
+
+            ccs.append(
+                GeneratedCC(
+                    cctr=cctr_code,
+                    pctr="",  # filled in step 3 below — depends on group assembly
+                    name=short_name,
+                    description=description,
+                    entity=ent,
+                    division=div,
+                    function=function,
+                    department=department,
+                    team=team,
+                    responsible_name=resp_name,
+                    responsible_user=resp_user,
+                    will_retire=will_retire,
+                    pc_group_key="",
+                    is_pc_group_leader=False,
+                    activity_level=activity,
+                )
+            )
+
+    # Step 3: assemble PC groups for the will_share CCs.
+    # Bucket sharing CCs by (entity, division, function), then within each
+    # bucket split into chunks of 2–6 (target ~3 per group). CCs in the same
+    # chunk share a PC; the chunk's most-active CC is the leader.
+    # Re-mark which of those actually want to share (we haven't set the flag
+    # because we wanted to assign group keys post-hoc). The earlier loop set
+    # `will_share` locally; persist it via a sentinel on `pc_group_key` ==
+    # 'SHARE' for now.
+    # … but we already lost `will_share` outside the loop. Capture it on the
+    # CC object via a temporary attribute set in the loop above instead.
+    # See the loop: we set will_share but never stored it on the CC. Fix that
+    # by re-deriving from the same RNG state? Cleanest: re-roll quickly
+    # using the same parameters but a separate RNG seeded from the original.
+    # Simpler: do the bucketing inline in the main loop. Let's restructure.
+
+    # … but the cleanest fix is to keep the will_share flag on the CC. Done
+    # via a small additional field — we use a non-empty pc_group_key as the
+    # marker. Re-roll deterministically: same `share_p` per CC.
+    rng2 = random.Random(rng.random())  # deterministic offshoot
+    buckets: dict[tuple[str, str, str], list[GeneratedCC]] = {}
+    for cc in ccs:
+        if cc.will_retire:
+            continue
+        share_p_cc = share_among_alive + cc.division.sharing_bias
+        if rng2.random() < share_p_cc:
+            key = (cc.entity.ccode, cc.division.code, cc.function)
+            buckets.setdefault(key, []).append(cc)
+
+    # Split each bucket into chunks of size 2–6. Singletons (only 1 CC in the
+    # bucket) become non-shared (their own PC).
+    for (ec, dc, fn), bucket_ccs in buckets.items():
+        if len(bucket_ccs) < 2:
+            continue
+        # Random chunk sizes summing to len(bucket_ccs); target chunk = 3.
+        rng2.shuffle(bucket_ccs)
+        i = 0
+        chunk_idx = 0
+        # Sanitise the function name into a stable group-key segment. We
+        # used a 6-char prefix earlier but several Corporate Center
+        # functions ('Group Treasury', 'Group Risk', etc.) collapsed to
+        # the same prefix and produced bogus shared groups across them.
+        fn_safe = fn.replace(" ", "_").replace("&", "and").replace("/", "_").upper()[:20]
+        while i < len(bucket_ccs):
+            size = min(rng2.randint(2, 6), len(bucket_ccs) - i)
+            if size < 2:
+                break  # leave the last 1 as non-shared
+            chunk = bucket_ccs[i : i + size]
+            group_key = f"{ec}-{dc}-{fn_safe}-G{chunk_idx:02d}"[:38]
+            for cc in chunk:
+                cc.pc_group_key = group_key
+                cc.pctr = group_key
+            # Promote most-active CC as leader (matters for the m:1 detector).
+            leader = max(chunk, key=lambda c: c.activity_level)
+            leader.is_pc_group_leader = True
+            i += size
+            chunk_idx += 1
+
+    # Step 4: every remaining CC (not in a sharing group) gets its own PC.
+    for cc in ccs:
+        if not cc.pctr:
+            cc.pctr = f"P{cc.cctr[1:]}"
+            cc.is_pc_group_leader = True
+
+    return ccs
+
+
+def _weighted_choice(rng: random.Random, items: list[tuple]) -> object:
+    total = sum(w for _, w in items)
+    r = rng.random() * total
+    cumulative = 0.0
+    for item, w in items:
+        cumulative += w
+        if r < cumulative:
+            return item
+    return items[-1][0]
+
+
+# ── Database write ────────────────────────────────────────────────────────
+
+
+def reset_scope(session: Session) -> None:
+    """Wipe all data in the `cleanup` scope so we can start fresh.
+
+    Order matters because of foreign keys.
+    """
+    print("Resetting scope='cleanup'...")
+    # Use raw deletes to avoid relationship cascade overhead.
+    session.execute(delete(Balance).where(Balance.scope == SCOPE))
+    session.execute(
+        delete(HierarchyLeaf).where(
+            HierarchyLeaf.hierarchy_id.in_(
+                session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
+            )
+        )
+    )
+    session.execute(
+        delete(HierarchyNode).where(
+            HierarchyNode.hierarchy_id.in_(
+                session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
+            )
+        )
+    )
+    session.execute(delete(Hierarchy).where(Hierarchy.scope == SCOPE))
+    session.execute(delete(LegacyProfitCenter).where(LegacyProfitCenter.scope == SCOPE))
+    session.execute(delete(LegacyCostCenter).where(LegacyCostCenter.scope == SCOPE))
+    session.execute(delete(Entity).where(Entity.scope == SCOPE))
+    session.commit()
+    print("  done.")
+
+
+def insert_entities(session: Session, entities: list[GeneratedEntity]) -> None:
+    started = time.monotonic()
+    rows = [
+        {
+            "scope": SCOPE,
+            "data_category": DATA_CATEGORY,
+            "ccode": ent.ccode,
+            "name": ent.name,
+            "city": ent.city,
+            "country": ent.country.code,
+            "region": ent.country.region,
+            "currency": ent.country.currency,
+            "language": "EN",
+            "chart_of_accounts": "UBS01",
+        }
+        for ent in entities
+    ]
+    n = 0
+    total = len(rows)
+    for chunk in chunked(rows, 1000):
+        session.bulk_insert_mappings(Entity, chunk)
+        n += len(chunk)
+        progress("entities", n, total, started)
+    session.commit()
+
+
+def insert_cost_centers(session: Session, ccs: list[GeneratedCC], today: date) -> None:
+    """Bulk insert legacy_cost_center."""
+    started = time.monotonic()
+    far_future = "99991231"
+
+    rows: list[dict] = []
+    for cc in ccs:
+        # SAP date fields: datab=valid-from, datbi=valid-to. Retire candidates
+        # get a past datbi (already expired) to make their status realistic.
+        datbi = (
+            (today.replace(day=1).toordinal() - 365 * 2)  # >2y expired
+            and date.fromordinal(today.toordinal() - 365 * 2).strftime("%Y%m%d")
+            if cc.will_retire and cc.activity_level == 0
+            else far_future
+        )
+        rows.append(
+            {
+                "scope": SCOPE,
+                "data_category": DATA_CATEGORY,
+                "coarea": COAREA,
+                "cctr": cc.cctr,
+                "txtsh": cc.name,
+                "txtmi": cc.description,
+                "datab": "20200101",
+                "datbi": datbi,
+                "ccode": cc.entity.ccode,
+                "responsible": cc.responsible_name,
+                "verak_user": cc.responsible_user,
+                "currency": cc.entity.country.currency,
+                "pctr": cc.pctr,
+                "land1": cc.entity.country.code,
+                "name1": cc.responsible_name,
+                "ort01": cc.entity.city,
+                "ersda": "20200101",
+                "usnam": "GENSCRIPT",
+            }
+        )
+
+    n = 0
+    total = len(rows)
+    for chunk in chunked(rows, 2000):
+        session.bulk_insert_mappings(LegacyCostCenter, chunk)
+        n += len(chunk)
+        progress("cost centers", n, total, started)
+    session.commit()
+
+
+def insert_profit_centers(session: Session, ccs: list[GeneratedCC]) -> None:
+    """One profit center per *unique* pctr code.
+
+    Group leaders get a friendly description; group followers don't get their
+    own PC row at all (they share the leader's PC). This is the m:1 migration
+    case the V2 pipeline is supposed to detect.
+    """
+    started = time.monotonic()
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for cc in ccs:
+        if cc.pctr in seen:
+            continue
+        seen.add(cc.pctr)
+        rows.append(
+            {
+                "scope": SCOPE,
+                "data_category": DATA_CATEGORY,
+                "coarea": COAREA,
+                "pctr": cc.pctr,
+                "txtsh": cc.name,
+                "txtmi": cc.description,
+                "datab": "20200101",
+                "datbi": "99991231",
+                "ccode": cc.entity.ccode,
+                "responsible": cc.responsible_name,
+                "verak_user": cc.responsible_user,
+                "currency": cc.entity.country.currency,
+                "department": cc.department,
+                "land1": cc.entity.country.code,
+                "name1": cc.responsible_name,
+                "ort01": cc.entity.city,
+                "ersda": "20200101",
+                "usnam": "GENSCRIPT",
+            }
+        )
+
+    n = 0
+    total = len(rows)
+    for chunk in chunked(rows, 2000):
+        session.bulk_insert_mappings(LegacyProfitCenter, chunk)
+        n += len(chunk)
+        progress("profit centers", n, total, started)
+    session.commit()
+
+
+def insert_balances(
+    session: Session,
+    rng: random.Random,
+    ccs: list[GeneratedCC],
+    months: int,
+    today: date,
+) -> None:
+    """Generate `months` months of balance data per cost center.
+
+    Realistic features:
+      * Active CCs have a noisy monthly cost trend.
+      * NCL / retire candidates have zero or near-zero amounts.
+      * Posting count correlates with activity level.
+      * Per-period currency = entity currency; gc_amt translated to USD.
+    """
+    started = time.monotonic()
+    fx_to_usd = {
+        "USD": 1.00,
+        "CHF": 1.10,
+        "EUR": 1.06,
+        "GBP": 1.27,
+        "HKD": 0.13,
+        "SGD": 0.74,
+        "JPY": 0.0064,
+        "AUD": 0.66,
+        "INR": 0.012,
+        "CNY": 0.14,
+        "BRL": 0.20,
+        "CAD": 0.74,
+        "MXN": 0.058,
+        "AED": 0.272,
+        "ILS": 0.27,
+    }
+
+    # Build (year, period) list — last `months` months, period=1..12 of fiscal year.
+    periods: list[tuple[int, int]] = []
+    y, m = today.year, today.month
+    for _ in range(months):
+        periods.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    periods.reverse()
+
+    # For each CC, decide a baseline monthly cost (USD-equivalent) based on
+    # division and activity. Big IB trading desks: USD millions/month. Small
+    # back-office team: USD tens of thousands.
+    baselines = []
+    for cc in ccs:
+        scale = {
+            "GWM": 1_500_000,
+            "IB": 3_000_000,
+            "PC": 600_000,
+            "AM": 900_000,
+            "NCL": 200_000,
+            "CC": 400_000,
+        }[cc.division.code]
+        baseline_usd = scale * cc.activity_level * rng.uniform(0.4, 1.6)
+        baselines.append(baseline_usd)
+
+    rows_buffer: list[dict] = []
+    n = 0
+    total = len(ccs) * len(periods)
+    batch_size = 5000
+
+    for cc, baseline_usd in zip(ccs, baselines, strict=True):
+        currency = cc.entity.country.currency
+        fx = fx_to_usd.get(currency, 1.0)
+        for fy, period in periods:
+            # Monthly variation: ±25% noise around baseline, plus a slight
+            # uptrend through the year (real cost growth).
+            noise = rng.gauss(1.0, 0.12)
+            trend = 1.0 + (period - 6) * 0.005
+            monthly_usd = max(0.0, baseline_usd * noise * trend)
+            tc_amt = Decimal(str(round(monthly_usd / fx, 2))) if fx else Decimal("0.00")
+            gc_amt = Decimal(str(round(monthly_usd, 2)))
+            posting_count = (
+                0
+                if cc.will_retire and rng.random() < 0.85
+                else max(0, int(rng.gauss(40 * cc.activity_level, 8)))
+            )
+            rows_buffer.append(
+                {
+                    "scope": SCOPE,
+                    "data_category": DATA_CATEGORY,
+                    "coarea": COAREA,
+                    "cctr": cc.cctr,
+                    "ccode": cc.entity.ccode,
+                    "fiscal_year": fy,
+                    "period": period,
+                    "account": "9000",  # synthetic personnel cost account
+                    "account_class": "PERS",
+                    "tc_amt": tc_amt,
+                    "gc_amt": gc_amt,
+                    "currency_tc": currency,
+                    "currency_gc": "USD",
+                    "posting_count": posting_count,
+                }
+            )
+            if len(rows_buffer) >= batch_size:
+                session.bulk_insert_mappings(Balance, rows_buffer)
+                n += len(rows_buffer)
+                rows_buffer.clear()
+                progress("balances", n, total, started)
+
+    if rows_buffer:
+        session.bulk_insert_mappings(Balance, rows_buffer)
+        n += len(rows_buffer)
+        progress("balances", n, total, started)
+    session.commit()
+
+
+# ── Hierarchies ───────────────────────────────────────────────────────────
+
+
+def build_entity_hierarchy(session: Session, entities: list[GeneratedEntity]) -> None:
+    """5-level entity hierarchy: Group → Region → Country → Type → Entity.
+
+    Stored as a single ``Hierarchy`` row with setclass='ENT' plus parent→child
+    edges in ``hierarchy_node`` and the entity-ccode leaves in
+    ``hierarchy_leaf``.
+    """
+    print("Building entity hierarchy...")
+    h = Hierarchy(
+        scope=SCOPE,
+        data_category=DATA_CATEGORY,
+        setclass="ENT",
+        setname="UBS_GROUP_ENT",
+        label="UBS Group entity hierarchy",
+        description="Group → Region → Country → Type → Entity (5 levels)",
+        coarea=COAREA,
+        is_active=True,
+    )
+    session.add(h)
+    session.flush()
+    hid = h.id
+
+    nodes: list[dict] = []
+    leaves: list[dict] = []
+
+    # L1 → L2: Group → Regions
+    regions = {ent.country.region for ent in entities}
+    for region in sorted(regions):
+        nodes.append(
+            {
+                "hierarchy_id": hid,
+                "parent_setname": "UBS_GROUP_ENT",
+                "child_setname": f"REG_{region}",
+                "seq": 0,
+            }
+        )
+
+    # L2 → L3: Region → Country
+    seen_country = set()
+    for ent in entities:
+        key = (ent.country.region, ent.country.code)
+        if key in seen_country:
+            continue
+        seen_country.add(key)
+        nodes.append(
+            {
+                "hierarchy_id": hid,
+                "parent_setname": f"REG_{ent.country.region}",
+                "child_setname": f"CTRY_{ent.country.code}",
+                "seq": 0,
+            }
+        )
+
+    # L3 → L4: Country → Type
+    seen_type = set()
+    for ent in entities:
+        key = (ent.country.code, ent.type)
+        if key in seen_type:
+            continue
+        seen_type.add(key)
+        nodes.append(
+            {
+                "hierarchy_id": hid,
+                "parent_setname": f"CTRY_{ent.country.code}",
+                "child_setname": f"TYPE_{ent.country.code}_{ent.type}",
+                "seq": 0,
+            }
+        )
+
+    # L4 → L5 (entity-as-set name) and leaves under it
+    for ent in entities:
+        type_set = f"TYPE_{ent.country.code}_{ent.type}"
+        ent_set = f"ENT_{ent.ccode}"
+        nodes.append(
+            {
+                "hierarchy_id": hid,
+                "parent_setname": type_set,
+                "child_setname": ent_set,
+                "seq": 0,
+            }
+        )
+        leaves.append(
+            {
+                "hierarchy_id": hid,
+                "setname": ent_set,
+                "value": ent.ccode,
+                "seq": 0,
+            }
+        )
+
+    for chunk in chunked(nodes, 5000):
+        session.bulk_insert_mappings(HierarchyNode, chunk)
+    for chunk in chunked(leaves, 5000):
+        session.bulk_insert_mappings(HierarchyLeaf, chunk)
+    session.commit()
+    print(f"  entity hierarchy: {len(nodes)} edges, {len(leaves)} leaves")
+
+
+def build_cc_hierarchy(session: Session, ccs: list[GeneratedCC]) -> None:
+    """6-level CC hierarchy: Bank → Division → Function → Dept → Team → CC.
+
+    The leaves are CC codes (KOSTL). ``hierarchy_leaf.value`` stores the cctr
+    so leaf-level lookups work the same way as in the V2 routines.
+    """
+    print("Building cost center hierarchy...")
+    h = Hierarchy(
+        scope=SCOPE,
+        data_category=DATA_CATEGORY,
+        setclass="CC",
+        setname="UBS_GROUP_CC",
+        label="UBS Group cost center hierarchy",
+        description="Bank → Division → Function → Dept → Team → CC (6 levels)",
+        coarea=COAREA,
+        is_active=True,
+    )
+    session.add(h)
+    session.flush()
+    hid = h.id
+
+    nodes: list[dict] = []
+    leaves: list[dict] = []
+
+    # Build a single canonical setname per (level, division, function, dept, team)
+    # so the same parent isn't repeated. Use a set to dedupe edges.
+    edges: set[tuple[str, str]] = set()
+    leaf_keys: list[tuple[str, str]] = []
+    started = time.monotonic()
+    total = len(ccs)
+
+    for i, cc in enumerate(ccs):
+        l2 = f"DIV_{cc.division.code}"
+        # Truncate function/dept/team to keep setname under DB cap (40 chars).
+        fn_safe = cc.function.replace(" ", "_").replace("&", "and").replace("/", "_")[:12]
+        dp_safe = cc.department.replace(" ", "_")[:8]
+        tm_safe = cc.team.replace(" ", "_")[:8]
+        l3 = f"FN_{cc.division.code}_{fn_safe}"[:40]
+        l4 = f"DP_{cc.division.code}_{fn_safe}_{dp_safe}"[:40]
+        l5 = f"TM_{cc.division.code}_{fn_safe}_{dp_safe}_{tm_safe}"[:40]
+
+        edges.add(("UBS_GROUP_CC", l2))
+        edges.add((l2, l3))
+        edges.add((l3, l4))
+        edges.add((l4, l5))
+        leaf_keys.append((l5, cc.cctr))
+
+        if i % 5000 == 0:
+            progress("cc hierarchy build", i, total, started)
+    progress("cc hierarchy build", total, total, started)
+
+    for parent, child in edges:
+        nodes.append(
+            {
+                "hierarchy_id": hid,
+                "parent_setname": parent,
+                "child_setname": child,
+                "seq": 0,
+            }
+        )
+    for setname, value in leaf_keys:
+        leaves.append(
+            {
+                "hierarchy_id": hid,
+                "setname": setname,
+                "value": value,
+                "seq": 0,
+            }
+        )
+
+    started = time.monotonic()
+    n = 0
+    for chunk in chunked(nodes, 5000):
+        session.bulk_insert_mappings(HierarchyNode, chunk)
+        n += len(chunk)
+        progress("cc hierarchy nodes", n, len(nodes), started)
+
+    started = time.monotonic()
+    n = 0
+    for chunk in chunked(leaves, 5000):
+        session.bulk_insert_mappings(HierarchyLeaf, chunk)
+        n += len(chunk)
+        progress("cc hierarchy leaves", n, len(leaves), started)
+
+    session.commit()
+    print(f"  cc hierarchy: {len(nodes)} edges, {len(leaves)} leaves")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate UBS-flavored sample data for ampliFi.")
+    parser.add_argument(
+        "--centers",
+        type=int,
+        default=130_000,
+        help="Number of cost centers to generate (default: 130000)",
+    )
+    parser.add_argument(
+        "--entities", type=int, default=600, help="Number of legal entities (default: 600)"
+    )
+    parser.add_argument(
+        "--months", type=int, default=12, help="Months of historical balances (default: 12)"
+    )
+    parser.add_argument(
+        "--retire-pct",
+        type=float,
+        default=0.30,
+        help="Target share of retire candidates (default: 0.30)",
+    )
+    parser.add_argument(
+        "--sharing-pct",
+        type=float,
+        default=0.40,
+        help="Target share of CCs in 1:n PC groups (default: 0.40)",
+    )
+    parser.add_argument("--seed", type=int, default=20260506, help="RNG seed for reproducibility")
+    parser.add_argument(
+        "--reset", action="store_true", help="Wipe the cleanup scope before generating"
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Plan only, don't write to DB")
+    args = parser.parse_args()
+
+    rng = random.Random(args.seed)
+    today = date.today()
+
+    print("ampliFi sample-data generator")
+    print(f"  centers   : {args.centers:>10,}")
+    print(f"  entities  : {args.entities:>10,}")
+    print(f"  months    : {args.months:>10}")
+    print(f"  retire    : {args.retire_pct:>10.1%}")
+    print(f"  sharing   : {args.sharing_pct:>10.1%}")
+    print(f"  seed      : {args.seed:>10}")
+    print(f"  scope     : {SCOPE}")
+    print(f"  coarea    : {COAREA}")
+    print()
+
+    print(f"Database: {os.environ.get('DATABASE_URL', '(default)')}")
+    if args.dry_run:
+        print("(dry-run — no DB writes)")
+
+    # Phase 1: build in-memory plan
+    t_start = time.monotonic()
+    print("\n[1/5] Planning entities...")
+    entities = build_entities(rng, args.entities)
+    n_countries = len({e.country.code for e in entities})
+    print(f"  generated {len(entities)} entities across {n_countries} countries")
+
+    print("\n[2/5] Planning cost centers...")
+    ccs = build_cost_centers(rng, entities, args.centers, args.retire_pct, args.sharing_pct)
+    n_retire = sum(1 for c in ccs if c.will_retire)
+    n_share = sum(1 for c in ccs if c.pc_group_key)
+    n_unique_pc = len({c.pctr for c in ccs})
+    print(f"  generated {len(ccs):,} cost centers")
+    print(f"    retire candidates: {n_retire:,} ({n_retire / len(ccs):.1%})")
+    print(f"    in 1:n PC groups: {n_share:,} ({n_share / len(ccs):.1%})")
+    print(f"    distinct PCs:     {n_unique_pc:,} (CC:PC ratio = {len(ccs) / n_unique_pc:.2f})")
+
+    if args.dry_run:
+        return 0
+
+    # Phase 2: write
+    db_url = os.environ.get("DATABASE_URL", "")
+    print(f"\nUsing DB: {db_url or '(default from app config)'}")
+
+    with SessionLocal() as session:
+        if args.reset:
+            reset_scope(session)
+
+        print("\n[3/5] Inserting entities...")
+        insert_entities(session, entities)
+
+        print("\n[4/5] Inserting cost centers + profit centers...")
+        insert_cost_centers(session, ccs, today)
+        insert_profit_centers(session, ccs)
+
+        print("\n[5/5] Inserting balances + hierarchies...")
+        insert_balances(session, rng, ccs, args.months, today)
+        build_entity_hierarchy(session, entities)
+        build_cc_hierarchy(session, ccs)
+
+    elapsed = time.monotonic() - t_start
+    print(f"\n✓ Done in {elapsed:.1f}s.")
+    print("\nSample queries:")
+    print("  -- count by division:")
+    # These are docs strings — false positive flagged S608 (SQL injection
+    # vector). The user just sees these printed in the terminal.
+    print(f"  SELECT txtmi FROM cleanup.legacy_cost_center WHERE scope='{SCOPE}' LIMIT 5;")  # noqa: S608
+    print(f"  SELECT count(*) FROM cleanup.balance WHERE scope='{SCOPE}';")  # noqa: S608
+    print("\nNext: open http://YOUR-PI/cockpit and create a wave with this scope.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
