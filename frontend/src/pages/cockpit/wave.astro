@@ -360,10 +360,23 @@ import Layout from '../../components/layout/Layout.astro';
             <option value="entity">By Entity</option>
             <option value="hierarchy_node">By Hierarchy Node</option>
             <option value="list">By CC List</option>
-          </select></div>
+          </select>
+          <p id="sf-type-help" class="text-[11px] text-gray-500 mt-1"></p>
+        </div>
         <div><label class="block text-xs font-medium mb-1">Reviewer Name</label><input id="sf-reviewer" class="input text-sm" /></div>
         <div><label class="block text-xs font-medium mb-1">Reviewer Email</label><input id="sf-email" type="email" class="input text-sm" /></div>
-        <div><label class="block text-xs font-medium mb-1">Entity Filter (comma-separated ccodes)</label><input id="sf-ccodes" class="input text-sm" placeholder="1000,2000" /></div>
+        <div id="sf-entity-wrap"><label class="block text-xs font-medium mb-1">Entity Filter (comma-separated ccodes)</label><input id="sf-ccodes" class="input text-sm" placeholder="1000,2000" /></div>
+        <div id="sf-hier-wrap" class="hidden">
+          <label class="block text-xs font-medium mb-1">Hierarchy Node</label>
+          <div class="flex gap-2">
+            <select id="sf-hier-id" class="input text-sm flex-1">
+              <option value="">-- Pick a hierarchy --</option>
+            </select>
+            <select id="sf-hier-node" class="input text-sm flex-1" disabled>
+              <option value="">-- Pick a hierarchy first --</option>
+            </select>
+          </div>
+        </div>
         <div class="flex justify-end gap-2 pt-2">
           <button type="button" onclick="document.getElementById('scope-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
           <button type="submit" class="btn-amplifi">Create</button>
@@ -373,6 +386,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 </Layout>
 
+<script src="/ui-prompts.js" is:inline></script>
 <script is:inline>
 (function() {
   var token = localStorage.getItem('amplifi_token');
@@ -630,7 +644,7 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('btn-confirm-add').addEventListener('click', async function() {
     var cbs = document.querySelectorAll('.entity-cb:checked');
     var ccodes = []; cbs.forEach(function(cb) { ccodes.push(cb.value); });
-    if (!ccodes.length) { alert('No entities selected.'); return; }
+    if (!ccodes.length) { uiAlert('No entities selected.'); return; }
     await fetch('/api/waves/' + waveId + '/entities', {
       method: 'POST', headers: jsonHdr, body: JSON.stringify({ ccodes: ccodes })
     });
@@ -784,7 +798,7 @@ import Layout from '../../components/layout/Layout.astro';
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Analysis failed');
       loadRuns(); loadWave();
-    } catch(e) { alert('Error: ' + e.message); }
+    } catch(e) { uiAlert('Error: ' + e.message); }
     document.getElementById('btn-run-analysis').disabled = false;
     document.getElementById('btn-run-analysis').textContent = 'Run Analysis';
   };
@@ -792,7 +806,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   window.proposeRun = async function(runId) {
     var res = await fetch('/api/waves/' + waveId + '/propose/' + runId, { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail); return; }
     loadRuns(); loadWave();
   };
 
@@ -911,21 +925,103 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadScopes();
 
+  // ── Scope-form context-sensitive UX ──────────────────────────────
+  // The fields a reviewer needs to fill depend on scope_type:
+  //   entity, list  → Entity filter is relevant; hierarchy block is hidden
+  //   hierarchy_node → Hierarchy + node pickers are relevant; entity hidden
+  // We also show a one-line help text per type so the user knows what
+  // each scope means before filling the form.
+  var SF_TYPE_HELP = {
+    'entity':         'Reviewer sees centers belonging to one or more entities.',
+    'hierarchy_node': 'Reviewer sees centers under a node in a hierarchy (e.g. all centers under "ROOT/EUROPE/DACH").',
+    'list':           'Reviewer sees a hand-picked list of cost centers — same UI as entity, useful for ad-hoc spot reviews.',
+  };
+  function refreshScopeFormVisibility() {
+    var type = document.getElementById('sf-type').value;
+    var entityWrap = document.getElementById('sf-entity-wrap');
+    var hierWrap = document.getElementById('sf-hier-wrap');
+    var help = document.getElementById('sf-type-help');
+    if (type === 'hierarchy_node') {
+      entityWrap.classList.add('hidden');
+      hierWrap.classList.remove('hidden');
+    } else {
+      entityWrap.classList.remove('hidden');
+      hierWrap.classList.add('hidden');
+    }
+    help.textContent = SF_TYPE_HELP[type] || '';
+  }
+  document.getElementById('sf-type').addEventListener('change', refreshScopeFormVisibility);
+  refreshScopeFormVisibility();
+
+  // Cascade: when hierarchy changes, load nodes for it.
+  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var sel = document.getElementById('sf-hier-id');
+      (d.items || []).forEach(function(h) {
+        var opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = h.setname + ' (' + (h.description || h.setclass) + ')';
+        sel.appendChild(opt);
+      });
+    })
+    .catch(function() {/* ignore — hierarchy not loaded */});
+  document.getElementById('sf-hier-id').addEventListener('change', function(e) {
+    var hierId = e.target.value;
+    var nodeSel = document.getElementById('sf-hier-node');
+    if (!hierId) {
+      nodeSel.innerHTML = '<option value="">-- Pick a hierarchy first --</option>';
+      nodeSel.disabled = true;
+      return;
+    }
+    nodeSel.innerHTML = '<option value="">-- Loading nodes… --</option>';
+    nodeSel.disabled = true;
+    fetch('/api/legacy/hierarchies/' + hierId + '/nodes?size=500', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        nodeSel.innerHTML = '<option value="">-- Whole hierarchy --</option>';
+        (d.items || []).forEach(function(n) {
+          var opt = document.createElement('option');
+          opt.value = n.setname;
+          opt.textContent = n.setname + (n.description ? ' — ' + n.description : '');
+          nodeSel.appendChild(opt);
+        });
+        nodeSel.disabled = false;
+      })
+      .catch(function() {
+        nodeSel.innerHTML = '<option value="">-- Failed to load nodes --</option>';
+      });
+  });
+
   document.getElementById('scope-form').addEventListener('submit', async function(e) {
     e.preventDefault();
+    var type = document.getElementById('sf-type').value;
     var body = {
       name: document.getElementById('sf-name').value,
-      scope_type: document.getElementById('sf-type').value,
+      scope_type: type,
       reviewer_name: document.getElementById('sf-reviewer').value || null,
       reviewer_email: document.getElementById('sf-email').value || null,
       scope_filter: {},
     };
-    var ccodes = document.getElementById('sf-ccodes').value;
-    if (ccodes) body.scope_filter.entity_ccodes = ccodes.split(',').map(function(s) { return s.trim(); });
+    if (type === 'hierarchy_node') {
+      var hierId = document.getElementById('sf-hier-id').value;
+      var nodeSetname = document.getElementById('sf-hier-node').value;
+      if (!hierId) {
+        uiAlert({ message: 'Pick a hierarchy first.', kind: 'warning' });
+        return;
+      }
+      body.scope_filter.hierarchy_id = parseInt(hierId, 10);
+      if (nodeSetname) body.scope_filter.node_setname = nodeSetname;
+    } else {
+      // entity / list — entity ccodes filter
+      var ccodesInput = document.getElementById('sf-ccodes');
+      var ccodes = ccodesInput ? ccodesInput.value : '';
+      if (ccodes) body.scope_filter.entity_ccodes = ccodes.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
     var res = await fetch('/api/waves/' + waveId + '/scopes', {
       method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
     });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail, kind: 'danger' }); return; }
     document.getElementById('scope-overlay').classList.add('hidden');
     loadScopes(); loadWave();
   });
@@ -933,28 +1029,34 @@ import Layout from '../../components/layout/Layout.astro';
   // Wave lifecycle actions
   window.lockWave = async function() {
     var res = await fetch('/api/waves/' + waveId + '/proposal/lock', { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail); return; }
     loadWave();
   };
   window.signoffWave = async function() {
     var res = await fetch('/api/waves/' + waveId + '/signoff', { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail); return; }
     loadWave();
   };
   window.closeWave = async function() {
     var res = await fetch('/api/waves/' + waveId + '/close', { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail); return; }
     loadWave();
   };
   window.cancelWave = async function() {
-    if (!confirm('Cancel this wave?')) return;
+    if (!await uiConfirm({
+      title: 'Cancel this wave?',
+      message: 'Cancelling stops all in-progress work. The wave will move to status "cancelled" and cannot run new analyses.',
+      okLabel: 'Cancel wave',
+      cancelLabel: 'Keep running',
+      danger: true,
+    })) return;
     var res = await fetch('/api/waves/' + waveId + '/cancel', { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail, kind: 'danger' }); return; }
     loadWave();
   };
   window.unlockWave = async function() {
     var res = await fetch('/api/waves/' + waveId + '/proposal/unlock', { method: 'POST', headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail); return; }
     loadWave();
   };
   // --- Progress Tab ---
@@ -998,32 +1100,32 @@ import Layout from '../../components/layout/Layout.astro';
 
   window.copyReviewLink = function(token) {
     navigator.clipboard.writeText(window.location.origin + '/review/' + token);
-    alert('Review link copied to clipboard.');
+    uiToast('Review link copied to clipboard.', { kind: 'success' });
   };
   window.inviteReviewer = async function(scopeId) {
     try {
       var res = await fetch('/api/waves/scopes/' + scopeId + '/invite', { method: 'POST', headers: authHdr });
-      if (!res.ok) { var d = await res.json(); alert(d.detail || 'Failed'); return; }
-      alert('Invitation email sent to reviewer.');
-    } catch(e) { alert('Error: ' + e.message); }
+      if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail || 'Failed', kind: 'danger' }); return; }
+      uiToast('Invitation email sent to reviewer.', { kind: 'success' });
+    } catch(e) { uiAlert({ message: 'Error: ' + e.message, kind: 'danger' }); }
   };
   window.sendReminder = async function(scopeId) {
     try {
       var res = await fetch('/api/waves/scopes/' + scopeId + '/remind', { method: 'POST', headers: authHdr });
-      if (!res.ok) { var d = await res.json(); alert(d.detail || 'Failed'); return; }
-      alert('Reminder email sent.');
-    } catch(e) { alert('Error: ' + e.message); }
+      if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail || 'Failed', kind: 'danger' }); return; }
+      uiToast('Reminder email sent.', { kind: 'success' });
+    } catch(e) { uiAlert('Error: ' + e.message); }
   };
   window.exportMDG = async function(exportType) {
     var res = await fetch('/api/waves/' + waveId + '/mdg-export?export_type=' + exportType, { headers: authHdr });
-    if (!res.ok) { var d = await res.json(); alert(d.detail || 'Export failed'); return; }
+    if (!res.ok) { var d = await res.json(); uiAlert(d.detail || 'Export failed'); return; }
     var d = await res.json();
     var blob = new Blob([d.content], { type: 'text/csv' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = d.filename;
     a.click();
-    alert('Exported ' + d.record_count + ' records to ' + d.filename);
+    uiAlert('Exported ' + d.record_count + ' records to ' + d.filename);
   };
 
   // ── V2 Simulation Tab ─────────────────────────────────────────────────
@@ -1368,13 +1470,13 @@ import Layout from '../../components/layout/Layout.astro';
       var res = await fetch(url, {
         method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
       });
-      if (!res.ok) { var err = await res.json(); alert(err.detail || 'Simulation failed'); return; }
+      if (!res.ok) { var err = await res.json(); uiAlert(err.detail || 'Simulation failed'); return; }
       var result = await res.json();
       document.getElementById('sim-config-panel').classList.add('hidden');
       loadSimRuns();
       window.viewSimRun(result.run_id);
     } catch(e) {
-      alert('Error: ' + e.message);
+      uiAlert('Error: ' + e.message);
     } finally {
       this.disabled = false;
       this.textContent = 'Run Simulation';
@@ -1384,19 +1486,24 @@ import Layout from '../../components/layout/Layout.astro';
   // Activate simulation
   document.getElementById('btn-sim-activate').addEventListener('click', async function() {
     if (!simRunId) return;
-    if (!confirm('Activate this simulation? This will assign real PC/CC numbers (replacing temporary CT/PT IDs) and make the results available for review.')) return;
+    if (!await uiConfirm({
+      title: 'Activate this simulation?',
+      message: 'This will assign real PC/CC numbers (replacing temporary CT/PT IDs) and make the results available for review. The simulation cannot be modified after this step.',
+      okLabel: 'Activate',
+      cancelLabel: 'Not yet',
+    })) return;
     this.disabled = true;
     this.textContent = 'Activating...';
     try {
       var res = await fetch('/api/waves/simulations/' + simRunId + '/activate', {
         method: 'POST', headers: authHdr
       });
-      if (!res.ok) { var err = await res.json(); alert(err.detail || 'Activation failed'); return; }
-      alert('Simulation activated. Real PC/CC IDs assigned.');
+      if (!res.ok) { var err = await res.json(); uiAlert({ message: err.detail || 'Activation failed', kind: 'danger' }); return; }
+      uiAlert('Simulation activated. Real PC/CC IDs assigned.');
       loadSimRuns();
       window.viewSimRun(simRunId);
     } catch(e) {
-      alert('Error: ' + e.message);
+      uiAlert('Error: ' + e.message);
     } finally {
       this.disabled = false;
       this.textContent = 'Activate';
@@ -1407,7 +1514,7 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('btn-sim-export').addEventListener('click', async function() {
     if (!simRunId) return;
     var res = await fetch('/api/waves/' + waveId + '/runs/' + simRunId + '/export-v2', { headers: authHdr });
-    if (!res.ok) { alert('Export failed'); return; }
+    if (!res.ok) { uiAlert('Export failed'); return; }
     var blob = await res.blob();
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1646,7 +1753,7 @@ import Layout from '../../components/layout/Layout.astro';
     }
 
     if (!userName && !entityCodes.length && !revSelectedNodes.length) {
-      alert('Please select a reviewer and at least one entity or hierarchy node.');
+      uiAlert('Please select a reviewer and at least one entity or hierarchy node.');
       return;
     }
 
@@ -1675,13 +1782,13 @@ import Layout from '../../components/layout/Layout.astro';
       });
       if (!res.ok) {
         var err = await res.json();
-        alert(err.detail || 'Assignment failed');
+        uiAlert(err.detail || 'Assignment failed');
         return;
       }
       document.getElementById('reviewer-overlay').classList.add('hidden');
       loadReviewerAssignments();
     } catch(e) {
-      alert('Error: ' + e.message);
+      uiAlert('Error: ' + e.message);
     } finally {
       this.disabled = false;
       this.textContent = 'Assign';

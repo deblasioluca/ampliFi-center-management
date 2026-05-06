@@ -100,6 +100,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 </Layout>
 
+<script src="/ui-prompts.js" is:inline></script>
 <script>
   const state = {
     engine: 'v1',
@@ -202,11 +203,17 @@ import Layout from '../../components/layout/Layout.astro';
 
   // ── Preset instantiation ─────────────────────────────────────────
   async function instantiatePreset(presetName) {
-    const friendlyName = prompt(
-      `Name for the new variant (based on '${presetName}'):`,
-      `${presetName} ${new Date().toISOString().slice(0, 10)}`
-    );
-    if (!friendlyName) return;
+    let friendlyName;
+    try {
+      friendlyName = await uiPrompt({
+        title: 'New variant from preset',
+        label: `Name for the new variant (based on '${presetName}'):`,
+        defaultValue: `${presetName} ${new Date().toISOString().slice(0, 10)}`,
+        helpText: 'You can rename later. The variant is independent — editing it does not change the preset.',
+      });
+    } catch {
+      return; // user cancelled
+    }
     try {
       const result = await api(
         `/api/configs/presets/${state.engine}/${presetName}/instantiate`,
@@ -223,7 +230,7 @@ import Layout from '../../components/layout/Layout.astro';
       renderConfigsList();
       loadConfig(result.id);
     } catch (err) {
-      alert('Error: ' + err.message);
+      uiAlert('Error: ' + err.message);
     }
   }
 
@@ -397,26 +404,35 @@ import Layout from '../../components/layout/Layout.astro';
         method: 'POST',
         body: JSON.stringify({ config: state.currentConfig.config }),
       });
-      alert('Variant saved (new version created).');
+      uiToast('Variant saved (new version created).', { kind: 'success' });
       boot();
     } catch (err) {
-      alert('Error: ' + err.message);
+      uiAlert('Error: ' + err.message);
     }
   });
 
   document.getElementById('btn-fork').addEventListener('click', async () => {
     if (!state.currentConfigId) return;
-    const newCode = prompt('New code for the fork:', state.currentConfig.code + '-copy');
-    if (!newCode) return;
+    let newCode;
+    try {
+      newCode = await uiPrompt({
+        title: 'Fork variant',
+        label: 'New code for the fork:',
+        defaultValue: state.currentConfig.code + '-copy',
+        helpText: 'A short identifier — this is what shows up in URLs and logs.',
+      });
+    } catch {
+      return;
+    }
     try {
       await api(`/api/configs/${state.currentConfig.code}/fork`, {
         method: 'POST',
         body: JSON.stringify({ new_code: newCode, name: state.currentConfig.name + ' (Fork)' }),
       });
-      alert('Fork created.');
+      uiToast('Fork created.', { kind: 'success' });
       boot();
     } catch (err) {
-      alert('Error: ' + err.message);
+      uiAlert({ message: 'Error: ' + err.message, kind: 'danger' });
     }
   });
 
@@ -434,11 +450,18 @@ import Layout from '../../components/layout/Layout.astro';
         }),
       });
       const url = `/cockpit/decisions?run_id=${result.run_id || result.id}`;
-      if (confirm(`Run started (#${result.run_id || result.id}). Go to results page?`)) {
+      uiToast(`Run #${result.run_id || result.id} started.`, { kind: 'success' });
+      const goNow = await uiConfirm({
+        title: 'Run started',
+        message: `Run #${result.run_id || result.id} is now running. Open the results page to watch progress?`,
+        okLabel: 'Open results',
+        cancelLabel: 'Stay here',
+      });
+      if (goNow) {
         window.location.href = url;
       }
     } catch (err) {
-      alert('Error: ' + err.message);
+      uiAlert('Error: ' + err.message);
     }
   });
 
