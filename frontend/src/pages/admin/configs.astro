@@ -111,8 +111,24 @@ import Layout from '../../components/layout/Layout.astro';
     waves: [],
   };
 
+  // ── API helper — JWT bearer auth via localStorage 'amplifi_token' ─
+  const TOKEN = localStorage.getItem('amplifi_token');
+  if (!TOKEN) {
+    window.location.href = '/login';
+  }
+
   async function api(path, opts = {}) {
-    const r = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opts });
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + TOKEN,
+      ...(opts.headers || {}),
+    };
+    const r = await fetch(path, { ...opts, headers });
+    if (r.status === 401) {
+      // token expired/invalid → bounce to login
+      window.location.href = '/login';
+      throw new Error('Not authenticated — redirecting to login');
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${r.status}`);
