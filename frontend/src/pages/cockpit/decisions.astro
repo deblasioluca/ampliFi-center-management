@@ -1,0 +1,426 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Simulationsergebnis" requireAuth={true} requiredRole="data_manager">
+  <!-- Header with back nav and view-mode toggle -->
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Zurück</a>
+      <h2 class="text-xl font-bold mt-2" id="page-title">Simulationsergebnis lädt…</h2>
+      <div class="flex gap-2 mt-1 text-sm text-gray-500" id="run-meta"></div>
+    </div>
+    <div class="flex gap-2">
+      <button id="view-flat" class="btn btn-sm btn-primary">Flach (Tabelle)</button>
+      <button id="view-tree" class="btn btn-sm btn-ghost">Hierarchisch (Baum)</button>
+    </div>
+  </div>
+
+  <!-- Help banner -->
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-900 leading-relaxed">
+    <strong>Wie liest man diese Seite?</strong> Für jeden Cost Center sieht der Reviewer:
+    <span class="text-gray-700">(1) den alten Zustand</span> →
+    <span class="text-gray-700">(2) welche Regel die Entscheidung getroffen hat</span> →
+    <span class="text-gray-700">(3) das vorgeschlagene Ergebnis (KEEP / RETIRE / MERGE / REDESIGN)</span> →
+    <span class="text-gray-700">(4) das neue Target-Objekt (CC und/oder PC)</span>.
+    Klick auf eine Zeile öffnet die Detail-Ansicht mit voller Rule-Path.
+  </div>
+
+  <!-- Outcome KPI summary tiles -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="outcome-tiles"></div>
+
+  <!-- Filters -->
+  <div class="card mb-4 flex items-center gap-3 flex-wrap text-sm">
+    <label class="text-gray-600">Outcome:</label>
+    <select id="filter-outcome" class="input text-sm w-40">
+      <option value="">Alle</option>
+      <option value="KEEP">KEEP (bleibt)</option>
+      <option value="RETIRE">RETIRE (Stilllegung)</option>
+      <option value="MERGE_MAP">MERGE_MAP (zusammenführen)</option>
+      <option value="REDESIGN">REDESIGN (neu konzipieren)</option>
+    </select>
+    <label class="text-gray-600 ml-3">Engine:</label>
+    <span id="engine-badge" class="badge badge-gray">—</span>
+    <label class="text-gray-600 ml-3">Modus:</label>
+    <span id="mode-badge" class="badge badge-gray">—</span>
+    <button id="export-csv" class="btn btn-sm btn-ghost ml-auto">CSV Export</button>
+  </div>
+
+  <!-- ── FLAT VIEW ────────────────────────────────────────────────── -->
+  <div id="flat-view" class="card">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+          <tr>
+            <th class="text-left px-3 py-2">Legacy CC</th>
+            <th class="text-left px-3 py-2">Bezeichnung</th>
+            <th class="text-left px-3 py-2">Land / Bereich</th>
+            <th class="text-left px-3 py-2">Verantwortlich</th>
+            <th class="text-left px-3 py-2">Entscheidende Regel</th>
+            <th class="text-left px-3 py-2">Outcome</th>
+            <th class="text-left px-3 py-2">Target CC</th>
+            <th class="text-left px-3 py-2">Target PC</th>
+            <th class="text-left px-3 py-2 w-16">Konfidenz</th>
+          </tr>
+        </thead>
+        <tbody id="decisions-body">
+          <tr><td colspan="9" class="text-center py-8 text-gray-400">Lädt…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between mt-3 text-xs text-gray-500" id="pagination">
+      <span id="page-info">—</span>
+      <div class="flex gap-2">
+        <button id="prev-page" class="btn btn-sm btn-ghost">‹ Zurück</button>
+        <button id="next-page" class="btn btn-sm btn-ghost">Weiter ›</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HIERARCHY VIEW ──────────────────────────────────────────── -->
+  <div id="tree-view" class="card hidden">
+    <div class="text-xs text-gray-600 mb-3">
+      Klick auf einen Knoten zum Aufklappen. Pro Knoten siehst du, wie viele Centers darunter
+      welchen Outcome bekommen haben — drill-down bis zu den einzelnen Vorschlägen.
+    </div>
+    <div id="tree-root" class="text-sm">
+      <div class="text-center py-8 text-gray-400">Lädt…</div>
+    </div>
+  </div>
+
+  <!-- ── DETAIL DRAWER (slide-in from right) ──────────────────────── -->
+  <div id="detail-drawer" class="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white shadow-2xl border-l border-gray-200 transform translate-x-full transition-transform duration-200 z-50 overflow-y-auto">
+    <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
+      <h3 class="font-semibold">Entscheidungsdetail</h3>
+      <button id="close-drawer" class="text-gray-400 hover:text-gray-700">✕</button>
+    </div>
+    <div id="drawer-content" class="p-4 space-y-4 text-sm"></div>
+  </div>
+</Layout>
+
+<script>
+  // ── State ─────────────────────────────────────────────────────────
+  const state = {
+    runId: null,
+    page: 1,
+    size: 50,
+    outcome: '',
+    view: 'flat',  // 'flat' | 'tree'
+    runMeta: null,
+    cache: { decisions: null, tree: null },
+  };
+
+  // Outcome → color/label mapping (mirrors the catalog verdict_meanings)
+  const OUTCOME_STYLE = {
+    KEEP:      { color: 'green',  label: 'Bleibt erhalten' },
+    RETIRE:    { color: 'red',    label: 'Stilllegung' },
+    MERGE_MAP: { color: 'orange', label: 'Zusammenführen' },
+    REDESIGN:  { color: 'blue',   label: 'Neu konzipieren' },
+  };
+
+  function badgeFor(outcome) {
+    const s = OUTCOME_STYLE[outcome] || { color: 'gray', label: outcome };
+    return `<span class="inline-block px-2 py-0.5 rounded text-xs bg-${s.color}-100 text-${s.color}-800 font-medium">${outcome}</span>`;
+  }
+
+  // ── URL parsing ───────────────────────────────────────────────────
+  function parseUrl() {
+    const params = new URLSearchParams(window.location.search);
+    state.runId = parseInt(params.get('run_id'), 10);
+    if (!state.runId || Number.isNaN(state.runId)) {
+      document.getElementById('page-title').textContent = 'Kein run_id in der URL';
+      throw new Error('run_id required');
+    }
+  }
+
+  // ── API calls ─────────────────────────────────────────────────────
+  async function api(path) {
+    const r = await fetch(path, { credentials: 'include' });
+    if (!r.ok) {
+      throw new Error(`${path} → HTTP ${r.status}`);
+    }
+    return r.json();
+  }
+
+  async function loadRunMeta() {
+    state.runMeta = await api(`/api/runs/${state.runId}`);
+    document.getElementById('page-title').textContent =
+      `Simulationsergebnis: ${state.runMeta.label || `Run #${state.runId}`}`;
+    document.getElementById('run-meta').innerHTML = `
+      <span>Status: <strong>${state.runMeta.status}</strong></span>
+      <span>•</span>
+      <span>Wave: ${state.runMeta.wave_id || 'global'}</span>
+      <span>•</span>
+      <span>Erstellt: ${(state.runMeta.created_at || '').slice(0, 16)}</span>
+    `;
+    document.getElementById('engine-badge').textContent = state.runMeta.engine_version || 'v1';
+    document.getElementById('mode-badge').textContent = state.runMeta.mode || 'simulation';
+  }
+
+  async function loadDecisions() {
+    const params = new URLSearchParams({
+      page: String(state.page),
+      size: String(state.size),
+    });
+    if (state.outcome) params.append('outcome', state.outcome);
+    const data = await api(`/api/runs/${state.runId}/decisions?${params}`);
+    state.cache.decisions = data;
+    renderOutcomeTiles(data.summary_by_outcome);
+    renderFlatTable(data);
+  }
+
+  async function loadTree() {
+    if (state.cache.tree) {
+      renderTree(state.cache.tree);
+      return;
+    }
+    const data = await api(`/api/runs/${state.runId}/decisions/by-hierarchy`);
+    state.cache.tree = data;
+    renderTree(data);
+  }
+
+  // ── Renderers ─────────────────────────────────────────────────────
+  function renderOutcomeTiles(summary) {
+    const total = Object.values(summary || {}).reduce((a, b) => a + b, 0);
+    const tiles = ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN'].map(o => {
+      const count = summary?.[o] || 0;
+      const pct = total ? ((count / total) * 100).toFixed(1) : '0.0';
+      const s = OUTCOME_STYLE[o];
+      return `
+        <button class="bg-${s.color}-50 border border-${s.color}-200 rounded-lg p-3 text-left hover:bg-${s.color}-100 cursor-pointer transition" data-outcome="${o}">
+          <div class="text-xs text-${s.color}-700 font-medium">${o} — ${s.label}</div>
+          <div class="text-2xl font-bold text-${s.color}-900 mt-1">${count.toLocaleString()}</div>
+          <div class="text-xs text-${s.color}-600">${pct}% des Wave</div>
+        </button>
+      `;
+    });
+    document.getElementById('outcome-tiles').innerHTML = tiles.join('');
+    document.querySelectorAll('[data-outcome]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const target = e.currentTarget;
+        const o = target.getAttribute('data-outcome');
+        document.getElementById('filter-outcome').value = o;
+        state.outcome = o;
+        state.page = 1;
+        loadDecisions();
+      });
+    });
+  }
+
+  function renderFlatTable(data) {
+    const tbody = document.getElementById('decisions-body');
+    if (!data.items?.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-gray-400">Keine Vorschläge gefunden</td></tr>`;
+    } else {
+      tbody.innerHTML = data.items.map(it => {
+        const dec = it.decision || {};
+        const dr = it.deciding_rule || {};
+        const tgt = it.target || {};
+        const overrideMark = dec.is_overridden
+          ? '<span class="text-orange-600 ml-1" title="Override aktiv">●</span>'
+          : '';
+        return `
+          <tr class="border-t hover:bg-gray-50 cursor-pointer" data-proposal-id="${it.proposal_id}">
+            <td class="px-3 py-2 font-mono text-xs">${it.legacy_cctr || '—'}</td>
+            <td class="px-3 py-2 max-w-[240px] truncate" title="${it.txtsh || ''}">${it.txtsh || '—'}</td>
+            <td class="px-3 py-2 text-xs">${[it.ccode, it.coarea].filter(Boolean).join(' / ')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600">${it.responsible || '—'}</td>
+            <td class="px-3 py-2 text-xs">
+              <span class="inline-block px-2 py-0.5 bg-gray-100 rounded text-gray-700">${dr.label || '—'}</span>
+            </td>
+            <td class="px-3 py-2">${badgeFor(dec.outcome)}${overrideMark}</td>
+            <td class="px-3 py-2 font-mono text-xs">${tgt.cctr || '—'}</td>
+            <td class="px-3 py-2 font-mono text-xs">
+              ${tgt.pctr || '—'}
+              ${tgt.approach === '1:n' ? '<span class="ml-1 text-xs text-purple-600" title="m:1 Gruppierung">⊕</span>' : ''}
+            </td>
+            <td class="px-3 py-2 text-xs text-right">${dec.confidence != null ? (dec.confidence * 100).toFixed(0) + '%' : '—'}</td>
+          </tr>
+        `;
+      }).join('');
+      // Bind row clicks → drawer
+      tbody.querySelectorAll('tr[data-proposal-id]').forEach(row => {
+        row.addEventListener('click', () => openDrawer(row.getAttribute('data-proposal-id')));
+      });
+    }
+
+    // Pagination info
+    const start = ((state.page - 1) * state.size) + 1;
+    const end = Math.min(start + (data.items?.length || 0) - 1, data.total);
+    document.getElementById('page-info').textContent =
+      `${start.toLocaleString()}–${end.toLocaleString()} von ${data.total.toLocaleString()}`;
+    document.getElementById('prev-page').disabled = state.page <= 1;
+    document.getElementById('next-page').disabled = end >= data.total;
+  }
+
+  function renderTreeNode(node) {
+    const counts = node.outcome_counts_total || {};
+    const countParts = ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']
+      .filter(o => counts[o])
+      .map(o => `${badgeFor(o)} ${counts[o]}`);
+    const expandable = (node.children?.length || node.has_more_children);
+    return `
+      <div class="ml-${Math.min(node.depth * 4, 16)} my-1">
+        <div class="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded cursor-pointer ${expandable ? 'tree-toggle' : ''}" data-node-id="${node.node_id}">
+          <span class="text-gray-400 w-4">${expandable ? '▶' : ''}</span>
+          <span class="font-medium">${node.label}</span>
+          <span class="text-xs text-gray-500">L${node.level || node.depth} • ${node.proposal_count_total} Centers</span>
+          <span class="ml-auto flex gap-2 text-xs">${countParts.join(' ')}</span>
+        </div>
+        <div class="tree-children hidden ml-6">
+          ${(node.children || []).map(renderTreeNode).join('')}
+          ${(node.proposals || []).map(p => `
+            <div class="flex items-center gap-2 py-1 px-2 text-xs hover:bg-gray-50 cursor-pointer leaf-proposal" data-proposal-id="${p.proposal_id}">
+              <span class="text-gray-400 w-4">·</span>
+              <span class="font-mono text-gray-700">${p.legacy_cctr}</span>
+              <span class="text-gray-500 truncate max-w-[200px]">${p.txtsh || ''}</span>
+              <span class="ml-auto">${badgeFor(p.outcome)}</span>
+              <span class="text-gray-500 ml-2">${(p.deciding_rule || {}).label || ''}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTree(data) {
+    const root = document.getElementById('tree-root');
+    if (!data.tree?.length) {
+      root.innerHTML = `<div class="text-gray-400 text-center py-8">Keine Hierarchie für diesen Run gefunden — nutze die flache Ansicht.</div>`;
+      return;
+    }
+    root.innerHTML = data.tree.map(renderTreeNode).join('');
+    // Bind expand/collapse
+    root.querySelectorAll('.tree-toggle').forEach(el => {
+      el.addEventListener('click', e => {
+        const card = e.currentTarget.parentElement;
+        const children = card.querySelector('.tree-children');
+        if (children) children.classList.toggle('hidden');
+        const arrow = e.currentTarget.querySelector('span');
+        if (arrow && (arrow.textContent === '▶' || arrow.textContent === '▼')) {
+          arrow.textContent = arrow.textContent === '▶' ? '▼' : '▶';
+        }
+      });
+    });
+    // Bind leaf clicks → drawer
+    root.querySelectorAll('.leaf-proposal').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        openDrawer(e.currentTarget.getAttribute('data-proposal-id'));
+      });
+    });
+  }
+
+  // ── Detail drawer ─────────────────────────────────────────────────
+  async function openDrawer(proposalId) {
+    const drawer = document.getElementById('detail-drawer');
+    const content = document.getElementById('drawer-content');
+    drawer.classList.remove('translate-x-full');
+    content.innerHTML = `<div class="text-gray-400">Lädt Detail…</div>`;
+
+    try {
+      const why = await api(`/api/runs/${state.runId}/proposals/${proposalId}/why`);
+      const compare = await api(
+        `/api/explore/compare?legacy_cctr=${encodeURIComponent(why.legacy?.cctr || '')}&coarea=${encodeURIComponent(why.legacy?.coarea || '')}`
+      ).catch(() => null);
+
+      content.innerHTML = renderDrawerContent(why, compare);
+    } catch (err) {
+      content.innerHTML = `<div class="text-red-600">Fehler: ${err.message}</div>`;
+    }
+  }
+
+  function renderDrawerContent(why, compare) {
+    const dec = why?.decision || {};
+    const ruleSteps = (why?.rule_path?.steps || why?.rule_path || []);
+    return `
+      <section>
+        <h4 class="font-semibold text-base mb-2">Entscheidungspfad</h4>
+        <ol class="space-y-1">
+          ${ruleSteps.map((s, i) => {
+            const step = typeof s === 'string' ? { code: s.split(':')[0], verdict: s.split(':')[1] } : s;
+            return `<li class="flex items-center gap-2">
+              <span class="text-xs text-gray-400 w-5">${i+1}.</span>
+              <span class="font-mono text-xs">${step.code}</span>
+              ${step.verdict ? `<span class="text-xs text-gray-600">→ ${step.verdict}</span>` : ''}
+            </li>`;
+          }).join('')}
+        </ol>
+        <div class="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+          <strong>Finaler Outcome:</strong> ${badgeFor(dec.outcome || why?.cleansing_outcome)} → Target: ${dec.target_object || why?.target_object || '—'}
+        </div>
+      </section>
+
+      ${compare ? `
+        <section class="border-t pt-4">
+          <h4 class="font-semibold text-base mb-2">Alt → Neu</h4>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-gray-50 p-3 rounded">
+              <div class="text-xs uppercase text-gray-500 mb-1">Legacy CC</div>
+              <div class="font-mono text-sm">${compare.legacy_cc?.cctr || '—'}</div>
+              <div class="text-xs text-gray-600 mt-1">${compare.legacy_cc?.txtsh || ''}</div>
+              <div class="text-xs text-gray-500 mt-2">PC: <span class="font-mono">${compare.legacy_cc?.pctr || '—'}</span></div>
+            </div>
+            <div class="bg-emerald-50 p-3 rounded">
+              <div class="text-xs uppercase text-emerald-700 mb-1">Target</div>
+              <div class="font-mono text-sm">${compare.target_cc?.cctr || '—'}</div>
+              <div class="text-xs text-gray-600 mt-1">${compare.target_cc?.txtsh || ''}</div>
+              <div class="text-xs text-gray-500 mt-2">PC: <span class="font-mono">${compare.target_pc?.pctr || '—'}</span></div>
+              <div class="text-xs text-gray-500">${compare.target_pc?.txtsh || ''}</div>
+            </div>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">Engines beteiligt: ${(compare.summary?.engines_used || []).join(', ') || '—'}</div>
+        </section>
+      ` : ''}
+
+      ${(why?.llm_commentary?.summary) ? `
+        <section class="border-t pt-4">
+          <h4 class="font-semibold text-base mb-2">LLM-Kommentar</h4>
+          <p class="text-xs text-gray-700">${why.llm_commentary.summary}</p>
+        </section>
+      ` : ''}
+    `;
+  }
+
+  // ── Wire up controls ─────────────────────────────────────────────
+  document.getElementById('view-flat').addEventListener('click', () => switchView('flat'));
+  document.getElementById('view-tree').addEventListener('click', () => switchView('tree'));
+  document.getElementById('filter-outcome').addEventListener('change', e => {
+    state.outcome = e.target.value;
+    state.page = 1;
+    loadDecisions();
+  });
+  document.getElementById('prev-page').addEventListener('click', () => {
+    if (state.page > 1) { state.page--; loadDecisions(); }
+  });
+  document.getElementById('next-page').addEventListener('click', () => {
+    state.page++; loadDecisions();
+  });
+  document.getElementById('close-drawer').addEventListener('click', () => {
+    document.getElementById('detail-drawer').classList.add('translate-x-full');
+  });
+  document.getElementById('export-csv').addEventListener('click', () => {
+    window.location.href = `/api/runs/${state.runId}/decisions.csv?outcome=${state.outcome}`;
+  });
+
+  function switchView(v) {
+    state.view = v;
+    document.getElementById('flat-view').classList.toggle('hidden', v !== 'flat');
+    document.getElementById('tree-view').classList.toggle('hidden', v !== 'tree');
+    document.getElementById('view-flat').classList.toggle('btn-primary', v === 'flat');
+    document.getElementById('view-flat').classList.toggle('btn-ghost', v !== 'flat');
+    document.getElementById('view-tree').classList.toggle('btn-primary', v === 'tree');
+    document.getElementById('view-tree').classList.toggle('btn-ghost', v !== 'tree');
+    if (v === 'tree') loadTree();
+  }
+
+  // ── Boot ────────────────────────────────────────────────────────
+  (async function main() {
+    parseUrl();
+    await loadRunMeta();
+    await loadDecisions();
+  })().catch(err => {
+    document.getElementById('page-title').textContent = 'Fehler';
+    document.getElementById('run-meta').innerHTML = `<span class="text-red-600">${err.message}</span>`;
+  });
+</script>
