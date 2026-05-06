@@ -45,6 +45,54 @@ A wave aggregates:
   alongside existing runs; the analyst can compare versions (§05.8) before promoting one
   to "preferred".
 
+## 8.3b Simulation → Activation Workflow (implemented)
+
+**Added in PRs #51-52.** Analysis runs operate in one of two modes:
+
+### Simulation Mode
+- Run analysis (V1 or V2) in "simulation" mode — no permanent IDs assigned
+- Temporary IDs: `CT...` for cost centers, `PT...` for profit centers
+- Can run on a specific wave OR globally (all centers, with option to exclude
+  already-completed scopes via `excluded_scopes` JSON)
+- Results shown in both **tabular** and **hierarchical** views:
+  - Which centers migrate vs retire
+  - PC groupings (1:1 vs 1:n) for V2
+  - CC → PC linkage
+- Simulations are **versioned** — store multiple runs with different configs and labels
+- Compare simulation versions side-by-side
+- Progress tracked via `total_centers` / `completed_centers` on the run
+
+### Activation
+- When satisfied with a simulation, "activate" it:
+  - `POST /api/waves/simulations/{run_id}/activate`
+- At activation: assign real PC/CC IDs (P00137+, C00001+)
+- Run marked as preferred run for the wave
+- Only one activated run per wave
+- Valid state transition: `simulation` → `activated` (enforced server-side)
+
+### API Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/waves/{id}/analyse-v2` | Run V2 analysis (simulation or activated) |
+| GET | `/waves/{id}/runs/{run_id}/export-v2` | Export V2 results as Excel |
+| GET | `/waves/{id}/runs/{run_id}/proposals-v2` | V2 proposals (paginated) |
+| POST | `/waves/global/simulate-v2` | Global V2 simulation |
+| GET | `/waves/simulations/v2` | List V2 simulation runs |
+| POST | `/waves/simulations/{run_id}/activate` | Activate a simulation |
+
+### Wave Progress Pipeline (implemented)
+
+The wave detail page tracks progress through 8 steps:
+
+```
+Create → Defining Scope → Analyse → Simulation → Proposals → Review Scopes → Progress → Export
+```
+
+Each step unlocks the next set of tabs in the wave detail view. Previous steps
+remain accessible. The progress indicator shows the current step with visual
+highlighting.
+
 ## 8.4 Full-scope (non-wave) analysis
 
 A wave with `is_full_scope=true` represents a strategic, **non-sign-off** analysis over

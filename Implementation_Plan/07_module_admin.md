@@ -22,6 +22,29 @@ for the extensible decision-tree framework (§04.6).
 /admin/jobs            → Background job monitor (Celery / RQ)
 ```
 
+## 7.1b Decision Tree Configuration (implemented)
+
+**Added in PR #52.** A dedicated Decision Tree Config section in the admin panel
+provides full lifecycle management for analysis configurations:
+
+- **List all configs**: Grouped by `code`, showing latest version, engine type, status
+- **Create new config**: Select engine (V1/V2), name, code, description; toggle routines
+  on/off, set parameters (JSON editor), review before saving
+- **Edit**: Creates a new immutable version (preserving audit trail)
+- **Clone/fork**: Create a variant based on an existing config
+- **Version history**: Full timeline of versions per config code with timestamps
+  and change metadata
+
+Configurations are immutable once used in an analysis run (for reproducibility).
+The config version is stored on each `AnalysisRun` record.
+
+API:
+- `GET /api/configs` — list all configs (latest version per code)
+- `POST /api/configs` — create new config
+- `GET /api/configs/{code}/versions` — version history
+- `POST /api/configs/{code}/fork` — fork
+- `POST /api/configs/{code}/amend` — create new version
+
 ## 7.2 User administration
 
 ### 7.2.1 User CRUD
@@ -45,6 +68,30 @@ Behaviour:
 - Row-level errors reported in a downloadable error CSV.
 
 API: `POST /api/admin/users/bulk` (multipart form upload).
+
+### 7.2.3 Employee Picker for User Creation (implemented)
+
+**Added in PR #52.** When creating a new user in Admin > Users, the form includes
+an **employee picker** that searches the employee table (loaded via data upload):
+
+- Typeahead search on first name and last name
+- Select an employee to auto-fill the user creation form with:
+  - First name, last name, email, GPN (Global Personnel Number)
+- This eliminates manual data entry and ensures consistency with HR records
+
+API: `GET /api/reference/employees?search=<term>` — returns matching employees
+
+### 7.2.4 Entra ID Claims Popup (implemented)
+
+**Added in PR #52.** When the user logs in via Microsoft Entra ID (MSAL SPA flow),
+a popup/dialog appears showing all token claims received:
+
+- name, preferred_username, email, oid (Object ID)
+- tid (Tenant ID), groups, roles, app roles
+- Any other claims from the ID token
+
+This helps administrators identify which data is available from Entra ID to
+populate the user table and configure group-to-role mappings.
 
 ## 7.3 Database connection configuration
 
@@ -194,6 +241,13 @@ preview, validate, and load — or roll back.
 | `hierarchy_leaf` | `.xlsx`, `.csv` | `SETCLASS, SETNAME, LINEID, VALSIGN, VALOPTION, VALFROM, VALTO?` |
 | `entity` | `.xlsx`, `.csv` | `COMPANY_CODE, NAME, REGION?` |
 | `gl_account_class` | `.xlsx`, `.csv` | `ACCOUNT_FROM, ACCOUNT_TO, CLASS` (B/S, REVENUE, OPEX, OTHER) |
+| `cc_with_hierarchy` | `.xlsx` | Cost centers with embedded CEMA hierarchy columns (Ext_L0..L13 + descriptions) — flattened format **(PR #50)** |
+| `sap_flat_hierarchy` | `.xlsx`, `.csv` | SAP flat hierarchy (SETCLASS, SETNAME, LINEID, SUBSETNAME, VALFROM, VALTO) |
+| `gcr_balance` | `.xlsx`, `.csv` | GCR aggregated balance (company code, center, period, amounts by account class) |
+| `target_cost_center` | `.xlsx`, `.csv` | Target cost centers (full SAP CSKS structure) |
+| `target_profit_center` | `.xlsx`, `.csv` | Target profit centers (full SAP CEPC structure) |
+| `center_mapping` | `.xlsx`, `.csv` | Legacy → target center mapping |
+| `employee` | `.xlsx`, `.csv` | Employee records (GPN, FIRST_NAME, LAST_NAME, EMAIL, COMPANY_CODE, ...) |
 
 For files exported from MDG that include the leading `*COAREA …` metadata row (as in
 the provided sample files), the parser auto-detects and skips those header lines.

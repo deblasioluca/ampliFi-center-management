@@ -113,6 +113,31 @@ All endpoints are prefixed with `/api`. JSON in/out unless noted.
 | GET  | `/waves/{id}/exports` | List generated exports |
 | POST | `/waves/{id}/exports/regenerate` | Re-generate exports (admin) |
 
+## 11.7b Wave V2 Analysis & Simulation (implemented)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/waves/{id}/analyse-v2` | Run V2 CEMA migration analysis |
+| GET | `/waves/{id}/runs/{run_id}/export-v2` | Export V2 results as Excel (3 sheets: PC, CC, mapping) |
+| GET | `/waves/{id}/runs/{run_id}/proposals-v2` | Paginated V2 proposals |
+| POST | `/waves/global/simulate-v2` | Global V2 simulation (all centers) |
+| GET | `/waves/simulations/v2` | List V2 simulation runs |
+| POST | `/waves/simulations/{run_id}/activate` | Activate a simulation (assign real PC/CC IDs) |
+| GET | `/waves/hierarchy-nodes` | List hierarchy nodes for PC approach picker |
+| GET | `/waves/{id}/scope-coverage` | Scope coverage stats (entities, CCs, PCs per wave) |
+| DELETE | `/waves/{id}` | Delete wave (with ORM cascade) |
+| POST | `/waves/{id}/auto-assign` | Auto-assign reviewers to scopes |
+| POST | `/waves/{id}/auto-approve` | Auto-approve proposals in wave |
+
+## 11.7c Wave Templates
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/waves/templates` | List wave templates |
+| POST | `/waves/templates` | Create template |
+| DELETE | `/waves/templates/{id}` | Delete template |
+| POST | `/waves/templates/{id}/create-wave` | Create wave from template |
+
 ## 11.8 Reviewer (token-scoped)
 
 | Method | Path | Purpose |
@@ -139,11 +164,91 @@ All endpoints are prefixed with `/api`. JSON in/out unless noted.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/entities` | Entity list |
-| GET | `/legacy/cost-centers` | Filtered legacy CCs |
-| GET | `/legacy/profit-centers` | Filtered legacy PCs |
-| GET | `/legacy/hierarchies` | Hierarchies (sets, with optional tree expansion) |
-| GET | `/balances/aggregates` | Aggregate balance queries (ccode, period, account_class) |
+| GET | `/reference/entities` | Entity list (paginated, filterable) |
+| GET | `/reference/legacy/cost-centers` | Filtered legacy CCs |
+| GET | `/reference/legacy/profit-centers` | Filtered legacy PCs |
+| GET | `/reference/target/cost-centers` | Target cost centers |
+| GET | `/reference/target/profit-centers` | Target profit centers |
+| GET | `/reference/center-mappings` | Legacy → target mappings |
+| GET | `/reference/legacy/balances` | Balance data (filterable by entity, period, etc.) |
+| GET | `/reference/legacy/hierarchies` | Hierarchy sets list |
+| GET | `/reference/legacy/hierarchies/{id}/nodes` | Hierarchy nodes |
+| GET | `/reference/legacy/hierarchies/{id}/leaves` | Hierarchy leaves |
+| GET | `/reference/legacy/hierarchies/{id}/tree` | Full hierarchy tree (recursive) |
+| GET | `/reference/employees` | Employee list (searchable by name) |
+| GET | `/reference/employees/{gpn}` | Employee detail by GPN |
+| GET | `/reference/data/counts` | Counts for all data tables |
+| POST | `/reference/data/duplicate-check` | Check for duplicate centers |
+| POST | `/reference/data/naming-suggestions` | Generate naming suggestions |
+| GET | `/reference/data/upload-templates` | List available upload templates |
+| GET | `/reference/data/upload-templates/{kind}` | Download template for upload kind |
+
+## 11.10b Data management (delete endpoints)
+
+| Method | Path | Purpose |
+|---|---|---|
+| DELETE | `/data/entities` | Delete entities (by ids or ccode) |
+| DELETE | `/data/entities/all` | Delete all entities |
+| DELETE | `/data/legacy/cost-centers` | Delete legacy CCs (by ids, ccode, or coarea) |
+| DELETE | `/data/legacy/cost-centers/all` | Delete all legacy CCs |
+| DELETE | `/data/legacy/profit-centers` | Delete legacy PCs |
+| DELETE | `/data/legacy/profit-centers/all` | Delete all legacy PCs |
+| DELETE | `/data/target/cost-centers` | Delete target CCs |
+| DELETE | `/data/target/profit-centers` | Delete target PCs |
+| DELETE | `/data/center-mappings` | Delete center mappings |
+| DELETE | `/data/balances` | Delete balances (by ids, ccode, coarea, or fiscal_year) |
+| DELETE | `/data/balances/all` | Delete all balances |
+| DELETE | `/data/hierarchies` | Delete hierarchies (by ids or coarea, cascades) |
+| DELETE | `/data/hierarchies/all` | Delete all hierarchies |
+| DELETE | `/data/employees` | Delete employees |
+| DELETE | `/data/employees/all` | Delete all employees |
+| DELETE | `/data/purge-all` | Delete ALL imported data |
+| GET | `/data/counts` | Counts of all data tables |
+| GET | `/data/browser` | Universal data browser |
+
+## 11.10c Explorer (public)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/explore/counts` | Data counts for explorer |
+| GET | `/explore/display-config/{type}` | Display configuration per object type |
+| GET | `/explore/legacy/{type}` | Browse legacy data (filterable, sortable) |
+| GET | `/explore/legacy/{type}/{id}` | Detail view for a single item |
+| GET | `/explore/export/{type}` | Export data as CSV/Excel |
+| GET | `/explore/amplifi/mapping` | Browse center mappings |
+| GET | `/explore/amplifi/runs` | Browse analysis runs |
+| GET | `/explore/data-sources` | List configured data sources |
+| GET | `/explore/source-config` | Source configuration |
+| GET | `/explore/legacy/balances-agg` | Aggregated balance view |
+
+## 11.10d Admin additional endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin/datasphere/config` | Datasphere connection config |
+| PUT | `/admin/datasphere/config` | Update Datasphere config |
+| POST | `/admin/datasphere/test` | Test Datasphere connection |
+| GET | `/admin/datasphere/ddl` | Generate DDL for Datasphere |
+| GET | `/admin/datasphere/domains` | List Datasphere domains |
+| GET | `/admin/explorer-sources` | Explorer data source config |
+| POST | `/admin/explorer-sources` | Add explorer source |
+| PUT | `/admin/explorer-sources/{id}` | Update explorer source |
+| DELETE | `/admin/explorer-sources/{id}` | Delete explorer source |
+| GET | `/admin/explorer-display-config` | Display config for all types |
+| GET | `/admin/explorer-display-config/{type}` | Display config per type |
+| PUT | `/admin/explorer-display-config/{type}` | Update display config |
+| GET | `/admin/explorer-available-columns/{type}` | Available columns per type |
+| GET | `/admin/llm/usage` | LLM usage statistics |
+| GET | `/admin/logs` | Application log viewer |
+| GET | `/admin/hierarchies` | List imported hierarchies |
+| PATCH | `/admin/hierarchies/{id}` | Update hierarchy metadata |
+
+## 11.10e Auth — Entra ID (implemented)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/auth/entra/config` | Entra ID client config (client_id, authority) |
+| POST | `/auth/entra/token` | Exchange MSAL token for app JWT |
 
 ## 11.11 Health & ops
 

@@ -4,7 +4,7 @@
 
 | Layer | Technology |
 |---|---|
-| Frontend | **Astro 4.x** with the `@astrojs/node` SSR adapter, TypeScript, Tailwind, Astro UI islands (React or Svelte — implementer choice) |
+| Frontend | **Astro 4.x** (static build served by backend), TypeScript, Tailwind, React islands (via `@astrojs/react`) |
 | Backend API | **FastAPI 0.110+** (Python 3.11+), Uvicorn, Pydantic v2 |
 | ORM / migrations | SQLAlchemy 2.x + Alembic |
 | Background workers | **Celery 5** (preferred) on Redis 7. RQ is acceptable if Celery is overkill for the deploy target |
@@ -13,58 +13,72 @@
 | Object cache | Redis (also broker) |
 | LLM | Azure OpenAI + SAP BTP Generative AI Hub (abstracted) |
 | Email | SMTP (v1), Microsoft Graph (v2 alongside EntraID) |
-| Auth | Local (bcrypt + JWT) v1; Azure EntraID OIDC v2 |
+| Auth | Local (bcrypt + JWT) v1; Azure Entra ID MSAL SPA (PKCE) v2 |
 | Observability | OpenTelemetry traces, Prometheus metrics, structured JSON logs |
 | Container | Docker; docker-compose for local dev; production deploy is Kubernetes-ready |
 
 ## 2.2 Service decomposition (monorepo)
 
 ```
-ampliFi-cleanup/
-├── frontend/                       # Astro app (SSR)
+ampliFi-center-management/
+├── frontend/                       # Astro app (built to static, served by backend)
 │   ├── src/
 │   │   ├── pages/                  # Astro pages (file-based routing)
-│   │   │   ├── index.astro         # Entry / login
-│   │   │   ├── cockpit/            # Analyst cockpit
-│   │   │   ├── wave/[id]/          # Wave detail
-│   │   │   ├── review/[token]/     # Stakeholder review (tokenised)
-│   │   │   ├── housekeeping/       # Owner sign-off form
-│   │   │   └── admin/              # Admin views
-│   │   ├── components/
-│   │   ├── lib/api.ts              # Typed FastAPI client (generated from OpenAPI)
-│   │   └── stores/                 # Client state (nano stores or similar)
+│   │   │   ├── index.astro         # Dashboard (wave progress, system stats)
+│   │   │   ├── login.astro         # Authentication (local + optional Entra ID)
+│   │   │   ├── cockpit/            # Waves & Analysis cockpit
+│   │   │   │   ├── index.astro     # Wave list, scope coverage, global stats
+│   │   │   │   ├── wave.astro      # Wave detail (tabs: Scope, Analysis, Simulation, Proposals, Review, Progress)
+│   │   │   │   ├── analytics.astro # Analytics charts
+│   │   │   │   ├── compare.astro   # Run comparison
+│   │   │   │   ├── pipeline.astro  # Pipeline editor
+│   │   │   │   ├── run.astro       # Run detail view
+│   │   │   │   └── ...             # housekeeping, mdg-export, cluster, data-quality, llm-review
+│   │   │   ├── admin/              # System administration
+│   │   │   │   ├── index.astro     # Users, Decision Trees, Routines, App Config, System Health
+│   │   │   │   ├── sap.astro       # SAP connections
+│   │   │   │   ├── rules.astro     # Rule builder
+│   │   │   │   ├── templates.astro # Wave templates
+│   │   │   │   └── ...             # llm, email, naming, datasphere, explorer, audit, jobs, logs
+│   │   │   ├── data/index.astro    # Data management (upload, browse)
+│   │   │   ├── explore.astro       # Public data explorer
+│   │   │   ├── review/             # Stakeholder review (token-based)
+│   │   │   ├── tasks.astro         # My Tasks
+│   │   │   ├── activity.astro      # Activity feed
+│   │   │   └── setup.astro         # Setup wizard
+│   │   └── components/             # Reusable components
 │   ├── public/
 │   ├── astro.config.mjs
 │   └── package.json
 ├── backend/                        # FastAPI service
 │   ├── app/
-│   │   ├── main.py                 # FastAPI app factory
+│   │   ├── main.py                 # FastAPI app factory (+ serves frontend static files)
 │   │   ├── config.py               # Settings (env-driven, pydantic-settings)
-│   │   ├── api/                    # Routers, one per resource
+│   │   ├── api/                    # Routers (admin, auth, configs, waves, runs, review, stats, etc.)
 │   │   ├── domain/                 # Pure business logic (no I/O)
-│   │   │   ├── decision_tree/      # Cleansing + Mapping rules (§04)
+│   │   │   ├── decision_tree/      # V1 cleansing + mapping rules (§04)
+│   │   │   │   └── routines/       # Built-in routines (posting, ownership, redundancy, etc.)
 │   │   │   ├── ml/                 # Feature builders, models (§05)
 │   │   │   ├── naming/             # Naming convention engine (§07)
 │   │   │   └── proposal/           # Proposal builder, lock state machine
+│   │   ├── services/               # Business services
+│   │   │   ├── analysis.py         # V1 analysis execution
+│   │   │   ├── analysis_v2.py      # V2 CEMA-based migration engine
+│   │   │   ├── seed.py             # Data seeding
+│   │   │   └── upload_*.py         # Upload processors (cc_hierarchy, sap_hierarchy, etc.)
 │   │   ├── infra/                  # I/O adapters (DB, LLM, OData, email)
-│   │   │   ├── db/
-│   │   │   ├── llm/                # azure_openai.py, sap_btp.py + base interface
-│   │   │   ├── odata/
-│   │   │   ├── email/
-│   │   │   └── mdg/                # MDG file export + future API client
-│   │   ├── workers/                # Celery tasks
-│   │   ├── auth/                   # Local + EntraID strategies
+│   │   ├── auth/                   # Local + Entra ID (MSAL) strategies
 │   │   └── models/                 # SQLAlchemy ORM
-│   ├── alembic/
-│   ├── tests/
+│   ├── alembic/                    # Database migrations
+│   ├── tests/                      # Test suite (V1 + V2 engine, API tests)
 │   ├── pyproject.toml
 │   └── Dockerfile
-├── workers/                        # (thin wrapper; tasks live in backend/app/workers)
-├── infra/
-│   ├── docker-compose.yml          # Postgres, Redis, backend, frontend, mailhog
-│   ├── k8s/                        # Manifests (deferred)
-│   └── seed/                       # Seed scripts for dev
-└── spec/                           # This spec bundle
+├── scripts/                        # Setup and deployment scripts
+├── Implementation_Plan/            # Specification documents (21 files)
+├── docs/                           # Deployment guides
+├── Makefile                        # Project commands (start, stop, setup, update, etc.)
+├── .env.example                    # Environment template
+└── docker-compose.yml              # Docker deployment (optional)
 ```
 
 Domain code (`backend/app/domain/`) MUST NOT import from `backend/app/infra/`. The
@@ -74,38 +88,36 @@ decision tree, ML, and naming engines unit-testable without a database.
 ## 2.3 Runtime topology
 
 ```
-                         +------------------------+
-   Browser <-- HTTPS --> |  Astro SSR (Node)      |
-                         |  - serves UI           |
-                         |  - calls FastAPI on    |
-                         |    server side         |
-                         +-----------+------------+
-                                     |
-                                     v
-                         +------------------------+
-                         |  FastAPI (Uvicorn)     |
-                         |  - REST API            |
-                         |  - JWT / OIDC auth     |
-                         +-----+--------+---------+
+                         +-----------------------------------+
+   Browser <-- HTTP/S -> |  FastAPI (Uvicorn, port 8180)    |
+                         |  - serves static frontend        |
+                         |  - REST API (/api/*)             |
+                         |  - JWT / Entra ID (MSAL) auth    |
+                         +-----+--------+-------------------+
                                |        |
             +------------------+        +---------------------+
             v                                                v
      +-------------+                                +------------------+
      |  Postgres   |                                | Redis (cache +   |
-     |  (active or |                                | Celery broker)   |
-     |  Datasphere)|                                +--------+---------+
-     +------+------+                                         |
-            ^                                                v
-            |                                       +------------------+
-            +<--------- Celery workers ------------ | Worker pool      |
-                          |       |                 | - odata.refresh  |
-                          v       v                 | - ml.score       |
-                  +-----------+ +-----------+       | - email.send     |
-                  | SAP OData | |  LLM      |       | - mdg.export     |
-                  | endpoints | |  (Azure / |       +------------------+
-                  +-----------+ |   BTP)    |
+     |  (active or |                                | Celery broker,   |
+     |  Datasphere)|                                | optional)        |
+     +------+------+                                +--------+---------+
+            ^                                                |
+            |                                                v
+            +<--------- Celery workers ------------ +------------------+
+                          |       |                 | Worker pool      |
+                          v       v                 | - odata.refresh  |
+                  +-----------+ +-----------+       | - ml.score       |
+                  | SAP OData | |  LLM      |       | - email.send     |
+                  | endpoints | |  (Azure / |       | - mdg.export     |
+                  +-----------+ |   BTP)    |       +------------------+
                                 +-----------+
 ```
+
+> **Note (implementation status):** The frontend is built to static HTML/JS/CSS by Astro
+> and served by the FastAPI backend via `StaticFiles`. There is no separate Node SSR process
+> in production. The Astro pages use client-side `<script>` blocks for interactivity
+> (fetch calls to `/api/*`).
 
 ## 2.4 Data store strategy
 
@@ -158,8 +170,8 @@ Each task is idempotent: tasks accept a `run_id` (UUID), persist progress in
 - Backend exposes OpenAPI 3.1 at `/api/openapi.json`.
 - A typed TS client is generated into `frontend/src/lib/api.ts` (e.g. `openapi-typescript`
   + `openapi-fetch`). CI fails if the client is out-of-date relative to the spec.
-- Astro pages (SSR) call the backend with the user's JWT forwarded; client islands call
-  through `/api/...` proxied via Astro middleware (so the JWT cookie travels).
+- Astro pages are built to static HTML and served by the FastAPI backend. Client-side
+  `<script>` blocks call `/api/...` directly with the JWT from `localStorage`.
 
 ## 2.8 Local development
 
