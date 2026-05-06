@@ -260,3 +260,122 @@ def delete_gl_range(
     db.delete(r)
     db.commit()
     return {"deleted": True}
+
+
+# ── Rule catalog & presets (business-user-friendly config UX) ────────────
+
+
+@router.get("/rule-catalog")
+def get_rule_catalog(tree: str | None = None) -> dict:
+    """Return business-friendly metadata for every routine.
+
+    The catalog is the single source of truth for the config editor UI:
+    it exposes friendly labels, plain-language descriptions, parameter
+    schemas with units and help text, and the verdicts each rule can
+    emit. The frontend renders forms from this — no raw JSON editing.
+
+    Optional ``tree`` filter: 'cleansing' | 'mapping' | 'v2'.
+    """
+    from app.domain.decision_tree.rule_catalog import list_rule_catalog
+
+    entries = list_rule_catalog(tree=tree)
+    return {
+        "total": len(entries),
+        "entries": entries,
+    }
+
+
+@router.get("/presets")
+def list_config_presets(engine: str = "v1") -> dict:
+    """Return preset variant templates for the given engine ('v1' | 'v2').
+
+    Presets are starting points for new variants. A business user picks
+    one (e.g. 'Standard — empfohlen'), forks it via /presets/{name}/instantiate,
+    then tweaks parameters in the editor and saves with a friendly name.
+    """
+    from app.domain.decision_tree.rule_catalog import list_presets
+
+    presets = list_presets(engine)
+    return {
+        "engine": engine.lower(),
+        "presets": [
+            {"name": k, **v} for k, v in presets.items()
+        ],
+    }
+
+
+class InstantiatePresetIn(BaseModel):
+    """Request body for creating a config from a preset."""
+
+    name: str  # human-friendly name for the new config
+    code: str | None = None  # optional unique code; auto-generated if omitted
+    description: str | None = None
+
+
+@router.post("/presets/{engine}/{preset_name}/instantiate")
+def instantiate_preset(
+    engine: str,
+    preset_name: str,
+    body: InstantiatePresetIn,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Create a new AnalysisConfig from a preset template.
+
+    The new config is a normal versioned config — the caller can then
+    fork/amend it using the existing /{code}/fork and /{code}/amend
+    endpoints, edit it via the rule-catalog driven UI, and apply it to
+    analysis runs via /waves/{id}/analyse-with-engine.
+    """
+    from app.domain.decision_tree.rule_catalog import (
+        build_v1_config_from_preset,
+        build_v2_config_from_preset,
+        get_preset,
+    )
+
+    if engine.lower() not in ("v1", "v2"):
+        raise HTTPException(status_code=400, detail="engine must be 'v1' or 'v2'")
+    if not get_preset(engine, preset_name):
+        raise HTTPException(status_code=404, detail=f"Unknown {engine} preset: {preset_name}")
+
+    if engine.lower() == "v1":
+        config_data = build_v1_config_from_preset(preset_name)
+        default_code = f"v1-{preset_name}"
+    else:
+        config_data = build_v2_config_from_preset(preset_name)
+        default_code = f"v2-{preset_name}"
+
+    code = body.code or default_code
+    existing = db.execute(
+        select(AnalysisConfig).where(AnalysisConfig.code == code)
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Config code '{code}' already exists (id={existing.id}). "
+                "Pass a unique 'code' in the body or fork the existing one."
+            ),
+        )
+
+    config = AnalysisConfig(
+        code=code,
+        version=1,
+        name=body.name,
+        description=body.description
+        or f"Instantiated from preset '{preset_name}' ({engine})",
+        status="active",
+        config=config_data,
+        created_by=user.id,
+    )
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    return {
+        "id": config.id,
+        "code": config.code,
+        "version": config.version,
+        "name": config.name,
+        "engine": engine.lower(),
+        "preset": preset_name,
+    }
