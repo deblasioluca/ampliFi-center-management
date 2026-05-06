@@ -6,9 +6,9 @@ import Layout from '../../components/layout/Layout.astro';
   <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
 
   <div class="mb-4">
-    <h2 class="text-xl font-bold">Engine Comparison: Rule Tree vs ML vs LLM</h2>
+    <h2 class="text-xl font-bold">Engine Comparison: Decision Tree vs ML vs LLM</h2>
     <p class="text-sm text-gray-500 mt-1">
-      Run the deterministic rule tree, the ML predictor, and the LLM advisor on the same wave's
+      Run the deterministic decision tree, the ML predictor, and the LLM advisor on the same wave's
       cost centers, side by side. Read-only diagnostic — no proposals are persisted.
     </p>
   </div>
@@ -36,7 +36,7 @@ import Layout from '../../components/layout/Layout.astro';
       <div>
         <label class="block text-xs text-gray-500 mb-1">Engines</label>
         <div class="flex flex-wrap gap-3 text-sm py-1">
-          <label class="flex items-center gap-1"><input type="checkbox" id="eng-tree" checked /> Rule Tree</label>
+          <label class="flex items-center gap-1"><input type="checkbox" id="eng-tree" checked /> Decision Tree</label>
           <label class="flex items-center gap-1"><input type="checkbox" id="eng-ml" checked /> ML</label>
           <label class="flex items-center gap-1"><input type="checkbox" id="eng-llm" checked /> LLM</label>
         </div>

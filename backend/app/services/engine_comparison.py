@@ -59,11 +59,22 @@ DEFAULT_TREE_PIPELINE = {
 def _get_wave_centers(
     wave_id: int, db: Session, limit: int | None = None
 ) -> list[LegacyCostCenter]:
-    """Return cost centers in a wave's scope. Reuses the wave-entity link."""
-    entity_ids_q = select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave_id)
+    """Return cost centers in a wave's scope. Reuses the wave-entity link.
+
+    Note: ``LegacyCostCenter`` does not have a direct FK to ``Entity`` —
+    they're linked via ``ccode`` (the SAP company code BUKRS). So we go
+    wave_entity → entity → ccode → legacy_cost_center.
+    """
+    from app.models.core import Entity
+
+    ccodes_q = (
+        select(Entity.ccode)
+        .join(WaveEntity, WaveEntity.entity_id == Entity.id)
+        .where(WaveEntity.wave_id == wave_id)
+    )
     query = (
         select(LegacyCostCenter)
-        .where(LegacyCostCenter.entity_id.in_(entity_ids_q))
+        .where(LegacyCostCenter.ccode.in_(ccodes_q))
         .order_by(LegacyCostCenter.cctr)
     )
     if limit:
