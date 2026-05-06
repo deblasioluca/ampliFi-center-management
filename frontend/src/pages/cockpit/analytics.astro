@@ -216,89 +216,282 @@ import Layout from '../../components/layout/Layout.astro';
     }
   };
 
-  // Why panel (decision reasoning)
+  // ── Business-friendly decision reasoning panel ──────────────────────
+  // Renders the proposal's outcome + decision steps in plain language,
+  // pulls a fresh ML opinion automatically, and offers an LLM advisor on
+  // demand (since LLM calls have cost).
   var _currentRunId = null;
+  var _currentProposalId = null;
+
+  // Wider panel — there's a lot to show now and the old 24rem cramped
+  // probability bars and rule descriptions onto two lines each.
+  (function widenPanel() {
+    var panel = document.getElementById('why-panel');
+    if (panel) {
+      panel.classList.remove('w-96');
+      panel.classList.add('w-[28rem]', 'md:w-[32rem]');
+    }
+  })();
+
+  // Verdict badge colours — semantic, not arbitrary.
+  var OUTCOME_BADGE = {
+    KEEP:      { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
+    RETIRE:    { bg: 'bg-red-100',   text: 'text-red-800',   border: 'border-red-300'   },
+    MERGE_MAP: { bg: 'bg-blue-100',  text: 'text-blue-800',  border: 'border-blue-300'  },
+    REDESIGN:  { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' },
+    MIGRATE:   { bg: 'bg-violet-100',text: 'text-violet-800',border: 'border-violet-300'},
+    UNKNOWN:   { bg: 'bg-gray-100',  text: 'text-gray-700',  border: 'border-gray-300'  },
+  };
+  function outcomeBadge(verdict) {
+    var c = OUTCOME_BADGE[verdict] || OUTCOME_BADGE.UNKNOWN;
+    return '<span class="inline-block px-2 py-0.5 rounded border text-[11px] font-mono ' +
+           c.bg + ' ' + c.text + ' ' + c.border + '">' + esc(verdict || 'UNKNOWN') + '</span>';
+  }
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function renderProbabilityBars(probs) {
+    if (!probs || !Object.keys(probs).length) return '';
+    var entries = Object.entries(probs).sort(function(a, b) { return b[1] - a[1]; });
+    return entries.map(function(kv) {
+      var v = kv[0];
+      var p = kv[1];
+      var c = OUTCOME_BADGE[v] || OUTCOME_BADGE.UNKNOWN;
+      return '<div class="flex items-center gap-2 text-[11px]">' +
+        '<span class="inline-block w-20 font-mono">' + esc(v) + '</span>' +
+        '<div class="flex-1 h-2.5 rounded overflow-hidden bg-gray-100">' +
+          '<div class="h-full ' + c.bg + '" style="width:' + (p * 100).toFixed(1) + '%"></div>' +
+        '</div>' +
+        '<span class="w-10 text-right tabular-nums">' + pct(p) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function renderAnomalyGauge(score) {
+    if (score == null) return '';
+    var p = Math.max(0, Math.min(1, score));
+    var label, tone;
+    if (p < 0.33)      { label = 'Typical'; tone = 'bg-green-100 text-green-800'; }
+    else if (p < 0.66) { label = 'Somewhat unusual'; tone = 'bg-amber-100 text-amber-800'; }
+    else               { label = 'Unusual — review carefully'; tone = 'bg-red-100 text-red-800'; }
+    return '<div class="flex items-center gap-2 text-[11px] mt-2">' +
+      '<span class="inline-block w-24 text-gray-500">Anomaly score</span>' +
+      '<div class="flex-1 h-2 rounded overflow-hidden bg-gray-100">' +
+        '<div class="h-full bg-gradient-to-r from-green-300 via-amber-300 to-red-400" style="width:' + (p * 100).toFixed(1) + '%"></div>' +
+      '</div>' +
+      '<span class="px-2 py-0.5 rounded text-[10px] ' + tone + '">' + label + '</span>' +
+    '</div>';
+  }
+
+  function renderAgreement(treeVerdict, otherVerdict, otherEngineLabel) {
+    if (!treeVerdict || !otherVerdict) return '';
+    var same = treeVerdict === otherVerdict;
+    var cls = same ? 'bg-green-50 text-green-800 border-green-200' : 'bg-amber-50 text-amber-800 border-amber-200';
+    var msg = same
+      ? otherEngineLabel + ' agrees with the rule tree.'
+      : otherEngineLabel + ' disagrees: rule tree said ' + esc(treeVerdict) + ', ' + otherEngineLabel + ' says ' + esc(otherVerdict) + '. Worth a closer look.';
+    return '<div class="mt-2 px-2 py-1 border rounded text-[11px] ' + cls + '">' + msg + '</div>';
+  }
+
+  function renderRuleSteps(steps) {
+    if (!steps || !steps.length) {
+      return '<p class="text-xs text-gray-400">No decision steps recorded for this center.</p>';
+    }
+    return '<ol class="space-y-2.5">' + steps.map(function(s, idx) {
+      var num = '<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amplifi-100 text-amplifi-800 text-[10px] font-bold flex-shrink-0">' + (idx + 1) + '</span>';
+      var conf = s.confidence != null ? ' <span class="text-[10px] text-gray-400">(' + pct(s.confidence) + ')</span>' : '';
+      var meaning = s.verdict_meaning ? '<div class="text-xs text-gray-700 mt-0.5">' + esc(s.verdict_meaning) + '</div>' : '';
+      var description = s.description ? '<div class="text-[11px] text-gray-500 mt-0.5 italic">' + esc(s.description) + '</div>' : '';
+      var techDetail = '<div class="text-[10px] text-gray-400 font-mono mt-1">' + esc(s.code) + ' → ' + esc(s.verdict) + conf + '</div>';
+      return '<li class="flex gap-2">' + num +
+        '<div class="flex-1 min-w-0">' +
+          '<div class="text-xs font-semibold text-gray-800">' + esc(s.label) + '</div>' +
+          meaning +
+          description +
+          techDetail +
+        '</div>' +
+      '</li>';
+    }).join('') + '</ol>';
+  }
+
   window.showWhyPanel = function(proposalId) {
     if (!_currentRunId) return;
+    _currentProposalId = proposalId;
     var panel = document.getElementById('why-panel');
     var content = document.getElementById('why-panel-content');
-    content.innerHTML = '<span class="text-gray-400">Loading...</span>';
+    content.innerHTML = '<div class="text-xs text-gray-400">Loading reasoning…</div>';
     panel.style.transform = 'translateX(0)';
 
     fetch('/api/runs/' + _currentRunId + '/proposals/' + proposalId + '/why', { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var html = '';
-        // Outcome badge
-        var oc = d.cleansing_outcome || 'UNKNOWN';
-        var color = COLORS[oc] || '#999';
-        html += '<div class="flex items-center gap-2 mb-2"><span class="px-2 py-0.5 rounded text-white text-[10px] font-bold" style="background:' + color + '">' + esc(oc) + '</span>';
-        if (d.target_object) html += '<span class="text-gray-500">→ ' + esc(d.target_object) + '</span>';
-        html += '</div>';
-
-        // Rule path
-        html += '<div class="border rounded p-2 bg-gray-50"><h4 class="font-semibold text-gray-700 mb-1">Rule Path</h4>';
-        var rp = d.rule_path;
-        if (rp && rp.steps && rp.steps.length) {
-          html += '<ol class="list-decimal list-inside space-y-1">';
-          rp.steps.forEach(function(step) {
-            var code = step.routine || step.code || '';
-            var verdict = step.verdict || step.result || '';
-            var conf = step.confidence != null ? ' (' + (step.confidence * 100).toFixed(0) + '%)' : '';
-            html += '<li><span class="font-mono text-blue-700">' + esc(code) + '</span> → <span class="font-medium">' + esc(verdict) + '</span>' + conf + '</li>';
-          });
-          html += '</ol>';
-        } else if (rp && typeof rp === 'object') {
-          html += '<pre class="text-[10px] whitespace-pre-wrap">' + esc(JSON.stringify(rp, null, 2)) + '</pre>';
-        } else {
-          html += '<span class="text-gray-400">No rule path recorded</span>';
-        }
-        html += '</div>';
-
-        // ML Scores
-        if (d.ml_scores && Object.keys(d.ml_scores).length) {
-          html += '<div class="border rounded p-2 bg-gray-50"><h4 class="font-semibold text-gray-700 mb-1">ML Scores</h4>';
-          html += '<div class="space-y-1">';
-          Object.keys(d.ml_scores).forEach(function(k) {
-            if (k.charAt(0) === '_') return;
-            var v = d.ml_scores[k];
-            var pct = typeof v === 'number' ? Math.round(v * 100) : v;
-            html += '<div class="flex justify-between"><span>' + esc(k) + '</span><span class="font-mono font-medium">' + pct + (typeof v === 'number' ? '%' : '') + '</span></div>';
-          });
-          html += '</div></div>';
-        }
-
-        // LLM Commentary
-        html += '<div class="border rounded p-2 bg-blue-50"><h4 class="font-semibold text-gray-700 mb-1">LLM Assessment</h4>';
-        var llm = d.llm_commentary;
-        if (llm && llm.error) {
-          html += '<span class="text-red-500">' + esc(llm.error) + '</span>';
-        } else if (llm && (llm.commentary || llm.assessment || llm.text)) {
-          html += '<p class="whitespace-pre-wrap">' + esc(llm.commentary || llm.assessment || llm.text) + '</p>';
-          if (llm.recommendation) html += '<p class="mt-1 font-medium text-blue-700">Recommendation: ' + esc(llm.recommendation) + '</p>';
-          if (llm.suggested_outcome) html += '<p class="mt-1">LLM suggested: <span class="font-mono font-bold">' + esc(llm.suggested_outcome) + '</span></p>';
-        } else if (llm && typeof llm === 'object') {
-          html += '<pre class="text-[10px] whitespace-pre-wrap">' + esc(JSON.stringify(llm, null, 2)) + '</pre>';
-        } else {
-          html += '<span class="text-gray-400">No LLM review performed</span>';
-        }
-        html += '</div>';
-
-        // Override
-        if (d.override && (d.override.outcome || d.override.target)) {
-          html += '<div class="border rounded p-2 bg-amber-50"><h4 class="font-semibold text-gray-700 mb-1">Manual Override</h4>';
-          if (d.override.outcome) html += '<div>Outcome: <span class="font-bold">' + esc(d.override.outcome) + '</span></div>';
-          if (d.override.target) html += '<div>Target: <span class="font-bold">' + esc(d.override.target) + '</span></div>';
-          if (d.override.reason) html += '<div class="text-gray-600 mt-1">' + esc(d.override.reason) + '</div>';
-          html += '</div>';
-        }
-
-        content.innerHTML = html;
+        renderWhyPanelContent(d);
+        // Auto-fetch ML opinion on open — it's free and fast.
+        loadMlOpinion(_currentRunId, proposalId);
       })
       .catch(function(err) {
-        content.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
+        content.innerHTML = '<span class="text-red-500 text-xs">Error: ' + esc(err.message) + '</span>';
       });
   };
+
+  function renderWhyPanelContent(d) {
+    var content = document.getElementById('why-panel-content');
+    var outcome = (d.outcome_friendly && d.outcome_friendly.label) || d.cleansing_outcome || 'UNKNOWN';
+    var verdict = d.cleansing_outcome || 'UNKNOWN';
+    var sentence = (d.outcome_friendly && d.outcome_friendly.sentence) || '';
+    var targetText = d.target_friendly || '';
+
+    var html = '';
+
+    // ── Header: outcome + plain-language sentence ─────────────────
+    html += '<div class="pb-3 border-b">' +
+      '<div class="flex items-center gap-2 mb-2">' +
+        outcomeBadge(verdict) +
+        (d.target_object ? ' <span class="text-xs text-gray-500">→ ' + esc(d.target_object) + '</span>' : '') +
+      '</div>' +
+      (sentence ? '<p class="text-sm text-gray-800">' + esc(sentence) + '</p>' : '') +
+      (targetText ? '<p class="text-xs text-gray-500 mt-1">Target object: ' + esc(targetText) + '</p>' : '') +
+      (d.confidence != null ? '<p class="text-[11px] text-gray-400 mt-1">Rule-tree confidence: ' + pct(d.confidence) + '</p>' : '') +
+    '</div>';
+
+    // ── How we decided: numbered steps in plain language ──────────
+    html += '<section class="mt-4">' +
+      '<h4 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">How we decided</h4>' +
+      renderRuleSteps(d.rule_path_translated) +
+    '</section>';
+
+    // ── ML Predictor placeholder (filled in async) ────────────────
+    html += '<section class="mt-4 pt-3 border-t" id="why-ml-section">' +
+      '<h4 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">ML Predictor (second opinion)</h4>' +
+      '<div id="why-ml-body" class="text-xs text-gray-400">Computing ML opinion…</div>' +
+    '</section>';
+
+    // ── LLM Advisor: opt-in button ────────────────────────────────
+    html += '<section class="mt-4 pt-3 border-t" id="why-llm-section">' +
+      '<h4 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">LLM Advisor</h4>' +
+      '<div id="why-llm-body">' +
+        '<button id="why-llm-btn" class="text-xs px-2 py-1 rounded bg-amplifi-50 hover:bg-amplifi-100 text-amplifi-700 border border-amplifi-200">Get LLM opinion</button>' +
+        '<p class="text-[11px] text-gray-400 mt-1.5">Costs a few cents. Asks the LLM for an independent verdict on this center.</p>' +
+      '</div>' +
+    '</section>';
+
+    // ── Stored LLM commentary, if any ─────────────────────────────
+    var llm = d.llm_commentary;
+    if (llm && (llm.commentary || llm.assessment || llm.text || llm.recommendation || llm.suggested_outcome)) {
+      html += '<section class="mt-4 pt-3 border-t">' +
+        '<h4 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">LLM review (from this run)</h4>' +
+        '<div class="text-xs text-gray-700 space-y-1">' +
+          (llm.commentary || llm.assessment || llm.text ? '<p class="whitespace-pre-wrap">' + esc(llm.commentary || llm.assessment || llm.text) + '</p>' : '') +
+          (llm.recommendation ? '<p class="font-medium text-amplifi-700">Recommendation: ' + esc(llm.recommendation) + '</p>' : '') +
+          (llm.suggested_outcome ? '<p>Suggested outcome: ' + outcomeBadge(llm.suggested_outcome) + '</p>' : '') +
+        '</div>' +
+      '</section>';
+    }
+
+    // ── Manual override, if any ───────────────────────────────────
+    if (d.override && (d.override.outcome || d.override.target)) {
+      html += '<section class="mt-4 pt-3 border-t bg-amber-50 -mx-4 px-4 py-3">' +
+        '<h4 class="text-xs font-bold uppercase tracking-wider text-amber-700 mb-2">Manual Override</h4>' +
+        '<div class="text-xs space-y-1">' +
+          (d.override.outcome ? '<div>Final outcome: ' + outcomeBadge(d.override.outcome) + '</div>' : '') +
+          (d.override.target  ? '<div>Final target: <span class="font-mono">' + esc(d.override.target) + '</span></div>' : '') +
+          (d.override.reason  ? '<p class="italic text-gray-600 mt-1">"' + esc(d.override.reason) + '"</p>' : '') +
+        '</div>' +
+      '</section>';
+    }
+
+    // ── Technical detail (collapsed) ──────────────────────────────
+    html += '<details class="mt-4 pt-3 border-t">' +
+      '<summary class="cursor-pointer text-[11px] text-gray-400 hover:text-gray-700">Show technical detail</summary>' +
+      '<pre class="text-[10px] text-gray-500 mt-2 whitespace-pre-wrap font-mono">' +
+        esc(JSON.stringify({
+          rule_path: d.rule_path,
+          ml_scores: d.ml_scores,
+          llm_commentary: d.llm_commentary,
+        }, null, 2)) +
+      '</pre>' +
+    '</details>';
+
+    content.innerHTML = html;
+
+    // Wire LLM button
+    var llmBtn = document.getElementById('why-llm-btn');
+    if (llmBtn) {
+      llmBtn.addEventListener('click', function() {
+        loadLlmOpinion(_currentRunId, _currentProposalId);
+      });
+    }
+  }
+
+  // ── Async: load ML opinion ──────────────────────────────────────────
+  function loadMlOpinion(runId, proposalId) {
+    var body = document.getElementById('why-ml-body');
+    if (!body) return;
+    fetch('/api/runs/' + runId + '/proposals/' + proposalId + '/ml-opinion', { headers: authHdr })
+      .then(function(r) {
+        if (r.status === 401) { window.location.href = '/login'; return null; }
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || ('HTTP ' + r.status)); });
+        return r.json();
+      })
+      .then(function(d) {
+        if (!d) return;
+        var html = '<div class="flex items-center gap-2 mb-2 text-xs">' +
+          'Top prediction: ' + outcomeBadge(d.verdict || 'UNKNOWN') +
+          (d.confidence != null ? ' <span class="text-gray-400">' + pct(d.confidence) + '</span>' : '') +
+        '</div>';
+        html += '<div class="space-y-1">' + renderProbabilityBars(d.probs) + '</div>';
+        if (d.anomaly_score != null) html += renderAnomalyGauge(d.anomaly_score);
+        if (d.contributors && d.contributors.length) {
+          html += '<div class="mt-2 flex flex-wrap gap-1 text-[10px]">' +
+            d.contributors.map(function(c) {
+              return '<span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700" title="' + escAttr(c.explain || '') + '">' + esc(c.explain || c.code) + '</span>';
+            }).join('') +
+          '</div>';
+        }
+        html += renderAgreement(d.tree_verdict, d.verdict, 'ML');
+        body.innerHTML = html;
+      })
+      .catch(function(err) {
+        body.innerHTML = '<p class="text-xs text-red-500">ML opinion unavailable: ' + esc(err.message) + '</p>';
+      });
+  }
+
+  // ── Async: load LLM opinion (on demand) ─────────────────────────────
+  function loadLlmOpinion(runId, proposalId) {
+    var body = document.getElementById('why-llm-body');
+    if (!body) return;
+    body.innerHTML = '<div class="text-xs text-gray-400">Asking the LLM…</div>';
+    fetch('/api/runs/' + runId + '/proposals/' + proposalId + '/llm-opinion', { headers: authHdr })
+      .then(function(r) {
+        if (r.status === 401) { window.location.href = '/login'; return null; }
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || ('HTTP ' + r.status)); });
+        return r.json();
+      })
+      .then(function(d) {
+        if (!d) return;
+        if (!d.available) {
+          body.innerHTML = '<p class="text-xs text-gray-500">LLM provider not configured. ' +
+            '<span class="text-gray-400">(' + esc(d.reason || 'no provider') + ')</span></p>' +
+            '<p class="text-[11px] text-gray-400 mt-1">Configure Azure OpenAI credentials in <code>backend/.env</code> to enable this.</p>';
+          return;
+        }
+        var html = '<div class="flex items-center gap-2 mb-2 text-xs">' +
+          'Verdict: ' + outcomeBadge(d.verdict || 'UNKNOWN') +
+          (d.confidence != null ? ' <span class="text-gray-400">' + pct(d.confidence) + '</span>' : '') +
+        '</div>';
+        if (d.reasoning) {
+          html += '<p class="text-xs text-gray-700 italic">"' + esc(d.reasoning) + '"</p>';
+        }
+        html += renderAgreement(d.tree_verdict, d.verdict, 'LLM');
+        if (d.tokens_in || d.tokens_out) {
+          html += '<p class="text-[10px] text-gray-400 mt-2">Model: ' + esc(d.model || '?') +
+            ' · ' + (d.tokens_in || 0) + ' in / ' + (d.tokens_out || 0) + ' out tokens</p>';
+        }
+        body.innerHTML = html;
+      })
+      .catch(function(err) {
+        body.innerHTML = '<p class="text-xs text-red-500">LLM call failed: ' + esc(err.message) + '</p>';
+      });
+  }
   window.closeWhyPanel = function() {
     document.getElementById('why-panel').style.transform = 'translateX(100%)';
   };
