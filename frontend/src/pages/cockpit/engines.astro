@@ -1,0 +1,375 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Engine Comparison" requireAuth={true}>
+  <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
+
+  <div class="mb-4">
+    <h2 class="text-xl font-bold">Engine Comparison: Rule Tree vs ML vs LLM</h2>
+    <p class="text-sm text-gray-500 mt-1">
+      Run the deterministic rule tree, the ML predictor, and the LLM advisor on the same wave's
+      cost centers, side by side. Read-only diagnostic — no proposals are persisted.
+    </p>
+  </div>
+
+  <!-- ── Help banner ─────────────────────────────────────────────── -->
+  <div class="card bg-amplifi-50 border-amplifi-200 mb-4">
+    <p class="text-xs text-amplifi-800 leading-relaxed">
+      <strong>How to use:</strong> Pick a wave, choose which engines to compare, hit "Run".
+      The result tells you per cost center what each engine recommends, where they agree
+      ("unanimous" rows are safe to auto-approve), and where they disagree ("split" rows
+      need human review). Use the agreement breakdown chart and the anomaly top-N list
+      to find suspicious cases first.
+    </p>
+  </div>
+
+  <!-- ── Run controls ────────────────────────────────────────────── -->
+  <div class="card mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Wave</label>
+        <select id="cmp-wave" class="input text-sm w-full">
+          <option value="">Loading waves…</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Engines</label>
+        <div class="flex flex-wrap gap-3 text-sm py-1">
+          <label class="flex items-center gap-1"><input type="checkbox" id="eng-tree" checked /> Rule Tree</label>
+          <label class="flex items-center gap-1"><input type="checkbox" id="eng-ml" checked /> ML</label>
+          <label class="flex items-center gap-1"><input type="checkbox" id="eng-llm" checked /> LLM</label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Sample size</label>
+        <select id="cmp-sample" class="input text-sm w-full">
+          <option value="25">25 centers (fast)</option>
+          <option value="100" selected>100 centers (default)</option>
+          <option value="500">500 centers</option>
+          <option value="-1">All centers (slow, capped at 1000)</option>
+        </select>
+      </div>
+      <button id="btn-run-cmp" class="btn-amplifi text-sm" disabled>▶ Run comparison</button>
+    </div>
+    <p class="text-xs text-gray-400 mt-2">
+      Note: the LLM engine returns <em>PASS</em> when no LLM provider is configured.
+      That is normal in dev environments — the comparison still works for tree vs ML.
+    </p>
+  </div>
+
+  <!-- ── Result area ─────────────────────────────────────────────── -->
+  <div id="cmp-loading" class="hidden card text-center text-sm text-gray-400 py-8">
+    Running comparison… this can take a moment for the LLM engine.
+  </div>
+  <div id="cmp-error" class="hidden card text-center text-sm text-red-600 py-4"></div>
+
+  <div id="cmp-results" class="hidden">
+    <!-- Summary row: per-engine counts + agreement breakdown -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      <div class="card">
+        <h3 class="text-sm font-semibold mb-3">Outcome counts per engine</h3>
+        <div id="per-engine-summary" class="space-y-3 text-xs"></div>
+      </div>
+      <div class="card">
+        <h3 class="text-sm font-semibold mb-3">Agreement across engines</h3>
+        <div id="agreement-summary" class="space-y-2 text-xs"></div>
+        <div class="text-[11px] text-gray-400 mt-3 leading-snug">
+          <strong>Unanimous</strong>: all selected engines pick the same outcome — high confidence.<br/>
+          <strong>Majority</strong>: most engines agree, one differs (or the LLM was unavailable).<br/>
+          <strong>Split</strong>: every engine picks a different outcome — needs reviewer judgement.
+        </div>
+      </div>
+    </div>
+
+    <!-- Anomaly top-10 -->
+    <div id="anomaly-section" class="card mb-4 hidden">
+      <h3 class="text-sm font-semibold mb-3">Top-10 anomalous centers (by ML)</h3>
+      <p class="text-xs text-gray-500 mb-2">
+        Most unusual centers in the population, sorted by IsolationForest score.
+        These often deserve manual review even if all engines agree on an outcome.
+      </p>
+      <div id="anomaly-table" class="overflow-x-auto"></div>
+    </div>
+
+    <!-- Per-center comparison table -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold">Per-center comparison <span id="cmp-count" class="text-gray-400 font-normal"></span></h3>
+        <div class="flex gap-2 text-xs">
+          <label>Filter:
+            <select id="cmp-filter" class="input text-xs">
+              <option value="all">All</option>
+              <option value="unanimous">Unanimous</option>
+              <option value="majority">Majority</option>
+              <option value="split">Split (need review)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="cmp-table" class="overflow-x-auto"></div>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var TOKEN = localStorage.getItem('amplifi_token');
+  if (!TOKEN) { window.location.href = '/login'; return; }
+  var headers = { 'Authorization': 'Bearer ' + TOKEN };
+
+  var OUTCOME_BG = {
+    KEEP:      'bg-green-100',
+    RETIRE:    'bg-red-100',
+    MERGE_MAP: 'bg-blue-100',
+    REDESIGN:  'bg-amber-100',
+    PASS:      'bg-gray-100',
+    UNKNOWN:   'bg-gray-100',
+  };
+  var OUTCOME_TEXT = {
+    KEEP:      'text-green-800',
+    RETIRE:    'text-red-800',
+    MERGE_MAP: 'text-blue-800',
+    REDESIGN:  'text-amber-800',
+    PASS:      'text-gray-500',
+    UNKNOWN:   'text-gray-500',
+  };
+  var AGREEMENT_BG = {
+    unanimous: 'bg-green-50',
+    majority:  'bg-amber-50',
+    split:     'bg-red-50',
+    no_data:   'bg-gray-50',
+  };
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function pct(n) { return (n * 100).toFixed(0) + '%'; }
+  function badge(verdict) {
+    var bg = OUTCOME_BG[verdict] || OUTCOME_BG.UNKNOWN;
+    var fg = OUTCOME_TEXT[verdict] || OUTCOME_TEXT.UNKNOWN;
+    return '<span class="inline-block px-2 py-0.5 rounded border text-[11px] font-mono ' + bg + ' ' + fg + ' border-gray-300">' + escapeHtml(verdict) + '</span>';
+  }
+
+  var lastResult = null;
+
+  // ── Load wave list ──────────────────────────────────────────────
+  fetch('/api/waves?size=200', { headers: headers })
+    .then(function(r) {
+      if (r.status === 401) { window.location.href = '/login'; return null; }
+      return r.json();
+    })
+    .then(function(d) {
+      if (!d) return;
+      var sel = document.getElementById('cmp-wave');
+      var items = (d && d.items) || [];
+      sel.innerHTML = '<option value="">-- Pick a wave --</option>';
+      items.forEach(function(w) {
+        var opt = document.createElement('option');
+        opt.value = w.id;
+        opt.textContent = w.code + ' — ' + (w.name || '') + ' (' + w.status + ')';
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', function(e) {
+        document.getElementById('btn-run-cmp').disabled = !e.target.value;
+      });
+    })
+    .catch(function(err) {
+      document.getElementById('cmp-wave').innerHTML = '<option>Error loading waves</option>';
+      console.error(err);
+    });
+
+  // ── Run the comparison ─────────────────────────────────────────
+  document.getElementById('btn-run-cmp').addEventListener('click', async function() {
+    var waveId = document.getElementById('cmp-wave').value;
+    if (!waveId) return;
+
+    var engines = [];
+    if (document.getElementById('eng-tree').checked) engines.push('tree');
+    if (document.getElementById('eng-ml').checked) engines.push('ml');
+    if (document.getElementById('eng-llm').checked) engines.push('llm');
+    if (!engines.length) {
+      alert('Pick at least one engine.');
+      return;
+    }
+    var sample = document.getElementById('cmp-sample').value;
+
+    document.getElementById('cmp-loading').classList.remove('hidden');
+    document.getElementById('cmp-error').classList.add('hidden');
+    document.getElementById('cmp-results').classList.add('hidden');
+    document.getElementById('btn-run-cmp').disabled = true;
+
+    try {
+      var url = '/api/runs/compare/wave/' + encodeURIComponent(waveId) +
+                '?engines=' + engines.join(',') +
+                '&sample_size=' + encodeURIComponent(sample);
+      var r = await fetch(url, { headers: headers });
+      if (r.status === 401) { window.location.href = '/login'; return; }
+      if (!r.ok) {
+        var err = await r.json().catch(function(){return{};});
+        throw new Error(err.detail || ('HTTP ' + r.status));
+      }
+      lastResult = await r.json();
+      renderResults(lastResult);
+    } catch(err) {
+      var ce = document.getElementById('cmp-error');
+      ce.textContent = 'Error: ' + err.message;
+      ce.classList.remove('hidden');
+    } finally {
+      document.getElementById('cmp-loading').classList.add('hidden');
+      document.getElementById('btn-run-cmp').disabled = false;
+    }
+  });
+
+  // ── Renderers ──────────────────────────────────────────────────
+  function renderResults(data) {
+    document.getElementById('cmp-results').classList.remove('hidden');
+    document.getElementById('cmp-count').textContent =
+      '(' + data.sample_size + ' centers, ' + (data.duration_ms / 1000).toFixed(1) + 's)';
+
+    renderPerEngineSummary(data);
+    renderAgreementSummary(data);
+    renderAnomalies(data);
+    renderTable(data, 'all');
+  }
+
+  function renderPerEngineSummary(data) {
+    var el = document.getElementById('per-engine-summary');
+    var perEng = data.summary.per_engine || {};
+    var html = '';
+    data.engines.forEach(function(eng) {
+      var counts = perEng[eng] || {};
+      var total = Object.values(counts).reduce(function(a,b){return a+b;}, 0);
+      var bars = '';
+      ['KEEP','RETIRE','MERGE_MAP','REDESIGN','PASS','UNKNOWN'].forEach(function(v) {
+        var n = counts[v] || 0;
+        if (!n) return;
+        var p = total ? (n/total*100) : 0;
+        var bg = OUTCOME_BG[v] || OUTCOME_BG.UNKNOWN;
+        bars += '<div class="flex items-center gap-2 text-[11px]">' +
+                  '<span class="inline-block w-20">' + v + '</span>' +
+                  '<div class="flex-1 h-3 rounded overflow-hidden bg-gray-100">' +
+                    '<div class="h-full ' + bg + '" style="width:' + p + '%"></div>' +
+                  '</div>' +
+                  '<span class="w-16 text-right tabular-nums">' + n + ' (' + p.toFixed(0) + '%)</span>' +
+                '</div>';
+      });
+      html += '<div><div class="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">' + eng.toUpperCase() + '</div>' + bars + '</div>';
+    });
+    el.innerHTML = html || '<div class="text-gray-400 italic">No data</div>';
+  }
+
+  function renderAgreementSummary(data) {
+    var el = document.getElementById('agreement-summary');
+    var ag = data.summary.agreement || {};
+    var total = Object.values(ag).reduce(function(a,b){return a+b;}, 0);
+    if (!total) {
+      el.innerHTML = '<div class="text-gray-400 italic">No data</div>';
+      return;
+    }
+    var html = '';
+    ['unanimous','majority','split','no_data'].forEach(function(level) {
+      var n = ag[level] || 0;
+      if (!n) return;
+      var p = (n/total*100);
+      var bg = AGREEMENT_BG[level] || AGREEMENT_BG.no_data;
+      html += '<div class="flex items-center gap-2">' +
+                '<span class="inline-block w-20 ' + bg + ' border border-gray-200 px-2 py-0.5 rounded text-gray-700">' + level + '</span>' +
+                '<div class="flex-1 h-3 rounded overflow-hidden bg-gray-100">' +
+                  '<div class="h-full bg-amplifi-400" style="width:' + p + '%"></div>' +
+                '</div>' +
+                '<span class="w-16 text-right tabular-nums">' + n + ' (' + p.toFixed(0) + '%)</span>' +
+              '</div>';
+    });
+    el.innerHTML = html;
+  }
+
+  function renderAnomalies(data) {
+    var top = (data.summary && data.summary.anomaly_top) || [];
+    var section = document.getElementById('anomaly-section');
+    if (!top.length) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+    var rows = top.map(function(r) {
+      var verdicts = data.engines.map(function(e) {
+        var v = (r.verdicts || {})[e] || 'UNKNOWN';
+        return '<td class="px-2 py-1">' + badge(v) + '</td>';
+      }).join('');
+      return '<tr class="border-t">' +
+        '<td class="px-2 py-1 font-mono text-xs">' + escapeHtml(r.cctr) + '</td>' +
+        '<td class="px-2 py-1 text-xs max-w-xs truncate" title="' + escapeHtml(r.txtsh || '') + '">' + escapeHtml(r.txtsh || '') + '</td>' +
+        '<td class="px-2 py-1 text-xs text-gray-500">' + escapeHtml(r.ccode) + '</td>' +
+        verdicts +
+        '<td class="px-2 py-1 text-xs tabular-nums">' + (r.anomaly != null ? r.anomaly.toFixed(2) : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+    var headerEngines = data.engines.map(function(e) { return '<th class="px-2 py-1 text-left">' + e.toUpperCase() + '</th>'; }).join('');
+    document.getElementById('anomaly-table').innerHTML =
+      '<table class="w-full text-xs"><thead class="bg-gray-50"><tr>' +
+        '<th class="px-2 py-1 text-left">Cost Center</th>' +
+        '<th class="px-2 py-1 text-left">Description</th>' +
+        '<th class="px-2 py-1 text-left">Entity</th>' +
+        headerEngines +
+        '<th class="px-2 py-1 text-left">Anomaly</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderTable(data, filter) {
+    var rows = data.centers.filter(function(r) {
+      if (filter === 'all') return true;
+      return r.agreement === filter;
+    });
+    var headerEngines = data.engines.map(function(e) {
+      return '<th class="px-2 py-1 text-left text-[11px] uppercase tracking-wide text-gray-500">' + e + '</th>';
+    }).join('');
+    var html = '<table class="w-full text-xs"><thead class="bg-gray-50"><tr>' +
+      '<th class="px-2 py-1 text-left">Cost Center</th>' +
+      '<th class="px-2 py-1 text-left">Description</th>' +
+      '<th class="px-2 py-1 text-left">Entity</th>' +
+      headerEngines +
+      '<th class="px-2 py-1 text-left">Agreement</th>' +
+    '</tr></thead><tbody>';
+    if (!rows.length) {
+      html += '<tr><td colspan="' + (4 + data.engines.length) + '" class="px-2 py-4 text-center text-gray-400 italic">No rows match this filter</td></tr>';
+    } else {
+      rows.forEach(function(r) {
+        var rowBg = AGREEMENT_BG[r.agreement] || '';
+        var engineCells = data.engines.map(function(e) {
+          var er = r.engines[e] || {};
+          var conf = er.confidence != null ? pct(er.confidence) : '';
+          var label = badge(er.verdict || 'UNKNOWN');
+          var detail = '';
+          if (e === 'ml' && er.probs) {
+            detail = '<div class="text-[10px] text-gray-400 mt-0.5">' + Object.entries(er.probs)
+              .filter(function(kv) { return kv[1] >= 0.05; })
+              .sort(function(a,b) { return b[1]-a[1]; })
+              .map(function(kv) { return kv[0] + ':' + pct(kv[1]); })
+              .join(' · ') + '</div>';
+          } else if (e === 'llm' && er.comment) {
+            detail = '<div class="text-[10px] text-gray-500 mt-0.5 italic">' + escapeHtml(er.comment.substring(0, 80)) + (er.comment.length > 80 ? '…' : '') + '</div>';
+          } else if (er.reason) {
+            detail = '<div class="text-[10px] text-gray-400 mt-0.5 font-mono">' + escapeHtml(er.reason) + '</div>';
+          }
+          return '<td class="px-2 py-2 align-top">' + label +
+                 (conf ? ' <span class="text-[10px] text-gray-400">' + conf + '</span>' : '') +
+                 detail + '</td>';
+        }).join('');
+        html += '<tr class="border-t ' + rowBg + '">' +
+          '<td class="px-2 py-2 font-mono align-top">' + escapeHtml(r.cctr) + '</td>' +
+          '<td class="px-2 py-2 align-top max-w-xs truncate" title="' + escapeHtml(r.txtsh || '') + '">' + escapeHtml(r.txtsh || '') + '</td>' +
+          '<td class="px-2 py-2 text-gray-500 align-top">' + escapeHtml(r.ccode) + '</td>' +
+          engineCells +
+          '<td class="px-2 py-2 text-[11px] uppercase tracking-wide align-top">' + escapeHtml(r.agreement) + '</td>' +
+        '</tr>';
+      });
+    }
+    html += '</tbody></table>';
+    document.getElementById('cmp-table').innerHTML = html;
+  }
+
+  document.getElementById('cmp-filter').addEventListener('change', function(e) {
+    if (lastResult) renderTable(lastResult, e.target.value);
+  });
+})();
+</script>
