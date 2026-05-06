@@ -6,14 +6,14 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="flex items-center justify-between mb-4">
     <div>
       <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Admin</a>
-      <h2 class="text-xl font-bold mt-2">Decision Tree Varianten</h2>
+      <h2 class="text-xl font-bold mt-2">Decision Tree Variants</h2>
       <p class="text-sm text-gray-500 mt-1">
-        Erstelle und verwalte Varianten des Entscheidungsbaums. Wähle eine
-        Vorlage zum Starten und passe die Parameter an deine Anforderungen an.
+        Create and manage decision-tree variants. Pick a preset to start, then
+        tweak parameters to your needs.
       </p>
     </div>
     <div class="flex gap-2">
-      <button id="new-from-preset" class="btn btn-primary">+ Neue Variante aus Vorlage</button>
+      <button id="new-from-preset" class="btn btn-primary">+ New variant from preset</button>
     </div>
   </div>
 
@@ -23,23 +23,23 @@ import Layout from '../../components/layout/Layout.astro';
     <button id="engine-v1" class="btn btn-sm btn-primary">V1 — Standard Cleansing</button>
     <button id="engine-v2" class="btn btn-sm btn-ghost">V2 — CEMA Migration</button>
     <span class="ml-3 text-xs text-gray-500" id="engine-help">
-      V1 ist der klassische Cleansing-Tree. V2 ist die CEMA-Migration mit m:1 PC-Gruppierung.
+      V1 is the classic cleansing tree. V2 is CEMA migration with m:1 PC grouping.
     </span>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     <!-- ── LEFT: Configs list ──────────────────────────────── -->
     <aside class="card lg:col-span-1">
-      <h3 class="text-sm font-semibold mb-3">Bestehende Varianten</h3>
+      <h3 class="text-sm font-semibold mb-3">Existing variants</h3>
       <div id="configs-list" class="space-y-1 text-sm max-h-96 overflow-y-auto">
-        <div class="text-gray-400 text-xs">Lädt…</div>
+        <div class="text-gray-400 text-xs">Loading…</div>
       </div>
     </aside>
 
     <!-- ── RIGHT: Editor ────────────────────────────────────── -->
     <main class="card lg:col-span-2">
       <div id="editor-empty" class="text-center py-12 text-gray-400">
-        <div class="text-sm">Wähle eine Variante links, oder erstelle eine neue aus einer Vorlage.</div>
+        <div class="text-sm">Pick a variant on the left, or create a new one from a preset.</div>
       </div>
 
       <div id="editor-form" class="hidden space-y-4">
@@ -48,34 +48,34 @@ import Layout from '../../components/layout/Layout.astro';
             <h3 class="font-semibold" id="editor-title">—</h3>
             <p class="text-xs text-gray-500 mt-1" id="editor-subtitle">—</p>
             <span id="preset-badge" class="hidden inline-block mt-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
-              Aus Vorlage erstellt
+              Created from preset
             </span>
           </div>
           <div class="flex gap-2">
-            <button id="btn-fork" class="btn btn-sm btn-ghost" title="Forken in neue Version">⎘ Forken</button>
-            <button id="btn-amend" class="btn btn-sm btn-primary">Speichern</button>
+            <button id="btn-fork" class="btn btn-sm btn-ghost" title="Fork in neue Version">⎘ Fork</button>
+            <button id="btn-amend" class="btn btn-sm btn-primary">Save</button>
           </div>
         </div>
 
         <!-- Pipeline editor — driven by rule-catalog -->
         <div id="pipeline-editor" class="space-y-3">
-          <div class="text-gray-400 text-sm">Lädt Regelkatalog…</div>
+          <div class="text-gray-400 text-sm">Loading rule catalog…</div>
         </div>
 
         <!-- Apply to wave -->
         <div class="border-t pt-4">
-          <h4 class="text-sm font-semibold mb-2">Diese Variante auf einen Wave anwenden</h4>
+          <h4 class="text-sm font-semibold mb-2">Apply this variant to a wave</h4>
           <div class="flex items-center gap-3">
-            <select id="apply-wave" class="input text-sm w-64"><option>– wähle Wave –</option></select>
+            <select id="apply-wave" class="input text-sm w-64"><option>– select wave –</option></select>
             <select id="apply-mode" class="input text-sm w-40">
-              <option value="simulation">Simulation (kein Save)</option>
-              <option value="activated">Aktiviert (commit)</option>
+              <option value="simulation">Simulation (no save)</option>
+              <option value="activated">Activated (commit)</option>
             </select>
-            <button id="btn-apply" class="btn btn-sm btn-primary" disabled>▶ Run starten</button>
+            <button id="btn-apply" class="btn btn-sm btn-primary" disabled>▶ Start run</button>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            Tipp: Erst <strong>Simulation</strong> laufen lassen, Ergebnisse auf der Decisions-Seite
-            checken, und erst danach <strong>Aktiviert</strong> starten.
+            Tip: Run a <strong>Simulation</strong> first, review the results on the decisions page,
+            and only then start <strong>Activated</strong>.
           </p>
         </div>
       </div>
@@ -86,13 +86,13 @@ import Layout from '../../components/layout/Layout.astro';
   <div id="preset-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
     <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full m-4 max-h-[80vh] overflow-y-auto">
       <div class="px-5 py-3 border-b flex items-center justify-between">
-        <h3 class="font-semibold">Neue Variante aus Vorlage</h3>
+        <h3 class="font-semibold">New variant from preset</h3>
         <button id="close-modal" class="text-gray-400 hover:text-gray-700">✕</button>
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">
-          Eine Vorlage ist ein vorkonfigurierter Decision Tree. Du kannst sie nach dem Erstellen
-          beliebig anpassen — die Vorlage selbst wird dabei nicht verändert.
+          A preset is a pre-configured decision tree. You can adjust it freely after
+          creation — the preset itself is not modified.
         </p>
         <div id="presets-list" class="space-y-2"></div>
       </div>
@@ -163,7 +163,7 @@ import Layout from '../../components/layout/Layout.astro';
             <div class="font-medium text-sm">${p.label}</div>
             <div class="text-xs text-gray-500 mt-1">${p.description}</div>
           </div>
-          <button class="btn btn-sm btn-primary use-preset" data-preset="${p.name}">Wählen</button>
+          <button class="btn btn-sm btn-primary use-preset" data-preset="${p.name}">Choose</button>
         </div>
       </div>
     `).join('');
@@ -177,7 +177,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   function renderWaveDropdown() {
     const sel = document.getElementById('apply-wave');
-    sel.innerHTML = '<option value="">– wähle Wave –</option>' +
+    sel.innerHTML = '<option value="">– select wave –</option>' +
       state.waves.map(w => `<option value="${w.id}">${w.name} (${w.status})</option>`).join('');
     sel.addEventListener('change', () => {
       document.getElementById('btn-apply').disabled = !sel.value || !state.currentConfigId;
@@ -187,7 +187,7 @@ import Layout from '../../components/layout/Layout.astro';
   // ── Preset instantiation ─────────────────────────────────────────
   async function instantiatePreset(presetName) {
     const friendlyName = prompt(
-      `Name für die neue Variante (basierend auf '${presetName}'):`,
+      `Name for the new variant (based on '${presetName}'):`,
       `${presetName} ${new Date().toISOString().slice(0, 10)}`
     );
     if (!friendlyName) return;
@@ -207,7 +207,7 @@ import Layout from '../../components/layout/Layout.astro';
       renderConfigsList();
       loadConfig(result.id);
     } catch (err) {
-      alert('Fehler: ' + err.message);
+      alert('Error: ' + err.message);
     }
   }
 
@@ -227,7 +227,7 @@ import Layout from '../../components/layout/Layout.astro';
       `${cfg.code} · Version ${cfg.version} · ${cfg.description || ''}`;
     const presetBadge = document.getElementById('preset-badge');
     if (cfg.config?._preset_origin) {
-      presetBadge.textContent = `Aus Vorlage: ${cfg.config._preset_origin}`;
+      presetBadge.textContent = `From preset: ${cfg.config._preset_origin}`;
       presetBadge.classList.remove('hidden');
     } else {
       presetBadge.classList.add('hidden');
@@ -241,13 +241,13 @@ import Layout from '../../components/layout/Layout.astro';
     const container = document.getElementById('pipeline-editor');
     const pipeline = configData?.pipeline || [];
     if (!pipeline.length) {
-      container.innerHTML = `<div class="text-gray-400 text-sm">Pipeline ist leer.</div>`;
+      container.innerHTML = `<div class="text-gray-400 text-sm">Pipeline is empty.</div>`;
       return;
     }
     container.innerHTML = pipeline.map((step, idx) => {
       const meta = state.catalog?.find(c => c.code === step.routine);
       if (!meta) {
-        return `<div class="border rounded p-2 text-xs text-gray-400">${step.routine} (kein Catalog-Eintrag)</div>`;
+        return `<div class="border rounded p-2 text-xs text-gray-400">${step.routine} (no catalog entry)</div>`;
       }
       return renderPipelineStep(step, meta, idx);
     }).join('');
@@ -284,7 +284,7 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
         <div class="p-3 text-sm">
           <p class="text-xs text-gray-600 mb-3 leading-relaxed">${meta.description}</p>
-          ${paramsHtml ? `<div class="space-y-3">${paramsHtml}</div>` : '<div class="text-xs text-gray-400 italic">Keine Parameter</div>'}
+          ${paramsHtml ? `<div class="space-y-3">${paramsHtml}</div>` : '<div class="text-xs text-gray-400 italic">No parameters</div>'}
         </div>
       </div>
     `;
@@ -381,26 +381,26 @@ import Layout from '../../components/layout/Layout.astro';
         method: 'POST',
         body: JSON.stringify({ config: state.currentConfig.config }),
       });
-      alert('Variante gespeichert (neue Version erstellt).');
+      alert('Variant saved (new version created).');
       boot();
     } catch (err) {
-      alert('Fehler: ' + err.message);
+      alert('Error: ' + err.message);
     }
   });
 
   document.getElementById('btn-fork').addEventListener('click', async () => {
     if (!state.currentConfigId) return;
-    const newCode = prompt('Neuer Code für den Fork:', state.currentConfig.code + '-copy');
+    const newCode = prompt('New code for the fork:', state.currentConfig.code + '-copy');
     if (!newCode) return;
     try {
       await api(`/api/configs/${state.currentConfig.code}/fork`, {
         method: 'POST',
         body: JSON.stringify({ new_code: newCode, name: state.currentConfig.name + ' (Fork)' }),
       });
-      alert('Fork erstellt.');
+      alert('Fork created.');
       boot();
     } catch (err) {
-      alert('Fehler: ' + err.message);
+      alert('Error: ' + err.message);
     }
   });
 
@@ -418,11 +418,11 @@ import Layout from '../../components/layout/Layout.astro';
         }),
       });
       const url = `/cockpit/decisions?run_id=${result.run_id || result.id}`;
-      if (confirm(`Run gestartet (#${result.run_id || result.id}). Zur Ergebnis-Seite?`)) {
+      if (confirm(`Run started (#${result.run_id || result.id}). Go to results page?`)) {
         window.location.href = url;
       }
     } catch (err) {
-      alert('Fehler: ' + err.message);
+      alert('Error: ' + err.message);
     }
   });
 
@@ -445,14 +445,14 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('engine-v2').classList.toggle('btn-primary', v === 'v2');
     document.getElementById('engine-v2').classList.toggle('btn-ghost', v !== 'v2');
     document.getElementById('engine-help').textContent = v === 'v1'
-      ? 'V1 ist der klassische Cleansing-Tree.'
-      : 'V2 ist die CEMA-Migration mit m:1 PC-Gruppierung.';
+      ? 'V1 is the classic cleansing tree.'
+      : 'V2 is CEMA migration with m:1 PC grouping.';
     boot();
   }
 
   // Boot
   boot().catch(err => {
     document.getElementById('configs-list').innerHTML =
-      `<div class="text-red-600 text-xs">Fehler beim Laden: ${err.message}</div>`;
+      `<div class="text-red-600 text-xs">Error loading: ${err.message}</div>`;
   });
 </script>

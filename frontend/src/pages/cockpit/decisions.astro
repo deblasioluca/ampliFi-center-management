@@ -2,28 +2,28 @@
 import Layout from '../../components/layout/Layout.astro';
 ---
 
-<Layout title="Simulationsergebnis" requireAuth={true} requiredRole="data_manager">
+<Layout title="Simulation results" requireAuth={true} requiredRole="data_manager">
   <!-- Header with back nav and view-mode toggle -->
   <div class="flex items-center justify-between mb-4">
     <div>
-      <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Zurück</a>
-      <h2 class="text-xl font-bold mt-2" id="page-title">Simulationsergebnis lädt…</h2>
+      <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back</a>
+      <h2 class="text-xl font-bold mt-2" id="page-title">Loading simulation results…</h2>
       <div class="flex gap-2 mt-1 text-sm text-gray-500" id="run-meta"></div>
     </div>
     <div class="flex gap-2">
-      <button id="view-flat" class="btn btn-sm btn-primary">Flach (Tabelle)</button>
-      <button id="view-tree" class="btn btn-sm btn-ghost">Hierarchisch (Baum)</button>
+      <button id="view-flat" class="btn btn-sm btn-primary">Flat (table)</button>
+      <button id="view-tree" class="btn btn-sm btn-ghost">Hierarchical (tree)</button>
     </div>
   </div>
 
   <!-- Help banner -->
   <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-900 leading-relaxed">
-    <strong>Wie liest man diese Seite?</strong> Für jeden Cost Center sieht der Reviewer:
-    <span class="text-gray-700">(1) den alten Zustand</span> →
-    <span class="text-gray-700">(2) welche Regel die Entscheidung getroffen hat</span> →
-    <span class="text-gray-700">(3) das vorgeschlagene Ergebnis (KEEP / RETIRE / MERGE / REDESIGN)</span> →
-    <span class="text-gray-700">(4) das neue Target-Objekt (CC und/oder PC)</span>.
-    Klick auf eine Zeile öffnet die Detail-Ansicht mit voller Rule-Path.
+    <strong>How to read this page?</strong> For each cost center the reviewer sees:
+    <span class="text-gray-700">(1) the legacy state</span> →
+    <span class="text-gray-700">(2) which rule drove the decision</span> →
+    <span class="text-gray-700">(3) the proposed outcome (KEEP / RETIRE / MERGE / REDESIGN)</span> →
+    <span class="text-gray-700">(4) the new target object (CC and/or PC)</span>.
+    Click a row to open the detail view with the full rule path.
   </div>
 
   <!-- Outcome KPI summary tiles -->
@@ -33,17 +33,17 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="card mb-4 flex items-center gap-3 flex-wrap text-sm">
     <label class="text-gray-600">Outcome:</label>
     <select id="filter-outcome" class="input text-sm w-40">
-      <option value="">Alle</option>
-      <option value="KEEP">KEEP (bleibt)</option>
-      <option value="RETIRE">RETIRE (Stilllegung)</option>
-      <option value="MERGE_MAP">MERGE_MAP (zusammenführen)</option>
-      <option value="REDESIGN">REDESIGN (neu konzipieren)</option>
+      <option value="">All</option>
+      <option value="KEEP">KEEP (stays)</option>
+      <option value="RETIRE">RETIRE (retirement)</option>
+      <option value="MERGE_MAP">MERGE_MAP (merge)</option>
+      <option value="REDESIGN">REDESIGN (reconceptualise)</option>
     </select>
     <label class="text-gray-600 ml-3">Engine:</label>
     <span id="engine-badge" class="badge badge-gray">—</span>
-    <label class="text-gray-600 ml-3">Modus:</label>
+    <label class="text-gray-600 ml-3">Mode:</label>
     <span id="mode-badge" class="badge badge-gray">—</span>
-    <button id="export-csv" class="btn btn-sm btn-ghost ml-auto">CSV Export</button>
+    <button id="export-csv" class="btn btn-sm btn-ghost ml-auto">CSV export</button>
   </div>
 
   <!-- ── FLAT VIEW ────────────────────────────────────────────────── -->
@@ -53,26 +53,26 @@ import Layout from '../../components/layout/Layout.astro';
         <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
           <tr>
             <th class="text-left px-3 py-2">Legacy CC</th>
-            <th class="text-left px-3 py-2">Bezeichnung</th>
-            <th class="text-left px-3 py-2">Land / Bereich</th>
-            <th class="text-left px-3 py-2">Verantwortlich</th>
-            <th class="text-left px-3 py-2">Entscheidende Regel</th>
+            <th class="text-left px-3 py-2">Description</th>
+            <th class="text-left px-3 py-2">Country / Area</th>
+            <th class="text-left px-3 py-2">Responsible</th>
+            <th class="text-left px-3 py-2">Deciding rule</th>
             <th class="text-left px-3 py-2">Outcome</th>
             <th class="text-left px-3 py-2">Target CC</th>
             <th class="text-left px-3 py-2">Target PC</th>
-            <th class="text-left px-3 py-2 w-16">Konfidenz</th>
+            <th class="text-left px-3 py-2 w-16">Confidence</th>
           </tr>
         </thead>
         <tbody id="decisions-body">
-          <tr><td colspan="9" class="text-center py-8 text-gray-400">Lädt…</td></tr>
+          <tr><td colspan="9" class="text-center py-8 text-gray-400">Loading…</td></tr>
         </tbody>
       </table>
     </div>
     <div class="flex items-center justify-between mt-3 text-xs text-gray-500" id="pagination">
       <span id="page-info">—</span>
       <div class="flex gap-2">
-        <button id="prev-page" class="btn btn-sm btn-ghost">‹ Zurück</button>
-        <button id="next-page" class="btn btn-sm btn-ghost">Weiter ›</button>
+        <button id="prev-page" class="btn btn-sm btn-ghost">‹ Prev</button>
+        <button id="next-page" class="btn btn-sm btn-ghost">Next ›</button>
       </div>
     </div>
   </div>
@@ -80,18 +80,18 @@ import Layout from '../../components/layout/Layout.astro';
   <!-- ── HIERARCHY VIEW ──────────────────────────────────────────── -->
   <div id="tree-view" class="card hidden">
     <div class="text-xs text-gray-600 mb-3">
-      Klick auf einen Knoten zum Aufklappen. Pro Knoten siehst du, wie viele Centers darunter
-      welchen Outcome bekommen haben — drill-down bis zu den einzelnen Vorschlägen.
+      Click a node to expand. Each node shows how many centers below it got
+      which outcome — drill down to individual proposals.
     </div>
     <div id="tree-root" class="text-sm">
-      <div class="text-center py-8 text-gray-400">Lädt…</div>
+      <div class="text-center py-8 text-gray-400">Loading…</div>
     </div>
   </div>
 
   <!-- ── DETAIL DRAWER (slide-in from right) ──────────────────────── -->
   <div id="detail-drawer" class="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white shadow-2xl border-l border-gray-200 transform translate-x-full transition-transform duration-200 z-50 overflow-y-auto">
     <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
-      <h3 class="font-semibold">Entscheidungsdetail</h3>
+      <h3 class="font-semibold">Decision detail</h3>
       <button id="close-drawer" class="text-gray-400 hover:text-gray-700">✕</button>
     </div>
     <div id="drawer-content" class="p-4 space-y-4 text-sm"></div>
@@ -112,10 +112,10 @@ import Layout from '../../components/layout/Layout.astro';
 
   // Outcome → color/label mapping (mirrors the catalog verdict_meanings)
   const OUTCOME_STYLE = {
-    KEEP:      { color: 'green',  label: 'Bleibt erhalten' },
-    RETIRE:    { color: 'red',    label: 'Stilllegung' },
-    MERGE_MAP: { color: 'orange', label: 'Zusammenführen' },
-    REDESIGN:  { color: 'blue',   label: 'Neu konzipieren' },
+    KEEP:      { color: 'green',  label: 'Stays' },
+    RETIRE:    { color: 'red',    label: 'Retirement' },
+    MERGE_MAP: { color: 'orange', label: 'Merge' },
+    REDESIGN:  { color: 'blue',   label: 'Reconceptualise' },
   };
 
   function badgeFor(outcome) {
@@ -128,7 +128,7 @@ import Layout from '../../components/layout/Layout.astro';
     const params = new URLSearchParams(window.location.search);
     state.runId = parseInt(params.get('run_id'), 10);
     if (!state.runId || Number.isNaN(state.runId)) {
-      document.getElementById('page-title').textContent = 'Kein run_id in der URL';
+      document.getElementById('page-title').textContent = 'No run_id in URL';
       throw new Error('run_id required');
     }
   }
@@ -145,13 +145,13 @@ import Layout from '../../components/layout/Layout.astro';
   async function loadRunMeta() {
     state.runMeta = await api(`/api/runs/${state.runId}`);
     document.getElementById('page-title').textContent =
-      `Simulationsergebnis: ${state.runMeta.label || `Run #${state.runId}`}`;
+      `Simulation results: ${state.runMeta.label || `Run #${state.runId}`}`;
     document.getElementById('run-meta').innerHTML = `
       <span>Status: <strong>${state.runMeta.status}</strong></span>
       <span>•</span>
       <span>Wave: ${state.runMeta.wave_id || 'global'}</span>
       <span>•</span>
-      <span>Erstellt: ${(state.runMeta.created_at || '').slice(0, 16)}</span>
+      <span>Created: ${(state.runMeta.created_at || '').slice(0, 16)}</span>
     `;
     document.getElementById('engine-badge').textContent = state.runMeta.engine_version || 'v1';
     document.getElementById('mode-badge').textContent = state.runMeta.mode || 'simulation';
@@ -190,7 +190,7 @@ import Layout from '../../components/layout/Layout.astro';
         <button class="bg-${s.color}-50 border border-${s.color}-200 rounded-lg p-3 text-left hover:bg-${s.color}-100 cursor-pointer transition" data-outcome="${o}">
           <div class="text-xs text-${s.color}-700 font-medium">${o} — ${s.label}</div>
           <div class="text-2xl font-bold text-${s.color}-900 mt-1">${count.toLocaleString()}</div>
-          <div class="text-xs text-${s.color}-600">${pct}% des Wave</div>
+          <div class="text-xs text-${s.color}-600">${pct}% of the wave</div>
         </button>
       `;
     });
@@ -210,14 +210,14 @@ import Layout from '../../components/layout/Layout.astro';
   function renderFlatTable(data) {
     const tbody = document.getElementById('decisions-body');
     if (!data.items?.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-gray-400">Keine Vorschläge gefunden</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-gray-400">No proposals found</td></tr>`;
     } else {
       tbody.innerHTML = data.items.map(it => {
         const dec = it.decision || {};
         const dr = it.deciding_rule || {};
         const tgt = it.target || {};
         const overrideMark = dec.is_overridden
-          ? '<span class="text-orange-600 ml-1" title="Override aktiv">●</span>'
+          ? '<span class="text-orange-600 ml-1" title="Override active">●</span>'
           : '';
         return `
           <tr class="border-t hover:bg-gray-50 cursor-pointer" data-proposal-id="${it.proposal_id}">
@@ -232,7 +232,7 @@ import Layout from '../../components/layout/Layout.astro';
             <td class="px-3 py-2 font-mono text-xs">${tgt.cctr || '—'}</td>
             <td class="px-3 py-2 font-mono text-xs">
               ${tgt.pctr || '—'}
-              ${tgt.approach === '1:n' ? '<span class="ml-1 text-xs text-purple-600" title="m:1 Gruppierung">⊕</span>' : ''}
+              ${tgt.approach === '1:n' ? '<span class="ml-1 text-xs text-purple-600" title="m:1 grouping">⊕</span>' : ''}
             </td>
             <td class="px-3 py-2 text-xs text-right">${dec.confidence != null ? (dec.confidence * 100).toFixed(0) + '%' : '—'}</td>
           </tr>
@@ -286,7 +286,7 @@ import Layout from '../../components/layout/Layout.astro';
   function renderTree(data) {
     const root = document.getElementById('tree-root');
     if (!data.tree?.length) {
-      root.innerHTML = `<div class="text-gray-400 text-center py-8">Keine Hierarchie für diesen Run gefunden — nutze die flache Ansicht.</div>`;
+      root.innerHTML = `<div class="text-gray-400 text-center py-8">No hierarchy available for this run — use the flat view.</div>`;
       return;
     }
     root.innerHTML = data.tree.map(renderTreeNode).join('');
@@ -316,7 +316,7 @@ import Layout from '../../components/layout/Layout.astro';
     const drawer = document.getElementById('detail-drawer');
     const content = document.getElementById('drawer-content');
     drawer.classList.remove('translate-x-full');
-    content.innerHTML = `<div class="text-gray-400">Lädt Detail…</div>`;
+    content.innerHTML = `<div class="text-gray-400">Loading detail…</div>`;
 
     try {
       const why = await api(`/api/runs/${state.runId}/proposals/${proposalId}/why`);
@@ -326,7 +326,7 @@ import Layout from '../../components/layout/Layout.astro';
 
       content.innerHTML = renderDrawerContent(why, compare);
     } catch (err) {
-      content.innerHTML = `<div class="text-red-600">Fehler: ${err.message}</div>`;
+      content.innerHTML = `<div class="text-red-600">Error: ${err.message}</div>`;
     }
   }
 
@@ -335,7 +335,7 @@ import Layout from '../../components/layout/Layout.astro';
     const ruleSteps = (why?.rule_path?.steps || why?.rule_path || []);
     return `
       <section>
-        <h4 class="font-semibold text-base mb-2">Entscheidungspfad</h4>
+        <h4 class="font-semibold text-base mb-2">Decision path</h4>
         <ol class="space-y-1">
           ${ruleSteps.map((s, i) => {
             const step = typeof s === 'string' ? { code: s.split(':')[0], verdict: s.split(':')[1] } : s;
@@ -347,13 +347,13 @@ import Layout from '../../components/layout/Layout.astro';
           }).join('')}
         </ol>
         <div class="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
-          <strong>Finaler Outcome:</strong> ${badgeFor(dec.outcome || why?.cleansing_outcome)} → Target: ${dec.target_object || why?.target_object || '—'}
+          <strong>Final outcome:</strong> ${badgeFor(dec.outcome || why?.cleansing_outcome)} → Target: ${dec.target_object || why?.target_object || '—'}
         </div>
       </section>
 
       ${compare ? `
         <section class="border-t pt-4">
-          <h4 class="font-semibold text-base mb-2">Alt → Neu</h4>
+          <h4 class="font-semibold text-base mb-2">Legacy → Target</h4>
           <div class="grid grid-cols-2 gap-3">
             <div class="bg-gray-50 p-3 rounded">
               <div class="text-xs uppercase text-gray-500 mb-1">Legacy CC</div>
@@ -369,13 +369,13 @@ import Layout from '../../components/layout/Layout.astro';
               <div class="text-xs text-gray-500">${compare.target_pc?.txtsh || ''}</div>
             </div>
           </div>
-          <div class="text-xs text-gray-500 mt-2">Engines beteiligt: ${(compare.summary?.engines_used || []).join(', ') || '—'}</div>
+          <div class="text-xs text-gray-500 mt-2">Engines involved: ${(compare.summary?.engines_used || []).join(', ') || '—'}</div>
         </section>
       ` : ''}
 
       ${(why?.llm_commentary?.summary) ? `
         <section class="border-t pt-4">
-          <h4 class="font-semibold text-base mb-2">LLM-Kommentar</h4>
+          <h4 class="font-semibold text-base mb-2">LLM commentary</h4>
           <p class="text-xs text-gray-700">${why.llm_commentary.summary}</p>
         </section>
       ` : ''}
@@ -420,7 +420,7 @@ import Layout from '../../components/layout/Layout.astro';
     await loadRunMeta();
     await loadDecisions();
   })().catch(err => {
-    document.getElementById('page-title').textContent = 'Fehler';
+    document.getElementById('page-title').textContent = 'Error';
     document.getElementById('run-meta').innerHTML = `<span class="text-red-600">${err.message}</span>`;
   });
 </script>

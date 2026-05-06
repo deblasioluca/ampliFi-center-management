@@ -1,16 +1,16 @@
-"""Business-friendly rule catalog metadata.
+"""User-friendly rule catalog metadata.
 
 The decision tree pipeline is built from "routines" (rules, ML models, LLM
 passes, aggregates). Each routine has a technical ``code`` and a Python
 implementation in ``app.domain.decision_tree.routines``.
 
-This module enriches that with metadata aimed at *business users* — the
-people who configure variants of the decision tree without reading Python:
+This module enriches that with metadata aimed at *users who configure
+variants of the decision tree without reading Python*:
 
 - ``business_label``: short, non-technical name displayed in the UI
 - ``description``: one paragraph explaining what the rule checks and why
 - ``verdict_meanings``: maps each verdict the rule emits to a plain-language
-  explanation (so "RETIRE" appears as "Center wird stillgelegt" in the UI)
+  explanation (so "RETIRE" appears as "Center will be retired" in the UI)
 - ``params``: enriched param schema with ``min``, ``max``, ``unit``,
   ``help_text``, ``friendly_label`` per parameter
 - ``decides``: the cleansing or mapping outcomes this rule can drive — used
@@ -21,7 +21,7 @@ returns this dict, and config editors render forms from it.
 
 Adding a new rule? Add an entry here at the same time you add the routine
 class. Missing entries fall back to the routine's own ``params_schema``,
-but business users will see the technical code instead of a friendly name.
+but users will see the technical code instead of a friendly name.
 """
 
 from __future__ import annotations
@@ -34,87 +34,88 @@ from typing import Any
 CATALOG: dict[str, dict[str, Any]] = {
     # ── Cleansing tree (V1) ──────────────────────────────────────────────
     "rule.posting_activity": {
-        "business_label": "Inaktivität erkennen",
+        "business_label": "Detect inactivity",
         "description": (
-            "Markiert Cost Center die seit mehreren Monaten keine oder kaum "
-            "Buchungen mehr hatten. Solche Center sind Stilllegungs-Kandidaten "
-            "(RETIRE), weil sie keinen aktiven Geschäftszweck mehr abbilden."
+            "Flags cost centers with no or very few postings over the last "
+            "few months. These are candidates for retirement (RETIRE) "
+            "because they no longer represent an active business purpose."
         ),
         "decides": ["RETIRE", "KEEP"],
         "verdict_meanings": {
-            "RETIRE": "Inaktiv → wird zur Stilllegung vorgeschlagen",
-            "KEEP": "Aktiv genug → bleibt erhalten",
-            "PASS": "Keine Aussage möglich (z.B. fehlende Daten)",
+            "RETIRE": "Inactive — proposed for retirement",
+            "KEEP": "Active enough — stays",
+            "PASS": "No determination possible (e.g. missing data)",
         },
         "params": {
             "posting_inactivity_threshold": {
-                "friendly_label": "Inaktivitäts-Schwelle",
+                "friendly_label": "Inactivity threshold",
                 "type": "integer",
                 "default": 12,
                 "min": 1,
                 "max": 60,
-                "unit": "Monate",
+                "unit": "months",
                 "help_text": (
-                    "Ein Cost Center, der seit mehr als dieser Anzahl Monaten "
-                    "keine Buchungen hatte, gilt als inaktiv. Empfehlung: 12–24 "
-                    "Monate. Niedrigere Werte = strenger (mehr RETIRE-Vorschläge)."
+                    "A cost center with no postings for more than this many "
+                    "months is considered inactive. Recommended: 12–24 months. "
+                    "Lower values = stricter (more RETIRE proposals)."
                 ),
             },
             "posting_minimal_threshold": {
-                "friendly_label": "Minimum-Buchungen",
+                "friendly_label": "Minimum postings",
                 "type": "integer",
                 "default": 0,
                 "min": 0,
                 "max": 100,
-                "unit": "Buchungen",
+                "unit": "postings",
                 "help_text": (
-                    "Anzahl Buchungen im Beobachtungsfenster, ab der ein Center "
-                    "noch als aktiv gilt. 0 = jede Buchung zählt; 5 = vereinzelte "
-                    "Buchungen werden ignoriert (Center trotzdem inaktiv)."
+                    "Posting count in the observation window above which the "
+                    "center still counts as active. 0 = every posting counts; "
+                    "5 = sporadic postings are ignored (center still inactive)."
                 ),
             },
         },
     },
     "rule.ownership": {
-        "business_label": "Verantwortlichkeit prüfen",
+        "business_label": "Check ownership",
         "description": (
-            "Markiert Cost Center ohne gültigen Verantwortlichen (kein 'responsible' "
-            "gesetzt oder Person nicht mehr im Unternehmen). Solche Center benötigen "
-            "vor Migration eine Klärung — entweder neuer Owner oder Stilllegung."
+            "Flags cost centers without a valid owner ('responsible' field "
+            "empty or pointing to someone no longer at the company). These "
+            "need clarification before migration — either a new owner or "
+            "retirement."
         ),
         "decides": ["RETIRE", "REDESIGN", "KEEP"],
         "verdict_meanings": {
-            "RETIRE": "Kein gültiger Owner → Center kandidiert für Stilllegung",
-            "REDESIGN": "Owner unklar → muss neu zugeordnet werden",
-            "KEEP": "Gültiger Owner vorhanden",
+            "RETIRE": "No valid owner — candidate for retirement",
+            "REDESIGN": "Owner unclear — must be reassigned",
+            "KEEP": "Valid owner present",
         },
         "params": {
             "require_active_employee": {
-                "friendly_label": "Aktiven Mitarbeiter erforderlich",
+                "friendly_label": "Require active employee",
                 "type": "boolean",
                 "default": True,
                 "help_text": (
-                    "Wenn aktiv, muss der Owner ein aktuell aktiver Mitarbeiter "
-                    "sein. Wenn aus, reicht ein historischer Eintrag."
+                    "When on, the owner must be a currently active employee. "
+                    "When off, a historical employee record is enough."
                 ),
             },
         },
     },
     "rule.redundancy": {
-        "business_label": "Duplikate / Redundanzen",
+        "business_label": "Detect duplicates / redundancies",
         "description": (
-            "Erkennt Cost Center die inhaltlich Duplikate anderer Center sind "
-            "(ähnliche Bezeichnung, gleicher Bereich, ähnliche Buchungsmuster). "
-            "Solche Center können zusammengeführt werden (MERGE_MAP)."
+            "Identifies cost centers that are functional duplicates of others "
+            "(similar name, same area, similar posting patterns). These can "
+            "be merged into a single canonical center (MERGE_MAP)."
         ),
         "decides": ["MERGE_MAP", "KEEP"],
         "verdict_meanings": {
-            "MERGE_MAP": "Duplikat → wird in ein anderes Center zusammengeführt",
-            "KEEP": "Eindeutig → bleibt erhalten",
+            "MERGE_MAP": "Duplicate — will be merged into another center",
+            "KEEP": "Unique — stays",
         },
         "params": {
             "similarity_threshold": {
-                "friendly_label": "Ähnlichkeits-Schwelle",
+                "friendly_label": "Similarity threshold",
                 "type": "number",
                 "default": 0.92,
                 "min": 0.5,
@@ -122,241 +123,243 @@ CATALOG: dict[str, dict[str, Any]] = {
                 "step": 0.01,
                 "unit": "0..1",
                 "help_text": (
-                    "Wie ähnlich müssen Bezeichnung + Attribute sein damit zwei "
-                    "Center als Duplikat gelten? 0.92 = sehr streng (nur fast "
-                    "identische); 0.75 = locker (mehr Treffer aber auch mehr "
-                    "False Positives)."
+                    "How similar must name + attributes be for two centers "
+                    "to count as duplicates? 0.92 = very strict (near-"
+                    "identical only); 0.75 = loose (more matches but also "
+                    "more false positives)."
                 ),
             },
         },
     },
     "rule.hierarchy_compliance": {
-        "business_label": "Hierarchie-Konformität",
+        "business_label": "Hierarchy compliance",
         "description": (
-            "Prüft ob ein Cost Center an der richtigen Stelle in der Standard-"
-            "Hierarchie hängt (z.B. CEMA-Hierarchie). Center die irgendwo lose "
-            "hängen oder gar nicht in einer Hierarchie sind, brauchen Redesign."
+            "Checks whether a cost center sits in the right place within the "
+            "standard hierarchy (e.g. CEMA hierarchy). Centers that hang "
+            "loose somewhere or aren't in any standard hierarchy need "
+            "redesign before migration."
         ),
         "decides": ["REDESIGN", "KEEP"],
         "verdict_meanings": {
-            "REDESIGN": "Nicht in Standard-Hierarchie → muss neu eingehängt werden",
-            "KEEP": "Korrekt eingehängt",
+            "REDESIGN": "Not in standard hierarchy — must be re-anchored",
+            "KEEP": "Properly anchored",
         },
         "params": {
             "strict_hierarchy_mode": {
-                "friendly_label": "Strenge Hierarchie",
+                "friendly_label": "Strict hierarchy",
                 "type": "boolean",
                 "default": False,
                 "help_text": (
-                    "Wenn aktiv, müssen Center exakt in der Standard-Hierarchie "
-                    "verankert sein. Locker (default): tolerante Zuordnung erlaubt."
+                    "When on, centers must be exactly anchored in the "
+                    "standard hierarchy. Loose (default): tolerant placement "
+                    "is allowed."
                 ),
             },
         },
     },
     "rule.cross_system_dependency": {
-        "business_label": "System-Abhängigkeiten",
+        "business_label": "System dependencies",
         "description": (
-            "Erkennt Cost Center die in anderen SAP-Systemen referenziert sind "
-            "(z.B. von WBS, Aufträgen, Bestellungen). Solche Center können nicht "
-            "ohne Weiteres geändert werden — sie müssen mindestens als Mapping "
-            "weiterleben."
+            "Identifies cost centers that are referenced by other SAP systems "
+            "(e.g. WBS elements, orders, purchase requisitions). These can't "
+            "simply be changed — they must at minimum live on as a mapping."
         ),
         "decides": ["MERGE_MAP", "KEEP"],
         "verdict_meanings": {
-            "MERGE_MAP": "Hat Abhängigkeiten → muss als Mapping erhalten bleiben",
-            "KEEP": "Keine externen Abhängigkeiten",
+            "MERGE_MAP": "Has dependencies — must be preserved as a mapping",
+            "KEEP": "No external dependencies",
         },
         "params": {},
     },
     # ── Mapping tree (V1) ────────────────────────────────────────────────
     "rule.bs_relevance": {
-        "business_label": "Bilanz-Relevanz",
+        "business_label": "Balance sheet relevance",
         "description": (
-            "Prüft ob das Center bilanzrelevante Buchungen hat (B/S Konten). "
-            "Solche Center werden zwingend als Cost Center (CC) im neuen Modell "
-            "geführt — Profit Center allein reichen für Bilanz-Reporting nicht."
+            "Checks whether the center has balance sheet postings (B/S "
+            "accounts). Such centers must be carried forward as cost "
+            "centers (CC) in the new model — profit centers alone do not "
+            "satisfy B/S reporting requirements."
         ),
         "decides": ["CC", "PC_ONLY"],
         "verdict_meanings": {
-            "CC": "Bilanzrelevant → wird CC + PC im neuen Modell",
-            "PC_ONLY": "Nur GuV-relevant → reicht als Profit Center",
+            "CC": "B/S relevant — becomes both CC and PC in the new model",
+            "PC_ONLY": "P&L only — profit center is sufficient",
         },
         "params": {},
     },
     "rule.has_direct_revenue": {
-        "business_label": "Direkter Umsatz",
+        "business_label": "Direct revenue",
         "description": (
-            "Center mit direkten Umsatz-Buchungen werden zwingend als Profit "
-            "Center geführt (PC_ONLY oder CC_AND_PC, je nach BS-Relevanz)."
+            "Centers with direct revenue postings must be modeled as profit "
+            "centers (PC_ONLY or CC_AND_PC, depending on B/S relevance)."
         ),
         "decides": ["PC_ONLY", "CC_AND_PC"],
         "verdict_meanings": {
-            "PC_ONLY": "Direkter Umsatz, keine BS → reines PC",
-            "CC_AND_PC": "Direkter Umsatz + BS → CC und PC",
+            "PC_ONLY": "Direct revenue, no B/S — pure PC",
+            "CC_AND_PC": "Direct revenue + B/S — both CC and PC",
         },
         "params": {},
     },
     "rule.collects_project_costs": {
-        "business_label": "Projektkosten-Sammler",
+        "business_label": "Project cost collector",
         "description": (
-            "Center die als Projekt-Kostensammler dienen werden zu WBS-Elementen "
-            "konvertiert (entweder echt oder statistisch je nach Verwendung)."
+            "Centers acting as project cost collectors are converted to WBS "
+            "elements (real or statistical, depending on usage)."
         ),
         "decides": ["WBS_REAL", "WBS_STAT"],
         "verdict_meanings": {
-            "WBS_REAL": "Projekt mit echten Kosten → reales WBS-Element",
-            "WBS_STAT": "Projekt nur für Reporting → statistisches WBS",
+            "WBS_REAL": "Project with real costs — real WBS element",
+            "WBS_STAT": "Project for reporting only — statistical WBS",
         },
         "params": {},
     },
     "rule.has_operational_costs": {
-        "business_label": "Operative Kosten",
+        "business_label": "Operational costs",
         "description": (
-            "Center mit operativen Kosten (Gehälter, Mieten, Sachaufwand) sind "
-            "klassische Cost Center und werden im neuen Modell entsprechend geführt."
+            "Centers with operational costs (salaries, rent, supplies) are "
+            "classic cost centers and remain so in the new model."
         ),
         "decides": ["CC"],
-        "verdict_meanings": {"CC": "Operative Kosten → klassisches Cost Center"},
+        "verdict_meanings": {"CC": "Operational costs — classic cost center"},
         "params": {},
     },
     "rule.revenue_allocation_vehicle": {
-        "business_label": "Umsatz-Verteilung",
+        "business_label": "Revenue allocation vehicle",
         "description": (
-            "Center die Umsätze auf andere Center verteilen (Allokationsfahrzeuge) "
-            "können als reine PCs geführt oder ganz ersetzt werden."
+            "Centers used to allocate revenue to other centers (allocation "
+            "vehicles) can be modeled as pure PCs or replaced entirely."
         ),
         "decides": ["PC_ONLY", "RETIRE"],
         "verdict_meanings": {
-            "PC_ONLY": "Verteilfahrzeug → bleibt als PC",
-            "RETIRE": "Veraltetes Verteilfahrzeug → ablösbar",
+            "PC_ONLY": "Allocation vehicle — stays as a PC",
+            "RETIRE": "Legacy allocation vehicle — replaceable",
         },
         "params": {},
     },
     "rule.cost_allocation_vehicle": {
-        "business_label": "Kosten-Verteilung",
-        "description": "Analog zu Umsatz-Verteilung, aber für Kostenverteilung.",
+        "business_label": "Cost allocation vehicle",
+        "description": "Analogous to revenue allocation, but for cost allocation.",
         "decides": ["CC", "RETIRE"],
         "verdict_meanings": {
-            "CC": "Kostenverteiler → bleibt als CC",
-            "RETIRE": "Veraltet → ablösbar",
+            "CC": "Cost allocation vehicle — stays as a CC",
+            "RETIRE": "Legacy — replaceable",
         },
         "params": {},
     },
     "rule.info_only": {
-        "business_label": "Nur statistisch",
+        "business_label": "Reporting-only",
         "description": (
-            "Center die nur für Reporting/Statistik dienen (keine echten Buchungen) "
-            "werden zu statistischen WBS oder ablösbar."
+            "Centers used purely for reporting/statistics (no real postings) "
+            "become statistical WBS elements or are retired."
         ),
         "decides": ["WBS_STAT", "RETIRE"],
         "verdict_meanings": {
-            "WBS_STAT": "Reporting-only → statistisches WBS",
-            "RETIRE": "Reporting nicht mehr nötig → ablösbar",
+            "WBS_STAT": "Reporting-only — statistical WBS",
+            "RETIRE": "Reporting no longer needed — replaceable",
         },
         "params": {},
     },
     "aggregate.combine_outcomes": {
-        "business_label": "Ergebnisse zusammenführen",
+        "business_label": "Combine outcomes",
         "description": (
-            "Dieser Schritt fasst die Verdikte aller vorherigen Regeln zusammen "
-            "und bestimmt den finalen Outcome (KEEP / RETIRE / MERGE_MAP / "
-            "REDESIGN). Sollte am Ende der Pipeline stehen."
+            "This step aggregates the verdicts from all preceding rules and "
+            "determines the final outcome (KEEP / RETIRE / MERGE_MAP / "
+            "REDESIGN). Should sit at the end of the pipeline."
         ),
         "decides": ["KEEP", "RETIRE", "MERGE_MAP", "REDESIGN"],
         "verdict_meanings": {
-            "KEEP": "Bleibt im neuen Modell erhalten",
-            "RETIRE": "Wird stillgelegt",
-            "MERGE_MAP": "Wird mit anderem Center zusammengeführt",
-            "REDESIGN": "Muss neu konzipiert werden",
+            "KEEP": "Carried forward unchanged into the new model",
+            "RETIRE": "Will be retired",
+            "MERGE_MAP": "Will be merged with another center",
+            "REDESIGN": "Must be reconceptualised",
         },
         "params": {},
     },
     # ── V2 (CEMA Migration) ──────────────────────────────────────────────
     "v2.retire_flag": {
-        "business_label": "RETIRE-Markierung (V2)",
+        "business_label": "RETIRE flag (V2)",
         "description": (
-            "V2: Center deren Bezeichnung ein bestimmtes Muster enthält (z.B. "
-            "'_RETIRE') werden direkt als zu stilllegen markiert — bypassing "
-            "der weiteren Analyse."
+            "V2: Centers whose name matches a configured pattern (e.g. "
+            "'_RETIRE') are immediately marked for retirement, bypassing "
+            "further analysis steps."
         ),
         "decides": ["RETIRE", "PASS"],
         "verdict_meanings": {
-            "RETIRE": "Pattern erkannt → stillegen",
-            "PASS": "Pattern nicht erkannt → weitere Analyse",
+            "RETIRE": "Pattern matched — retire",
+            "PASS": "Pattern not matched — continue analysis",
         },
         "params": {
             "retire_pattern": {
-                "friendly_label": "Pattern für Stilllegung",
+                "friendly_label": "Retirement pattern",
                 "type": "string",
                 "default": "_RETIRE",
                 "help_text": (
-                    "Substring der in der Bezeichnung vorkommen muss um als "
-                    "Stilllegungs-Kandidat zu gelten. Achtung: Groß-/Kleinschreibung."
+                    "Substring that must appear in the name for the center "
+                    "to be flagged for retirement. Note: case-sensitive."
                 ),
             },
         },
     },
     "v2.balance_migrate": {
-        "business_label": "Bilanz-Migration (V2)",
+        "business_label": "Balance sheet migration (V2)",
         "description": (
-            "V2: Bestimmt ob ein Center wegen seiner Bilanz-Charakteristik in die "
-            "neue Welt migriert werden muss (vs. nur PC-Migration)."
+            "V2: Determines whether a center must be migrated due to its "
+            "balance sheet character (vs. PC-only migration)."
         ),
         "decides": ["MIGRATE", "PASS"],
         "verdict_meanings": {
-            "MIGRATE": "Bilanz-relevant → muss migriert werden",
-            "PASS": "Keine zwingende Bilanz-Migration",
+            "MIGRATE": "B/S relevant — must be migrated",
+            "PASS": "No mandatory B/S migration",
         },
         "params": {},
     },
     "v2.pc_approach": {
-        "business_label": "PC-Gruppierungs-Strategie (V2)",
+        "business_label": "PC grouping strategy (V2)",
         "description": (
-            "V2 — KERN-LOGIK: Bestimmt für jedes Center ob es 1:1 (eigenes PC) "
-            "oder 1:n (mehrere CCs teilen sich ein PC) migriert wird. "
-            "Gruppierungs-Regeln greifen auf Hierarchie-Level zu (z.B. 'alle "
-            "Center unter L3 ROOT/EUROPE/DACH bekommen ein gemeinsames PC')."
+            "V2 — CORE LOGIC: For each center, determines whether it migrates "
+            "1:1 (its own PC) or 1:n (multiple CCs share one PC). Grouping "
+            "rules access hierarchy levels (e.g. 'all centers under L3 "
+            "ROOT/EUROPE/DACH share a common PC')."
         ),
         "decides": ["1:1", "1:n"],
         "verdict_meanings": {
-            "1:1": "Eigener PC pro Center (klassisch)",
-            "1:n": "Mehrere CCs teilen ein PC (canonical SAP m:1)",
+            "1:1": "Own PC per center (classic)",
+            "1:n": "Multiple CCs share one PC (canonical SAP m:1)",
         },
         "params": {
             "approach_rules": {
-                "friendly_label": "Gruppierungs-Regeln",
+                "friendly_label": "Grouping rules",
                 "type": "array",
                 "default": [],
                 "help_text": (
-                    "Liste von Regeln die bestimmen welche Center zusammengruppiert "
-                    "werden. Jede Regel hat 'match' (welche Center treffen?) und "
-                    "'approach' (1:1 oder 1:n). Wird in einer dedizierten UI editiert."
+                    "List of rules that determine which centers are grouped "
+                    "together. Each rule has 'match' (which centers are hit?) "
+                    "and 'approach' (1:1 or 1:n). Edited via a dedicated UI."
                 ),
             },
             "default_approach": {
-                "friendly_label": "Standard-Strategie",
+                "friendly_label": "Default strategy",
                 "type": "string",
                 "default": "1:1",
                 "enum": ["1:1", "1:n"],
                 "help_text": (
-                    "Was passiert mit Centern die keine Regel matcht? "
-                    "1:1 ist konservativ (jeder bekommt eigenes PC)."
+                    "What happens to centers that no rule matches? "
+                    "1:1 is conservative (everyone gets their own PC)."
                 ),
             },
         },
     },
     "v2.combine_migration": {
-        "business_label": "Migrations-Ergebnis bilden (V2)",
+        "business_label": "Build migration result (V2)",
         "description": (
-            "V2: Schlussschritt der Pipeline — kombiniert die Outputs der "
-            "vorherigen V2-Schritte zu einem finalen Migrations-Plan pro Center."
+            "V2: Final pipeline step — combines the outputs of the preceding "
+            "V2 steps into a final migration plan per center."
         ),
         "decides": ["KEEP", "RETIRE", "MIGRATE"],
         "verdict_meanings": {
-            "KEEP": "Bleibt unverändert",
-            "RETIRE": "Wird stillgelegt",
-            "MIGRATE": "Wird ins neue Modell migriert",
+            "KEEP": "Stays unchanged",
+            "RETIRE": "Will be retired",
+            "MIGRATE": "Will be migrated to the new model",
         },
         "params": {},
     },
@@ -364,17 +367,16 @@ CATALOG: dict[str, dict[str, Any]] = {
 
 
 # ── Preset variant templates ─────────────────────────────────────────────
-# Pre-built decision tree configs for common scenarios. A business user can
-# pick one as starting point and then tweak parameters.
+# Pre-built decision tree configs for common scenarios. A user can pick one
+# as a starting point and then tweak parameters.
 
 PRESETS_V1: dict[str, dict[str, Any]] = {
     "strict": {
-        "label": "Streng — viele RETIRE",
+        "label": "Strict — many RETIRE",
         "description": (
-            "Aggressive Bereinigung: niedrige Inaktivitäts-Schwelle, strenge "
-            "Hierarchie-Prüfung. Eignet sich wenn das Portfolio stark verkleinert "
-            "werden soll. Erwarte viele RETIRE-Vorschläge die manuell überprüft "
-            "werden müssen."
+            "Aggressive cleanup: low inactivity threshold, strict hierarchy "
+            "check. Use when the portfolio should shrink significantly. "
+            "Expect many RETIRE proposals that need manual review."
         ),
         "params": {
             "posting_inactivity_threshold": 6,
@@ -384,11 +386,10 @@ PRESETS_V1: dict[str, dict[str, Any]] = {
         },
     },
     "standard": {
-        "label": "Standard — empfohlen",
+        "label": "Standard — recommended",
         "description": (
-            "Ausgewogene Balance zwischen Bereinigung und Stabilität. Default-"
-            "Werte aus der Implementation_Plan §04 Spezifikation. Empfohlen für "
-            "den ersten Durchlauf."
+            "Balanced cleanup vs. stability. Default values from the "
+            "Implementation Plan §04 spec. Recommended for the first run."
         ),
         "params": {
             "posting_inactivity_threshold": 12,
@@ -398,11 +399,11 @@ PRESETS_V1: dict[str, dict[str, Any]] = {
         },
     },
     "lenient": {
-        "label": "Locker — wenig RETIRE",
+        "label": "Lenient — few RETIRE",
         "description": (
-            "Konservativ: hohe Inaktivitäts-Schwelle, lockere Duplikat-Erkennung. "
-            "Eignet sich wenn maximal vorsichtig migriert werden soll und manuelle "
-            "Überprüfung pro RETIRE teuer ist."
+            "Conservative: high inactivity threshold, loose duplicate "
+            "detection. Use when migration must be maximally cautious and "
+            "manual RETIRE review is expensive."
         ),
         "params": {
             "posting_inactivity_threshold": 24,
@@ -416,21 +417,21 @@ PRESETS_V1: dict[str, dict[str, Any]] = {
 
 PRESETS_V2: dict[str, dict[str, Any]] = {
     "all_one_to_one": {
-        "label": "Konservativ — 1:1 für alle",
+        "label": "Conservative — 1:1 for all",
         "description": (
-            "Jeder Cost Center bekommt einen eigenen Profit Center (1:1). "
-            "Sicher, einfach, aber führt zu vielen PCs. Sinnvoll wenn die "
-            "Kosten-Granularität exakt erhalten bleiben muss."
+            "Every cost center gets its own profit center (1:1). Safe and "
+            "simple, but produces many PCs. Use when cost-granularity must "
+            "be preserved exactly."
         ),
         "approach_rules": [],
         "default_approach": "1:1",
     },
     "by_level3": {
-        "label": "Gruppierung nach L3",
+        "label": "Group by L3",
         "description": (
-            "Alle Cost Center unter dem gleichen Level-3 Hierarchie-Knoten teilen "
-            "sich einen Profit Center (1:n). Reduziert die PC-Zahl drastisch "
-            "während die Reporting-Granularität auf L3-Ebene erhalten bleibt."
+            "All cost centers under the same level-3 hierarchy node share a "
+            "profit center (1:n). Drastically reduces PC count while "
+            "preserving reporting granularity at the L3 level."
         ),
         "approach_rules": [
             {"match": {"hier_level": "L3"}, "approach": "1:n"},
@@ -438,10 +439,10 @@ PRESETS_V2: dict[str, dict[str, Any]] = {
         "default_approach": "1:1",
     },
     "by_country": {
-        "label": "Gruppierung nach Land",
+        "label": "Group by country",
         "description": (
-            "Cost Center werden nach dem Country-Code (`ccode`) gruppiert. "
-            "Sinnvoll für regionale Reporting-Strukturen."
+            "Cost centers are grouped by country code (`ccode`). Useful for "
+            "regional reporting structures."
         ),
         "approach_rules": [
             {"match": {"by_field": "ccode"}, "approach": "1:n"},
@@ -455,7 +456,7 @@ PRESETS_V2: dict[str, dict[str, Any]] = {
 
 
 def get_rule_metadata(code: str) -> dict[str, Any] | None:
-    """Return business-friendly metadata for a routine code, or None."""
+    """Return user-friendly metadata for a routine code, or None."""
     return CATALOG.get(code)
 
 
@@ -484,7 +485,7 @@ def list_rule_catalog(tree: str | None = None) -> list[dict[str, Any]]:
             "name": routine.name,
             "kind": routine.kind,
             "tree": routine.tree,
-            # Business metadata (with sensible fallbacks)
+            # Catalog metadata (with sensible fallbacks)
             "business_label": meta.get("business_label", routine.name),
             "description": meta.get("description", ""),
             "decides": meta.get("decides", []),

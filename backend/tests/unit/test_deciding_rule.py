@@ -105,11 +105,11 @@ def test_step_without_verdict_falls_through_to_last() -> None:
 
 
 def test_label_uses_business_friendly_name_when_known() -> None:
-    """Known routine codes should produce a German business label."""
+    """Known routine codes should produce a friendly business label."""
     path = ["rule.posting_activity:RETIRE"]
     r = _extract_deciding_rule(path, "RETIRE")
-    # Should mention the friendly label "Inaktivität erkennen"
-    assert "Inaktivität" in r["label"]
+    # Should mention the friendly label "Detect inactivity"
+    assert "Detect inactivity" in r["label"] or "inactivity" in r["label"].lower()
 
 
 def test_label_falls_back_to_code_when_unknown() -> None:
@@ -123,8 +123,8 @@ def test_verdict_meaning_appears_in_label_when_available() -> None:
     """When the catalog has a verdict_meaning, it should be in the label."""
     path = ["rule.posting_activity:RETIRE"]
     r = _extract_deciding_rule(path, "RETIRE")
-    # rule.posting_activity has verdict_meaning for RETIRE
-    assert "stillegung" in r["label"].lower() or "inaktiv" in r["label"].lower()
+    # rule.posting_activity has verdict_meaning for RETIRE: "Inactive — proposed for retirement"
+    assert "retirement" in r["label"].lower() or "inactive" in r["label"].lower()
 
 
 # ── Verdict case-insensitivity ────────────────────────────────────────

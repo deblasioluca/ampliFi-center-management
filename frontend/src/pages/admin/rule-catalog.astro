@@ -2,33 +2,33 @@
 import Layout from '../../components/layout/Layout.astro';
 ---
 
-<Layout title="Built-in Rule Katalog" requireAuth={true} adminOnly={true}>
+<Layout title="Built-in Rule Catalog" requireAuth={true} adminOnly={true}>
   <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
   <div class="mb-4">
-    <h1 class="text-2xl font-bold text-gray-900">Built-in Rule Katalog</h1>
+    <h1 class="text-2xl font-bold text-gray-900">Built-in Rule Catalog</h1>
     <p class="text-sm text-gray-500 mt-1">
-      Komplette Übersicht aller im Code definierten Decision-Tree-Regeln. Jeder Eintrag zeigt
-      was die Regel prüft, welche Verdikte sie liefert und welche Parameter konfigurierbar sind.
+      Complete overview of all decision-tree rules defined in code. Each entry shows
+      what the rule checks, which verdicts it produces, and which parameters are configurable.
     </p>
   </div>
 
   <!-- Help banner: where to do what -->
   <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-900">
-    <p class="font-semibold mb-2">Wo mache ich was?</p>
+    <p class="font-semibold mb-2">Where do I do what?</p>
     <ul class="space-y-1 text-blue-800">
       <li>
-        <strong>Diese Seite (Katalog):</strong> nur lesen — built-in Regeln sind im Python-Code
-        definiert und können <em>nicht gelöscht</em> werden.
+        <strong>This page (catalog):</strong> read-only — built-in rules are defined in
+        Python code and <em>cannot be deleted</em>.
       </li>
       <li>
-        <strong>Parameter pro Variante anpassen:</strong>
-        <a href="/admin/configs" class="underline font-medium">Decision Tree Varianten</a>
-        — dort wählst du Regeln in eine Pipeline und stellst Parameter ein.
+        <strong>Tune parameters per variant:</strong>
+        <a href="/admin/configs" class="underline font-medium">Decision Tree Variants</a>
+        — pick rules into a pipeline and set parameters.
       </li>
       <li>
-        <strong>Eigene Regeln bauen (No-Code DSL):</strong>
+        <strong>Build custom rules (No-Code DSL):</strong>
         <a href="/admin/rules" class="underline font-medium">Rule Builder</a>
-        — dort kannst du custom Regeln erstellen, anpassen und löschen.
+        — create, edit and delete custom rules.
       </li>
     </ul>
   </div>
@@ -37,28 +37,28 @@ import Layout from '../../components/layout/Layout.astro';
   <div class="card mb-4 flex flex-wrap items-center gap-3 text-sm">
     <label class="text-gray-600">Tree:</label>
     <select id="filter-tree" class="input text-sm w-48">
-      <option value="">Alle (built-in + V2)</option>
+      <option value="">All (built-in + V2)</option>
       <option value="cleansing">V1 Cleansing (KEEP/RETIRE/MERGE/REDESIGN)</option>
-      <option value="mapping">V1 Mapping (CC/PC-Strategie)</option>
+      <option value="mapping">V1 Mapping (CC/PC strategy)</option>
       <option value="v2">V2 CEMA Migration</option>
     </select>
 
-    <label class="text-gray-600 ml-3">Suche:</label>
+    <label class="text-gray-600 ml-3">Search:</label>
     <input id="filter-search" type="text" class="input text-sm w-72"
-           placeholder="Name, Code, Beschreibung, Parameter..." />
+           placeholder="Name, code, description, parameter..." />
 
-    <span class="ml-auto text-xs text-gray-500" id="result-count">— Regeln</span>
+    <span class="ml-auto text-xs text-gray-500" id="result-count">— rules</span>
   </div>
 
   <!-- Rule list -->
   <div id="rules-container" class="space-y-3">
-    <div class="text-gray-400 text-center py-12">Lädt Katalog…</div>
+    <div class="text-gray-400 text-center py-12">Loading Katalog…</div>
   </div>
 
   <!-- Detail modal (slides in) -->
   <div id="detail-drawer" class="fixed inset-y-0 right-0 w-full md:w-[640px] bg-white shadow-2xl border-l border-gray-200 transform translate-x-full transition-transform duration-200 z-50 overflow-y-auto">
     <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
-      <h3 class="font-semibold" id="drawer-title">Regel-Detail</h3>
+      <h3 class="font-semibold" id="drawer-title">Rule detail</h3>
       <button id="close-drawer" class="text-gray-400 hover:text-gray-700 text-xl">✕</button>
     </div>
     <div id="drawer-content" class="p-5 space-y-5 text-sm"></div>
@@ -109,7 +109,7 @@ import Layout from '../../components/layout/Layout.astro';
       render();
     } catch (err) {
       document.getElementById('rules-container').innerHTML =
-        `<div class="card text-red-600">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
+        `<div class="card text-red-600">Error loading: ${escapeHtml(err.message)}</div>`;
     }
   }
 
@@ -147,7 +147,7 @@ import Layout from '../../components/layout/Layout.astro';
 
     const container = document.getElementById('rules-container');
     if (!entries.length) {
-      container.innerHTML = `<div class="card text-gray-400 text-center py-8">Keine Regeln passen zum Filter</div>`;
+      container.innerHTML = `<div class="card text-gray-400 text-center py-8">No rules match the filter</div>`;
       return;
     }
 
@@ -166,8 +166,8 @@ import Layout from '../../components/layout/Layout.astro';
 
     const paramCount = Object.keys(entry.params || {}).length;
     const paramHint = paramCount === 0
-      ? '<span class="text-xs text-gray-400">Keine Parameter</span>'
-      : `<span class="text-xs text-gray-600">${paramCount} Parameter</span>`;
+      ? '<span class="text-xs text-gray-400">No parameters</span>'
+      : `<span class="text-xs text-gray-600">${paramCount} parameters</span>`;
 
     return `
       <div class="card hover:shadow-md cursor-pointer transition" data-rule-code="${escapeHtml(entry.code)}">
@@ -180,10 +180,10 @@ import Layout from '../../components/layout/Layout.astro';
               </span>
             </div>
             <code class="text-xs text-gray-500 font-mono">${escapeHtml(entry.code)}</code>
-            <p class="text-sm text-gray-700 mt-2 leading-relaxed">${escapeHtml(entry.description || '(keine Beschreibung)')}</p>
+            <p class="text-sm text-gray-700 mt-2 leading-relaxed">${escapeHtml(entry.description || '(no description)')}</p>
             <div class="flex items-center gap-3 mt-3 flex-wrap">
               <div class="flex items-center gap-1">
-                <span class="text-xs text-gray-500">Verdikte:</span>
+                <span class="text-xs text-gray-500">Verdicts:</span>
                 ${decidesBadges || '<span class="text-xs text-gray-400">—</span>'}
               </div>
               <span class="text-gray-300">·</span>
@@ -247,39 +247,39 @@ import Layout from '../../components/layout/Layout.astro';
       </section>
 
       <section>
-        <h4 class="text-sm font-semibold mb-2">Mögliche Verdikte</h4>
+        <h4 class="text-sm font-semibold mb-2">Possible verdicts</h4>
         ${verdictExplanations
           ? `<ul class="space-y-2">${verdictExplanations}</ul>`
-          : '<div class="text-xs text-gray-400">Diese Regel emittiert keine direkten Verdikte (Aggregator).</div>'}
+          : '<div class="text-xs text-gray-400">This rule emits no direct verdicts (aggregator).</div>'}
       </section>
 
       <section>
-        <h4 class="text-sm font-semibold mb-2">Parameter (${Object.keys(entry.params || {}).length})</h4>
+        <h4 class="text-sm font-semibold mb-2">Parameters (${Object.keys(entry.params || {}).length})</h4>
         ${paramCards
           ? `<div class="space-y-2">${paramCards}</div>`
-          : '<div class="text-xs text-gray-400">Diese Regel hat keine konfigurierbaren Parameter.</div>'}
+          : '<div class="text-xs text-gray-400">This rule has no configurable parameters.</div>'}
       </section>
 
       <section class="border-t pt-4">
-        <h4 class="text-sm font-semibold mb-2">Anpassen / Verwenden</h4>
+        <h4 class="text-sm font-semibold mb-2">Adjust / Use</h4>
         <p class="text-xs text-gray-600 mb-3">
-          Built-in Regeln sind im Code definiert und können nicht gelöscht werden.
-          Um sie in einer Analyse zu verwenden:
+          Built-in rules are defined in code and cannot be deleted.
+          To use one in an analysis:
         </p>
         <ol class="text-xs text-gray-700 space-y-1 list-decimal list-inside">
-          <li>Gehe zu <a href="/admin/configs" class="text-amplifi-600 underline">Decision Tree Varianten</a></li>
-          <li>Erstelle eine neue Variante aus einer Vorlage oder forke eine bestehende</li>
-          <li>Wähle diese Regel in die Pipeline, stelle die Parameter ein und speichere</li>
-          <li>Wende die Variante auf einen Wave an (Simulation oder Aktiviert)</li>
+          <li>Go to <a href="/admin/configs" class="text-amplifi-600 underline">Decision Tree Variants</a></li>
+          <li>Create a new variant from a preset or fork an existing one</li>
+          <li>Pick this rule into the pipeline, set parameters and save</li>
+          <li>Apply the variant to a wave (Simulation or Activated)</li>
         </ol>
       </section>
 
       <section class="border-t pt-4">
-        <h4 class="text-sm font-semibold mb-2">Dieser Regel-Eintrag</h4>
+        <h4 class="text-sm font-semibold mb-2">This rule entry</h4>
         <ul class="text-xs text-gray-600 space-y-1">
           <li><span class="text-gray-400">Tree:</span> ${escapeHtml(entry.tree || (entry.code.startsWith('v2.') ? 'v2' : '—'))}</li>
           <li><span class="text-gray-400">Kind:</span> ${escapeHtml(entry.kind || '—')}</li>
-          <li><span class="text-gray-400">Code-Datei:</span> <code class="text-xs">backend/app/domain/decision_tree/routines/</code></li>
+          <li><span class="text-gray-400">Code file:</span> <code class="text-xs">backend/app/domain/decision_tree/routines/</code></li>
           <li><span class="text-gray-400">Metadata:</span> <code class="text-xs">backend/app/domain/decision_tree/rule_catalog.py</code></li>
         </ul>
       </section>

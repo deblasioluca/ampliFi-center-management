@@ -92,7 +92,7 @@ def test_numeric_params_have_min_max() -> None:
 def test_get_rule_metadata_known_code() -> None:
     meta = get_rule_metadata("rule.posting_activity")
     assert meta is not None
-    assert meta["business_label"] == "Inaktivität erkennen"
+    assert meta["business_label"] == "Detect inactivity"
 
 
 def test_get_rule_metadata_unknown_code_returns_none() -> None:
