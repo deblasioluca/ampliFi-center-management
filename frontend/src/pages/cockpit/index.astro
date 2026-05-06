@@ -163,8 +163,8 @@ import Layout from '../../components/layout/Layout.astro';
           <input type="text" id="wave-desc" class="input text-sm" placeholder="Description" />
         </div>
         <div>
-          <label class="block text-xs text-gray-500 mb-1">Scope: Entities (comma-separated company codes)</label>
-          <input type="text" id="wave-entities" class="input text-sm" placeholder="DE01, US01, JP01" />
+          <label class="block text-xs text-gray-500 mb-1">Scope: Entities</label>
+          <div id="wave-entity-picker"></div>
         </div>
         <div>
           <label class="block text-xs text-gray-500 mb-1">Scope: Hierarchy Node</label>
@@ -172,7 +172,9 @@ import Layout from '../../components/layout/Layout.astro';
             <select id="wave-hier-id" class="input text-sm flex-1">
               <option value="">-- Select Hierarchy --</option>
             </select>
-            <input type="text" id="wave-hier-node" class="input text-sm flex-1" placeholder="Node setname" />
+            <select id="wave-hier-node" class="input text-sm flex-1" disabled>
+              <option value="">-- Pick a hierarchy first --</option>
+            </select>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -189,6 +191,7 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 </Layout>
 
+<script src="/entity-picker.js" is:inline></script>
 <script is:inline>
   (function() {
     var token = localStorage.getItem('amplifi_token');
@@ -380,11 +383,48 @@ import Layout from '../../components/layout/Layout.astro';
       });
     }).catch(function(){});
 
+    // Cascade: when hierarchy changes, load its nodes into the second select
+    document.getElementById('wave-hier-id').addEventListener('change', function(e) {
+      var hierId = e.target.value;
+      var nodeSel = document.getElementById('wave-hier-node');
+      nodeSel.innerHTML = '<option value="">-- Loading nodes… --</option>';
+      nodeSel.disabled = true;
+      if (!hierId) {
+        nodeSel.innerHTML = '<option value="">-- Pick a hierarchy first --</option>';
+        return;
+      }
+      fetch('/api/legacy/hierarchies/' + hierId + '/nodes?size=500', { headers: headers })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          nodeSel.innerHTML = '<option value="">-- Whole hierarchy --</option>';
+          (d.items || []).forEach(function(n) {
+            var opt = document.createElement('option');
+            opt.value = n.setname;
+            var label = n.setname;
+            if (n.description) label += ' — ' + n.description;
+            opt.textContent = label;
+            nodeSel.appendChild(opt);
+          });
+          nodeSel.disabled = false;
+        })
+        .catch(function() {
+          nodeSel.innerHTML = '<option value="">-- Failed to load nodes --</option>';
+        });
+    });
+
+    // Mount the entity picker for scope.
+    var waveEntityPicker = window.mountEntityPicker('wave-entity-picker', {
+      multi: true,
+      placeholder: 'Pick entities for this wave (or check Full Scope below)…',
+    });
+    document.getElementById('wave-full-scope').addEventListener('change', function(e) {
+      waveEntityPicker.setEnabled(!e.target.checked);
+    });
+
     document.getElementById('save-wave-btn').addEventListener('click', async function() {
       var code = document.getElementById('wave-code').value.trim();
       var name = document.getElementById('wave-name').value.trim();
       var desc = document.getElementById('wave-desc').value.trim();
-      var entitiesRaw = document.getElementById('wave-entities').value.trim();
       var hierId = document.getElementById('wave-hier-id').value;
       var hierNode = document.getElementById('wave-hier-node').value.trim();
       var fullScope = document.getElementById('wave-full-scope').checked;
@@ -392,7 +432,7 @@ import Layout from '../../components/layout/Layout.astro';
       errEl.classList.add('hidden');
       if (!code) { errEl.textContent = 'Code required'; errEl.classList.remove('hidden'); return; }
       if (!name) { errEl.textContent = 'Name required'; errEl.classList.remove('hidden'); return; }
-      var entity_ccodes = entitiesRaw ? entitiesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+      var entity_ccodes = fullScope ? [] : waveEntityPicker.getCcodes();
       var hierarchy_scopes = [];
       if (hierId && hierNode) {
         hierarchy_scopes.push({ hierarchy_id: parseInt(hierId), node_setname: hierNode });

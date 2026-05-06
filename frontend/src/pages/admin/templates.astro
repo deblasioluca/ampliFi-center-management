@@ -24,18 +24,18 @@ import Layout from '../../components/layout/Layout.astro';
         <label class="block text-xs text-gray-500 mb-1">Description</label>
         <input id="tpl-desc" type="text" class="input text-sm w-full" placeholder="Description..." />
       </div>
-      <div>
-        <label class="block text-xs text-gray-500 mb-1">Entity Company Codes (comma-separated)</label>
-        <input id="tpl-ccodes" type="text" class="input text-sm w-full" placeholder="DE01,DE02,US01" />
+      <div class="md:col-span-2">
+        <label class="block text-xs text-gray-500 mb-1">Entities</label>
+        <div id="tpl-entity-picker"></div>
       </div>
       <div class="flex gap-4 items-end pb-1">
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" id="tpl-full-scope" />
-          Full Scope
+          Full Scope (all entities)
         </label>
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" id="tpl-exclude-prior" checked />
-          Exclude Prior
+          Exclude entities that already had cleanup runs
         </label>
       </div>
     </div>
@@ -49,13 +49,48 @@ import Layout from '../../components/layout/Layout.astro';
   <!-- Template list -->
   <div id="template-list" class="space-y-3">Loading...</div>
   <div id="tpl-empty" class="hidden card text-center text-sm text-gray-400 py-8">No templates yet. Create your first template above.</div>
+
+  <!-- Use-template modal -->
+  <div id="use-tpl-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-2xl w-full max-w-md mx-4">
+      <div class="px-5 py-3 border-b">
+        <h3 class="font-semibold text-base">Create wave from template</h3>
+        <p class="text-xs text-gray-500 mt-1">Based on template: <span id="use-tpl-name-from" class="font-medium text-gray-700"></span></p>
+      </div>
+      <div class="p-5 space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Wave Code</label>
+          <input type="text" id="use-tpl-code" class="input text-sm w-full" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Wave Name</label>
+          <input type="text" id="use-tpl-name" class="input text-sm w-full" />
+        </div>
+        <div id="use-tpl-error" class="hidden text-xs text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t flex justify-end gap-2">
+        <button id="use-tpl-cancel" class="btn-secondary text-sm">Cancel</button>
+        <button id="use-tpl-submit" class="btn-amplifi text-sm">Create Wave</button>
+      </div>
+    </div>
+  </div>
 </Layout>
 
 <script src="/ui-prompts.js" is:inline></script>
+<script src="/entity-picker.js" is:inline></script>
 <script>
   var token = localStorage.getItem('amplifi_token');
   if (!token) window.location.href = '/login';
   var headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  // Initialise the entity picker once. Disabled when "Full Scope" is checked.
+  var entityPicker = window.mountEntityPicker('tpl-entity-picker', {
+    multi: true,
+    placeholder: 'Pick entities (or check Full Scope below)…',
+  });
+  document.getElementById('tpl-full-scope').addEventListener('change', function(e) {
+    entityPicker.setEnabled(!e.target.checked);
+  });
 
   document.getElementById('new-template-btn').addEventListener('click', function() {
     document.getElementById('create-form').classList.toggle('hidden');
@@ -114,35 +149,8 @@ import Layout from '../../components/layout/Layout.astro';
       });
 
       el.querySelectorAll('.use-tpl-btn').forEach(function(btn) {
-        btn.addEventListener('click', async function() {
-          var code, name;
-          try {
-            code = await uiPrompt({
-              title: 'Create wave from template',
-              label: 'Wave Code',
-              defaultValue: 'WAVE-' + Date.now().toString(36).toUpperCase(),
-              helpText: 'A short identifier for this wave (e.g. WAVE-Q3-CLEANUP).',
-            });
-            name = await uiPrompt({
-              title: 'Create wave from template',
-              label: 'Wave Name',
-              defaultValue: 'Wave from ' + btn.dataset.name,
-              helpText: 'Human-friendly name shown in the cockpit list.',
-            });
-          } catch {
-            return; // user cancelled
-          }
-          try {
-            var r = await fetch('/api/waves/templates/' + btn.dataset.id + '/create-wave?code=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(name), { method: 'POST', headers: headers });
-            if (r.ok) {
-              var d = await r.json();
-              uiToast('Wave ' + d.code + ' created.', { kind: 'success' });
-              window.location.href = '/cockpit';
-            } else {
-              var e = await r.json();
-              uiAlert({ message: 'Error: ' + (e.detail || 'Failed'), kind: 'danger' });
-            }
-          } catch(e) { uiAlert({ message: 'Error: ' + e.message, kind: 'danger' }); }
+        btn.addEventListener('click', function() {
+          openUseTemplateModal(btn.dataset.id, btn.dataset.name);
         });
       });
     } catch(e) {
@@ -151,15 +159,63 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadTemplates();
 
+  // ── Use-template modal (replaces nested prompt() chain) ──────────
+  function openUseTemplateModal(templateId, templateName) {
+    var modal = document.getElementById('use-tpl-modal');
+    document.getElementById('use-tpl-name-from').textContent = templateName;
+    document.getElementById('use-tpl-code').value = 'WAVE-' + Date.now().toString(36).toUpperCase();
+    document.getElementById('use-tpl-name').value = 'Wave from ' + templateName;
+    document.getElementById('use-tpl-error').classList.add('hidden');
+    modal.classList.remove('hidden');
+    modal.setAttribute('data-template-id', templateId);
+    setTimeout(function() { document.getElementById('use-tpl-name').focus(); }, 50);
+  }
+  document.getElementById('use-tpl-cancel').addEventListener('click', function() {
+    document.getElementById('use-tpl-modal').classList.add('hidden');
+  });
+  document.getElementById('use-tpl-submit').addEventListener('click', async function() {
+    var modal = document.getElementById('use-tpl-modal');
+    var templateId = modal.getAttribute('data-template-id');
+    var code = document.getElementById('use-tpl-code').value.trim();
+    var name = document.getElementById('use-tpl-name').value.trim();
+    var errEl = document.getElementById('use-tpl-error');
+    if (!code || !name) {
+      errEl.textContent = 'Both code and name are required.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    try {
+      var r = await fetch('/api/waves/templates/' + templateId + '/create-wave?code=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(name), { method: 'POST', headers: headers });
+      if (r.ok) {
+        var d = await r.json();
+        modal.classList.add('hidden');
+        uiToast('Wave ' + (d.code || code) + ' created.', { kind: 'success' });
+        window.location.href = '/cockpit';
+      } else {
+        var e = await r.json();
+        errEl.textContent = e.detail || 'Failed to create wave';
+        errEl.classList.remove('hidden');
+      }
+    } catch(e) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  });
+
   document.getElementById('save-template-btn').addEventListener('click', async function() {
     var res = document.getElementById('tpl-result');
     res.classList.remove('hidden');
     try {
-      var ccodes = document.getElementById('tpl-ccodes').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      var fullScope = document.getElementById('tpl-full-scope').checked;
+      var ccodes = fullScope ? [] : entityPicker.getCcodes();
+      if (!fullScope && !ccodes.length) {
+        res.innerHTML = '<span class="text-red-600">Pick at least one entity, or check Full Scope.</span>';
+        return;
+      }
       var body = {
         name: document.getElementById('tpl-name').value,
         description: document.getElementById('tpl-desc').value,
-        is_full_scope: document.getElementById('tpl-full-scope').checked,
+        is_full_scope: fullScope,
         exclude_prior: document.getElementById('tpl-exclude-prior').checked,
         entity_ccodes: ccodes.length ? ccodes : null,
       };
