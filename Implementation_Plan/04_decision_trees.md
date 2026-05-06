@@ -292,13 +292,133 @@ class RoutineRegistry:
 The cockpit pulls `list()` to render the pipeline editor (§06.3). Each routine entry
 exposes its JSON-Schema so the UI can render a parameter form automatically.
 
-## 4.7 Configuration shape (cross-reference)
+## 4.7 Tree C — V2 CEMA-based Migration Decision Tree (implemented)
+
+**Added in PR #51.** This tree automates the CEMA-based center migration workflow
+described by Patrick's production steps document. It ingests the flattened CEMA
+hierarchy (from CC-with-hierarchy upload) and determines which centers to migrate,
+whether to create 1:1 or 1:n PC-CC relationships, and assigns sequential PC/CC IDs.
+
+### 4.7.1 V2 Pipeline Routines
+
+The V2 engine uses 4 pipeline routines executed in sequence:
+
+```
+INPUT: a legacy cost center C with CEMA hierarchy path + balance data
+
+# ① Retire flag
+ROUTINE v2.retire_flag:
+  IF C.description CONTAINS "_RETIRE":
+      SET C.retire = true
+      RETURN verdict "retire" with reason "description_contains_retire"
+
+# ② Balance-based migration check
+ROUTINE v2.balance_migrate:
+  CHECK balance categories: Assets, Liabilities, Equity, Statistical,
+        Revenues, Direct Costs, Hard Cost Allocations, Allocated Costs
+  IF ANY category has non-zero balance AND NOT C.retire:
+      SET C.migrate = "Y"
+      RETURN verdict "migrate" with reason "has_balance"
+  ELSE:
+      SET C.migrate = "N"
+      RETURN verdict "no_migrate" with reason "no_balance" or "retired"
+
+# ③ PC approach determination
+ROUTINE v2.pc_approach:
+  LOOKUP C's CEMA hierarchy path against configurable approach rules:
+    - Rules reference hierarchy nodes selected by the admin (e.g. "Group Functions", "Asset Management")
+    - Matching nodes → approach = "1:n" (one PC for the block, name from level 3)
+    - All others → approach = "1:1" (each center gets its own PC, name from lowest hierarchy level)
+  RETURN verdict with approach type and pc_name
+
+# ④ Combine migration results
+ROUTINE v2.combine_migration:
+  AGGREGATE results from routines 1-3
+  SET final: migrate, approach, pc_name, retire status
+  RETURN combined verdict
+```
+
+### 4.7.2 PC/CC ID Assignment (post-pipeline)
+
+After the pipeline completes, IDs are assigned to migrated centers:
+
+- **PC IDs**: `P00001` – `PZZZZZ`, configurable start (default `P00137`)
+  - 1:1 centers: each gets an incremental PC ID
+  - 1:n centers: one PC ID shared by all centers in the block
+- **CC IDs**: `C00001` – `CZZZZZ`, sequential for all migrated centers
+- Centers with `migrate = "N"` receive no IDs
+- Sort order follows hierarchy path (Ext_L0 → L13) for deterministic ID assignment
+
+### 4.7.3 PC Approach Configuration
+
+The approach rules are stored as JSON in the `AnalysisConfig` parameters and
+are editable through the admin UI (Decision Trees page):
+
+```json
+{
+  "pc_approach_rules": [
+    {
+      "name": "Group Functions",
+      "match": {"field": "ext_l1", "op": "in", "values": ["GF_NODE_01", ...]},
+      "approach": "1:n",
+      "pc_level": 3
+    },
+    {
+      "name": "Asset Management",
+      "match": {"field": "ext_l1", "op": "==", "value": "AM_NODE"},
+      "approach": "1:n",
+      "pc_level": 3
+    }
+  ],
+  "default_approach": "1:1",
+  "pc_start_id": 137,
+  "cc_start_id": 1
+}
+```
+
+The hierarchy nodes in the rules can be selected via a hierarchical picker in
+the admin UI (referencing actual `HierarchyNode` records).
+
+### 4.7.4 V2 Export
+
+`GET /api/waves/{id}/runs/{run_id}/export-v2` generates an Excel workbook with
+3 sheets: PC template, CC template, and Legacy→Target mapping.
+
+### 4.7.5 Simulation vs Activation
+
+V2 runs support two modes (see §08 for lifecycle details):
+
+- **Simulation** (`mode = "simulation"`): Assigns temporary IDs (`CT...`, `PT...`).
+  Multiple simulation versions can be saved and compared.
+- **Activated** (`mode = "activated"`): Assigns real PC/CC IDs. Marks the run
+  as the preferred run for the wave. Only one activated run per wave.
+
+## 4.8 Configuration shape (cross-reference)
 
 The exact JSON shape of an analytical configuration that selects which routines fire,
 their order, and parameter values is defined in **§05.6**. The decision tree engine
 consumes that shape verbatim.
 
-## 4.8 Testing requirements
+## 4.9 Decision Tree Configuration Admin UI (implemented)
+
+**Added in PR #52.** The admin UI provides a full configuration management interface
+at `/admin` → Decision Trees:
+
+- **List all configs**: Grouped by code, shows latest version + status
+- **Create new config**: Select routines (checkboxes), set parameters (JSON editor),
+  code/name/description
+- **Edit existing config**: Creates new immutable version (for reproducibility)
+- **Clone/fork configs**: Create variants based on existing configurations
+- **Version history**: View all versions for any config with timestamps
+
+When running analysis or simulation on a wave, the analyst selects:
+1. **Engine version** (V1 Decision Tree or V2 CEMA Migration) via dropdown
+2. **Config version** from available configs via dropdown
+
+The selected config is passed as `config_id` in the analysis POST body and stored
+on the `AnalysisRun` record for traceability.
+
+## 4.10 Testing requirements
 
 - Each built-in routine must have a unit test covering: positive verdict, negative
   verdict, missing feature (UNKNOWN), boundary values.

@@ -78,8 +78,8 @@ finally runs a **monthly housekeeping cycle** on the new environment to keep it 
 
 These are decided. The build plan does not need to re-litigate them.
 
-1. **Frontend:** Astro (Node SSR adapter), TypeScript, Tailwind, lightweight component
-   library (shadcn-style or DaisyUI — implementer choice).
+1. **Frontend:** Astro (static build served by backend), TypeScript, Tailwind, React
+   islands (via `@astrojs/react`). No separate Node SSR process in production.
 2. **Backend:** Python 3.11 + **FastAPI**, SQLAlchemy 2.x, Alembic for migrations,
    Pydantic v2 for DTOs.
 3. **Workers:** Celery or RQ for long-running jobs (OData refresh, ML scoring, email
@@ -92,8 +92,8 @@ These are decided. The build plan does not need to re-litigate them.
    Tracked with MLflow (optional but recommended).
 7. **LLM access:** abstracted behind a `LLMProvider` interface with Azure OpenAI and SAP
    BTP Generative AI Hub adapters. No raw vendor SDKs leak into business logic.
-8. **Auth v1:** username/password + bcrypt + JWT session. **Auth v2:** Azure EntraID
-   (OIDC). The auth layer is an interchangeable strategy from day one.
+8. **Auth v1:** username/password + bcrypt + JWT session. **Auth v2:** Azure Entra ID
+   (MSAL SPA with PKCE). The auth layer is an interchangeable strategy from day one.
 9. **Email v1:** SMTP relay (env-config). **Email v2:** Microsoft Graph
    (consistent with EntraID move).
 10. **Naming convention:** Structured / coded (not speaking) — per the deck recommendation.

@@ -1,8 +1,10 @@
-# ampliFi Center Management — Gap Analysis (Updated 2026-04-25 UTC)
+# ampliFi Center Management — Gap Analysis (Updated 2026-04-25 UTC, revised 2026-05-06 post-PR #52)
 
 ## Executive Summary
 
-After implementing Phases 0-10 plus PR #4 enhancements, the application covers **~95-97% of the full specification**. All core domain logic is implemented: decision trees, ML classifiers (Random Forest + LightGBM), DSL rule engine with combinator expressions, LLM review engine (SINGLE/SEQUENTIAL/DEBATE), chat agent, housekeeping with email notifications, analytics visualizations (13+ chart types), MDG export, setup wizard, wave templates, activity feed, data quality dashboard, cluster explorer, reviewer workload balancer, auto-approve, workload-aware scope assignment, batch feature computation, employee table with SAP HR fields, complete frontend with 6 review modes (comparison, flat, hierarchy tree, proposed structure, group by entity, group by outcome), keyboard navigation, i18n, and review invitation/reminder emails.
+After implementing through PR #52, the application covers **~97-98% of the full specification**. Recent additions (PRs #50-52) include: **Decision Tree V2** (CEMA-based migration engine with 4 pipeline routines, PC/CC ID assignment, 1:1/1:n approach rules), **simulation mode** (temporary CT/PT IDs, versioned runs, activation workflow), **Decision Tree Configuration admin UI** (create/version/clone configs, routine toggles, parameter editors), **entity picker** (search, Select All for 600+ entities), **employee picker** (typeahead on employee table for user creation), **scope coverage dashboard** (entities/CCs/PCs analysed per wave), **tab state management** (progress-based tab enabling/disabling), **Entra ID claims popup**, **wave delete with cascade**, and **engine/config version selectors**.
+
+Previously implemented: V1 decision trees, ML classifiers (Random Forest + LightGBM), DSL rule engine with combinator expressions, LLM review engine (SINGLE/SEQUENTIAL/DEBATE), chat agent, housekeeping with email notifications, analytics visualizations (13+ chart types), MDG export, setup wizard, wave templates, activity feed, data quality dashboard, cluster explorer, reviewer workload balancer, auto-approve, workload-aware scope assignment, batch feature computation, employee table with SAP HR fields, complete frontend with 6 review modes, keyboard navigation, i18n, and review invitation/reminder emails.
 
 ---
 
@@ -76,6 +78,13 @@ After implementing Phases 0-10 plus PR #4 enhancements, the application covers *
 | Pipeline editor UI | DONE | `/cockpit/pipeline` page with 6 steps |
 | CombineOutcomes aggregate routine | DONE | Merges all routine results |
 | Rule Builder UI | DONE | `/admin/rules` — no-code visual rule authoring |
+| **V2 CEMA Migration Engine** | **DONE** | **4 routines: retire_flag, balance_migrate, pc_approach, combine_migration (PR #51)** |
+| **V2 PC/CC ID Assignment** | **DONE** | **P00137+ / C00001+ sequential IDs, 1:1 and 1:n grouping (PR #51)** |
+| **V2 PC Approach Rules** | **DONE** | **Configurable JSON rules with hierarchy node picker (PR #51)** |
+| **V2 Export (Excel)** | **DONE** | **3-sheet workbook: PC template, CC template, mapping (PR #51)** |
+| **Decision Tree Config Admin UI** | **DONE** | **Create/version/clone/edit configs, routine toggles, JSON param editor (PR #52)** |
+| **Config Version Selector** | **DONE** | **Dropdown on wave analysis tab, stores config_id on run (PR #52)** |
+| **Engine Selector (V1/V2)** | **DONE** | **Dropdown to choose analysis engine before running (PR #52)** |
 | Golden corpus tests | MISSING | |
 
 ---
@@ -135,6 +144,15 @@ After implementing Phases 0-10 plus PR #4 enhancements, the application covers *
 | Keyboard navigation | DONE | j/k arrows, Enter select, a/r quick approve/reject |
 | Final sign-off with completeness check | DONE | Blocks if PENDING items remain |
 | Wave templates | DONE | CRUD + create-wave-from-template |
+| **Wave delete with cascade** | **DONE** | **ORM cascade on all wave relationships, frontend error handling (PR #52)** |
+| **Entity picker (600+ entities)** | **DONE** | **Search, Select All, count badge (PR #52)** |
+| **Simulation mode (V1 + V2)** | **DONE** | **Temporary CT/PT IDs, versioned runs, compare versions (PRs #51-52)** |
+| **Simulation activation** | **DONE** | **Assign real PC/CC IDs on activation (PR #51)** |
+| **Tab state management** | **DONE** | **Tabs disabled/enabled based on wave progress step (PR #52)** |
+| **Scope coverage dashboard** | **DONE** | **Entities/CCs/PCs per wave, Unassigned row, active CCs only (PR #52)** |
+| **Employee picker for users** | **DONE** | **Typeahead search on employee table, auto-fill user form (PR #52)** |
+| **Entra ID claims popup** | **DONE** | **Shows all token claims on MSAL login (PR #52)** |
+| **CC-with-hierarchy upload** | **DONE** | **Excel upload with CEMA hierarchy columns (PR #50)** |
 
 ---
 

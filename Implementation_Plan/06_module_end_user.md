@@ -40,6 +40,16 @@ Analyst clicks **New wave** → form:
 
 Persisted state on `wave` row; entities pinned to the wave on `wave_entity`.
 
+### 6.2.1 Entity Picker (implemented)
+
+**Added in PR #52.** The entity selection for wave scoping uses a sophisticated
+multi-select picker designed for 600+ entities:
+
+- **Search/filter**: Typeahead search on entity name and company code
+- **Select All / Deselect All**: Buttons to select/deselect all (respects current filter)
+- **Count badge**: Shows number of selected entities
+- **Grouped display**: Clear list with entity code and name
+
 ## 6.3 Pipeline editor (analytical configuration)
 
 Located at `/wave/{id}/pipeline`.
@@ -228,14 +238,56 @@ with a clear list. Once submitted: scope is frozen, reviewer email confirmation 
 When **all** scopes are completed → wave state moves to `signed_off` automatically.
 Analyst then runs **Close wave**: triggers MDG export (§09.4) and final email.
 
-## 6.10 Full-scope strategic run
+## 6.10 Tab State Management (implemented)
+
+**Added in PR #52.** The wave detail page uses a progress-based tab system.
+Tabs are disabled/enabled based on the current wave step:
+
+| Wave Step | Available Tabs |
+|-----------|---------------|
+| Create | Scope only |
+| Defining Scope | Scope |
+| Analyse | Scope, Analysis |
+| Simulation | Scope, Analysis, Simulation |
+| Proposals | Scope, Analysis, Simulation, Proposals |
+| Review Scopes | All tabs through Review Scopes |
+| Progress | All tabs |
+| Export | All tabs |
+
+Disabled tabs appear grayed out and are not clickable, preventing premature
+access to steps that aren't relevant yet.
+
+## 6.11 Engine & Config Selection (implemented)
+
+**Added in PR #52.** When running analysis from the wave page:
+
+1. **Engine selector**: Dropdown to choose V1 (Decision Tree) or V2 (CEMA Migration)
+2. **Config version selector**: Dropdown listing all available analysis configs with
+   version numbers, filtered to show only configs compatible with the selected engine
+3. Both selectors persist their values on the `AnalysisRun` record
+
+## 6.12 Scope Coverage Dashboard (implemented)
+
+**Added in PR #52.** The cockpit page (`/cockpit`) displays scope coverage statistics:
+
+- **Entities**: X / Y analysed (with percentage bar)
+- **Cost Centers (analysed)**: X / Y with percentage — only counts active CCs
+  (not orphaned analysis runs)
+- **Profit Centers**: X / Y with percentage
+- **Per-wave breakdown**: Table showing entities, CC count, and coverage per wave
+- **Unassigned row**: Orphaned analysis runs (no wave) are shown separately so
+  numbers always add up correctly
+
+On 401 (JWT expired), the dashboard redirects to login instead of showing stale/empty data.
+
+## 6.13 Full-scope strategic run
 
 A wave with `is_full_scope=true` skips the review/sign-off phase. It produces the same
 analysis run + cockpit views, intended for strategic analysis (e.g. "if we ran clean-up
 on everything excluding waves already done, what would the future PC structure look
 like?"). The Lock / Scopes / Sign-off actions are hidden for these waves.
 
-## 6.11 Performance targets
+## 6.14 Performance targets
 
 | Action | Target |
 |---|---|

@@ -22,19 +22,24 @@ local login form or redirect to `/api/auth/oidc/start`.
 - Password policy: min 12 chars, ≥ 1 letter + ≥ 1 digit, not in HaveIBeenPwned k-anon
   list (`pwnedpasswords` API; can be disabled in air-gapped deploys).
 
-### 10.1.2 EntraID auth (v2)
+### 10.1.2 EntraID auth (v2) — implemented as MSAL SPA
 
-- OIDC authorization code flow with PKCE.
-- App registered in EntraID; client ID + tenant ID + client secret stored as secrets.
-- On callback: validate `id_token` (signature, issuer, audience, nbf/exp), look up
-  user by `oid` (Object ID, mapped to `app_user.external_id`), upsert user record on
-  first login (display_name from claims; role defaults to `reviewer` unless an admin
-  pre-provisioned).
-- Sessions still use JWT (issued by the app), refreshed via the EntraID refresh token
-  silently; logout clears local cookies AND calls EntraID `end_session_endpoint`.
+- **MSAL SPA flow with PKCE** (not server-side OIDC redirect). The browser acquires
+  tokens directly from Azure using `@azure/msal-browser`.
+- App registered in Entra ID; client ID + tenant ID configured via `.env`
+  (`ENTRAID_CLIENT_ID`, `ENTRAID_TENANT_ID`).
+- Flow:
+  1. Frontend calls `GET /api/auth/entra/config` → receives `client_id`, `authority`
+  2. MSAL acquires `id_token` via popup/redirect
+  3. Frontend sends `id_token` to `POST /api/auth/entra/token`
+  4. Backend validates token (signature, issuer, audience, nbf/exp), looks up user
+     by `oid` (Object ID, mapped to `app_user.external_id`), upserts on first login
+  5. Backend returns an app JWT (same format as local auth)
+- **Claims popup (PR #52)**: On first login, a popup displays all received token claims
+  (name, email, oid, groups, roles, etc.) to help admins map fields to the user table.
 - Group-to-role mapping: configurable `app_config['auth.entraid.role_map']`
   e.g. `{"GroupAdminGUID": "admin", "GroupAnalystGUID": "analyst"}`. Group claims
-  must be enabled on the EntraID app.
+  must be enabled on the Entra ID app.
 
 ### 10.1.3 Tokenised stakeholder links (no-login mode)
 

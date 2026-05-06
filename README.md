@@ -1,6 +1,6 @@
 # ampliFi Center Management
 
-ERP migration support application for rationalizing legacy SAP cost centers through a two-stage decision tree framework (cleansing + mapping) with wave-based rollout.
+ERP migration support application for rationalizing ~216,000 legacy SAP cost centers into a clean target structure of cost centers, profit centers and WBS elements. Uses a configurable decision tree framework (V1 cleansing + mapping, V2 CEMA-based migration) with wave-based rollout, simulation mode, and integrated review workflow.
 
 ## Tech Stack
 
@@ -10,8 +10,8 @@ ERP migration support application for rationalizing legacy SAP cost centers thro
 | ORM        | SQLAlchemy 2.x + Alembic                      |
 | Workers    | Celery 5 on Redis 7                           |
 | Database   | PostgreSQL 15+                                |
-| Frontend   | Astro 4.x with SSR, TypeScript, Tailwind      |
-| Auth       | Local bcrypt + JWT                            |
+| Frontend   | Astro 4.x (static build), TypeScript, Tailwind, React islands |
+| Auth       | Local bcrypt + JWT; optional Microsoft Entra ID (MSAL SPA) |
 | Container  | Docker + docker-compose (optional)            |
 
 ## Quick Start (Makefile)
@@ -87,7 +87,7 @@ make seed           # Full seed: admin user + sample data + built-in routines
 
 | What       | Value                                |
 |------------|--------------------------------------|
-| Admin user | `admin@amplifi.dev` / `admin`        |
+| Admin user | `admin` / `admin` (or `admin@amplifi.dev` / `admin`) |
 
 ## Configuration
 
@@ -148,30 +148,70 @@ DELETE /api/data/purge-all             # delete ALL imported data
 GET    /api/data/counts                # counts of all data tables
 ```
 
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Decision Tree V1** | Cleansing + mapping rules (posting activity, ownership, redundancy, hierarchy compliance, cross-system dependency) |
+| **Decision Tree V2** | CEMA-based migration engine (retire flag, balance migrate, PC approach 1:1/1:n, combine migration) with PC/CC ID assignment |
+| **Decision Tree Config Admin** | Create, version, clone configs; toggle routines, set parameters; immutable once used in a run |
+| **Wave Management** | Create waves scoped by entities/hierarchy; 8-step progress pipeline (Create → Scope → Analyse → Review → Lock → Stakeholder → Sign Off → Export) |
+| **Simulation Mode** | Run analysis in simulation (temporary CT/PT IDs); compare versions; activate to assign real PC/CC IDs |
+| **Entity Picker** | Multi-select with search, Select All, count badge — built for 600+ entities |
+| **Employee Picker** | Typeahead search on employee table for user creation (auto-fills name, email) |
+| **Scope Coverage** | Dashboard showing entities and cost centers analysed per wave, with "Unassigned" row for orphaned runs |
+| **Tab State Management** | Wave detail tabs disabled based on progress step (prevents premature access to Analysis, Proposals, Review, etc.) |
+| **Entra ID Claims** | Popup showing all token claims after MSAL login (name, email, groups, etc.) |
+| **Data Upload** | Excel/CSV upload with templates: CC with hierarchy, SAP flat hierarchy, GCR balances, entities, GL accounts, target objects |
+| **Explore Page** | Public data explorer with configurable display columns and hierarchical tree view |
+| **Review Workflow** | Token-based stakeholder review; assign reviewers by entity/hierarchy node; progress tracking |
+| **MDG Export** | Generate SAP MDG upload files for approved proposals |
+
 ## Project Structure
 
 ```
 ampliFi-center-management/
   backend/                 # FastAPI application
     app/
-      api/                 # API route handlers
-      auth/                # Authentication service
-      domain/              # Business logic (decision tree engine)
+      api/                 # API route handlers (admin, auth, configs, waves, runs, review, etc.)
+      auth/                # Authentication service (local + Entra ID)
+      domain/              # Business logic (decision tree engine, routines, naming)
       infra/               # Infrastructure (DB, SAP client, logging)
       models/              # SQLAlchemy ORM models
-      services/            # Shared services (seed, etc.)
+      services/            # Analysis services (V1, V2), seed, upload processing
     alembic/               # Database migrations
-    tests/                 # Test suite
-  frontend/                # Astro SSR frontend
+    tests/                 # Test suite (21+ unit tests for V2 engine)
+  frontend/                # Astro frontend (built to static, served by backend)
     src/
-      pages/               # Page routes
+      pages/               # Page routes (dashboard, cockpit, admin, data, explore, etc.)
       components/          # Reusable components
   scripts/                 # Setup and deployment scripts
-  Implementation_Plan/     # Specification documents
+  Implementation_Plan/     # Specification documents (21 files)
   Makefile                 # Project commands
   .env.example             # Environment template
   docker-compose.yml       # Docker deployment (optional)
 ```
+
+## Architecture
+
+The backend (FastAPI) serves both the REST API and the built frontend as static files on a single port (default 8180). There is no separate frontend server in production.
+
+```
+Browser  ──► FastAPI (Uvicorn, port 8180)
+               ├── /api/*          → REST API (JWT auth)
+               ├── /api/docs       → Swagger UI
+               ├── /api/redoc      → ReDoc
+               └── /*              → Static frontend (Astro build output)
+                    ├── /           → Dashboard
+                    ├── /cockpit    → Waves & Analysis
+                    ├── /admin      → System Administration
+                    ├── /data       → Data Management
+                    ├── /explore    → Public Explorer
+                    ├── /login      → Authentication
+                    └── /review/*   → Stakeholder Review (token-based)
+```
+
+Backend → PostgreSQL (primary store) + Redis (cache/broker, optional).
 
 ## Deployment
 
@@ -181,7 +221,7 @@ ampliFi-center-management/
 2. Clone the repo and `cp .env.example .env`
 3. Edit `.env` with your database credentials and port preferences
 4. Run `make setup` for initial installation
-5. Run `make start` to start the backend
+5. Run `make start` to start the backend (serves both API and frontend)
 6. Use `make update` after pulling new code
 
 ### Docker
@@ -191,3 +231,28 @@ docker-compose up -d
 ```
 
 All ports are configurable via `.env`.
+
+## Admin Pages
+
+The System (Admin) section includes:
+
+| Section | Path | Purpose |
+|---------|------|---------|
+| Users | `/admin` | User CRUD, employee picker for creation, role management |
+| SAP Connections | `/admin/sap` | SAP system connections (OData/ADT/SOAP-RFC) |
+| Data Explorer Sources | `/admin/explorer` | Configure which data sources appear in Explorer |
+| Explorer Display Config | `/admin/explorer-display` | Column labels and visibility per object type |
+| Data Storage | `/admin/datasphere` | SAP Datasphere connection and DDL export |
+| LLM Settings | `/admin/llm` | Azure OpenAI / BTP AI Hub model configuration |
+| Email Settings | `/admin/email` | SMTP provider and template configuration |
+| Naming Conventions | `/admin/naming` | PC/CC/WBS naming rules |
+| App Config | `/admin` (App Config) | Global application settings |
+| **Decision Trees** | `/admin` (Decision Trees) | Create, version, clone analysis configs; toggle routines, set parameters |
+| Rule Builder | `/admin/rules` | Custom DSL rule editor |
+| Wave Templates | `/admin/templates` | Reusable wave configuration templates |
+| Routines | `/admin` (Routines) | Registered analysis routines (built-in + plugins + DSL) |
+| Jobs | `/admin/jobs` | Background job monitor |
+| Audit Log | `/admin/audit` | Audit trail viewer |
+| Application Logs | `/admin/logs` | Application log viewer |
+| System Health | `/admin` (System Health) | DB, Redis, system status |
+| Setup Wizard | `/setup` | Initial setup guide |
