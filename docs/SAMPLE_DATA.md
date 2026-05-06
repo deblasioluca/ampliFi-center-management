@@ -57,6 +57,35 @@ python scripts/generate_sample_data.py --reset --centers 500000 --months 24
 python scripts/generate_sample_data.py --dry-run
 ```
 
+## Wiping data
+
+Two flags for clearing the cleanup scope:
+
+| Flag           | Effect |
+|----------------|--------|
+| `--reset`      | Wipe before regenerating (the existing flag — still works). |
+| `--wipe-only`  | Wipe and exit. Don't regenerate anything. Useful between demos. |
+| `--purge`      | With either of the above: also delete waves, analysis runs, analysis configs and review scopes. By default these are kept; their links to the legacy data go away automatically via `ON DELETE CASCADE`, leaving empty wave shells. Use `--purge` for a fully clean slate. |
+
+```bash
+# Just wipe — don't regenerate
+python scripts/generate_sample_data.py --wipe-only
+
+# Wipe everything (including waves, runs, configs)
+python scripts/generate_sample_data.py --wipe-only --purge
+
+# Wipe and regenerate with a different seed
+python scripts/generate_sample_data.py --reset --seed 42
+
+# Wipe everything and regenerate
+python scripts/generate_sample_data.py --reset --purge
+```
+
+The wipe is idempotent — running `--wipe-only` against an already-empty
+scope reports `(nothing to delete — scope was already empty)` and returns
+cleanly. The cleanup respects FK ordering: legacy data first, then entity
+last (so cascade deletes downstream wave_entity rows automatically).
+
 ## All flags
 
 | Flag                | Default     | Meaning |
@@ -68,6 +97,8 @@ python scripts/generate_sample_data.py --dry-run
 | `--sharing-pct`     | 0.40        | Target share of CCs in 1:n PC groups |
 | `--seed`            | 20260506    | RNG seed for reproducibility |
 | `--reset`           | off         | Wipe `scope='cleanup'` before writing |
+| `--wipe-only`       | off         | Wipe and exit — don't regenerate |
+| `--purge`           | off         | With `--reset` / `--wipe-only`: also delete waves, runs, configs |
 | `--dry-run`         | off         | Plan only, don't write to DB |
 
 `--seed` is honoured for **everything** — entity codes, CC codes, PC

@@ -709,16 +709,17 @@ def build_cost_centers(
         i = 0
         chunk_idx = 0
         # Sanitise the function name into a stable group-key segment. We
-        # used a 6-char prefix earlier but several Corporate Center
-        # functions ('Group Treasury', 'Group Risk', etc.) collapsed to
-        # the same prefix and produced bogus shared groups across them.
-        fn_safe = fn.replace(" ", "_").replace("&", "and").replace("/", "_").upper()[:20]
+        # keep 8 chars — long enough that all CC-division functions stay
+        # distinct (GROUP_TR / GROUP_RI / GROUP_FI / etc.) and short enough
+        # that the full key fits in the 20-char ``pctr`` column.
+        # Final format:  "{ec}{dc}-{fn8}-G{nn}"  → max 4+3+1+8+1+3 = 20 chars.
+        fn_safe = fn.replace(" ", "_").replace("&", "and").replace("/", "_").upper()[:8]
         while i < len(bucket_ccs):
             size = min(rng2.randint(2, 6), len(bucket_ccs) - i)
             if size < 2:
                 break  # leave the last 1 as non-shared
             chunk = bucket_ccs[i : i + size]
-            group_key = f"{ec}-{dc}-{fn_safe}-G{chunk_idx:02d}"[:38]
+            group_key = f"{ec}{dc}-{fn_safe}-G{chunk_idx:02d}"[:20]
             for cc in chunk:
                 cc.pc_group_key = group_key
                 cc.pctr = group_key
@@ -751,34 +752,108 @@ def _weighted_choice(rng: random.Random, items: list[tuple]) -> object:
 # ── Database write ────────────────────────────────────────────────────────
 
 
-def reset_scope(session: Session) -> None:
-    """Wipe all data in the `cleanup` scope so we can start fresh.
+def reset_scope(session: Session, *, purge_waves: bool = False) -> dict[str, int]:
+    """Wipe all data in the ``cleanup`` scope so we can start fresh.
 
-    Order matters because of foreign keys.
+    Returns a dict of {table_name: rows_deleted} so the caller can report.
+
+    Deletion order respects foreign keys. Most downstream tables (
+    ``routine_output``, ``center_proposal``, ``wave_entity``, etc.) are
+    cleaned automatically because they have ``ON DELETE CASCADE`` against
+    the legacy data we're deleting, but a handful of scope-aware tables
+    written by the analyser (target_cost_center, target_profit_center,
+    center_mapping) and a couple of manual tables (employee) need an
+    explicit pass.
+
+    If ``purge_waves`` is True, also deletes all ``wave``, ``analysis_run``
+    and ``review_scope`` rows. This is the nuclear option — useful when
+    starting a fresh demo, but it nukes any analyser configurations or
+    review work the user might want to keep.
     """
     print("Resetting scope='cleanup'...")
-    # Use raw deletes to avoid relationship cascade overhead.
-    session.execute(delete(Balance).where(Balance.scope == SCOPE))
-    session.execute(
-        delete(HierarchyLeaf).where(
-            HierarchyLeaf.hierarchy_id.in_(
-                session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
-            )
-        )
+    counts: dict[str, int] = {}
+
+    # The model classes with a `scope` field, in dependency order
+    # (children first so FKs don't fire). We import inside the function
+    # to keep the top-level imports of the script tight.
+    from app.models.core import (  # noqa: PLC0415
+        AnalysisRun,
+        CenterMapping,
+        Employee,
+        ReviewScope,
+        TargetCostCenter,
+        TargetProfitCenter,
+        Wave,
     )
-    session.execute(
-        delete(HierarchyNode).where(
-            HierarchyNode.hierarchy_id.in_(
-                session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
+
+    # 1. Analyser-generated outputs that share the scope concept.
+    counts["target_profit_center"] = _delete_by_scope(session, TargetProfitCenter)
+    counts["target_cost_center"] = _delete_by_scope(session, TargetCostCenter)
+    counts["center_mapping"] = _delete_by_scope(session, CenterMapping)
+
+    # 2. Master data — order matters because of FKs.
+    counts["balance"] = session.execute(delete(Balance).where(Balance.scope == SCOPE)).rowcount or 0
+    counts["hierarchy_leaf"] = (
+        session.execute(
+            delete(HierarchyLeaf).where(
+                HierarchyLeaf.hierarchy_id.in_(
+                    session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
+                )
             )
-        )
+        ).rowcount
+        or 0
     )
-    session.execute(delete(Hierarchy).where(Hierarchy.scope == SCOPE))
-    session.execute(delete(LegacyProfitCenter).where(LegacyProfitCenter.scope == SCOPE))
-    session.execute(delete(LegacyCostCenter).where(LegacyCostCenter.scope == SCOPE))
-    session.execute(delete(Entity).where(Entity.scope == SCOPE))
+    counts["hierarchy_node"] = (
+        session.execute(
+            delete(HierarchyNode).where(
+                HierarchyNode.hierarchy_id.in_(
+                    session.query(Hierarchy.id).filter(Hierarchy.scope == SCOPE).scalar_subquery()
+                )
+            )
+        ).rowcount
+        or 0
+    )
+    counts["hierarchy"] = (
+        session.execute(delete(Hierarchy).where(Hierarchy.scope == SCOPE)).rowcount or 0
+    )
+    counts["legacy_profit_center"] = (
+        session.execute(
+            delete(LegacyProfitCenter).where(LegacyProfitCenter.scope == SCOPE)
+        ).rowcount
+        or 0
+    )
+    counts["legacy_cost_center"] = (
+        session.execute(delete(LegacyCostCenter).where(LegacyCostCenter.scope == SCOPE)).rowcount
+        or 0
+    )
+    counts["employee"] = _delete_by_scope(session, Employee)
+
+    # 3. Entity last — wave_entity rows CASCADE-delete with it.
+    counts["entity"] = session.execute(delete(Entity).where(Entity.scope == SCOPE)).rowcount or 0
+
+    # 4. Optionally nuke wave/run/review_scope rows. Even without --purge
+    # the wave_entity rows are gone (CASCADE), so any leftover Wave is an
+    # empty husk. Fine to leave for users who care about their wave names.
+    if purge_waves:
+        counts["review_scope"] = session.execute(delete(ReviewScope)).rowcount or 0
+        counts["analysis_run"] = session.execute(delete(AnalysisRun)).rowcount or 0
+        counts["wave"] = session.execute(delete(Wave)).rowcount or 0
+
     session.commit()
-    print("  done.")
+
+    # Summary — only print non-zero rows so the output stays scannable.
+    width = max((len(k) for k in counts), default=10)
+    for table, n in counts.items():
+        if n:
+            print(f"  {table:<{width}}  {n:>10,} rows")
+    if not any(counts.values()):
+        print("  (nothing to delete — scope was already empty)")
+    return counts
+
+
+def _delete_by_scope(session: Session, model: type) -> int:
+    """Delete all rows of ``model`` belonging to SCOPE. Returns rowcount."""
+    return session.execute(delete(model).where(model.scope == SCOPE)).rowcount or 0
 
 
 def insert_entities(session: Session, entities: list[GeneratedEntity]) -> None:
@@ -1235,8 +1310,34 @@ def main() -> int:
     parser.add_argument(
         "--reset", action="store_true", help="Wipe the cleanup scope before generating"
     )
+    parser.add_argument(
+        "--wipe-only",
+        action="store_true",
+        help="Wipe the cleanup scope and exit — don't regenerate anything",
+    )
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="With --reset / --wipe-only: also delete waves, runs and review scopes "
+        "(by default these are kept; their entity/CC links go away via cascade)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Plan only, don't write to DB")
     args = parser.parse_args()
+
+    # --wipe-only short-circuits the whole pipeline.
+    if args.wipe_only:
+        if args.dry_run:
+            print("(dry-run — no DB writes)")
+            print(f"\nWould wipe scope='{SCOPE}'{' including waves/runs' if args.purge else ''}.")
+            return 0
+        print(
+            f"Wipe-only mode — clearing scope='{SCOPE}'"
+            f"{' (purging waves/runs too)' if args.purge else ''}\n"
+        )
+        with SessionLocal() as session:
+            reset_scope(session, purge_waves=args.purge)
+        print("\n✓ Done.")
+        return 0
 
     rng = random.Random(args.seed)
     today = date.today()
@@ -1282,7 +1383,7 @@ def main() -> int:
 
     with SessionLocal() as session:
         if args.reset:
-            reset_scope(session)
+            reset_scope(session, purge_waves=args.purge)
 
         print("\n[3/5] Inserting entities...")
         insert_entities(session, entities)
