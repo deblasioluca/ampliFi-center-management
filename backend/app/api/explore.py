@@ -56,7 +56,6 @@ from app.models.core import (
     TargetProfitCenter,
 )
 
-
 # get_current_user already returns None when no/invalid auth — alias for clarity
 get_current_user_optional = get_current_user
 
@@ -79,15 +78,19 @@ def _check_sensitive_access(object_type: str, user: AppUser | None) -> None:
                 "Sign in as an analyst or admin to access this data."
             ),
         )
-    if object_type in _SENSITIVE_OBJECT_TYPES and user is not None:
-        if user.role not in ("analyst", "admin", "data_manager"):
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    f"Role '{user.role}' is not permitted to access "
-                    f"'{object_type}'. Contact an admin if you need access."
-                ),
-            )
+    if (
+        object_type in _SENSITIVE_OBJECT_TYPES
+        and user is not None
+        and user.role not in ("analyst", "admin", "data_manager")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Role '{user.role}' is not permitted to access "
+                f"'{object_type}'. Contact an admin if you need access."
+            ),
+        )
+
 
 router = APIRouter()
 
@@ -109,9 +112,7 @@ _OBJECT_MODELS: dict[str, Any] = {
 
 # Object types that contain potentially sensitive HR/financial data and
 # require an authenticated user when EXPLORER_REQUIRE_AUTH is enabled.
-_SENSITIVE_OBJECT_TYPES: frozenset[str] = frozenset(
-    {"employees", "balances"}
-)
+_SENSITIVE_OBJECT_TYPES: frozenset[str] = frozenset({"employees", "balances"})
 
 # Default columns per object type (when no ExplorerDisplayConfig exists)
 _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
@@ -1016,14 +1017,12 @@ def compare_objects(
     # Fetch all proposals for this legacy CC across runs (V1 + V2)
     proposals: list[dict] = []
     if legacy:
-        prop_rows = (
-            db.execute(
-                select(CenterProposal, AnalysisRun)
-                .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
-                .where(CenterProposal.legacy_cc_id == legacy.id)
-                .order_by(AnalysisRun.created_at.desc())
-            ).all()
-        )
+        prop_rows = db.execute(
+            select(CenterProposal, AnalysisRun)
+            .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
+            .where(CenterProposal.legacy_cc_id == legacy.id)
+            .order_by(AnalysisRun.created_at.desc())
+        ).all()
         for prop, run in prop_rows:
             attrs = prop.attrs or {}
             proposals.append(
@@ -1032,7 +1031,9 @@ def compare_objects(
                     "run_id": run.id,
                     "wave_id": run.wave_id,
                     "engine_version": run.engine_version,
-                    "engine_label": "V2" if str(run.engine_version or "").startswith("v2") else "V1",
+                    "engine_label": (
+                        "V2" if str(run.engine_version or "").startswith("v2") else "V1"
+                    ),
                     "mode": run.mode,
                     "outcome": prop.cleansing_outcome,
                     "target_object": prop.target_object,
@@ -1043,54 +1044,47 @@ def compare_objects(
                         "pc_id": attrs.get("pc_id"),
                         "group_key": attrs.get("group_key"),
                         "approach": attrs.get("approach"),
-                    } if str(run.engine_version or "").startswith("v2") else None,
+                    }
+                    if str(run.engine_version or "").startswith("v2")
+                    else None,
                 }
             )
 
         # Resolve target objects from proposals (any approved/locked)
         if not target_cc:
-            target_cc = (
-                db.execute(
-                    select(TargetCostCenter).where(
-                        TargetCostCenter.coarea == legacy.coarea,
-                        TargetCostCenter.cctr == legacy.cctr,
-                    )
-                ).scalar_one_or_none()
-            )
+            target_cc = db.execute(
+                select(TargetCostCenter).where(
+                    TargetCostCenter.coarea == legacy.coarea,
+                    TargetCostCenter.cctr == legacy.cctr,
+                )
+            ).scalar_one_or_none()
         # If V2 produced a different cc_id, look that up too
         if not target_cc:
             for p in proposals:
                 cc_from_attrs = (p.get("v2") or {}).get("cc_id")
                 if cc_from_attrs:
-                    target_cc = (
-                        db.execute(
-                            select(TargetCostCenter).where(
-                                TargetCostCenter.cctr == cc_from_attrs,
-                                TargetCostCenter.coarea == legacy.coarea,
-                            )
-                        ).scalar_one_or_none()
-                    )
+                    target_cc = db.execute(
+                        select(TargetCostCenter).where(
+                            TargetCostCenter.cctr == cc_from_attrs,
+                            TargetCostCenter.coarea == legacy.coarea,
+                        )
+                    ).scalar_one_or_none()
                     if target_cc:
                         break
 
     if target_cc:
         # Resolve the PC the target CC points to
-        target_pc = (
-            db.execute(
-                select(TargetProfitCenter).where(
-                    TargetProfitCenter.coarea == target_cc.coarea,
-                    TargetProfitCenter.pctr == target_cc.pctr,
-                )
-            ).scalar_one_or_none()
-        )
+        target_pc = db.execute(
+            select(TargetProfitCenter).where(
+                TargetProfitCenter.coarea == target_cc.coarea,
+                TargetProfitCenter.pctr == target_cc.pctr,
+            )
+        ).scalar_one_or_none()
 
     def _serialize(obj: Any | None) -> dict | None:
         if obj is None:
             return None
-        return {
-            c.key: getattr(obj, c.key)
-            for c in inspect(obj.__class__).column_attrs
-        }
+        return {c.key: getattr(obj, c.key) for c in inspect(obj.__class__).column_attrs}
 
     return {
         "legacy_cc": _serialize(legacy),

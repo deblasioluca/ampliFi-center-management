@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -804,9 +805,7 @@ def run_decisions_table(
 
     proposals = (
         db.execute(
-            base_q.order_by(CenterProposal.id)
-            .offset((pag.page - 1) * pag.size)
-            .limit(pag.size)
+            base_q.order_by(CenterProposal.id).offset((pag.page - 1) * pag.size).limit(pag.size)
         )
         .scalars()
         .all()
@@ -918,13 +917,10 @@ def run_decisions_by_hierarchy(
         }
 
     nodes = (
-        db.execute(
-            select(HierarchyNode).where(HierarchyNode.hierarchy_id == hierarchy.id)
-        )
+        db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == hierarchy.id))
         .scalars()
         .all()
     )
-    nodes_by_id: dict[int, HierarchyNode] = {n.id: n for n in nodes}
     children_of: dict[int | None, list[HierarchyNode]] = {}
     for n in nodes:
         children_of.setdefault(n.parent_id, []).append(n)
@@ -943,20 +939,14 @@ def run_decisions_by_hierarchy(
 
     # Load all proposals + their legacy CCs in two queries
     proposals = (
-        db.execute(
-            select(CenterProposal).where(CenterProposal.run_id == run_id)
-        )
-        .scalars()
-        .all()
+        db.execute(select(CenterProposal).where(CenterProposal.run_id == run_id)).scalars().all()
     )
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
     if cc_ids:
         cc_map = {
             c.id: c
-            for c in db.execute(
-                select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids))
-            )
+            for c in db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(cc_ids)))
             .scalars()
             .all()
         }
@@ -984,9 +974,7 @@ def run_decisions_by_hierarchy(
         return c
 
     # Build tree recursively
-    def _serialize_node(
-        node: HierarchyNode, depth: int = 0
-    ) -> dict[str, Any]:
+    def _serialize_node(node: HierarchyNode, depth: int = 0) -> dict[str, Any]:
         direct_props = proposals_at_node.get(node.id, [])
         child_nodes = children_of.get(node.id, [])
         # Recurse into children up to max_depth — beyond that, return only
@@ -1017,14 +1005,10 @@ def run_decisions_by_hierarchy(
                     "legacy_cctr": cc_map[p.legacy_cc_id].cctr
                     if p.legacy_cc_id in cc_map
                     else None,
-                    "txtsh": cc_map[p.legacy_cc_id].txtsh
-                    if p.legacy_cc_id in cc_map
-                    else None,
+                    "txtsh": cc_map[p.legacy_cc_id].txtsh if p.legacy_cc_id in cc_map else None,
                     "outcome": p.override_outcome or p.cleansing_outcome,
                     "target_object": p.override_target or p.target_object,
-                    "deciding_rule": _extract_deciding_rule(
-                        p.rule_path, p.cleansing_outcome
-                    ),
+                    "deciding_rule": _extract_deciding_rule(p.rule_path, p.cleansing_outcome),
                 }
                 for p in direct_props
             ],

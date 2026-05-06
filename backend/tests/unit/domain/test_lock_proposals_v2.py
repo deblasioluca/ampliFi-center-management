@@ -317,9 +317,7 @@ def test_lock_creates_one_pc_per_group_for_v2() -> None:
             # — we need to read it from proposals_data based on cc_id we
             # tracked. Find pc_id by matching cc_id in proposals_data.
             cc_id = pending_call.get("cc_id")
-            pc_id = next(
-                (pc for (_cctr, _gk, pc, c) in proposals_data if c == cc_id), None
-            )
+            pc_id = next((pc for (_cctr, _gk, pc, c) in proposals_data if c == cc_id), None)
             key = ("1000", pc_id)
             if key in seen_pc_keys:
                 tpc_existing = MagicMock()

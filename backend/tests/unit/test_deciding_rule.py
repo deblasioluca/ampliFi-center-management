@@ -11,7 +11,6 @@ from __future__ import annotations
 # Direct import of the private helper — it's the unit under test.
 from app.api.runs import _extract_deciding_rule
 
-
 # ── Empty / null inputs ─────────────────────────────────────────────────
 
 

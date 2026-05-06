@@ -15,7 +15,6 @@ from app.services.housekeeping import (
     _resolve_owner_email,
 )
 
-
 # ── _months_ago_period ──────────────────────────────────────────────────
 
 

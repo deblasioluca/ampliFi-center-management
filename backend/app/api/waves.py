@@ -88,9 +88,7 @@ def _send_scope_invitation(
                     "reviewed_count": decided_count,
                     "total_count": item_count,
                     "deadline": (
-                        str(scope.token_expires_at)[:10]
-                        if scope.token_expires_at
-                        else "soon"
+                        str(scope.token_expires_at)[:10] if scope.token_expires_at else "soon"
                     ),
                 },
             )
@@ -104,9 +102,7 @@ def _send_scope_invitation(
                     "wave_name": wave.name,
                     "review_url": f"/review/{scope.token}",
                     "expires_at": (
-                        str(scope.token_expires_at)[:10]
-                        if scope.token_expires_at
-                        else "N/A"
+                        str(scope.token_expires_at)[:10] if scope.token_expires_at else "N/A"
                     ),
                     "scope_name": scope.name,
                     "item_count": item_count,

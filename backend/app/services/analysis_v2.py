@@ -224,6 +224,7 @@ def run_v2_analysis(
         id_config=id_config,
         mode=mode,
         db=db,
+        excluded_scopes=excluded_scopes,
     )
 
 
@@ -264,6 +265,7 @@ def execute_v2_analysis_for_run(
         id_config=id_config,
         mode=mode,
         db=db,
+        excluded_scopes=run.excluded_scopes,
     )
 
 
@@ -310,6 +312,7 @@ def _execute_v2_pipeline(
     id_config: dict,
     mode: str,
     db: Session,
+    excluded_scopes: list[str] | None = None,
 ) -> dict:
     """Inner pipeline execution — extracted so both the synchronous and
     Celery-dispatched paths share the same body. Caller is responsible for

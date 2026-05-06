@@ -152,9 +152,7 @@ def _build_suppression_set(
     suppressed: set[tuple[str, int | None, int | None, str]] = set()
     for ri in recent:
         if ri.decided_at and (now - ri.decided_at).days <= cutoff_days:
-            suppressed.add(
-                (ri.entity_type or "CC", ri.target_cc_id, ri.target_pc_id, ri.flag)
-            )
+            suppressed.add((ri.entity_type or "CC", ri.target_cc_id, ri.target_pc_id, ri.flag))
     return suppressed
 
 
@@ -172,9 +170,7 @@ def _scan_cost_centers(
     cutoff_period = _months_ago_period(now, unused_months)
 
     targets = (
-        db.execute(
-            select(TargetCostCenter).where(TargetCostCenter.is_active.is_(True))
-        )
+        db.execute(select(TargetCostCenter).where(TargetCostCenter.is_active.is_(True)))
         .scalars()
         .all()
     )
@@ -250,9 +246,7 @@ def _scan_profit_centers(
     cutoff_period = _months_ago_period(now, unused_months)
 
     pcs = (
-        db.execute(
-            select(TargetProfitCenter).where(TargetProfitCenter.is_active.is_(True))
-        )
+        db.execute(select(TargetProfitCenter).where(TargetProfitCenter.is_active.is_(True)))
         .scalars()
         .all()
     )
@@ -397,9 +391,7 @@ def _load_email_engine(db: Session) -> tuple[Any | None, dict]:
     from app.infra.email.engine import EmailEngine
     from app.models.core import AppConfig
 
-    cfg_row = (
-        db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
-    )
+    cfg_row = db.execute(select(AppConfig).where(AppConfig.key == "email")).scalar_one_or_none()
     cfg = cfg_row.value if cfg_row else {}
     if not cfg:
         logger.warning("housekeeping.no_email_config")
@@ -605,9 +597,7 @@ def auto_close_overdue(cycle_id: int, db: Session) -> dict:
     for it in items:
         if it.notified_at and (now - it.notified_at).days >= cutoff_days:
             it.decision = "DEFER"
-            it.decision_comment = (
-                f"Auto-deferred after {days} days without owner response"
-            )
+            it.decision_comment = f"Auto-deferred after {days} days without owner response"
             it.decided_at = now
             closed += 1
     if closed:
