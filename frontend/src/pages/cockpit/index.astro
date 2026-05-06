@@ -202,6 +202,7 @@ import Layout from '../../components/layout/Layout.astro';
 
     // Global stats
     fetch('/api/stats/global', { headers: headers })
+      .then(function(r) { if (r.status === 401) { localStorage.removeItem('amplifi_token'); localStorage.removeItem('amplifi_user'); window.location.href = '/login'; throw new Error('expired'); } return r; })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var u = data.universe || {};
@@ -213,9 +214,21 @@ import Layout from '../../components/layout/Layout.astro';
       })
       .catch(function() {});
 
+    // Helper: redirect to login on 401
+    function checkAuth(r) {
+      if (r.status === 401) {
+        localStorage.removeItem('amplifi_token');
+        localStorage.removeItem('amplifi_user');
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+      return r;
+    }
+
     // Waves list
     function loadWaves() {
       fetch('/api/waves?page=1&size=100', { headers: headers })
+        .then(checkAuth)
         .then(function(r) { return r.json(); })
         .then(function(data) {
           var el = document.getElementById('wave-list');
@@ -308,7 +321,7 @@ import Layout from '../../components/layout/Layout.astro';
             html += '<table class="w-full text-xs"><thead><tr class="border-b text-gray-500"><th class="py-1 text-left">Wave</th><th class="py-1 text-center">Status</th><th class="py-1 text-center">Entities</th><th class="py-1 text-center">CCs Analysed</th><th class="py-1 text-center">Scope</th></tr></thead><tbody>';
             d.waves.forEach(function(w) {
               html += '<tr class="border-b hover:bg-gray-50">';
-              html += '<td class="py-1 font-medium"><a href="/cockpit/wave?id=' + w.id + '" class="text-blue-600 hover:underline">' + escapeHtml(w.code) + '</a></td>';
+              html += '<td class="py-1 font-medium">' + (w.id ? '<a href="/cockpit/wave?id=' + w.id + '" class="text-blue-600 hover:underline">' + escapeHtml(w.code) + '</a>' : '<span class="text-gray-400 italic">' + escapeHtml(w.code) + '</span>') + '</td>';
               html += '<td class="py-1 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] bg-gray-100">' + escapeHtml(w.status) + '</span></td>';
               html += '<td class="py-1 text-center">' + w.entities_covered + '</td>';
               html += '<td class="py-1 text-center">' + w.cc_covered + '</td>';
