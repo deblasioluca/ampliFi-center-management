@@ -278,16 +278,6 @@ import Layout from '../../components/layout/Layout.astro';
       </div>
       <div id="review-scopes" class="text-sm">Loading...</div>
 
-      <!-- Reviewer Assignment Section -->
-      <div class="mt-6 border-t pt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="text-sm font-semibold">Reviewer Assignment</h4>
-          <button id="btn-add-reviewer" class="btn-amplifi text-sm">+ Assign Reviewer</button>
-        </div>
-        <p class="text-xs text-gray-500 mb-3">Assign reviewers by entity (company code) and/or hierarchy node. Each assignment defines which proposals a reviewer is responsible for.</p>
-        <div id="reviewer-assignments" class="space-y-2 text-sm">Loading...</div>
-      </div>
-
       <!-- Scope Coverage Summary -->
       <div class="mt-6 border-t pt-4">
         <h4 class="text-sm font-semibold mb-2">Scope Coverage</h4>
@@ -320,38 +310,7 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 
-  <!-- Assign Reviewer Modal -->
-  <div id="reviewer-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-      <h2 class="text-lg font-semibold mb-4">Assign Reviewer</h2>
-      <div class="mb-3">
-        <label class="block text-xs font-medium mb-1">Reviewer (user)</label>
-        <div class="relative">
-          <input type="text" id="rev-user-search" class="input text-sm w-full" placeholder="Search user by name..." autocomplete="off" />
-          <input type="hidden" id="rev-user-select" value="" />
-          <div id="rev-user-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
-        </div>
-      </div>
-      <div class="mb-3">
-        <label class="block text-xs font-medium mb-1">Assign by Entity (company code)</label>
-        <select id="rev-entity-select" class="input text-sm w-full" multiple>
-        </select>
-        <p class="text-xs text-gray-400 mt-1">Hold Ctrl to select multiple</p>
-      </div>
-      <div class="mb-3">
-        <label class="block text-xs font-medium mb-1">Assign by Hierarchy Node (optional)</label>
-        <select id="rev-hier-select" class="input text-sm w-full mb-2">
-          <option value="">Select hierarchy...</option>
-        </select>
-        <div id="rev-hier-tree" class="border rounded p-2 max-h-48 overflow-y-auto text-xs bg-gray-50 hidden"></div>
-        <div id="rev-selected-nodes" class="flex flex-wrap gap-1 mt-1"></div>
-      </div>
-      <div class="flex justify-end gap-2 mt-4">
-        <button onclick="document.getElementById('reviewer-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
-        <button id="btn-confirm-reviewer" class="btn-amplifi">Assign</button>
-      </div>
-    </div>
-  </div>
+
 
   <!-- Add Entities Modal -->
   <div id="entities-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-16">
@@ -398,7 +357,7 @@ import Layout from '../../components/layout/Layout.astro';
   <div id="scope-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
       <h2 class="text-lg font-semibold mb-4">Create Review Scope</h2>
-      <p class="text-xs text-gray-500 mb-3">Define a scope first, then assign a reviewer to it separately.</p>
+      <p class="text-xs text-gray-500 mb-3">Define a scope and assign a reviewer.</p>
       <form id="scope-form" class="space-y-3">
         <div><label class="block text-xs font-medium mb-1">Scope Name</label><input id="sf-name" class="input text-sm" required /></div>
         <div><label class="block text-xs font-medium mb-1">Scope Type</label>
@@ -423,6 +382,16 @@ import Layout from '../../components/layout/Layout.astro';
               <option value="">-- Pick a hierarchy first --</option>
             </select>
           </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">Reviewer</label>
+          <div class="relative">
+            <input type="text" id="sf-reviewer-search" class="input text-sm w-full" placeholder="Search user by name or email..." autocomplete="off" />
+            <input type="hidden" id="sf-reviewer-name" />
+            <input type="hidden" id="sf-reviewer-email" />
+            <div id="sf-reviewer-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
+          </div>
+          <p class="text-[11px] text-gray-400 mt-1">Optional — you can also assign a reviewer later.</p>
         </div>
         <div class="flex justify-end gap-2 pt-2">
           <button type="button" onclick="document.getElementById('scope-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
@@ -1154,6 +1123,51 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('sf-type').addEventListener('change', refreshScopeFormVisibility);
   refreshScopeFormVisibility();
 
+  // ── Reviewer search in Create Scope modal ─────────────────────────
+  var _sfRevTimer = null;
+  document.getElementById('sf-reviewer-search').addEventListener('input', function() {
+    var q = this.value.trim();
+    var resultsEl = document.getElementById('sf-reviewer-results');
+    clearTimeout(_sfRevTimer);
+    document.getElementById('sf-reviewer-name').value = '';
+    document.getElementById('sf-reviewer-email').value = '';
+    if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
+    _sfRevTimer = setTimeout(function() {
+      fetch('/api/admin/users?page=1&size=500', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var items = (data.items || []).filter(function(u) {
+            var text = ((u.display_name || '') + ' ' + (u.username || '') + ' ' + (u.email || '')).toLowerCase();
+            return text.indexOf(q.toLowerCase()) >= 0;
+          });
+          if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No users found</div>'; resultsEl.classList.remove('hidden'); return; }
+          var html = '';
+          items.forEach(function(u) {
+            html += '<div class="sf-rev-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
+              'data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
+              '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
+              (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
+              ' <span class="text-gray-300 text-[10px]">' + esc(u.role) + '</span></div>';
+          });
+          resultsEl.innerHTML = html;
+          resultsEl.classList.remove('hidden');
+          resultsEl.querySelectorAll('.sf-rev-pick').forEach(function(el) {
+            el.addEventListener('click', function() {
+              document.getElementById('sf-reviewer-name').value = this.getAttribute('data-name');
+              document.getElementById('sf-reviewer-email').value = this.getAttribute('data-email');
+              document.getElementById('sf-reviewer-search').value = this.getAttribute('data-name') + (this.getAttribute('data-email') ? ' (' + this.getAttribute('data-email') + ')' : '');
+              resultsEl.classList.add('hidden');
+            });
+          });
+        });
+    }, 300);
+  });
+  document.addEventListener('click', function(e) {
+    var s = document.getElementById('sf-reviewer-search');
+    var r = document.getElementById('sf-reviewer-results');
+    if (s && r && !s.contains(e.target) && !r.contains(e.target)) r.classList.add('hidden');
+  });
+
   // Cascade: when hierarchy changes, load nodes for it.
   fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
     .then(function(r) { return r.json(); })
@@ -1209,6 +1223,12 @@ import Layout from '../../components/layout/Layout.astro';
         scope_type: type,
         scope_filter: {},
       };
+      // Include reviewer if selected
+      var revName = document.getElementById('sf-reviewer-name').value;
+      var revEmail = document.getElementById('sf-reviewer-email').value;
+      if (revName) body.reviewer_name = revName;
+      if (revEmail) body.reviewer_email = revEmail;
+
       if (type === 'hierarchy_node') {
         var hierId = document.getElementById('sf-hier-id').value;
         var nodeSetname = document.getElementById('sf-hier-node').value;
@@ -1228,6 +1248,9 @@ import Layout from '../../components/layout/Layout.astro';
       if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail, kind: 'danger' }); return; }
       document.getElementById('scope-overlay').classList.add('hidden');
       document.getElementById('sf-name').value = '';
+      document.getElementById('sf-reviewer-search').value = '';
+      document.getElementById('sf-reviewer-name').value = '';
+      document.getElementById('sf-reviewer-email').value = '';
       loadScopes(); loadWave();
     } finally {
       _scopeCreating = false;
@@ -2182,42 +2205,7 @@ import Layout from '../../components/layout/Layout.astro';
     }
   });
 
-  // --- Reviewer Assignment ---
-  var revSelectedNodes = [];
-
-  function loadReviewerAssignments() {
-    fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var el = document.getElementById('reviewer-assignments');
-        if (!d.items || !d.items.length) {
-          el.innerHTML = '<p class="text-gray-400">No reviewers assigned yet.</p>';
-          loadReviewCoverage();
-          return;
-        }
-        var html = '';
-        d.items.forEach(function(s) {
-          var filter = s.scope_filter || {};
-          var entities = (filter.entity_ccodes || []).join(', ') || 'All';
-          var nodes = (filter.hierarchy_nodes || []).map(function(n) { return n.node_name; }).join(', ') || '—';
-          var statusColor = s.status === 'completed' ? 'text-green-600' : s.status === 'in_progress' ? 'text-blue-600' : 'text-gray-500';
-          html += '<div class="border rounded p-3 flex items-center justify-between">';
-          html += '<div>';
-          html += '<span class="font-medium">' + esc(s.name) + '</span>';
-          html += ' <span class="' + statusColor + ' text-xs">(' + s.status + ')</span>';
-          html += '<div class="text-xs text-gray-500 mt-1">Entities: ' + esc(entities) + '</div>';
-          html += '<div class="text-xs text-gray-500">Hierarchy nodes: ' + esc(nodes) + '</div>';
-          html += '<div class="text-xs text-gray-400">Items: ' + (s.total_items || 0) + ' | Reviewer: ' + esc(s.reviewer_name || s.reviewer_email || 'Unassigned') + '</div>';
-          html += '</div>';
-          html += '<div class="flex gap-2">';
-          html += '<a href="/review/' + s.token + '" class="text-xs text-blue-600 hover:underline">Review link</a>';
-          html += '</div></div>';
-        });
-        el.innerHTML = html;
-        loadReviewCoverage();
-      });
-  }
-
+  // --- Scope Coverage in Review Tab ---
   function loadReviewCoverage() {
     fetch('/api/waves/' + waveId + '/scope-coverage', { headers: authHdr })
       .then(function(r) { return r.json(); })
@@ -2239,194 +2227,10 @@ import Layout from '../../components/layout/Layout.astro';
       });
   }
 
-  // Open reviewer assignment modal
-  document.getElementById('btn-add-reviewer').addEventListener('click', async function() {
-    revSelectedNodes = [];
-    document.getElementById('rev-selected-nodes').innerHTML = '';
-    document.getElementById('reviewer-overlay').classList.remove('hidden');
-
-    // Reset user search
-    document.getElementById('rev-user-search').value = '';
-    document.getElementById('rev-user-select').value = '';
-    document.getElementById('rev-user-results').classList.add('hidden');
-
-    // Load entities for entity selector
-    try {
-      var entRes = await fetch('/api/waves/' + waveId + '/scope', { headers: authHdr });
-      var entData = await entRes.json();
-      var entSel = document.getElementById('rev-entity-select');
-      entSel.innerHTML = '';
-      (entData.entities || []).forEach(function(e) {
-        entSel.innerHTML += '<option value="' + esc(e.ccode || e.code || '') + '">' + esc(e.ccode || e.code || '') + ' — ' + esc(e.name || '') + '</option>';
-      });
-    } catch(e) { /* ignore */ }
-
-    // Load hierarchies for hierarchy picker
-    try {
-      var hierRes = await fetch('/api/waves/hierarchy-nodes', { headers: authHdr });
-      var hierData = await hierRes.json();
-      var hierSel = document.getElementById('rev-hier-select');
-      hierSel.innerHTML = '<option value="">Select hierarchy...</option>';
-      (hierData.hierarchies || []).forEach(function(h) {
-        hierSel.innerHTML += '<option value="' + h.id + '">' + esc(h.label || h.setname) + '</option>';
-      });
-    } catch(e) { /* ignore */ }
-  });
-
-  // Load hierarchy tree when hierarchy is selected
-  document.getElementById('rev-hier-select').addEventListener('change', async function() {
-    var hierId = this.value;
-    var treeEl = document.getElementById('rev-hier-tree');
-    if (!hierId) { treeEl.classList.add('hidden'); return; }
-    treeEl.classList.remove('hidden');
-    treeEl.innerHTML = 'Loading...';
-    try {
-      var res = await fetch('/api/waves/hierarchy-nodes?hierarchy_id=' + hierId, { headers: authHdr });
-      var data = await res.json();
-      treeEl.innerHTML = renderRevHierNodes(data.nodes || [], 0);
-    } catch(e) {
-      treeEl.innerHTML = '<p class="text-red-500">Failed to load</p>';
-    }
-  });
-
-  function renderRevHierNodes(nodes, depth) {
-    var html = '';
-    nodes.forEach(function(n) {
-      var indent = depth * 16;
-      var isSelected = revSelectedNodes.some(function(s) { return s.node_name === n.node_name; });
-      html += '<div style="padding-left:' + indent + 'px" class="flex items-center gap-1 py-0.5">';
-      html += '<input type="checkbox" class="rev-node-cb" data-name="' + esc(n.node_name) + '" data-text="' + esc(n.node_text) + '"' + (isSelected ? ' checked' : '') + ' />';
-      html += '<span>' + esc(n.node_name) + '</span>';
-      html += '<span class="text-gray-400 text-xs ml-1">' + esc(n.node_text || '') + '</span>';
-      html += '</div>';
-      if (n.children && n.children.length) {
-        html += renderRevHierNodes(n.children, depth + 1);
-      }
-    });
-    return html;
-  }
-
-  document.getElementById('rev-hier-tree').addEventListener('change', function(e) {
-    if (!e.target.classList.contains('rev-node-cb')) return;
-    var name = e.target.getAttribute('data-name');
-    var text = e.target.getAttribute('data-text');
-    if (e.target.checked) {
-      revSelectedNodes.push({ node_name: name, node_text: text });
-    } else {
-      revSelectedNodes = revSelectedNodes.filter(function(n) { return n.node_name !== name; });
-    }
-    var display = document.getElementById('rev-selected-nodes');
-    display.innerHTML = revSelectedNodes.map(function(n) {
-      return '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">' + esc(n.node_name) + '</span>';
-    }).join('');
-  });
-
-  // User typeahead for reviewer assignment
-  var revUserTimer = null;
-  var revSelectedUser = { name: '', email: '' };
-  document.getElementById('rev-user-search').addEventListener('input', function() {
-    var q = this.value.trim();
-    var resultsEl = document.getElementById('rev-user-results');
-    clearTimeout(revUserTimer);
-    revSelectedUser = { name: '', email: '' };
-    document.getElementById('rev-user-select').value = '';
-    if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
-    revUserTimer = setTimeout(function() {
-      fetch('/api/admin/users?page=1&size=500', { headers: authHdr })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var items = (data.items || []).filter(function(u) {
-            var name = ((u.display_name || '') + ' ' + (u.username || '') + ' ' + (u.email || '')).toLowerCase();
-            return name.indexOf(q.toLowerCase()) >= 0;
-          });
-          if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No users found</div>'; resultsEl.classList.remove('hidden'); return; }
-          var html = '';
-          items.forEach(function(u) {
-            html += '<div class="rev-user-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
-              'data-id="' + u.id + '" data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
-              '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
-              (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
-              ' <span class="text-gray-300">' + esc(u.role) + '</span></div>';
-          });
-          resultsEl.innerHTML = html;
-          resultsEl.classList.remove('hidden');
-          resultsEl.querySelectorAll('.rev-user-pick').forEach(function(el) {
-            el.addEventListener('click', function() {
-              revSelectedUser = { name: this.getAttribute('data-name'), email: this.getAttribute('data-email') };
-              document.getElementById('rev-user-select').value = this.getAttribute('data-id');
-              document.getElementById('rev-user-search').value = revSelectedUser.name;
-              resultsEl.classList.add('hidden');
-            });
-          });
-        });
-    }, 300);
-  });
-  document.addEventListener('click', function(e) {
-    var searchEl = document.getElementById('rev-user-search');
-    var resultsEl = document.getElementById('rev-user-results');
-    if (searchEl && resultsEl && !searchEl.contains(e.target) && !resultsEl.contains(e.target)) {
-      resultsEl.classList.add('hidden');
-    }
-  });
-
-  // Confirm reviewer assignment
-  document.getElementById('btn-confirm-reviewer').addEventListener('click', async function() {
-    var userName = revSelectedUser.name;
-    var userEmail = revSelectedUser.email;
-
-    var entSel = document.getElementById('rev-entity-select');
-    var entityCodes = [];
-    for (var i = 0; i < entSel.selectedOptions.length; i++) {
-      entityCodes.push(entSel.selectedOptions[i].value);
-    }
-
-    if (!userName && !entityCodes.length && !revSelectedNodes.length) {
-      uiAlert('Please select a reviewer and at least one entity or hierarchy node.');
-      return;
-    }
-
-    var scopeName = (userName || 'Reviewer') + ' — ' + (entityCodes.join(', ') || 'All entities');
-    if (revSelectedNodes.length) {
-      scopeName += ' + ' + revSelectedNodes.length + ' hierarchy nodes';
-    }
-
-    var scopeFilter = {};
-    if (entityCodes.length) scopeFilter.entity_ccodes = entityCodes;
-    if (revSelectedNodes.length) scopeFilter.hierarchy_nodes = revSelectedNodes;
-
-    this.disabled = true;
-    this.textContent = 'Assigning...';
-    try {
-      var res = await fetch('/api/waves/' + waveId + '/scopes', {
-        method: 'POST',
-        headers: jsonHdr,
-        body: JSON.stringify({
-          name: scopeName,
-          scope_type: revSelectedNodes.length ? 'hierarchy_node' : 'entity',
-          scope_filter: scopeFilter,
-          reviewer_name: userName,
-          reviewer_email: userEmail
-        })
-      });
-      if (!res.ok) {
-        var err = await res.json();
-        uiAlert(err.detail || 'Assignment failed');
-        return;
-      }
-      document.getElementById('reviewer-overlay').classList.add('hidden');
-      loadReviewerAssignments();
-    } catch(e) {
-      uiAlert('Error: ' + e.message);
-    } finally {
-      this.disabled = false;
-      this.textContent = 'Assign';
-    }
-  });
-
-  // Load reviewer assignments when review tab is shown
+  // Load scopes + coverage when review tab is shown
   document.querySelectorAll('#wave-tabs button').forEach(function(btn) {
     if (btn.getAttribute('data-tab') === 'review') {
-      btn.addEventListener('click', function() { loadReviewerAssignments(); });
+      btn.addEventListener('click', function() { loadScopes(); loadReviewCoverage(); });
     }
   });
 

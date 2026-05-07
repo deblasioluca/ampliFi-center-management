@@ -94,7 +94,7 @@ def list_configs(
 def create_config(
     body: ConfigCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> ConfigOut:
     cfg = AnalysisConfig(
         code=body.code,
@@ -166,7 +166,7 @@ def instantiate_preset(
     preset_name: str,
     body: InstantiatePresetIn,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Create a new AnalysisConfig from a preset template.
 
@@ -263,7 +263,7 @@ def fork_config(
     code: str,
     new_code: str,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> ConfigOut:
     parent = (
         db.execute(
@@ -295,7 +295,7 @@ def amend_config(
     code: str,
     body: ConfigCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> ConfigOut:
     latest = (
         db.execute(

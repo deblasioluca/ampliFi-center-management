@@ -83,17 +83,16 @@ import Layout from '../../components/layout/Layout.astro';
               <label class="block text-xs text-gray-500 mb-1">Password</label>
               <input type="password" id="nu-pass" class="input text-sm" placeholder="Password" />
             </div>
-            <div>
-              <label class="block text-xs text-gray-500 mb-1">Role</label>
-              <select id="nu-role" class="input text-sm">
-                <option value="analyst">Analyst</option>
-                <option value="admin">Admin</option>
-                <option value="data_manager">Data Manager</option>
-                <option value="reviewer">Reviewer</option>
-                <option value="auditor">Auditor</option>
-                <option value="owner">Owner</option>
-                <option value="viewer">Viewer</option>
-              </select>
+            <div class="col-span-2">
+              <label class="block text-xs text-gray-500 mb-1">Roles (select one or more)</label>
+              <div id="nu-roles" class="flex flex-wrap gap-2">
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="data_manager" checked /><span class="text-xs">Data Manager</span></label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="admin" /><span class="text-xs">Admin</span></label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="reviewer" /><span class="text-xs">Reviewer</span></label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="owner" /><span class="text-xs">Owner</span></label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="auditor" /><span class="text-xs">Auditor</span></label>
+                <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" class="nu-role-cb rounded border-gray-300 text-blue-600" value="viewer" /><span class="text-xs">Viewer</span></label>
+              </div>
             </div>
           </div>
           <div class="flex gap-2 mt-3">
@@ -298,8 +297,31 @@ import Layout from '../../components/layout/Layout.astro';
     });
 
     // ---- Users ----
-    var ROLES = ['admin', 'analyst', 'data_manager', 'reviewer', 'auditor', 'owner', 'viewer'];
-    function roleOption(val, sel) { return '<option value="' + val + '"' + (val === sel ? ' selected' : '') + '>' + val + '</option>'; }
+    var ROLES = [
+      { key: 'admin', label: 'Admin', desc: 'Full system access, user management, system configuration' },
+      { key: 'data_manager', label: 'Data Manager', desc: 'Load/manage data, create waves, run analysis, assign reviewers' },
+      { key: 'reviewer', label: 'Reviewer', desc: 'Review and decide on proposals within assigned scopes' },
+      { key: 'owner', label: 'Owner', desc: 'Cost center owner, housekeeping tasks' },
+      { key: 'auditor', label: 'Auditor', desc: 'Read-only audit trail access for compliance' },
+      { key: 'viewer', label: 'Viewer', desc: 'Read-only access to Data Explorer' },
+    ];
+
+    function parseRoles(roleStr) {
+      return new Set((roleStr || '').split(',').map(function(r) { return r.trim(); }).filter(Boolean));
+    }
+
+    function buildRoleCheckboxes(userId, roleStr) {
+      var active = parseRoles(roleStr);
+      var html = '<div class="flex flex-wrap gap-1">';
+      ROLES.forEach(function(r) {
+        var checked = active.has(r.key) ? ' checked' : '';
+        html += '<label class="inline-flex items-center gap-0.5 cursor-pointer" title="' + escapeHtml(r.desc) + '">' +
+          '<input type="checkbox" class="role-cb rounded border-gray-300 text-blue-600" data-uid="' + userId + '" data-role="' + r.key + '"' + checked + ' />' +
+          '<span class="text-[10px]">' + escapeHtml(r.label) + '</span></label>';
+      });
+      html += '</div>';
+      return html;
+    }
 
     function loadUsers() {
       fetch('/api/admin/users?page=1&size=100', { headers: authHdr })
@@ -308,13 +330,20 @@ import Layout from '../../components/layout/Layout.astro';
           var el = document.getElementById('users-table');
           var items = data.items || [];
           if (items.length === 0) { el.textContent = 'No users.'; return; }
-          var html = '<table class="w-full text-xs"><thead><tr class="border-b">' +
+
+          // Role legend
+          var html = '<div class="mb-3 p-3 bg-gray-50 rounded text-xs"><strong>Role descriptions:</strong><div class="grid grid-cols-2 md:grid-cols-3 gap-1 mt-1">';
+          ROLES.forEach(function(r) {
+            html += '<div><span class="font-medium">' + escapeHtml(r.label) + '</span> — <span class="text-gray-500">' + escapeHtml(r.desc) + '</span></div>';
+          });
+          html += '</div><p class="text-[10px] text-gray-400 mt-1">Users can have multiple roles. Changes are saved automatically.</p></div>';
+
+          html += '<table class="w-full text-xs"><thead><tr class="border-b">' +
             '<th class="text-left py-2 px-2">Username</th><th class="text-left py-2 px-2">Name</th>' +
-            '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Role</th>' +
+            '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Roles</th>' +
             '<th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
           items.forEach(function(u) {
-            var roleSelect = '<select class="role-select input text-xs py-0.5 px-1 w-28" data-id="' + u.id + '" data-orig="' + u.role + '">' +
-              ROLES.map(function(r) { return roleOption(r, u.role); }).join('') + '</select>';
+            var roleCells = buildRoleCheckboxes(u.id, u.role);
             var activeToggle = u.is_active
               ? '<button class="toggle-active text-xs text-green-600 hover:text-red-600" data-id="' + u.id + '" data-active="true" title="Click to deactivate">Active</button>'
               : '<button class="toggle-active text-xs text-red-600 hover:text-green-600" data-id="' + u.id + '" data-active="false" title="Click to activate">Inactive</button>';
@@ -322,21 +351,34 @@ import Layout from '../../components/layout/Layout.astro';
               '<td class="py-2 px-2 font-medium">' + escapeHtml(u.username) + '</td>' +
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
               '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
-              '<td class="py-2 px-2">' + roleSelect + '</td>' +
+              '<td class="py-2 px-2">' + roleCells + '</td>' +
               '<td class="py-2 px-2">' + activeToggle + '</td></tr>';
           });
           html += '</tbody></table>';
           el.innerHTML = html;
-          el.querySelectorAll('.role-select').forEach(function(sel) {
-            sel.addEventListener('change', async function() {
-              var uid = this.getAttribute('data-id');
+
+          // Role checkbox change handlers
+          el.querySelectorAll('.role-cb').forEach(function(cb) {
+            cb.addEventListener('change', async function() {
+              var uid = this.getAttribute('data-uid');
+              // Collect all checked roles for this user
+              var checked = [];
+              el.querySelectorAll('.role-cb[data-uid="' + uid + '"]').forEach(function(c) {
+                if (c.checked) checked.push(c.getAttribute('data-role'));
+              });
+              if (!checked.length) {
+                alert('A user must have at least one role.');
+                this.checked = true;
+                return;
+              }
               var res = await fetch('/api/admin/users/' + uid, {
                 method: 'PATCH', headers: jsonHdr,
-                body: JSON.stringify({ role: this.value })
+                body: JSON.stringify({ role: checked.join(',') })
               });
-              if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed to update role'); loadUsers(); }
+              if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed to update roles'); loadUsers(); }
             });
           });
+
           el.querySelectorAll('.toggle-active').forEach(function(btn) {
             btn.addEventListener('click', async function() {
               var uid = this.getAttribute('data-id');
@@ -423,7 +465,7 @@ import Layout from '../../components/layout/Layout.astro';
             email: document.getElementById('nu-email').value || null,
             display_name: document.getElementById('nu-name').value,
             password: document.getElementById('nu-pass').value,
-            role: document.getElementById('nu-role').value,
+            role: Array.from(document.querySelectorAll('.nu-role-cb:checked')).map(function(c) { return c.value; }).join(',') || 'data_manager',
           })
         });
         if (!res.ok) { var b = await res.json(); throw new Error(b.detail || 'Failed'); }

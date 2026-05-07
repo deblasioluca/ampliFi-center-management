@@ -29,12 +29,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):  # type: 
     return get_user_from_request(request, db)
 
 
-# Role aliases: data_manager has the same access as analyst
-_ROLE_ALIASES: dict[str, str] = {"data_manager": "analyst"}
+# Legacy alias: "analyst" is treated as "data_manager"
+_ROLE_ALIASES: dict[str, str] = {"analyst": "data_manager"}
+
+
+def _user_roles(user) -> set[str]:  # type: ignore[no-untyped-def]
+    """Parse comma-separated role string into a set, applying aliases."""
+    raw = {r.strip() for r in (user.role or "").split(",") if r.strip()}
+    resolved: set[str] = set()
+    for r in raw:
+        resolved.add(_ROLE_ALIASES.get(r, r))
+    return resolved
 
 
 def require_role(*roles: str):  # type: ignore[no-untyped-def]
-    # Expand role set: if "analyst" is accepted, "data_manager" is too (and vice versa)
+    # Expand required role set with aliases
     expanded = set(roles)
     for alias, canonical in _ROLE_ALIASES.items():
         if canonical in expanded:
@@ -45,7 +54,8 @@ def require_role(*roles: str):  # type: ignore[no-untyped-def]
     def _check(user=Depends(get_current_user)):  # type: ignore[no-untyped-def]
         if user is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
-        if user.role not in expanded:
+        user_roles = _user_roles(user)
+        if not user_roles & expanded:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
 

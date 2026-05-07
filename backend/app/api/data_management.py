@@ -276,7 +276,7 @@ def auto_derive_center_mappings(
     run_id: int | None = None,
     overwrite: bool = False,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> AutoDeriveResult:
     """Populate ``center_mapping`` from completed analysis runs (PR #89, A13).
 
@@ -664,7 +664,7 @@ class SAPExtractionRequest(BaseModel):
 def trigger_sap_extraction(
     body: SAPExtractionRequest,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Trigger SAP OData extraction for a given data kind."""
     if body.scope not in ALL_SCOPES:
@@ -690,7 +690,7 @@ def trigger_sap_extraction(
 @router.get("/sap-extract/available")
 def available_extractions(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> list[dict]:
     """List SAP connections available for OData extraction."""
     from app.services.sap_extraction import list_available_extractions
@@ -715,7 +715,7 @@ def data_browser(
     include_balances: bool = Query(default=False),
     include_hierarchies: bool = Query(default=False),
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Unified data browser: paginated centers + optional balances + hierarchies.
 

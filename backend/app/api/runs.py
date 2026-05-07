@@ -108,7 +108,7 @@ def _run_global_in_thread(run_id: int, config_id: int, user_id: int) -> None:
 def run_global_analysis(
     config_id: int | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Kick off a V1 analysis on ALL cost centers (no wave scope).
 
@@ -255,7 +255,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)) -> RunOut:
 def cancel_run(
     run_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     run = db.get(AnalysisRun, run_id)
     if not run:
@@ -271,7 +271,7 @@ def cancel_run(
 def delete_run(
     run_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Delete an analysis run and all its proposals."""
     run = db.get(AnalysisRun, run_id)
@@ -461,7 +461,7 @@ def proposal_ml_opinion(
     run_id: int,
     proposal_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "data_manager", "reviewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "data_manager", "reviewer")),
 ) -> dict:
     """Run the ML predictor on this proposal's center and return its opinion.
 
@@ -507,7 +507,7 @@ def proposal_llm_opinion(
     run_id: int,
     proposal_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "data_manager", "reviewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "data_manager", "reviewer")),
 ) -> dict:
     """Ask the LLM advisor for an independent opinion on this proposal.
 
@@ -561,7 +561,7 @@ def data_browser(
     size: int = 200,
     search: str | None = None,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Combined data browser: centers + balances + results.
 
@@ -777,7 +777,7 @@ def data_browser(
 def run_aggregates(
     run_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Server-side aggregations for the analytics dashboard charts.
 
@@ -958,7 +958,7 @@ def override_proposal(
     reason: str = Query(...),
     target: str | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     proposal = db.get(CenterProposal, proposal_id)
     if not proposal or proposal.run_id != run_id:
@@ -986,7 +986,7 @@ def trigger_llm_review(
     run_id: int,
     body: LLMReviewRequest,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Trigger LLM review pass on proposals in a completed run."""
     from app.models.core import AppConfig, LegacyCostCenter
@@ -1138,7 +1138,7 @@ def compare_runs(run_a: int, run_b: int, db: Session = Depends(get_db)) -> dict:
 def batch_compute_features(
     run_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Batch-compute features for all centers in a run using server-side aggregation.
 
@@ -1580,7 +1580,7 @@ def compare_engines(
     engines: str = "tree,ml,llm",
     sample_size: int | None = 100,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Run all requested engines (rule tree, ML, LLM) on a wave's centers.
 

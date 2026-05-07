@@ -273,7 +273,7 @@ def list_waves(
 def create_wave(
     body: WaveCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> WaveOut:
     existing = db.execute(select(Wave).where(Wave.code == body.code)).scalar_one_or_none()
     if existing:
@@ -404,7 +404,7 @@ def create_wave_from_template(
     code: str,
     name: str,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Create a new wave from an existing template."""
     tpl = db.get(WaveTemplate, template_id)
@@ -436,7 +436,7 @@ def create_wave_from_template(
 @router.get("/review-scopes")
 def my_review_scopes(
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "reviewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "reviewer")),
 ) -> list[dict]:
     """List review scopes assigned to the current user."""
     scopes = (
@@ -511,7 +511,7 @@ def update_wave(
     wave_id: int,
     body: WaveUpdate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> WaveOut:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -543,7 +543,7 @@ def update_wave(
 def cancel_wave(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -572,7 +572,7 @@ def cancel_wave(
 def lock_proposal(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -601,7 +601,7 @@ def lock_proposal(
 def unlock_proposal(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -629,7 +629,7 @@ def unlock_proposal(
 def signoff_wave(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -677,7 +677,7 @@ def signoff_wave(
 def close_wave(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -729,7 +729,7 @@ def add_wave_entities(
     wave_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -802,7 +802,7 @@ def add_wave_hierarchy_scope(
     wave_id: int,
     body: WaveHierarchyScopeIn,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Add a hierarchy node to the wave's scope.
 
@@ -858,7 +858,7 @@ def delete_wave_hierarchy_scope(
     wave_id: int,
     scope_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Remove a hierarchy node from the wave's scope.
 
@@ -924,7 +924,7 @@ def run_analysis(
     wave_id: int,
     params: V1AnalysisParams | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Execute decision tree analysis on wave's cost centers."""
     from app.services.analysis import execute_analysis, get_or_create_default_config
@@ -976,7 +976,7 @@ def set_preferred_run(
     wave_id: int,
     run_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -1002,7 +1002,7 @@ def set_preferred_run(
 def reset_proposals(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Delete all proposals for a wave and release allocated IDs.
 
@@ -1215,7 +1215,7 @@ def create_review_scope(
     wave_id: int,
     body: ReviewScopeCreate,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -1324,7 +1324,7 @@ def create_review_scope(
 def list_review_scopes(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -1368,7 +1368,7 @@ def list_review_scopes(
 def invite_reviewer(
     scope_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     scope = db.get(ReviewScope, scope_id)
     if not scope:
@@ -1391,7 +1391,7 @@ def invite_reviewer(
 def remind_reviewer(
     scope_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     scope = db.get(ReviewScope, scope_id)
     if not scope:
@@ -1412,7 +1412,7 @@ def remind_reviewer(
 def delete_review_scope(
     scope_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     scope = db.get(ReviewScope, scope_id)
     if not scope:
@@ -1437,7 +1437,7 @@ def assign_reviewer_to_scope(
     scope_id: int,
     body: AssignReviewerBody,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Assign or update the reviewer on an existing scope."""
     scope = db.get(ReviewScope, scope_id)
@@ -1476,7 +1476,7 @@ def override_proposal(
     proposal_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Override a proposal's cleansing outcome and/or target object."""
     from app.domain.proposal.service import override_proposal as do_override
@@ -1508,7 +1508,7 @@ def lock_and_create_targets(
     wave_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Lock proposals and create target CC/PC objects from approved proposals."""
     from app.domain.proposal.service import lock_proposals
@@ -1536,7 +1536,7 @@ def mdg_export(
     wave_id: int,
     export_type: str = "cost_center",
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Generate MDG export file for the wave's target objects."""
     from app.infra.mdg.export import export_cost_centers, export_profit_centers, export_retire_list
@@ -1681,7 +1681,7 @@ def wave_progress(wave_id: int, db: Session = Depends(get_db)) -> dict:
 def reviewer_workload(
     wave_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Get reviewer workload distribution for a wave."""
     wave = db.get(Wave, wave_id)
@@ -1755,7 +1755,7 @@ def auto_approve_obvious(
     wave_id: int,
     params: AutoApproveParams,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Auto-approve review items where the analysis confidence is above threshold."""
     wave = db.get(Wave, wave_id)
@@ -1977,7 +1977,7 @@ def run_v2_analysis_endpoint(
     wave_id: int,
     params: V2AnalysisParams | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Queue a V2 CEMA migration run on the wave's cost centers.
 
@@ -2105,7 +2105,7 @@ def export_v2_results(
     wave_id: int,
     run_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> Response:
     """Export V2 analysis results as Excel with PC/CC templates + mapping."""
     import io
@@ -2273,7 +2273,7 @@ def list_v2_proposals(
     include_paths: bool = False,
     hierarchy_id: int | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "viewer")),
 ) -> dict:
     """List V2 proposals with migration details.
 
@@ -2410,7 +2410,7 @@ class GlobalSimParams(BaseModel):
 def run_global_v2_simulation(
     params: GlobalSimParams | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Run V2 decision tree on ALL centers (global mode).
 
@@ -2480,7 +2480,7 @@ def list_simulations(
     mode: str | None = None,
     engine: str | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "viewer")),
 ) -> dict:
     """List simulation/activated runs (V1 and V2), optionally filtered."""
     q = select(AnalysisRun)
@@ -2615,7 +2615,7 @@ def list_hierarchy_nodes_for_picker(
     hierarchy_id: int | None = None,
     setclass: str | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "viewer")),
 ) -> dict:
     """Return hierarchy nodes in a tree structure for the PC approach node picker."""
     from app.models.core import Hierarchy, HierarchyNode
@@ -2697,7 +2697,7 @@ def list_hierarchy_nodes_for_picker(
 def get_wave_scope_coverage(
     wave_id: int,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
+    user: AppUser = Depends(require_role("admin", "data_manager", "viewer")),
 ) -> dict:
     """Check whether all centers in a wave are covered by review scopes + reviewers."""
     wave = db.get(Wave, wave_id)
@@ -2796,7 +2796,7 @@ def run_analyse_with_engine(
     wave_id: int,
     params: UnifiedAnalysisParams,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin", "analyst")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Run the configured decision-tree variant on a wave.
 

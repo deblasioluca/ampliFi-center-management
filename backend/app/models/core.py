@@ -1585,8 +1585,8 @@ class AppUser(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="analyst"
-    )  # admin|analyst|reviewer|auditor|owner
+        String(200), nullable=False, default="data_manager"
+    )  # comma-separated: admin,data_manager,reviewer,auditor,owner,viewer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     entraid_oid: Mapped[str | None] = mapped_column(String(64))
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

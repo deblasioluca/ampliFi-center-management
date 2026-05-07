@@ -394,7 +394,7 @@ def housekeeping_summary(db: Session = Depends(get_db)) -> dict:
 @router.post("/balance-aggregation/refresh")
 def refresh_balance_mv(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Refresh the materialized view for balance aggregation."""
     db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY cleanup.mv_balance_per_center"))

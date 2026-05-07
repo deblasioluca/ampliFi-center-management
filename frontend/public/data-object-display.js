@@ -82,41 +82,46 @@
     this.showViewToggle = opts.showViewToggle !== false;
     this.showSearch = opts.showSearch !== false;
     this.showPagination = opts.showPagination !== false;
+    this.subtitle = opts.subtitle || '';
     this.showCSV = opts.showCSV !== false;
     this.pageSize = opts.pageSize || 200;
-    this.hierPageSize = opts.hierPageSize || 10000; // bumped for hierarchical (need all items)
+    this.hierPageSize = opts.hierPageSize || 10000;
     this.extraColumns = opts.extraColumns || [];
     this.extraQueryParams = opts.extraQueryParams || {};
-    this.hierarchyTypes = opts.hierarchyTypes || null; // null = show all
-    this.glHierarchyMode = opts.glHierarchyMode || null; // 'type_a' or 'type_b' for GL accounts
-    // Fallback column definitions when no display config exists
-    this.columns = opts.columns || null; // [{key:'cctr', label:'CC'}, ...]
-    // If true, the data endpoint returns hierarchies inline (Data Browser mode).
-    // The loader will pass include_hierarchies=true to get nodes/leaves.
+    this.hierarchyTypes = opts.hierarchyTypes || null;
+    this.glHierarchyMode = opts.glHierarchyMode || null;
+    this.columns = opts.columns || null;
     this.inlineHierarchies = opts.inlineHierarchies || false;
-    // If true, fetch with include_balances=true
     this.includeBalances = opts.includeBalances || false;
-    // Callback after data loads (so caller can react, e.g. update pager)
     this.onDataLoad = opts.onDataLoad || null;
-    // Balance column formatting
     this.showBalanceColumns = opts.showBalanceColumns || false;
+    // Custom toolbar buttons: [{label, className, onclick, title}]
+    this.toolbarButtons = opts.toolbarButtons || [];
+    // Extra filter widgets: [{id, type:'text'|'select'|'number', placeholder, options}]
+    this.extraFilters = opts.extraFilters || [];
+    // Callback when extra filter changes
+    this.onExtraFilterChange = opts.onExtraFilterChange || null;
+    // Title shown above the table
+    this.title = opts.title || '';
 
     // State
-    this._view = 'tabular';          // 'tabular' or 'hierarchy'
+    this._view = opts.defaultView || 'tabular';
     this._page = 1;
     this._search = '';
     this._sort = { col: null, dir: 'asc' };
-    this._hierPickerId = null;       // selected hierarchy ID
-    this._hierData = null;           // loaded hierarchy nodes/leaves
-    this._hierOptions = [];          // available hierarchies for picker
-    this._data = null;               // { items, total, hierarchy_max_depth, levels }
-    this._displayConfig = null;      // { table_columns, column_labels, ... }
-    this._columnFilters = {};
-    this._expandedNodes = {};        // for hierarchical view collapse/expand
+    this._hierPickerId = null;
+    this._hierData = null;
+    this._hierOptions = [];
+    this._data = null;
+    this._displayConfig = null;
+    this._columnFilters = {};        // { col: Set of selected values } for Excel-style
+    this._columnFilterSearch = {};   // { col: search text } for filtering within dropdown
+    this._openFilterCol = null;      // which column's filter dropdown is open
+    this._expandedNodes = {};
     this._allExpanded = true;
-    this._selectedHierNode = null;   // selected node in tree panel
+    this._selectedHierNode = null;
     this._idSeq = 0;
-    this._hierInlined = false;       // whether hierarchy data is currently inline
+    this._hierInlined = false;
   }
 
   // ── Display config loading ──────────────────────────────────────────
@@ -274,20 +279,63 @@
   // ── Toolbar HTML ────────────────────────────────────────────────────
 
   DataObjectDisplay.prototype.buildToolbarHtml = function () {
-    var html = '<div class="flex items-center gap-2 mb-2 flex-wrap">';
+    var html = '';
+    // Title row with action buttons
+    if (this.title || this.toolbarButtons.length) {
+      html += '<div class="flex items-center justify-between mb-2 gap-3 flex-wrap">';
+      if (this.title) {
+        html += '<h3 class="text-base font-semibold flex-shrink-0">' + esc(this.title);
+        if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
+        html += '</h3>';
+      }
+      if (this.toolbarButtons.length) {
+        html += '<div class="flex items-center gap-2 flex-wrap ml-auto">';
+        this.toolbarButtons.forEach(function (btn, i) {
+          html += '<button data-dod-role="toolbar-btn-' + i + '" class="' +
+            escAttr(btn.className || 'btn-secondary text-xs') + '"' +
+            (btn.title ? ' title="' + escAttr(btn.title) + '"' : '') + '>' +
+            esc(btn.label) + '</button>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    // Controls row
+    html += '<div class="flex items-center gap-2 mb-2 flex-wrap">';
     if (this.showViewToggle) {
       html += this.buildViewToggleHtml();
     }
     if (this.showSearch) {
       html += '<input type="text" data-dod-role="search" placeholder="Search..." class="input text-sm w-48 flex-shrink-0" value="' + escAttr(this._search) + '" />';
     }
+    // Extra filter widgets
+    this.extraFilters.forEach(function (f) {
+      if (f.type === 'select') {
+        html += '<select data-dod-role="extra-filter" data-dod-filter-id="' + escAttr(f.id) + '" class="input text-sm ' + (f.className || 'w-32') + '">';
+        (f.options || []).forEach(function (opt) {
+          var val = typeof opt === 'string' ? opt : opt.value;
+          var label = typeof opt === 'string' ? opt : opt.label;
+          html += '<option value="' + escAttr(val) + '">' + esc(label) + '</option>';
+        });
+        html += '</select>';
+      } else {
+        html += '<input type="' + (f.type || 'text') + '" data-dod-role="extra-filter" data-dod-filter-id="' + escAttr(f.id) + '"' +
+          ' placeholder="' + escAttr(f.placeholder || '') + '"' +
+          ' class="input text-sm ' + (f.className || 'w-32') + '" />';
+      }
+    });
     if (this.showCSV) {
       html += '<button data-dod-role="csv" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>';
     }
-    // Expand/Collapse All (shown only in hierarchy view)
     if (this._view === 'hierarchy') {
       html += '<button data-dod-role="expand-all" class="btn-secondary text-xs flex-shrink-0">Expand All</button>';
       html += '<button data-dod-role="collapse-all" class="btn-secondary text-xs flex-shrink-0">Collapse All</button>';
+    }
+    // Show active filter count
+    var activeFilters = Object.keys(this._columnFilters).length;
+    if (activeFilters > 0) {
+      html += '<span class="text-xs text-blue-600 font-medium">' + activeFilters + ' filter(s) active</span>';
+      html += '<button data-dod-role="clear-all-filters" class="text-xs text-red-500 hover:text-red-700 underline">Clear All</button>';
     }
     html += '</div>';
 
@@ -552,12 +600,22 @@
 
   // ── Sort helpers ────────────────────────────────────────────────────
 
-  DataObjectDisplay.prototype.sortItems = function (items) {
+  DataObjectDisplay.prototype.sortItems = function (items, hierMap) {
     if (!this._sort.col) return items;
     var col = this._sort.col;
     var dir = this._sort.dir === 'desc' ? -1 : 1;
+    var isLevelCol = col.match(/^L\d+$/);
+    var self = this;
     return items.slice().sort(function (a, b) {
-      var va = a[col], vb = b[col];
+      var va, vb;
+      if (isLevelCol && hierMap) {
+        var ka = a[self.identityField] || a.id;
+        var kb = b[self.identityField] || b.id;
+        va = (hierMap[ka] || {})[col] || '';
+        vb = (hierMap[kb] || {})[col] || '';
+      } else {
+        va = a[col]; vb = b[col];
+      }
       if (va == null) va = '';
       if (vb == null) vb = '';
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
@@ -565,21 +623,112 @@
     });
   };
 
-  // ── Apply column filters ───────────────────────────────────────────
+  // ── Apply column filters (Excel-style: set of selected values) ─────
 
-  DataObjectDisplay.prototype.applyFilters = function (items) {
+  DataObjectDisplay.prototype.applyFilters = function (items, hierMap) {
     var filters = this._columnFilters;
     var keys = Object.keys(filters);
     if (!keys.length) return items;
+    var self = this;
     return items.filter(function (row) {
       for (var i = 0; i < keys.length; i++) {
-        var val = filters[keys[i]];
-        if (!val) continue;
-        var cell = String(row[keys[i]] || '').toLowerCase();
-        if (cell.indexOf(val.toLowerCase()) < 0) return false;
+        var colKey = keys[i];
+        var allowed = filters[colKey];
+        if (!allowed || !allowed.size) continue;
+        var cell;
+        if (colKey.match(/^L\d+$/) && hierMap) {
+          var k = row[self.identityField] || row.id;
+          cell = String((hierMap[k] || {})[colKey] || '');
+        } else {
+          cell = String(row[colKey] != null ? row[colKey] : '');
+        }
+        if (!allowed.has(cell)) return false;
       }
       return true;
     });
+  };
+
+  // Collect unique values for a column across all items (unfiltered)
+  DataObjectDisplay.prototype._getUniqueValues = function (col) {
+    var items = (this._data && this._data.items) || [];
+    var vals = {};
+    items.forEach(function (row) {
+      var v = String(row[col] != null ? row[col] : '');
+      vals[v] = (vals[v] || 0) + 1;
+    });
+    return Object.keys(vals).sort(function (a, b) {
+      return a.localeCompare(b, undefined, { numeric: true });
+    }).map(function (v) { return { value: v, count: vals[v] }; });
+  };
+
+  // Build the Excel-style filter dropdown HTML for a column
+  DataObjectDisplay.prototype._buildFilterDropdown = function (col) {
+    var self = this;
+    var uniqueVals = this._getUniqueValues(col);
+    var searchText = (this._columnFilterSearch[col] || '').toLowerCase();
+    var activeSet = this._columnFilters[col];
+    var isFiltered = activeSet && activeSet.size > 0;
+
+    var filtered = uniqueVals;
+    if (searchText) {
+      filtered = uniqueVals.filter(function (v) {
+        return v.value.toLowerCase().indexOf(searchText) >= 0;
+      });
+    }
+
+    var html = '<div class="dod-filter-dropdown" data-dod-filter-col="' + escAttr(col) + '" ' +
+      'style="position:absolute;top:100%;left:0;z-index:50;min-width:200px;max-width:320px;' +
+      'background:white;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:8px">';
+
+    // Search within filter
+    html += '<input type="text" data-dod-role="filter-search" data-dod-filter-col="' + escAttr(col) + '" ' +
+      'placeholder="Search values..." class="w-full border rounded px-2 py-1 text-xs mb-2" ' +
+      'value="' + escAttr(this._columnFilterSearch[col] || '') + '" />';
+
+    // Select All / Clear buttons
+    html += '<div class="flex items-center gap-2 mb-2 text-[10px]">';
+    html += '<button data-dod-role="filter-select-all" data-dod-filter-col="' + escAttr(col) + '" ' +
+      'class="text-blue-600 hover:underline">Select All</button>';
+    html += '<button data-dod-role="filter-clear" data-dod-filter-col="' + escAttr(col) + '" ' +
+      'class="text-red-500 hover:underline">Clear</button>';
+    if (isFiltered) {
+      html += '<button data-dod-role="filter-remove" data-dod-filter-col="' + escAttr(col) + '" ' +
+        'class="text-gray-500 hover:underline ml-auto">Remove Filter</button>';
+    }
+    html += '</div>';
+
+    // Checkbox list
+    html += '<div style="max-height:240px;overflow-y:auto" class="border-t pt-1">';
+    var maxShow = 500;
+    var shown = 0;
+    filtered.forEach(function (v) {
+      if (shown >= maxShow) return;
+      shown++;
+      var checked = !isFiltered || (activeSet && activeSet.has(v.value));
+      html += '<label class="flex items-center gap-1.5 py-0.5 px-1 text-xs hover:bg-gray-50 rounded cursor-pointer">';
+      html += '<input type="checkbox" data-dod-role="filter-cb" data-dod-filter-col="' + escAttr(col) + '" ' +
+        'data-dod-filter-val="' + escAttr(v.value) + '"' + (checked ? ' checked' : '') +
+        ' class="rounded border-gray-300 text-blue-600" />';
+      html += '<span class="truncate flex-1">' + esc(v.value || '(empty)') + '</span>';
+      html += '<span class="text-[10px] text-gray-400 flex-shrink-0">' + v.count + '</span>';
+      html += '</label>';
+    });
+    if (filtered.length > maxShow) {
+      html += '<div class="text-[10px] text-gray-400 px-1 py-1">... and ' + (filtered.length - maxShow) + ' more values</div>';
+    }
+    if (!filtered.length) {
+      html += '<div class="text-xs text-gray-400 py-2 text-center">No matching values</div>';
+    }
+    html += '</div>';
+
+    // Apply button
+    html += '<div class="border-t mt-2 pt-2 flex justify-end">';
+    html += '<button data-dod-role="filter-apply" data-dod-filter-col="' + escAttr(col) + '" ' +
+      'class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">Apply</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
   };
 
   // ── Render entry point ──────────────────────────────────────────────
@@ -603,7 +752,19 @@
       return;
     }
 
-    var filtered = this.applyFilters(items);
+    // Build hierMap early so filters on L-columns work
+    var hierLevels = [];
+    var hierMap = {};
+    if (this._hierPickerId) {
+      var hld = this.buildHierLevelMap();
+      hierLevels = hld.levels || [];
+      hierMap = hld.map || {};
+    }
+    // Cache for _renderTabular to reuse
+    this._cachedHierLevels = hierLevels;
+    this._cachedHierMap = hierMap;
+
+    var filtered = this.applyFilters(items, hierMap);
 
     var html = this.buildToolbarHtml();
 
@@ -621,17 +782,13 @@
 
   DataObjectDisplay.prototype._renderTabular = function (items) {
     var self = this;
-    var sorted = this.sortItems(items);
     var cols = this.getTableColumns();
 
-    // Build hierarchy level columns only if a hierarchy is selected
-    var hierLevels = [];
-    var hierMap = {};
-    if (this._hierPickerId) {
-      var hld = this.buildHierLevelMap();
-      hierLevels = hld.levels || [];
-      hierMap = hld.map || {};
-    }
+    // Reuse cached hierarchy data from render()
+    var hierLevels = this._cachedHierLevels || [];
+    var hierMap = this._cachedHierMap || {};
+
+    var sorted = this.sortItems(items, hierMap);
 
     // Header
     var html = '<div class="overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">';
@@ -639,17 +796,35 @@
 
     // Hierarchy level headers
     hierLevels.forEach(function (lv) {
-      html += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50 cursor-pointer" data-dod-sort="' + escAttr(lv) + '">' +
-        esc(lv) + self._sortIcon(lv) + '</th>';
+      var isLvFiltered = self._columnFilters[lv] && self._columnFilters[lv].size > 0;
+      html += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50 relative" style="position:relative">' +
+        '<div class="flex items-center gap-1">' +
+        '<span class="cursor-pointer flex-1" data-dod-sort="' + escAttr(lv) + '">' + esc(lv) + self._sortIcon(lv) + '</span>' +
+        '<span data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(lv) + '" ' +
+        'class="cursor-pointer text-[10px] px-0.5 rounded hover:bg-blue-100' +
+        (isLvFiltered ? ' text-blue-600 font-bold' : ' text-gray-400') + '" title="Filter">&#9660;</span>' +
+        '</div>';
+      if (self._openFilterCol === lv) {
+        html += self._buildFilterDropdown(lv);
+      }
+      html += '</th>';
     });
 
-    // Data columns
+    // Data columns with Excel-style filter icon
     cols.forEach(function (col) {
-      html += '<th class="py-1.5 px-2 text-left font-medium cursor-pointer" data-dod-sort="' + escAttr(col) + '">' +
-        esc(self.colLabel(col)) + self._sortIcon(col) +
-        '<div class="mt-0.5"><input type="text" data-dod-filter="' + escAttr(col) + '" ' +
-        'placeholder="Filter..." class="w-full border rounded px-1 py-0.5 text-[10px] font-normal" ' +
-        'value="' + escAttr(self._columnFilters[col] || '') + '" onclick="event.stopPropagation()" /></div></th>';
+      var isColFiltered = self._columnFilters[col] && self._columnFilters[col].size > 0;
+      html += '<th class="py-1.5 px-2 text-left font-medium relative" style="position:relative">' +
+        '<div class="flex items-center gap-1">' +
+        '<span class="cursor-pointer flex-1" data-dod-sort="' + escAttr(col) + '">' +
+        esc(self.colLabel(col)) + self._sortIcon(col) + '</span>' +
+        '<span data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(col) + '" ' +
+        'class="cursor-pointer text-[10px] px-0.5 rounded hover:bg-blue-100' +
+        (isColFiltered ? ' text-blue-600 font-bold' : ' text-gray-400') + '" title="Filter">&#9660;</span>' +
+        '</div>';
+      if (self._openFilterCol === col) {
+        html += self._buildFilterDropdown(col);
+      }
+      html += '</th>';
     });
 
     html += '</tr></thead><tbody>';
@@ -1131,14 +1306,152 @@
       });
     });
 
-    // Column filters
-    container.querySelectorAll('[data-dod-filter]').forEach(function (inp) {
-      inp.addEventListener('input', function () {
-        self._columnFilters[this.dataset.dodFilter] = this.value;
+    // Excel-style filter toggle (open/close dropdown)
+    container.querySelectorAll('[data-dod-role="filter-toggle"]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var col = this.dataset.dodFilterCol;
+        if (self._openFilterCol === col) {
+          self._openFilterCol = null;
+        } else {
+          self._openFilterCol = col;
+        }
         self.render();
-        // Re-focus the filter input after re-render
-        var newInp = document.querySelector('[data-dod-filter="' + this.dataset.dodFilter + '"]');
+        // Focus the search input in the newly opened dropdown
+        if (self._openFilterCol) {
+          var searchInput = document.querySelector('[data-dod-role="filter-search"][data-dod-filter-col="' + col + '"]');
+          if (searchInput) searchInput.focus();
+        }
+      });
+    });
+
+    // Filter search within dropdown
+    container.querySelectorAll('[data-dod-role="filter-search"]').forEach(function (inp) {
+      inp.addEventListener('input', function (e) {
+        e.stopPropagation();
+        self._columnFilterSearch[this.dataset.dodFilterCol] = this.value;
+        // Re-render just the dropdown by re-rendering the whole thing
+        self.render();
+        // Re-focus
+        var col = this.dataset.dodFilterCol;
+        var newInp = document.querySelector('[data-dod-role="filter-search"][data-dod-filter-col="' + col + '"]');
         if (newInp) { newInp.focus(); newInp.selectionStart = newInp.selectionEnd = newInp.value.length; }
+      });
+      inp.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+
+    // Filter Select All button
+    container.querySelectorAll('[data-dod-role="filter-select-all"]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var col = this.dataset.dodFilterCol;
+        var dropdown = container.querySelector('.dod-filter-dropdown[data-dod-filter-col="' + col + '"]');
+        if (dropdown) {
+          dropdown.querySelectorAll('[data-dod-role="filter-cb"]').forEach(function (cb) {
+            cb.checked = true;
+          });
+        }
+      });
+    });
+
+    // Filter Clear button (uncheck all)
+    container.querySelectorAll('[data-dod-role="filter-clear"]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var col = this.dataset.dodFilterCol;
+        var dropdown = container.querySelector('.dod-filter-dropdown[data-dod-filter-col="' + col + '"]');
+        if (dropdown) {
+          dropdown.querySelectorAll('[data-dod-role="filter-cb"]').forEach(function (cb) {
+            cb.checked = false;
+          });
+        }
+      });
+    });
+
+    // Filter Remove (clear filter entirely for this column)
+    container.querySelectorAll('[data-dod-role="filter-remove"]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var col = this.dataset.dodFilterCol;
+        delete self._columnFilters[col];
+        delete self._columnFilterSearch[col];
+        self._openFilterCol = null;
+        self.render();
+      });
+    });
+
+    // Filter Apply — collect checked values and apply
+    container.querySelectorAll('[data-dod-role="filter-apply"]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var col = this.dataset.dodFilterCol;
+        var dropdown = container.querySelector('.dod-filter-dropdown[data-dod-filter-col="' + col + '"]');
+        if (!dropdown) return;
+        var selected = new Set();
+        dropdown.querySelectorAll('[data-dod-role="filter-cb"]:checked').forEach(function (cb) {
+          selected.add(cb.dataset.dodFilterVal);
+        });
+        // If all values are selected, treat as no filter
+        var allVals = self._getUniqueValues(col);
+        if (selected.size >= allVals.length) {
+          delete self._columnFilters[col];
+        } else if (selected.size === 0) {
+          // Empty selection = show nothing (keep as filter)
+          self._columnFilters[col] = selected;
+        } else {
+          self._columnFilters[col] = selected;
+        }
+        self._openFilterCol = null;
+        delete self._columnFilterSearch[col];
+        self.render();
+      });
+    });
+
+    // Filter checkbox clicks should not close dropdown
+    container.querySelectorAll('[data-dod-role="filter-cb"]').forEach(function (cb) {
+      cb.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+
+    // Clear All Filters button
+    var clearAllBtn = container.querySelector('[data-dod-role="clear-all-filters"]');
+    if (clearAllBtn) clearAllBtn.addEventListener('click', function () {
+      self._columnFilters = {};
+      self._columnFilterSearch = {};
+      self._openFilterCol = null;
+      self.render();
+    });
+
+    // Close filter dropdown when clicking outside
+    var closeHandler = function (e) {
+      if (self._openFilterCol && !e.target.closest('.dod-filter-dropdown') && !e.target.closest('[data-dod-role="filter-toggle"]')) {
+        self._openFilterCol = null;
+        self.render();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    if (self._openFilterCol) {
+      setTimeout(function () { document.addEventListener('click', closeHandler); }, 0);
+    }
+
+    // Custom toolbar buttons
+    this.toolbarButtons.forEach(function (btn, i) {
+      var el = container.querySelector('[data-dod-role="toolbar-btn-' + i + '"]');
+      if (el && btn.onclick) {
+        el.addEventListener('click', function () { btn.onclick(self); });
+      }
+    });
+
+    // Extra filter widgets
+    container.querySelectorAll('[data-dod-role="extra-filter"]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        if (self.onExtraFilterChange) {
+          self.onExtraFilterChange(this.dataset.dodFilterId, this.value, self);
+        }
+      });
+      el.addEventListener('input', function () {
+        if (self.onExtraFilterChange) {
+          self.onExtraFilterChange(this.dataset.dodFilterId, this.value, self);
+        }
       });
     });
 
