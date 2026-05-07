@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -26,6 +28,91 @@ from app.models.core import (
 )
 
 router = APIRouter()
+
+log = logging.getLogger(__name__)
+
+
+# ── Cluster duplicate-check job registry ─────────────────────────────
+# In-memory registry of duplicate-check jobs, keyed by uuid hex. See
+# the docstring on ``check_duplicates`` for why this is in-memory rather
+# than a real DB table. Don't access this dict from request handlers
+# without the lock — the runner thread mutates the same entries.
+_cluster_jobs: dict[str, dict] = {}
+_cluster_jobs_lock = __import__("threading").Lock()
+
+
+def _run_duplicate_check_in_thread(
+    job_id: str,
+    coarea: str | None,
+    threshold: float,
+    limit: int,
+) -> None:
+    """Daemon-thread runner for the duplicate-check job.
+
+    Drives the same ``find_duplicates`` ML routine as the previous
+    synchronous endpoint, but updates the in-memory job entry in three
+    stages so the frontend's progress bar has something to show:
+
+      ``loading`` → SQL query for cost centers in scope
+      ``embedding`` → batch embed names through the model
+      ``pairing`` → pairwise cosine + threshold filter
+
+    On any exception the job flips to ``status='failed'`` with the
+    message set on ``error``; the frontend renders that as a red
+    notice rather than a stuck spinner. Even on success we trim the
+    pairs list to ``limit`` before storing — operators rarely need
+    more than the top 100 and shipping 50k pairs through the polling
+    endpoint defeats the point of being async.
+    """
+    from app.domain.ml.embeddings import find_duplicates
+    from app.infra.db.session import SessionLocal
+    from app.models.core import LegacyCostCenter
+
+    def _set(**kwargs):
+        with _cluster_jobs_lock:
+            job = _cluster_jobs.get(job_id)
+            if job is not None:
+                job.update(kwargs)
+
+    db = SessionLocal()
+    try:
+        _set(status="running", stage="loading", progress=0)
+        query = select(LegacyCostCenter).where(LegacyCostCenter.is_active.is_(True))
+        if coarea:
+            query = query.where(LegacyCostCenter.coarea == coarea)
+        ccs = db.execute(query).scalars().all()
+        names = [cc.txtsh or cc.txtmi or cc.cctr for cc in ccs]
+        ids = [cc.id for cc in ccs]
+        n = len(names)
+        _set(stage="embedding", total=n, progress=0)
+        if n < 2:
+            _set(
+                status="done",
+                stage="done",
+                progress=n,
+                total=n,
+                result={"total": 0, "pairs": []},
+            )
+            return
+        # find_duplicates is a single call so we can't get fine-grained
+        # progress out of it without rewriting the embedding routine.
+        # Mark progress as "halfway" while it runs — better than a
+        # frozen 0% bar that makes operators think something hung.
+        _set(progress=max(1, n // 2))
+        pairs = find_duplicates(names, ids, threshold=threshold)
+        _set(stage="pairing", progress=n)
+        _set(
+            status="done",
+            stage="done",
+            progress=n,
+            total=n,
+            result={"total": len(pairs), "pairs": pairs[:limit]},
+        )
+    except Exception as e:  # noqa: BLE001 — we want to surface the message
+        log.exception("duplicate_check_thread.failed job=%s", job_id)
+        _set(status="failed", stage="failed", error=str(e))
+    finally:
+        db.close()
 
 
 # Setclass codes used by SAP for the two hierarchy types we surface in
@@ -1028,17 +1115,77 @@ def check_duplicates(
     limit: int = 100,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Find near-duplicate cost center names using embeddings."""
-    from app.domain.ml.embeddings import find_duplicates
+    """Find near-duplicate cost center names using embeddings.
 
-    query = select(LegacyCostCenter).where(LegacyCostCenter.is_active.is_(True))
-    if coarea:
-        query = query.where(LegacyCostCenter.coarea == coarea)
-    ccs = db.execute(query).scalars().all()
-    names = [cc.txtsh or cc.txtmi or cc.cctr for cc in ccs]
-    ids = [cc.id for cc in ccs]
-    pairs = find_duplicates(names, ids, threshold=threshold)
-    return {"total": len(pairs), "pairs": pairs[:limit]}
+    PR #88 — async dispatch. The previous synchronous version held the
+    request handler open for the full duration of the embedding model
+    load (cold-start can be several seconds), the per-name embedding
+    pass, and the O(n²) pairwise cosine. On a coarea with thousands of
+    cost centers operators reported the cluster explorer "taking ages
+    and the system becoming unresponsive" — the request was tying up
+    a worker and the browser sat on a spinner.
+
+    Now the POST creates a job in an in-memory registry, dispatches a
+    daemon thread, and returns ``{job_id, status: 'queued'}`` in
+    well under a second. The frontend polls
+    ``GET /api/data/duplicate-check/jobs/{id}`` for progress and reads
+    the final pairs out of the same endpoint when ``status == 'done'``.
+
+    Trade-off vs a real DB-backed job table: jobs don't survive a
+    backend restart. That's acceptable here — duplicate-check is a
+    cheap-to-recompute analytical query, not a multi-step workflow,
+    and operators can simply re-run if the backend was restarted
+    mid-job. Sparing ourselves a model + migration keeps the change
+    surface small.
+    """
+    import threading
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    _cluster_jobs[job_id] = {
+        "status": "queued",
+        "progress": 0,
+        "total": 0,
+        "stage": "starting",
+        "result": None,
+        "error": None,
+        "params": {"coarea": coarea, "threshold": threshold, "limit": limit},
+    }
+
+    t = threading.Thread(
+        target=_run_duplicate_check_in_thread,
+        args=(job_id, coarea, threshold, limit),
+        daemon=True,
+    )
+    t.start()
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/data/duplicate-check/jobs/{job_id}")
+def get_duplicate_check_job(job_id: str) -> dict:
+    """Read the status (and, when ``status == 'done'``, result) of a
+    duplicate-check job.
+
+    The frontend polls this every ~2s while ``status`` is in
+    ``{'queued', 'running'}`` and renders the progress bar from the
+    ``stage`` and ``progress`` fields. Once status flips to ``'done'``
+    the ``result`` payload mirrors the old synchronous response shape
+    (``total`` + ``pairs``), so the UI can drop in the table without
+    a separate code path.
+    """
+    job = _cluster_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "progress": job["progress"],
+        "total": job["total"],
+        "stage": job["stage"],
+        "error": job["error"],
+        "result": job["result"] if job["status"] == "done" else None,
+    }
 
 
 @router.post("/data/naming-suggestions")

@@ -186,15 +186,64 @@ def list_global_runs(
 
 @router.get("/{run_id}")
 def get_run(run_id: int, db: Session = Depends(get_db)) -> RunOut:
+    """Get a single analysis run with its KPIs.
+
+    PR #88 fallback: if the cached ``run.kpis`` blob is empty or has
+    all-zero outcome counts despite the run having completed centers
+    (which we saw in production for a couple of older runs where the
+    pipeline finished but didn't persist the dict — root cause not
+    fully traced, but the proposals are the ground truth), recompute
+    the outcome counts on the fly from the proposals table. Cheap
+    enough — one GROUP BY per outcome — and protects the dashboard
+    from displaying confidently-wrong "0 KEEP, 0 RETIRE..." headlines
+    when the underlying data clearly has KEEP outcomes.
+    """
     run = db.get(AnalysisRun, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+
+    kpis = run.kpis or {}
+    outcome_keys = ("keep", "retire", "merge_map", "redesign")
+    cached_total_outcomes = sum(int(kpis.get(k) or 0) for k in outcome_keys)
+
+    # Fallback recompute: any time the cached outcome counts add up to
+    # zero, look at the proposals table directly. The proposals are the
+    # ground truth — if they show KEEP outcomes, the dashboard mustn't
+    # display "0 KEEP".
+    #
+    # PR #88 widening: previously this also required ``completed_centers
+    # > 0``, which excluded older runs where the field wasn't tracked.
+    # We saw real cases of "0 KEEP, 0 RETIRE, 0 MERGE_MAP, 0 REDESIGN"
+    # while the data browser below showed dozens of KEEP rows — exactly
+    # the case the gate was supposed to handle. The recompute is one
+    # GROUP BY query, cheap enough to do whenever cached values look
+    # suspect, no need for an extra precondition.
+    if cached_total_outcomes == 0:
+        rows = db.execute(
+            select(
+                CenterProposal.cleansing_outcome,
+                func.count(CenterProposal.id),
+            )
+            .where(CenterProposal.run_id == run_id)
+            .group_by(CenterProposal.cleansing_outcome)
+        ).all()
+        recomputed = dict.fromkeys(outcome_keys, 0)
+        total_props = 0
+        for outcome, cnt in rows:
+            total_props += int(cnt)
+            if outcome:
+                key = str(outcome).lower()
+                if key in recomputed:
+                    recomputed[key] = int(cnt)
+        if total_props > 0:
+            kpis = {**kpis, **recomputed, "total_centers": kpis.get("total_centers") or total_props}
+
     return RunOut(
         id=run.id,
         wave_id=run.wave_id,
         config_id=run.config_id,
         status=run.status,
-        kpis=run.kpis,
+        kpis=kpis,
         started_at=str(run.started_at) if run.started_at else None,
         finished_at=str(run.finished_at) if run.finished_at else None,
         total_centers=run.total_centers or 0,
@@ -507,6 +556,7 @@ def proposal_llm_opinion(
 def data_browser(
     run_id: int,
     include_hierarchies: bool = False,
+    path_hierarchy_id: int | None = None,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
@@ -518,6 +568,15 @@ def data_browser(
     tabular view doesn't need it. The frontend's "Hierarchical" tab
     re-fetches with ``?include_hierarchies=true`` only when the user
     explicitly switches to that view.
+
+    PR #88: when ``path_hierarchy_id`` is set, every item in the
+    response gets a ``hierarchy_path`` array (chain of node setnames
+    from root to leaf in that hierarchy) and the response carries
+    ``path_max_depth`` so the tabular view can build dynamic L0..LX
+    columns. The mechanism re-uses the same helper as wave/proposals-v2
+    (introduced in PR #76) — a single BFS walk per request rather
+    than per-row, so cost is bounded by the hierarchy size, not the
+    proposal count.
     """
     from app.models.core import (
         Balance,
@@ -645,12 +704,27 @@ def data_browser(
             }
         )
 
+    # PR #88: hierarchy paths for L0..LX columns. Resolved once per
+    # request (BFS over the hierarchy edges) and applied to every item;
+    # the frontend uses path_max_depth to size the column header list.
+    path_max_depth = 0
+    if path_hierarchy_id is not None:
+        from app.api.reference import _resolve_hierarchy_paths
+
+        cctrs_for_paths = list({it["cctr"] for it in items if it.get("cctr")})
+        if cctrs_for_paths:
+            paths, path_max_depth = _resolve_hierarchy_paths(db, path_hierarchy_id, cctrs_for_paths)
+            for it in items:
+                it["hierarchy_path"] = paths.get(it["cctr"], [])
+
     return {
         "run_id": run_id,
         "total": len(items),
         "items": items,
         "pc_target_groups": pc_target_groups,
         "hierarchies": hier_trees,
+        "path_hierarchy_id": path_hierarchy_id,
+        "path_max_depth": path_max_depth,
     }
 
 

@@ -61,6 +61,21 @@ import Layout from '../../components/layout/Layout.astro';
       <h3 class="text-sm font-semibold">Duplicate Pairs</h3>
       <span id="clu-count" class="text-xs text-gray-500"></span>
     </div>
+
+    <!-- Progress strip — visible only while a job is in flight (PR #88) -->
+    <div id="clu-progress" class="hidden mb-3 bg-blue-50 border border-blue-200 rounded p-3">
+      <div class="flex items-center justify-between text-xs mb-1">
+        <span class="font-medium text-blue-900" id="clu-progress-label">Starting…</span>
+        <button id="clu-cancel" class="text-amber-700 hover:underline text-xs">Cancel</button>
+      </div>
+      <div class="h-1.5 bg-blue-100 rounded-full overflow-hidden">
+        <div id="clu-progress-bar" class="h-full bg-blue-500 transition-all" style="width:0%"></div>
+      </div>
+      <p class="text-[11px] text-blue-700 mt-1">
+        Running in the background — you can navigate away and come back; results will appear here when done.
+      </p>
+    </div>
+
     <div id="clu-results" class="text-sm text-gray-500">Configure parameters above and click "Find Duplicates"</div>
   </div>
 </Layout>
@@ -106,6 +121,111 @@ import Layout from '../../components/layout/Layout.astro';
       sel.innerHTML = '<option value="">(failed to load CO areas)</option>';
     });
 
+  // PR #88 — async duplicate-check. Previously the click handler held
+  // the request open for the full ML run (model load + embedding +
+  // pairwise cosine — many seconds on real datasets, locking up the
+  // UI). Now we POST once to dispatch a job, then poll
+  // /api/data/duplicate-check/jobs/{id} every 2s for status. Cancel
+  // button just stops polling on the client; the backend job runs to
+  // completion either way (acceptable: it's a read-only ML job).
+  var cluPollTimer = null;
+  var cluCurrentJob = null;
+
+  function setCluProgress(label, pct) {
+    document.getElementById('clu-progress-label').textContent = label;
+    document.getElementById('clu-progress-bar').style.width = (pct || 0) + '%';
+  }
+
+  function showCluProgress(visible) {
+    var el = document.getElementById('clu-progress');
+    if (visible) el.classList.remove('hidden');
+    else el.classList.add('hidden');
+  }
+
+  function stopCluPolling() {
+    if (cluPollTimer) {
+      clearInterval(cluPollTimer);
+      cluPollTimer = null;
+    }
+    cluCurrentJob = null;
+    showCluProgress(false);
+  }
+
+  function pollCluJob(jobId) {
+    fetch('/api/data/duplicate-check/jobs/' + encodeURIComponent(jobId), { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (cluCurrentJob !== jobId) return; // user cancelled / started new job
+        if (d.status === 'queued') {
+          setCluProgress('Queued — starting up…', 5);
+          return;
+        }
+        if (d.status === 'running') {
+          var stage = d.stage || 'running';
+          var label = stage === 'loading' ? 'Loading cost centers from database…'
+            : stage === 'embedding' ? 'Embedding ' + (d.total || 0) + ' cost-center names…'
+            : stage === 'pairing' ? 'Comparing pairs and filtering by threshold…'
+            : 'Running…';
+          var pct = d.total > 0 ? Math.min(95, Math.round((d.progress / d.total) * 100)) : 25;
+          setCluProgress(label, pct);
+          return;
+        }
+        if (d.status === 'failed') {
+          stopCluPolling();
+          document.getElementById('clu-results').innerHTML =
+            '<span class="text-red-500">Error: ' + esc(d.error || 'Job failed') + '</span>';
+          document.getElementById('clu-count').textContent = '';
+          return;
+        }
+        if (d.status === 'done') {
+          stopCluPolling();
+          renderCluResults(d.result || { total: 0, pairs: [] });
+        }
+      })
+      .catch(function(err) {
+        stopCluPolling();
+        document.getElementById('clu-results').innerHTML =
+          '<span class="text-red-500">Polling error: ' + esc(err.message) + '</span>';
+      });
+  }
+
+  function renderCluResults(data) {
+    var resultsEl = document.getElementById('clu-results');
+    var countEl = document.getElementById('clu-count');
+    countEl.textContent = data.total + ' pairs found';
+    var pairs = data.pairs || [];
+    if (!pairs.length) {
+      resultsEl.textContent = 'No duplicates found at this threshold.';
+      return;
+    }
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      '<th class="py-2 px-2 text-left">Name A</th>' +
+      '<th class="py-2 px-2 text-left">Name B</th>' +
+      '<th class="py-2 px-2 text-center">Similarity</th>' +
+      '<th class="py-2 px-2 text-center">ID A</th>' +
+      '<th class="py-2 px-2 text-center">ID B</th></tr></thead><tbody>';
+    pairs.forEach(function(p) {
+      var pct = Math.round(p.similarity * 100);
+      var barColor = pct >= 95 ? 'bg-red-400' : pct >= 90 ? 'bg-amber-400' : 'bg-blue-400';
+      html += '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1.5 px-2">' + esc(p.name_a) + '</td>' +
+        '<td class="py-1.5 px-2">' + esc(p.name_b) + '</td>' +
+        '<td class="py-1.5 px-2 text-center"><div class="flex items-center gap-1 justify-center">' +
+          '<div class="w-16 bg-gray-100 rounded-full h-1.5"><div class="h-1.5 rounded-full ' + barColor + '" style="width:' + pct + '%"></div></div>' +
+          '<span class="font-mono">' + pct + '%</span></div></td>' +
+        '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_a + '</td>' +
+        '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_b + '</td></tr>';
+    });
+    resultsEl.innerHTML = html + '</tbody></table>';
+  }
+
+  document.getElementById('clu-cancel').addEventListener('click', function() {
+    stopCluPolling();
+    document.getElementById('clu-results').innerHTML =
+      '<span class="text-gray-400">Cancelled. (The backend may still finish — re-running gives fresh results.)</span>';
+    document.getElementById('clu-count').textContent = '';
+  });
+
   document.getElementById('btn-run-cluster').addEventListener('click', async function() {
     var coarea = document.getElementById('clu-coarea').value;
     if (!coarea) {
@@ -117,8 +237,13 @@ import Layout from '../../components/layout/Layout.astro';
     var resultsEl = document.getElementById('clu-results');
     var countEl = document.getElementById('clu-count');
 
-    resultsEl.textContent = 'Analyzing...';
+    // Stop any in-flight polling from a previous run
+    stopCluPolling();
+
+    resultsEl.innerHTML = '<span class="text-gray-400">Dispatching job…</span>';
     countEl.textContent = '';
+    showCluProgress(true);
+    setCluProgress('Submitting…', 2);
 
     try {
       var url = '/api/data/duplicate-check?threshold=' + threshold + '&limit=' + limit;
@@ -126,37 +251,16 @@ import Layout from '../../components/layout/Layout.astro';
       var resp = await fetch(url, { method: 'POST', headers: headers });
       if (!resp.ok) throw new Error('Failed: ' + resp.status);
       var data = await resp.json();
-
-      countEl.textContent = data.total + ' pairs found (showing up to ' + limit + ')';
-      var pairs = data.pairs || [];
-      if (!pairs.length) {
-        resultsEl.textContent = 'No duplicates found at this threshold.';
-        return;
-      }
-
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">Name A</th>' +
-        '<th class="py-2 px-2 text-left">Name B</th>' +
-        '<th class="py-2 px-2 text-center">Similarity</th>' +
-        '<th class="py-2 px-2 text-center">ID A</th>' +
-        '<th class="py-2 px-2 text-center">ID B</th></tr></thead><tbody>';
-
-      pairs.forEach(function(p) {
-        var pct = Math.round(p.similarity * 100);
-        var barColor = pct >= 95 ? 'bg-red-400' : pct >= 90 ? 'bg-amber-400' : 'bg-blue-400';
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2">' + esc(p.name_a) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(p.name_b) + '</td>' +
-          '<td class="py-1.5 px-2 text-center"><div class="flex items-center gap-1 justify-center">' +
-            '<div class="w-16 bg-gray-100 rounded-full h-1.5"><div class="h-1.5 rounded-full ' + barColor + '" style="width:' + pct + '%"></div></div>' +
-            '<span class="font-mono">' + pct + '%</span></div></td>' +
-          '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_a + '</td>' +
-          '<td class="py-1.5 px-2 text-center font-mono text-gray-400">' + p.id_b + '</td></tr>';
-      });
-
-      resultsEl.innerHTML = html + '</tbody></table>';
+      cluCurrentJob = data.job_id;
+      resultsEl.innerHTML = '<span class="text-gray-400">Running… results will appear here.</span>';
+      // Poll immediately, then every 2s
+      pollCluJob(cluCurrentJob);
+      cluPollTimer = setInterval(function() {
+        if (cluCurrentJob) pollCluJob(cluCurrentJob);
+      }, 2000);
     } catch(e) {
-      resultsEl.textContent = 'Error: ' + e.message;
+      stopCluPolling();
+      resultsEl.innerHTML = '<span class="text-red-500">Error: ' + esc(e.message) + '</span>';
     }
   });
 </script>

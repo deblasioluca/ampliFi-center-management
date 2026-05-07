@@ -99,17 +99,25 @@ import Layout from '../../components/layout/Layout.astro';
 
     <!-- Entities Tab -->
     <div id="tab-entities" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Entities (Legal Entities / Company Codes)</h3>
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
-            <button id="entities-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchEntitiesView('tabular')">Tabular</button>
-            <button id="entities-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchEntitiesView('hierarchy')">Hierarchical</button>
-          </div>
-          <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48" />
-          <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-entities" class="btn-danger text-xs">Delete All</button>
+      <!-- Toolbar — PR #88 split into two rows. The previous one-row
+           layout used flex-wrap, but on narrow viewports (e.g. side-by-side
+           windows on the operator's MacBook screenshot) the toggle group
+           ended up squeezed and the "Hierarchical" label got clipped to
+           a single character. Two rows is unambiguous: title + destructive
+           actions on top, view controls + search below. -->
+      <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
+        <h3 class="text-base font-semibold flex-shrink-0">Entities (Legal Entities / Company Codes)</h3>
+        <div class="flex items-center gap-2 flex-wrap ml-auto">
+          <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>
+          <button id="delete-all-entities" class="btn-danger text-xs flex-shrink-0">Delete All</button>
         </div>
+      </div>
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <div class="inline-flex rounded-md border border-gray-300 text-xs">
+          <button id="entities-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium whitespace-nowrap" onclick="switchEntitiesView('tabular')">Tabular</button>
+          <button id="entities-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50 whitespace-nowrap border-l border-gray-300" onclick="switchEntitiesView('hierarchy')">Hierarchical</button>
+        </div>
+        <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48 flex-shrink-0" />
       </div>
       <!-- Tabular -->
       <div id="entities-table-wrap">
@@ -809,20 +817,38 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
   document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
 
-  // Populate CC hierarchy picker with all setclass=0101 hierarchies, then
-  // wire change → reload (which in turn re-fetches with hierarchy_id and
-  // re-renders both views).
-  fetch('/api/legacy/hierarchies?setclass=0101&size=200', { headers: authHdr })
+  // CC hierarchy picker. PR #88: previously filtered to setclass=0101
+  // only, which surprised operators whose imports were tagged 0104 or
+  // a custom setclass (we saw "not all hierarchies shown" reports —
+  // the picker silently dropped non-0101 ones). We now load all
+  // hierarchies and group by setclass; the picker stays useful for
+  // any reasonable hierarchy. The wave-detail and analysis pipeline
+  // resolve leaves by (hierarchy_id, value) without caring about
+  // setclass, so any of these will work for visualisation.
+  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var sel = document.getElementById('cc-hier-picker');
-      (d.items || []).forEach(function(h) {
-        var label = h.setname + (h.description ? ' — ' + h.description : '');
-        var opt = document.createElement('option');
-        opt.value = h.id;
-        opt.textContent = label;
-        sel.appendChild(opt);
-      });
+      var items = d.items || [];
+      var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
+      var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
+      var otherHiers = items.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+
+      function appendGroup(label, list) {
+        if (!list.length) return;
+        var group = document.createElement('optgroup');
+        group.label = label;
+        list.forEach(function(h) {
+          var opt = document.createElement('option');
+          opt.value = h.id;
+          opt.textContent = h.setname + (h.description ? ' — ' + h.description : '');
+          group.appendChild(opt);
+        });
+        sel.appendChild(group);
+      }
+      appendGroup('Cost Center hierarchies (setclass=0101)', ccHiers);
+      appendGroup('Profit Center hierarchies (setclass=0104)', pcHiers);
+      appendGroup('Other', otherHiers);
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
   document.getElementById('cc-hier-picker').addEventListener('change', function() {
@@ -899,18 +925,37 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
   document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
 
-  // PC hierarchy picker — same pattern as CC, but setclass=0104.
-  fetch('/api/legacy/hierarchies?setclass=0104&size=200', { headers: authHdr })
+  // PC hierarchy picker. PR #88: previously filtered to setclass=0104
+  // only, which left the picker empty for customers whose CC↔PC
+  // mapping is 1:1 (no separate PC hierarchy imported — the CC
+  // hierarchy is the right answer there). We now load all imported
+  // hierarchies and group them so the operator can pick whichever
+  // matches their PC structure. Same approach as the V2 PC Approach
+  // picker in PR #85.
+  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var sel = document.getElementById('pc-hier-picker');
-      (d.items || []).forEach(function(h) {
-        var label = h.setname + (h.description ? ' — ' + h.description : '');
-        var opt = document.createElement('option');
-        opt.value = h.id;
-        opt.textContent = label;
-        sel.appendChild(opt);
-      });
+      var items = d.items || [];
+      var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
+      var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
+      var otherHiers = items.filter(function(h) { return h.setclass !== '0104' && h.setclass !== '0101'; });
+
+      function appendGroup(label, list) {
+        if (!list.length) return;
+        var group = document.createElement('optgroup');
+        group.label = label;
+        list.forEach(function(h) {
+          var opt = document.createElement('option');
+          opt.value = h.id;
+          opt.textContent = h.setname + (h.description ? ' — ' + h.description : '');
+          group.appendChild(opt);
+        });
+        sel.appendChild(group);
+      }
+      appendGroup('Profit Center hierarchies (setclass=0104)', pcHiers);
+      appendGroup('Cost Center hierarchies (setclass=0101) — usable when CC↔PC is 1:1', ccHiers);
+      appendGroup('Other', otherHiers);
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
   document.getElementById('pc-hier-picker').addEventListener('change', function() {
