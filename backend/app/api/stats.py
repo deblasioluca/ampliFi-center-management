@@ -287,6 +287,34 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
     }
 
 
+@router.get("/coareas")
+def list_coareas(db: Session = Depends(get_db)) -> dict:
+    """Distinct CO Area values across active legacy cost centers.
+
+    Used by pickers (e.g. the Cluster Explorer) so users don't have to
+    remember exact coarea codes. Returns coareas with the count of CCs
+    in each so a UI can show "1000 (130024 CCs)".
+
+    Sorted alphabetically; NULL coareas are excluded since they're not
+    selectable in the picker anyway.
+    """
+    rows = db.execute(
+        select(
+            LegacyCostCenter.coarea,
+            func.count(LegacyCostCenter.id),
+        )
+        .where(
+            LegacyCostCenter.is_active.is_(True),
+            LegacyCostCenter.coarea.is_not(None),
+        )
+        .group_by(LegacyCostCenter.coarea)
+        .order_by(LegacyCostCenter.coarea)
+    ).all()
+    return {
+        "items": [{"coarea": r[0], "cc_count": int(r[1])} for r in rows],
+    }
+
+
 @router.get("/housekeeping-summary")
 def housekeeping_summary(db: Session = Depends(get_db)) -> dict:
     """Aggregated housekeeping data for analytics charts."""
