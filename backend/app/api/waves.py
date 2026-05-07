@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
+import threading
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +29,8 @@ from app.models.core import (
     WaveHierarchyScope,
     WaveTemplate,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -1544,6 +1548,64 @@ class V2AnalysisParams(BaseModel):
     excluded_scopes: list[int] | None = None
 
 
+def _run_v2_in_thread(
+    run_id: int,
+    wave_id: int | None,
+    config_id: int,
+    user_id: int,
+    *,
+    mode: str,
+    id_config: dict | None,
+) -> None:
+    """Daemon-thread runner for the V2 CEMA migration pipeline.
+
+    Mirrors :func:`app.api.runs._run_global_in_thread` (the V1 dispatch
+    helper) so the V2 endpoint can return immediately while the long
+    pipeline runs in the background. Without this the request handler
+    blocked for the full duration of the analysis (minutes on real
+    data), the frontend had no progress to show, and a request timeout
+    would leave the run in 'running' status with no way to recover.
+
+    The same trade-offs apply: if the API process restarts mid-run the
+    thread dies and the row is left in 'running' — no different from
+    the prior synchronous behaviour. Operators who need durability
+    should switch to the Celery dispatch path
+    (``app.workers.tasks.run_v2_analysis``) which is already wired up
+    but unused in single-process deployments.
+    """
+    from app.infra.db.session import SessionLocal
+    from app.services.analysis_v2 import execute_v2_analysis_for_run
+
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run_id)
+        if not run:
+            log.warning("v2_run_thread.not_found run_id=%s", run_id)
+            return
+        execute_v2_analysis_for_run(
+            run=run,
+            wave_id=wave_id,
+            config_id=config_id,
+            mode=mode,
+            id_config=id_config,
+            db=db,
+        )
+    except Exception:
+        log.exception("v2_run_thread.failed run_id=%s", run_id)
+        # Mark the run as failed so the UI can surface the error
+        # instead of leaving it stuck in 'running'.
+        try:
+            run = db.get(AnalysisRun, run_id)
+            if run and run.status not in ("completed", "cancelled"):
+                run.status = "failed"
+                run.finished_at = datetime.now(UTC)
+                db.commit()
+        except Exception:
+            log.exception("v2_run_thread.failed_to_mark_failed run_id=%s", run_id)
+    finally:
+        db.close()
+
+
 @router.post("/{wave_id}/analyse-v2")
 def run_v2_analysis_endpoint(
     wave_id: int,
@@ -1551,8 +1613,15 @@ def run_v2_analysis_endpoint(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
-    """Run V2 CEMA migration decision tree on wave's cost centers."""
-    from app.services.analysis_v2 import V2_DEFAULT_CONFIG, run_v2_analysis
+    """Queue a V2 CEMA migration run on the wave's cost centers.
+
+    Returns immediately with the run id; the actual pipeline executes
+    in a daemon thread. Frontend polls ``GET /api/runs/{id}`` every 2s
+    to show progress and re-renders when ``status`` becomes terminal.
+    Replaces the previous synchronous behaviour where the request hung
+    for the full duration of the pipeline.
+    """
+    from app.services.analysis_v2 import V2_DEFAULT_CONFIG
 
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -1594,24 +1663,75 @@ def run_v2_analysis_endpoint(
         db.flush()
         config_id = ac.id
 
+    if config_id is None:
+        # Fall back to the latest persisted V2 config so callers don't
+        # have to re-specify pc_approach_rules every time.
+        from app.models.core import AnalysisConfig
+
+        latest = db.execute(
+            select(AnalysisConfig)
+            .where(AnalysisConfig.code == "cema_migration_v2")
+            .order_by(AnalysisConfig.version.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if latest:
+            config_id = latest.id
+        else:
+            # No persisted config — create a default one inline so the
+            # FK on AnalysisRun.config_id can be satisfied.
+            ac = AnalysisConfig(
+                code="cema_migration_v2",
+                version=1,
+                name="V2 CEMA Migration (default)",
+                config=V2_DEFAULT_CONFIG,
+                created_by=user.id,
+            )
+            db.add(ac)
+            db.flush()
+            config_id = ac.id
+
     sim_mode = params.mode if params else "simulation"
     sim_label = params.label if params else None
     excl = [str(x) for x in (params.excluded_scopes or [])] if params else None
+    id_config = {
+        "pc_start": params.pc_start if params else 137,
+        "cc_start": params.cc_start if params else 1,
+    }
 
-    try:
-        result = run_v2_analysis(
-            wave_id,
-            config_id,
-            db,
-            user.id,
-            mode=sim_mode,
-            label=sim_label,
-            excluded_scopes=excl,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"V2 analysis failed: {e}") from None
+    # Create the run row in 'queued' status so the UI immediately sees
+    # something to render and so the per-CC progress fields exist
+    # before the thread starts updating them.
+    run = AnalysisRun(
+        wave_id=wave_id,
+        mode=sim_mode,
+        status="queued",
+        engine_version="v2.cema_migration",
+        config_id=config_id,
+        label=sim_label,
+        excluded_scopes=excl,
+        triggered_by=user.id,
+        started_at=datetime.now(UTC),
+        total_centers=0,
+        completed_centers=0,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
 
-    return result
+    thread = threading.Thread(
+        target=_run_v2_in_thread,
+        args=(run.id, wave_id, config_id, user.id),
+        kwargs={"mode": sim_mode, "id_config": id_config},
+        daemon=True,
+        name=f"v2_run_{run.id}",
+    )
+    thread.start()
+
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "started_at": str(run.started_at) if run.started_at else None,
+    }
 
 
 @router.get("/{wave_id}/runs/{run_id}/export-v2")

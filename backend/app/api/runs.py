@@ -506,10 +506,19 @@ def proposal_llm_opinion(
 @router.get("/{run_id}/data-browser")
 def data_browser(
     run_id: int,
+    include_hierarchies: bool = False,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
-    """Combined data browser: centers + balances + results."""
+    """Combined data browser: centers + balances + results.
+
+    The ``include_hierarchies`` query param defaults to False because
+    loading every active hierarchy with all its nodes and leaves is
+    expensive (each hierarchy can have thousands of leaves) and the
+    tabular view doesn't need it. The frontend's "Hierarchical" tab
+    re-fetches with ``?include_hierarchies=true`` only when the user
+    explicitly switches to that view.
+    """
     from app.models.core import (
         Balance,
         Hierarchy,
@@ -570,37 +579,43 @@ def data_browser(
         if target and p.legacy_cc_id in cc_map:
             pc_target_groups.setdefault(target, []).append(cc_map[p.legacy_cc_id].cctr)
 
-    # Hierarchy tree for hierarchical view
-    hierarchies = db.execute(select(Hierarchy).where(Hierarchy.is_active.is_(True))).scalars().all()
-    hier_trees = []
-    for h in hierarchies:
-        nodes = (
-            db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
-            .scalars()
-            .all()
+    # Hierarchy tree for hierarchical view — gated behind a query param
+    # because loading every active hierarchy with all nodes + leaves is
+    # the expensive part of this endpoint. Skipped by default; the
+    # frontend's "Hierarchical" tab re-fetches with the flag set.
+    hier_trees: list[dict] = []
+    if include_hierarchies:
+        hierarchies = (
+            db.execute(select(Hierarchy).where(Hierarchy.is_active.is_(True))).scalars().all()
         )
-        leaves = (
-            db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
-            .scalars()
-            .all()
-        )
-        hier_trees.append(
-            {
-                "id": h.id,
-                "setname": h.setname,
-                "setclass": h.setclass,
-                "label": _hier_display_label(h),
-                "description": h.description,
-                "coarea": h.coarea,
-                "nodes": [
-                    {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
-                    for n in nodes
-                ],
-                "leaves": [
-                    {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
-                ],
-            }
-        )
+        for h in hierarchies:
+            nodes = (
+                db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
+                .scalars()
+                .all()
+            )
+            leaves = (
+                db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
+                .scalars()
+                .all()
+            )
+            hier_trees.append(
+                {
+                    "id": h.id,
+                    "setname": h.setname,
+                    "setclass": h.setclass,
+                    "label": _hier_display_label(h),
+                    "description": h.description,
+                    "coarea": h.coarea,
+                    "nodes": [
+                        {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
+                        for n in nodes
+                    ],
+                    "leaves": [
+                        {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
+                    ],
+                }
+            )
 
     items = []
     for p in proposals:

@@ -459,6 +459,29 @@ def _execute_v2_pipeline(
             db.flush()
             log.info("v2.progress: %d/%d", i + 1, total)
 
+        # Update progress + check for cancellation every 10 centers.
+        # Mirrors the V1 loop in execute_analysis_for_run so the
+        # frontend's progress poller (2s interval against the run row)
+        # gets a steady stream of updates and the user can cancel via
+        # status=cancelled set on the run row.
+        run.completed_centers = i + 1
+        if (i + 1) % 10 == 0:
+            db.flush()
+            db.refresh(run)
+            if run.status == "cancelled":
+                log.info("v2.cancelled run_id=%s at %d/%d", run.id, i + 1, total)
+                run.finished_at = datetime.now(UTC)
+                db.commit()
+                return {
+                    "run_id": run.id,
+                    "wave_id": wave_id,
+                    "mode": mode,
+                    "label": run.label,
+                    "total_centers": total,
+                    "completed_centers": i + 1,
+                    "status": "cancelled",
+                }
+
     db.flush()
 
     # Assign IDs — temp (CT/PT) for simulation, real (P/C) for activated

@@ -46,14 +46,22 @@ import Layout from '../../components/layout/Layout.astro';
       </select>
     </div>
     <div class="flex items-center gap-1">
-      <label class="text-xs text-gray-500 whitespace-nowrap">Config:</label>
-      <select id="sel-config" class="input text-xs py-1 w-40" title="Analysis configuration">
+      <label class="text-xs text-gray-500 whitespace-nowrap" title="Used only when starting a new run with the button on the right. Existing runs already have their own config baked in — selecting a different Config here does NOT re-render the displayed numbers.">Config (for new runs):</label>
+      <select id="sel-config" class="input text-xs py-1 w-40" title="Configuration used when you click 'Run Global Analysis'. Doesn't affect already-saved runs shown below.">
         <option value="">Default Config</option>
       </select>
     </div>
     <div class="flex items-center gap-1">
+      <label class="text-xs text-gray-500 whitespace-nowrap" title="Filter the Run dropdown by engine version. The dashboard's KPI cards use V1 outcome vocabulary (KEEP/RETIRE/MERGE_MAP/REDESIGN), so V1 is the default. V2 runs use a different vocabulary (MIGRATE_1_1, etc.) and the visuals will show 'OTHER' for them.">Engine:</label>
+      <select id="sel-engine-filter" class="input text-xs py-1 w-20" title="Filter runs by engine version">
+        <option value="v1" selected>V1</option>
+        <option value="v2">V2</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-1">
       <label class="text-xs text-gray-500 whitespace-nowrap">Run:</label>
-      <select id="sel-run" class="input text-xs py-1 w-48">
+      <select id="sel-run" class="input text-xs py-1 w-72">
         <option value="">Select Run...</option>
       </select>
     </div>
@@ -553,6 +561,14 @@ import Layout from '../../components/layout/Layout.astro';
     if (this.value) handleWaveSelect(this.value);
   });
 
+  // Engine filter: when changed, re-trigger handleWaveSelect on the
+  // current scope so the Run dropdown is repopulated with the new
+  // filter applied. Default V1 was set in the HTML.
+  document.getElementById('sel-engine-filter').addEventListener('change', function() {
+    var scope = document.getElementById('sel-wave').value;
+    if (scope) handleWaveSelect(scope);
+  });
+
   function handleWaveSelect(val) {
     // Re-target the action button(s) based on the chosen scope.
     // /api/runs/global ignores wave scope by design — running it while
@@ -585,14 +601,47 @@ import Layout from '../../components/layout/Layout.astro';
     }
   }
 
+  // Build a richer label for a run option so users can pick the right
+  // one without guessing. Format:
+  //    "[V2] Run #14 — 2026-05-06 06:09 (cfg #5, 127 centers)"
+  // Ordered so the engine tag is the first thing visible — matches the
+  // most common disambiguation question ('which engine produced this?').
+  function _formatRunLabel(r) {
+    var parts = [];
+    var engine = (r.engine_version || '').toLowerCase();
+    var engineLabel = engine.indexOf('v2') >= 0 ? 'V2' : 'V1';
+    parts.push('[' + engineLabel + ']');
+    parts.push('Run #' + r.id);
+    if (r.started_at) {
+      // Trim seconds + tz for compactness — '2026-05-06T06:09:17+02:00' → '2026-05-06 06:09'
+      var ts = String(r.started_at).slice(0, 16).replace('T', ' ');
+      parts.push('— ' + ts);
+    }
+    var meta = [];
+    if (r.config_id != null) meta.push('cfg #' + r.config_id);
+    if (r.kpis && r.kpis.total_centers != null) meta.push(r.kpis.total_centers + ' centers');
+    if (meta.length) parts.push('(' + meta.join(', ') + ')');
+    return parts.join(' ');
+  }
+
+  function _engineMatchesFilter(r, filterVal) {
+    if (!filterVal) return true;  // 'All'
+    var engine = (r.engine_version || '').toLowerCase();
+    if (filterVal === 'v2') return engine.indexOf('v2') >= 0;
+    return engine.indexOf('v2') < 0;  // V1 = anything not V2
+  }
+
   function loadGlobalRuns(preferredRunId) {
+    var filterVal = document.getElementById('sel-engine-filter').value;
     fetch('/api/runs/global/list?size=50', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var sel = document.getElementById('sel-run');
       sel.innerHTML = '<option value="">Select Run...</option>';
-      (d.items || []).filter(function(r) { return r.status === 'completed'; }).forEach(function(r) {
+      (d.items || []).filter(function(r) {
+        return r.status === 'completed' && _engineMatchesFilter(r, filterVal);
+      }).forEach(function(r) {
         var opt = document.createElement('option');
         opt.value = r.id;
-        opt.textContent = 'Global Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
+        opt.textContent = _formatRunLabel(r);
         sel.appendChild(opt);
       });
       // If the caller asked for a specific run (typically the one that
@@ -616,13 +665,16 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   function loadWaveRuns(waveId) {
+    var filterVal = document.getElementById('sel-engine-filter').value;
     fetch('/api/waves/' + waveId + '/runs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var sel = document.getElementById('sel-run');
       sel.innerHTML = '<option value="">Select Run...</option>';
-      (d.items || []).filter(function(r) { return r.status === 'completed'; }).forEach(function(r) {
+      (d.items || []).filter(function(r) {
+        return r.status === 'completed' && _engineMatchesFilter(r, filterVal);
+      }).forEach(function(r) {
         var opt = document.createElement('option');
         opt.value = r.id;
-        opt.textContent = 'Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
+        opt.textContent = _formatRunLabel(r);
         sel.appendChild(opt);
       });
       if (sel.options.length > 1) { sel.selectedIndex = 1; loadRunVisuals(sel.value, waveId); }
@@ -1372,7 +1424,19 @@ import Layout from '../../components/layout/Layout.astro';
 
   function loadDataBrowser(runId) {
     var el = document.getElementById('data-browser-content');
-    el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
+    // More informative loading state — the response can take a while
+    // on slower hardware (e.g. a Raspberry Pi) because the endpoint
+    // computes balance aggregations across the whole CC universe.
+    el.innerHTML = '<div class="text-gray-500 text-sm py-4">' +
+      '<div class="flex items-center gap-2">' +
+      '<svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
+      '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
+      '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>' +
+      '<span>Loading centers + balance history… this may take 5–30 seconds depending on data volume.</span>' +
+      '</div></div>';
+    // Default fetch: skip the hierarchies block (the expensive part).
+    // Hierarchies are re-fetched only when the user switches to the
+    // Hierarchical view tab — see switchBrowserView below.
     fetch('/api/runs/' + runId + '/data-browser', { headers: authHdr })
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1391,6 +1455,10 @@ import Layout from '../../components/layout/Layout.astro';
       });
   }
 
+  // Track whether we've already fetched hierarchies for the current
+  // run so we don't refetch each time the user toggles tabs.
+  var browserHierarchiesLoadedFor = null;
+
   window.switchBrowserView = function(view) {
     browserView = view;
     ['tabular', 'hierarchy', 'mapping'].forEach(function(v) {
@@ -1401,6 +1469,26 @@ import Layout from '../../components/layout/Layout.astro';
           : 'btn-sm bg-gray-200 text-gray-700 text-xs';
       }
     });
+    // Hierarchical view needs the hierarchies payload that we don't
+    // load by default. Fetch it on demand the first time the user
+    // switches to that tab for a given run.
+    if (view === 'hierarchy' && browserData && browserData.run_id != null
+        && browserHierarchiesLoadedFor !== browserData.run_id
+        && (!browserData.hierarchies || !browserData.hierarchies.length)) {
+      var el = document.getElementById('data-browser-content');
+      el.innerHTML = '<span class="text-gray-500 text-sm">Loading hierarchies…</span>';
+      fetch('/api/runs/' + browserData.run_id + '/data-browser?include_hierarchies=true', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          browserData = d;
+          browserHierarchiesLoadedFor = d.run_id;
+          renderBrowser();
+        })
+        .catch(function(err) {
+          el.innerHTML = '<span class="text-red-500">Error loading hierarchies: ' + esc(err.message) + '</span>';
+        });
+      return;
+    }
     renderBrowser();
   };
 

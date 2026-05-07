@@ -114,6 +114,34 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
         <div class="mb-3" id="sim-v2-hier-section">
           <label class="block text-xs font-semibold mb-2">PC Approach — Hierarchy Node Selection (V2 only)</label>
+          <details class="bg-blue-50 border border-blue-200 rounded mb-2 text-xs">
+            <summary class="cursor-pointer px-3 py-1.5 font-medium text-blue-900 select-none">
+              ℹ️ What does PC Approach do?
+            </summary>
+            <div class="px-3 pb-2 pt-1 text-blue-900 space-y-1.5 leading-relaxed">
+              <p>
+                The V2 CEMA migration engine decides for each cost center
+                whether to map its postings to a single profit center
+                (<strong>1:1</strong>, the default and cleanest case) or to
+                multiple profit centers based on a split key
+                (<strong>1:n</strong>, used for shared services and group
+                functions where one cost center logically serves many
+                business units).
+              </p>
+              <p>
+                Pick one or more <strong>nodes</strong> from a Profit Center
+                hierarchy below to flag every CC under those nodes as 1:n.
+                Common picks: <em>Group Functions</em>, <em>Asset
+                Management</em>, <em>Corporate Real Estate</em>. Centers
+                outside the selected nodes default to 1:1.
+              </p>
+              <p>
+                If the dropdown below is empty, you don't have any Profit
+                Center hierarchies imported yet — go to <em>Data → PC</em>
+                and import one with <code>setclass = 0104</code>.
+              </p>
+            </div>
+          </details>
           <p class="text-xs text-gray-500 mb-2">Select hierarchy nodes for 1:n PC treatment (e.g., Group Functions, Asset Management). All other centers default to 1:1.</p>
           <div class="flex gap-2 mb-2">
             <select id="sim-hier-select" class="input text-sm w-64">
@@ -129,6 +157,20 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="flex justify-end gap-2">
           <button id="btn-cancel-sim" class="btn-secondary text-sm">Cancel</button>
           <button id="btn-confirm-sim" class="btn-amplifi text-sm">Run Simulation</button>
+        </div>
+      </div>
+
+      <!-- Progress strip for in-flight V2 (and V1) simulations.
+           Shown while a queued/running run is active, hidden when
+           terminal. Mirrors the strip used on the global Analytics
+           Dashboard so both flows feel consistent. -->
+      <div id="sim-progress-strip" class="hidden mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded">
+        <div class="flex items-center justify-between mb-1">
+          <span id="sim-progress-label" class="text-xs font-medium text-blue-900">Queued…</span>
+          <button id="btn-sim-cancel-run" class="text-xs text-amber-700 hover:underline" type="button">Cancel</button>
+        </div>
+        <div class="h-1.5 bg-blue-100 rounded overflow-hidden">
+          <div id="sim-progress-bar" class="h-full bg-blue-500 transition-all" style="width: 0%"></div>
         </div>
       </div>
 
@@ -1188,9 +1230,15 @@ import Layout from '../../components/layout/Layout.astro';
           var rowClass = isSelected
             ? 'p-3 bg-blue-50 border-l-4 border-blue-500 cursor-pointer'
             : 'p-3 hover:bg-gray-50 cursor-pointer';
+          // Use data-* attributes everywhere instead of inline onclick.
+          // Inline onclick="..." breaks when string args contain double
+          // quotes (e.g. JSON.stringify(label) inserts a literal `"`
+          // which truncates the surrounding HTML attribute and silently
+          // mangles the click handler — that's the bug from PR #75 that
+          // made Delete buttons appear inert).
           html += '<div class="' + rowClass + '" data-run-id="' + r.id + '">';
           html +=   '<div class="flex items-center justify-between">';
-          html +=     '<div class="flex-1 cursor-pointer" onclick="viewSimRun(' + r.id + ')">';
+          html +=     '<div class="flex-1 cursor-pointer" data-action="view" data-run-id="' + r.id + '">';
           html +=       '<span class="font-medium">' + esc(r.label || 'Run #' + r.id) + '</span>';
           html +=       ' <span class="px-2 py-0.5 rounded text-xs ' + engineColor + '">' + engineLabel + '</span>';
           html +=       ' <span class="px-2 py-0.5 rounded text-xs ' + modeColor + '">' + esc(r.mode) + '</span>';
@@ -1200,12 +1248,14 @@ import Layout from '../../components/layout/Layout.astro';
           html +=       '<span class="text-xs text-gray-400">' + (r.started_at || '') + '</span>';
           // Delete button — only allowed on non-activated runs (server enforces too)
           if (r.mode !== 'activated') {
-            html +=     '<button class="btn-sm text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded border border-red-200" ';
-            html +=       'onclick="deleteSimRun(event, ' + r.id + ', ' + JSON.stringify(r.label || ('Run #' + r.id)) + ')">Delete</button>';
+            // data-label is HTML-escaped via esc(); the click handler
+            // reads it via dataset.label — no inline-string injection.
+            html +=     '<button type="button" class="btn-sm text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded border border-red-200" ';
+            html +=       'data-action="delete" data-run-id="' + r.id + '" data-label="' + esc(r.label || ('Run #' + r.id)) + '">Delete</button>';
           }
           html +=     '</div>';
           html +=   '</div>';
-          html +=   '<div class="grid grid-cols-3 gap-2 mt-2 text-xs cursor-pointer" onclick="viewSimRun(' + r.id + ')">';
+          html +=   '<div class="grid grid-cols-3 gap-2 mt-2 text-xs cursor-pointer" data-action="view" data-run-id="' + r.id + '">';
           html +=     '<div title="Number of cost/profit centers evaluated by this run"><span class="text-gray-500">Centers Analyzed:</span> <strong>' + fmt(r.total_centers) + '</strong></div>';
           html +=     '<div><span class="text-gray-500">Config:</span> #' + r.config_id + '</div>';
           if (r.excluded_scopes && r.excluded_scopes.length) {
@@ -1216,6 +1266,23 @@ import Layout from '../../components/layout/Layout.astro';
         });
         html += '</div></details>';
         el.innerHTML = html;
+
+        // Wire up data-action="view" / data-action="delete" via delegated
+        // listeners. We bind them here (after innerHTML) instead of using
+        // inline onclick attributes so quoting in run labels can never
+        // break HTML parsing — see comment above on the data-* attrs.
+        el.querySelectorAll('[data-action="view"]').forEach(function(node) {
+          node.addEventListener('click', function() {
+            var rid = parseInt(node.dataset.runId, 10);
+            if (rid) viewSimRun(rid);
+          });
+        });
+        el.querySelectorAll('[data-action="delete"]').forEach(function(node) {
+          node.addEventListener('click', function(evt) {
+            var rid = parseInt(node.dataset.runId, 10);
+            if (rid) deleteSimRun(evt, rid, node.dataset.label || ('Run #' + rid));
+          });
+        });
       });
   }
 
@@ -1430,13 +1497,32 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('btn-run-sim').addEventListener('click', function() {
     var panel = document.getElementById('sim-config-panel');
     panel.classList.toggle('hidden');
-    // Load available hierarchies for node picker
-    fetch('/api/waves/hierarchy-nodes', { headers: authHdr })
+    // Load available hierarchies for node picker. Filter to Profit
+    // Center hierarchies only (setclass=0104) — the dropdown is for
+    // PC approach, so showing CC hierarchies here would be confusing
+    // (and selecting one would produce nonsense in the V2 engine).
+    fetch('/api/waves/hierarchy-nodes?setclass=0104', { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var sel = document.getElementById('sim-hier-select');
+        var hiers = d.hierarchies || [];
+        if (!hiers.length) {
+          // Empty state: explain why and how to fix, instead of leaving
+          // an inert dropdown that looks broken.
+          sel.innerHTML = '<option value="">(no Profit Center hierarchies imported)</option>';
+          sel.disabled = true;
+          var tree = document.getElementById('sim-hier-tree');
+          if (tree) {
+            tree.innerHTML = '<p class="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">' +
+              'No PC hierarchies found. To use 1:n PC treatment, import a Profit Center hierarchy ' +
+              '(setclass=0104) under <strong>Data → PC</strong>. Without one, all centers will use ' +
+              '1:1 PC mapping by default.</p>';
+          }
+          return;
+        }
+        sel.disabled = false;
         sel.innerHTML = '<option value="">Select hierarchy...</option>';
-        (d.hierarchies || []).forEach(function(h) {
+        hiers.forEach(function(h) {
           sel.innerHTML += '<option value="' + h.id + '">' + esc(h.label || h.setname) + ' (' + h.setclass + ')</option>';
         });
       });
@@ -1527,6 +1613,101 @@ import Layout from '../../components/layout/Layout.astro';
   });
 
   // Confirm and run simulation
+  // Polling state for the in-flight simulation run. Module-scoped so
+  // the cancel button can talk to it.
+  var simPollTimer = null;
+  var simPollRunId = null;
+
+  function _showSimProgress() {
+    document.getElementById('sim-progress-strip').classList.remove('hidden');
+  }
+  function _hideSimProgress(delayMs) {
+    var el = document.getElementById('sim-progress-strip');
+    if (delayMs) {
+      setTimeout(function() { el.classList.add('hidden'); }, delayMs);
+    } else {
+      el.classList.add('hidden');
+    }
+  }
+  function _renderSimProgress(run) {
+    var label = document.getElementById('sim-progress-label');
+    var bar = document.getElementById('sim-progress-bar');
+    var total = run.total_centers || 0;
+    var done = run.completed_centers || 0;
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    var statusText;
+    if (run.status === 'queued') {
+      statusText = 'Queued — waiting for worker…';
+    } else if (run.status === 'running') {
+      statusText = total
+        ? 'Running: ' + done + ' / ' + total + ' centers (' + pct + '%)'
+        : 'Running: collecting centers…';
+    } else if (run.status === 'completed') {
+      statusText = '✓ Completed: ' + done + ' / ' + total + ' centers';
+    } else if (run.status === 'cancelled') {
+      statusText = 'Cancelled at ' + done + ' / ' + total;
+    } else if (run.status === 'failed') {
+      statusText = '✗ Failed at ' + done + ' / ' + total + ' — see backend log';
+    } else {
+      statusText = run.status;
+    }
+    label.textContent = statusText;
+    bar.style.width = (run.status === 'queued' ? 0 : pct) + '%';
+    if (run.status === 'failed' || run.status === 'cancelled') {
+      bar.classList.remove('bg-blue-500');
+      bar.classList.add(run.status === 'failed' ? 'bg-red-500' : 'bg-amber-500');
+    } else {
+      bar.classList.add('bg-blue-500');
+      bar.classList.remove('bg-red-500', 'bg-amber-500');
+    }
+  }
+  function _stopSimPolling() {
+    if (simPollTimer) {
+      clearInterval(simPollTimer);
+      simPollTimer = null;
+    }
+    simPollRunId = null;
+  }
+  function _pollSimRun(runId) {
+    simPollRunId = runId;
+    _showSimProgress();
+    var poll = function() {
+      fetch('/api/runs/' + runId, { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(run) {
+          if (simPollRunId !== runId) return;  // user moved on
+          _renderSimProgress(run);
+          if (run.status === 'completed' || run.status === 'cancelled' || run.status === 'failed') {
+            _stopSimPolling();
+            _hideSimProgress(4000);  // leave the final state visible briefly
+            loadSimRuns();
+            if (run.status === 'completed') {
+              // Auto-open the just-completed run so the user sees the result.
+              window.viewSimRun(runId);
+            }
+          }
+        })
+        .catch(function() {
+          // Transient errors are fine — keep polling.
+        });
+    };
+    poll();
+    simPollTimer = setInterval(poll, 2000);
+  }
+
+  document.getElementById('btn-sim-cancel-run').addEventListener('click', async function() {
+    if (!simPollRunId) return;
+    var ok = await uiConfirm({
+      title: 'Cancel this simulation?',
+      message: 'Already-processed centers stay in the database; the run is marked as cancelled and you can delete it afterwards.',
+      okLabel: 'Cancel run',
+      cancelLabel: 'Keep running',
+    });
+    if (!ok) return;
+    fetch('/api/runs/' + simPollRunId + '/cancel', { method: 'POST', headers: authHdr })
+      .catch(function() { /* swallow — the next poll surfaces the result */ });
+  });
+
   document.getElementById('btn-confirm-sim').addEventListener('click', async function() {
     var engine = document.getElementById('sim-engine').value;
     var label = document.getElementById('sim-label').value || null;
@@ -1537,7 +1718,7 @@ import Layout from '../../components/layout/Layout.astro';
     }
 
     this.disabled = true;
-    this.textContent = 'Running...';
+    this.textContent = 'Dispatching…';
     try {
       var body = {
         mode: 'simulation',
@@ -1572,7 +1753,16 @@ import Layout from '../../components/layout/Layout.astro';
       var result = await res.json();
       document.getElementById('sim-config-panel').classList.add('hidden');
       loadSimRuns();
-      window.viewSimRun(result.run_id);
+
+      // V2 returns immediately with a queued run_id (PR #81's async
+      // pattern). V1's wave-scoped /analyse is still synchronous and
+      // returns the completed result, in which case there's no point
+      // polling — just open the result.
+      if (engine === 'v2' && result.run_id && result.status === 'queued') {
+        _pollSimRun(result.run_id);
+      } else if (result.run_id) {
+        window.viewSimRun(result.run_id);
+      }
     } catch(e) {
       uiAlert('Error: ' + e.message);
     } finally {
