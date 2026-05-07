@@ -591,6 +591,11 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('sel-engine-filter').addEventListener('change', function() {
     var scope = document.getElementById('sel-wave').value;
     if (scope) handleWaveSelect(scope);
+    // PR #90 — also re-filter the Config dropdown, so picking V2
+    // hides V1 configs and vice versa. Without this, the operator's
+    // mental model ("Engine + Config picks the new run") breaks
+    // because the Config dropdown shows everything regardless.
+    loadConfigs();
   });
 
   function handleWaveSelect(val) {
@@ -763,16 +768,20 @@ import Layout from '../../components/layout/Layout.astro';
     // Data Browser
     loadDataBrowser(runId);
 
-    // Proposals for all charts
-    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr })
+    // PR #90 — charts now use the new server-side /aggregates endpoint
+    // instead of fetching up to 5000 proposals and aggregating client-
+    // side. Operator report: "Outcome distribution only shows 5k
+    // centers" — the donut showed 5,000 KEEP while KPI strip correctly
+    // showed 18,490 because the proposals fetch was capped. Aggregates
+    // are computed via SQL GROUP BY so the response is small and
+    // accurate at any run size.
+    fetch('/api/runs/' + runId + '/aggregates', { headers: authHdr })
       .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var items = d.items || [];
-        if (!items.length) {
-          // Diagnostic: if the run has KPIs showing centers analysed but
-          // no proposals come back, that's an inconsistent state — the
-          // run probably failed to commit proposals. Surface it clearly
-          // so the user doesn't think the dashboard is broken.
+      .then(function(agg) {
+        var total = agg.total_proposals || 0;
+        if (total === 0) {
+          // Same diagnostic as before — KPI shows N centers but
+          // aggregates is empty → run probably failed to commit.
           fetch('/api/runs/' + runId, { headers: authHdr })
             .then(function(r) { return r.json(); })
             .then(function(run) {
@@ -807,64 +816,56 @@ import Layout from '../../components/layout/Layout.astro';
         }
 
         // -- Outcome Distribution (CSS Donut + Legend) --
-        var outcomeCounts = {};
-        items.forEach(function(p) {
-          var o = p.cleansing_outcome || 'OTHER';
-          outcomeCounts[o] = (outcomeCounts[o] || 0) + 1;
-        });
-        drawDonutCSS('chart-outcome-donut', outcomeCounts, COLORS);
+        drawDonutCSS('chart-outcome-donut', agg.outcome_counts || {}, COLORS);
 
         // -- Target Bar (HTML bars) --
-        var targetByOutcome = {};
-        items.forEach(function(p) {
-          var o = p.cleansing_outcome || 'OTHER';
-          var t = p.target_object || 'NONE';
-          if (!targetByOutcome[o]) targetByOutcome[o] = {};
-          targetByOutcome[o][t] = (targetByOutcome[o][t] || 0) + 1;
-        });
-        drawTargetBars('chart-target-bar', targetByOutcome, TARGET_COLORS);
+        drawTargetBars('chart-target-bar', agg.target_per_outcome || {}, TARGET_COLORS);
 
         // -- Entity Heatmap --
+        // Server returns an array of {ccode, name, outcomes, total}
+        // sorted by total desc. Convert to the {ccode → outcomes}
+        // shape the existing renderer expects, but include name in
+        // the label.
         var entityOutcome = {};
-        items.forEach(function(p) {
-          var e = p.ccode || 'Unknown';
-          var o = p.cleansing_outcome || 'OTHER';
-          if (!entityOutcome[e]) entityOutcome[e] = {};
-          entityOutcome[e][o] = (entityOutcome[e][o] || 0) + 1;
+        (agg.outcome_by_entity || []).forEach(function(e) {
+          var label = e.ccode + (e.name ? ' ' + e.name : '');
+          entityOutcome[label] = e.outcomes || {};
         });
         drawHeatmap('chart-entity-heatmap', entityOutcome, ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']);
 
         // -- Sankey (flow bars) --
-        var flows = {};
-        items.forEach(function(p) {
-          var src = p.cleansing_outcome || 'OTHER';
-          var tgt = p.target_object || 'NONE';
-          var key = src + ' → ' + tgt;
-          flows[key] = (flows[key] || 0) + 1;
-        });
-        drawSankey('chart-sankey', flows);
+        drawSankey('chart-sankey', agg.outcome_target_flow || {});
 
         // -- Balance vs Activity --
-        drawBalanceActivity('chart-balance-activity', items);
+        // Server returns per-outcome avg_postings + avg_tc_amt +
+        // n_centers. Pass through to the renderer in the shape it
+        // expects — synthesised "items" with one entry per outcome
+        // group so existing draw code doesn't need to change.
+        var balActivityRows = [];
+        Object.keys(agg.balance_activity || {}).forEach(function(o) {
+          var stats = agg.balance_activity[o];
+          balActivityRows.push({
+            cleansing_outcome: o,
+            avg_postings: stats.avg_postings,
+            avg_tc_amt: stats.avg_tc_amt,
+            n_centers: stats.n_centers,
+          });
+        });
+        drawBalanceActivityFromAggregates('chart-balance-activity', balActivityRows);
 
         // -- ML Confidence Distribution --
-        var confs = items.filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
-        if (confs.length === 0 && items.length > 0) {
-          // We have proposals but none of them have ML confidence. Most
-          // likely the pipeline didn't include the ml.classify_outcome
-          // routine, or the ML model failed to load and the engine fell
-          // back to rule-only. Either way, point the user at the cause.
+        if ((agg.confidence_count || 0) === 0 && total > 0) {
           document.getElementById('chart-ml-hist').innerHTML =
-            '<span class="text-sm text-amber-700">No ML confidence values on this run\'s ' + items.length +
+            '<span class="text-sm text-amber-700">No ML confidence values on this run\'s ' + total +
             ' proposals. Likely cause: the analysis config doesn\'t include the <code>ml.classify_outcome</code> ' +
             'routine, or the ML model failed to load. Check the run\'s pipeline config.</span>';
         } else {
-          drawConfidenceHist('chart-ml-hist', confs);
+          drawConfidenceHistFromBins('chart-ml-hist', agg.confidence_histogram || []);
         }
       })
       .catch(function(err) {
-        console.error('Proposals fetch error:', err);
-        document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-red-500">Error loading proposals: ' + err.message + '</span>';
+        console.error('Aggregates fetch error:', err);
+        document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-red-500">Error loading aggregates: ' + err.message + '</span>';
       });
   }
 
@@ -1003,6 +1004,58 @@ import Layout from '../../components/layout/Layout.astro';
         '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">avg ' + avg + ' postings</span></div></div>';
     });
     html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // PR #90 — variant of drawBalanceActivity that takes the
+  // pre-aggregated rows from /aggregates instead of raw proposals.
+  // Each row: {cleansing_outcome, avg_postings, avg_tc_amt, n_centers}.
+  function drawBalanceActivityFromAggregates(divId, rows) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<span class="text-sm text-gray-400">No data</span>'; return; }
+    var maxPostings = 0;
+    rows.forEach(function(r) {
+      if (r.avg_postings > maxPostings) maxPostings = r.avg_postings;
+    });
+    var html = '<div class="space-y-2">';
+    rows.forEach(function(r) {
+      var avg = Math.round(r.avg_postings);
+      var pct = maxPostings ? Math.round((r.avg_postings / maxPostings) * 100) : 0;
+      html += '<div class="flex items-center gap-2">' +
+        '<span class="w-24 text-xs font-medium text-right" style="color:' + (COLORS[r.cleansing_outcome] || '#666') + '">' + r.cleansing_outcome + ' (' + r.n_centers + ')</span>' +
+        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
+        '<div class="h-full rounded" style="width:' + pct + '%;background:' + (COLORS[r.cleansing_outcome] || '#999') + ';opacity:0.6"></div>' +
+        '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">avg ' + avg + ' postings</span></div></div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // PR #90 — variant of drawConfidenceHist that takes the 10-bin
+  // histogram array from /aggregates: [{bin, count, label}, ...].
+  function drawConfidenceHistFromBins(divId, bins) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    if (!bins.length) { el.innerHTML = '<span class="text-sm text-gray-400">No ML confidence data</span>'; return; }
+    var maxCount = 0;
+    bins.forEach(function(b) { if (b.count > maxCount) maxCount = b.count; });
+    if (maxCount === 0) { el.innerHTML = '<span class="text-sm text-gray-400">No ML confidence data</span>'; return; }
+    // Use the same SVG layout as drawConfidenceHist for visual parity
+    var w = 320, h = 120, barW = w / 10;
+    var html = '<svg viewBox="0 0 ' + w + ' ' + (h + 30) + '" class="w-full h-32" preserveAspectRatio="none">';
+    bins.forEach(function(b, i) {
+      var bh = maxCount ? (b.count / maxCount) * h : 0;
+      var x = i * barW;
+      var y = h - bh;
+      html += '<rect x="' + (x + 1) + '" y="' + y + '" width="' + (barW - 2) + '" height="' + bh + '" fill="#8b5cf6" opacity="0.7"/>';
+      if (b.count > 0) {
+        html += '<text x="' + (x + barW / 2) + '" y="' + (y - 2) + '" text-anchor="middle" font-size="9" fill="#666">' + b.count + '</text>';
+      }
+      html += '<text x="' + (x + barW / 2) + '" y="' + (h + 12) + '" text-anchor="middle" font-size="9" fill="#999">' + b.label + '</text>';
+    });
+    html += '<text x="' + (w / 2) + '" y="' + (h + 26) + '" text-anchor="middle" font-size="9" fill="#666">Confidence</text>';
+    html += '</svg>';
     el.innerHTML = html;
   }
 
@@ -1218,16 +1271,36 @@ import Layout from '../../components/layout/Layout.astro';
   var jsonHdr = Object.assign({ 'Content-Type': 'application/json' }, authHdr);
 
   function loadConfigs() {
-    fetch('/api/configs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(configs) {
+    // PR #90 — pass the currently-selected engine so the dropdown only
+    // shows configs that actually run on that engine. Without the
+    // filter, operators on Engine=V2 saw V1 configs (and vice versa)
+    // in the dropdown and got confused — picking a config and clicking
+    // Run Global Analysis just runs whatever the engine setting says,
+    // so the mismatched options were misleading.
+    var engineSel = document.getElementById('sel-engine-filter');
+    var engineVal = engineSel ? engineSel.value : '';
+    var url = '/api/configs';
+    if (engineVal) url += '?engine=' + encodeURIComponent(engineVal);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(configs) {
       // Populate dropdown
       var sel = document.getElementById('sel-config');
+      var prev = sel.value;
       sel.innerHTML = '<option value="">Default Config</option>';
       configs.forEach(function(c) {
         var opt = document.createElement('option');
         opt.value = c.id;
-        opt.textContent = c.name + ' (v' + c.version + ')';
+        // Suffix is now ENGINE not config-revision-version. The
+        // (v1)/(v2) suffix on the dropdown matches the engine the
+        // config will actually run on, which is what operators expect.
+        var engine = c.engine_version || 'v1';
+        opt.textContent = c.name + ' (' + engine + ')';
         sel.appendChild(opt);
       });
+      // Restore prior selection if it's still in the list (engine
+      // change may have removed it — fall back to default in that case)
+      if (prev && [].slice.call(sel.options).some(function(o) { return o.value === prev; })) {
+        sel.value = prev;
+      }
       // Populate config list in panel
       var listEl = document.getElementById('config-list');
       if (!configs.length) {

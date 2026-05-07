@@ -92,6 +92,18 @@ import Layout from '../../components/layout/Layout.astro';
           <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
         </div>
       </div>
+      <!-- PR #90 — Hierarchy picker (applies to BOTH views).
+           In tabular view it adds L0..LX columns from the chosen
+           hierarchy. In hierarchical view it picks the tree to render.
+           Hidden until at least one hierarchy is loaded; the operator
+           clicks "+ Show hierarchy levels" to opt in (the load is
+           deferred for performance — see PR #87). -->
+      <div id="db-hier-picker-wrap" class="flex items-center gap-2 mb-2 hidden">
+        <label class="text-xs text-gray-500 whitespace-nowrap">Hierarchy:</label>
+        <select id="db-tabular-hier-picker" class="input text-xs w-72" onchange="onDbHierPickerChange()">
+          <option value="">(none — no L columns)</option>
+        </select>
+      </div>
       <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">
         <span class="text-sm text-gray-400">Loading data browser...</span>
       </div>
@@ -2519,6 +2531,68 @@ import Layout from '../../components/layout/Layout.astro';
   var dbPage = 1;
   var dbSize = 200;
   var dbSearchTimer = null;
+  // PR #90 — selected hierarchy for L0..LX columns in tabular AND for
+  // tree view in hierarchical. Defaults to the first CC hierarchy
+  // when one is loaded; nullable for "no L cols" mode.
+  var dbSelectedHierarchyId = null;
+  var _dbHierPickerPopulated = false;
+
+  // PR #90 — populate the Data Browser hierarchy picker from the
+  // hierarchies that came back inlined. Operator opt-in: stays hidden
+  // until at least one hierarchy is loaded (which happens after the
+  // operator clicks "+ Show hierarchy levels" or switches to the
+  // hierarchical view). Same kind labels (CC/PC/Entity) as elsewhere.
+  function populateDbHierPicker() {
+    var sel = document.getElementById('db-tabular-hier-picker');
+    var wrap = document.getElementById('db-hier-picker-wrap');
+    if (!sel || !wrap) return;
+    var hiers = (dbData && dbData.hierarchies) || [];
+    if (!hiers.length) {
+      wrap.classList.add('hidden');
+      _dbHierPickerPopulated = false;
+      return;
+    }
+    wrap.classList.remove('hidden');
+    if (_dbHierPickerPopulated) return;
+    _dbHierPickerPopulated = true;
+    var ccHiers = hiers.filter(function(h) { return h.setclass === '0101'; });
+    var pcHiers = hiers.filter(function(h) { return h.setclass === '0104'; });
+    var entHiers = hiers.filter(function(h) { return h.setclass === '0106'; });
+    var otherHiers = hiers.filter(function(h) {
+      return h.setclass !== '0101' && h.setclass !== '0104' && h.setclass !== '0106';
+    });
+    sel.innerHTML = '<option value="">(none — no L columns)</option>';
+    function appendGroup(label, list) {
+      if (!list.length) return;
+      var g = document.createElement('optgroup');
+      g.label = label;
+      list.forEach(function(h) {
+        var o = document.createElement('option');
+        o.value = h.id;
+        o.textContent = (h.label || h.setname) + (h.description ? ' — ' + h.description : '');
+        g.appendChild(o);
+      });
+      sel.appendChild(g);
+    }
+    appendGroup('Cost Center hierarchies (CC)', ccHiers);
+    appendGroup('Profit Center hierarchies (PC)', pcHiers);
+    appendGroup('Entity hierarchies', entHiers);
+    appendGroup('Other', otherHiers);
+    // Auto-pick the first CC hierarchy as default
+    if (ccHiers.length && !dbSelectedHierarchyId) {
+      dbSelectedHierarchyId = ccHiers[0].id;
+      sel.value = dbSelectedHierarchyId;
+    }
+  }
+
+  window.onDbHierPickerChange = function() {
+    var sel = document.getElementById('db-tabular-hier-picker');
+    var v = sel ? sel.value : '';
+    dbSelectedHierarchyId = v ? parseInt(v, 10) : null;
+    _cachedHierMap = null;
+    dbHierSelectedNode = null;
+    renderDB();
+  };
 
   function loadDataBrowser() {
     var el = document.getElementById('db-content');
@@ -2543,6 +2617,11 @@ import Layout from '../../components/layout/Layout.astro';
         dbColFilters = {};
         dbHierSelectedNode = null;
         _cachedHierMap = null;
+        // PR #90 — populate the tabular hierarchy picker once
+        // hierarchies are inlined. Hidden by default until the
+        // operator clicks "+ Show hierarchy levels" — same pattern
+        // as the existing balances toggle.
+        populateDbHierPicker();
         renderDB();
       })
       .catch(function(err) {
@@ -2556,15 +2635,25 @@ import Layout from '../../components/layout/Layout.astro';
     var hierBtn = document.getElementById('db-view-hierarchy');
     if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
     if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    // Hierarchical view needs hier.nodes / hier.leaves to walk the
-    // tree, which the default response doesn't ship (PR #87 — kept
-    // initial load fast). When the operator switches to hierarchical
-    // for the first time we re-fetch with include_hierarchies=true;
-    // subsequent switches reuse the already-loaded data.
-    if (view === 'hierarchy' && !dbIncludeHierarchies) {
-      dbIncludeHierarchies = true;
-      loadDataBrowser();
-      return;
+    // Hierarchical view needs:
+    //   1. hier.nodes / hier.leaves to walk the tree (PR #87 — kept
+    //      initial load fast).
+    //   2. ALL items to count & display (the default page is 200 rows;
+    //      with 100k+ CCs hierarchy nodes show counts based on the
+    //      current page only and most click-to-view-detail produced
+    //      "no cost centers under X" — operator complaint
+    //      post-PR-#88).
+    // PR #90 — flip both flags + bump page size so hierarchical mode
+    // gets the full set in one fetch. Tabular returns to size=200 on
+    // switch back.
+    if (view === 'hierarchy') {
+      var needFetch = false;
+      if (!dbIncludeHierarchies) { dbIncludeHierarchies = true; needFetch = true; }
+      if (dbSize !== 10000) { dbSize = 10000; needFetch = true; }
+      if (needFetch) { loadDataBrowser(); return; }
+    } else {
+      // Tabular — back to paginated default if we'd bumped size for hierarchy
+      if (dbSize === 10000) { dbSize = 200; loadDataBrowser(); return; }
     }
     renderDB();
   };
@@ -2665,8 +2754,16 @@ import Layout from '../../components/layout/Layout.astro';
 
   function buildHierLevelMap() {
     var hiers = (dbData && dbData.hierarchies) || [];
-    // Use the first CC hierarchy (setclass 0101) or the first available
-    var hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+    // PR #90 — pick the hierarchy the operator selected via the picker
+    // (or auto-defaulted to the first CC hierarchy at load time).
+    // Falls back to the previous "first CC" behaviour if no selection.
+    var hier;
+    if (dbSelectedHierarchyId != null) {
+      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
+    }
+    if (!hier) {
+      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+    }
     if (!hier) return { levels: [], map: {} };
 
     var childMap = {};
@@ -2710,15 +2807,41 @@ import Layout from '../../components/layout/Layout.astro';
     }
 
     // Build map: cctr -> { L1: 'X', L2: 'Y', ... }
+    // PR #90 — setclass-aware mapping. ``ccPaths`` is keyed by the
+    // hierarchy's leaf value (cctr / ccode / pctr depending on
+    // setclass). Tabular-view rows are always keyed by cctr, so we
+    // walk the loaded items to flip the key:
+    //   * 0101 (CC)     → leaf is cctr, identity map
+    //   * 0106 (Entity) → leaf is ccode, look up by it.cctr → it.ccode
+    //   * 0104 (PC)     → leaf is pctr, look up by it.cctr → it.pctr
     var ccLevelMap = {};
-    Object.keys(ccPaths).forEach(function(cctr) {
-      var p = ccPaths[cctr];
+    var setclass = hier.setclass || '';
+    var allItems = (dbData && dbData.items) || [];
+    function levelObj(p) {
       var obj = {};
       for (var i = 0; i < maxDepth; i++) {
         obj['hier_L' + (i + 1)] = p[i] || '';
       }
-      ccLevelMap[cctr] = obj;
-    });
+      return obj;
+    }
+    if (setclass === '0106') {
+      allItems.forEach(function(it) {
+        if (it.cctr && it.ccode && ccPaths[it.ccode]) {
+          ccLevelMap[it.cctr] = levelObj(ccPaths[it.ccode]);
+        }
+      });
+    } else if (setclass === '0104') {
+      allItems.forEach(function(it) {
+        if (it.cctr && it.pctr && ccPaths[it.pctr]) {
+          ccLevelMap[it.cctr] = levelObj(ccPaths[it.pctr]);
+        }
+      });
+    } else {
+      // 0101 / unknown — leaf key IS cctr
+      Object.keys(ccPaths).forEach(function(cctr) {
+        ccLevelMap[cctr] = levelObj(ccPaths[cctr]);
+      });
+    }
 
     return { levels: levelCols, map: ccLevelMap, hierLabel: hier.label || hier.setname || 'Hierarchy' };
   }
@@ -2901,15 +3024,41 @@ import Layout from '../../components/layout/Layout.astro';
     var detailEl = document.getElementById('db-hier-detail');
     if (!detailEl || !dbData) return;
     var items = getFilteredItems();
-    var ccMap = {};
-    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
 
     var hiers = dbData.hierarchies || [];
-    var selIdx = 0;
-    var selEl = document.getElementById('db-hier-select');
-    if (selEl) selIdx = parseInt(selEl.value) || 0;
-    var hier = hiers[selIdx] || hiers[0];
+    // PR #90 — use the unified picker selection (same as
+    // renderDBHierarchical above). Was reading from `db-hier-select`
+    // which is now removed in favour of `db-tabular-hier-picker`.
+    var hier = null;
+    if (dbSelectedHierarchyId != null) {
+      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
+    }
+    if (!hier) {
+      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+    }
     if (!hier) return;
+
+    // PR #90 — setclass-aware leafItemsMap. See renderDBHierarchical
+    // for the full rationale.
+    var leafItemsMap = {};
+    var setclass = hier.setclass || '';
+    if (setclass === '0106') {
+      items.forEach(function(it) {
+        if (!it.ccode) return;
+        if (!leafItemsMap[it.ccode]) leafItemsMap[it.ccode] = [];
+        leafItemsMap[it.ccode].push(it);
+      });
+    } else if (setclass === '0104') {
+      items.forEach(function(it) {
+        if (!it.pctr) return;
+        if (!leafItemsMap[it.pctr]) leafItemsMap[it.pctr] = [];
+        leafItemsMap[it.pctr].push(it);
+      });
+    } else {
+      items.forEach(function(it) {
+        if (it.cctr) leafItemsMap[it.cctr] = [it];
+      });
+    }
 
     var childMap = {};
     (hier.nodes || []).forEach(function(n) {
@@ -2921,20 +3070,31 @@ import Layout from '../../components/layout/Layout.astro';
       childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
     });
 
-    // Collect all leaf CCs under the selected node (recursively)
+    // Collect all leaf CCs under the selected node (recursively).
+    // Uses leafItemsMap so entity hierarchies surface every CC under
+    // the picked entity, etc.
     var leafCCs = [];
     function collectLeaves(node) {
       var ch = childMap[node] || [];
       ch.forEach(function(c) {
-        if (c.type === 'leaf') { if (ccMap[c.value]) leafCCs.push(ccMap[c.value]); }
+        if (c.type === 'leaf') {
+          (leafItemsMap[c.value] || []).forEach(function(it) { leafCCs.push(it); });
+        }
         else { collectLeaves(c.name); }
       });
     }
 
     if (dbHierSelectedNode === '__unassigned__') {
+      // For unassigned: items whose lookup key isn't in any leaf
       var assigned = {};
       (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-      leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
+      if (setclass === '0106') {
+        leafCCs = items.filter(function(it) { return it.cctr && it.ccode && !assigned[it.ccode]; });
+      } else if (setclass === '0104') {
+        leafCCs = items.filter(function(it) { return it.cctr && it.pctr && !assigned[it.pctr]; });
+      } else {
+        leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
+      }
     } else if (dbHierSelectedNode) {
       collectLeaves(dbHierSelectedNode);
     } else {
@@ -3019,23 +3179,61 @@ import Layout from '../../components/layout/Layout.astro';
     var ccMap = {};
     items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
 
-    // Hierarchy selector — read current selection before rebuilding
-    var selIdx = 0;
-    var selEl = document.getElementById('db-hier-select');
-    if (selEl) selIdx = parseInt(selEl.value) || 0;
-    var hier = hiers[selIdx] || hiers[0];
+    // PR #90 — use the unified dbSelectedHierarchyId picker at the
+    // top of the Data Browser tab instead of a second inline picker
+    // here. The previous inline picker confused operators ("two
+    // hierarchy dropdowns?") and didn't share selection with tabular.
+    var hier = null;
+    if (dbSelectedHierarchyId != null) {
+      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
+    }
+    if (!hier) {
+      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+    }
+    if (!hier) {
+      el.innerHTML = '<span class="text-gray-400">Select a hierarchy from the picker above to drill into it.</span>';
+      return;
+    }
 
-    var html = '<div class="mb-3"><label class="text-xs font-medium mr-2">Hierarchy:</label><select id="db-hier-select" class="input text-xs w-64" onchange="resetHierSelection()">';
-    hiers.forEach(function(h, i) {
-      html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + esc(h.label) + '</option>';
-    });
-    html += '</select></div>';
+    // Setclass-aware ccMap. The tree's leaf values match what the
+    // hierarchy stores (cctr / ccode / pctr); we want clicking a
+    // tree node to surface the cost centers under it. So the lookup
+    // map is keyed by leaf-value-type, not always cctr.
+    //   * 0106 (Entity) → leaf=ccode → group items by ccode
+    //   * 0104 (PC)     → leaf=pctr  → group items by pctr
+    //   * else          → leaf=cctr  → identity
+    var leafItemsMap = {};
+    var setclass = hier.setclass || '';
+    if (setclass === '0106') {
+      items.forEach(function(it) {
+        if (!it.ccode) return;
+        if (!leafItemsMap[it.ccode]) leafItemsMap[it.ccode] = [];
+        leafItemsMap[it.ccode].push(it);
+      });
+    } else if (setclass === '0104') {
+      items.forEach(function(it) {
+        if (!it.pctr) return;
+        if (!leafItemsMap[it.pctr]) leafItemsMap[it.pctr] = [];
+        leafItemsMap[it.pctr].push(it);
+      });
+    } else {
+      items.forEach(function(it) {
+        if (it.cctr) leafItemsMap[it.cctr] = [it];
+      });
+    }
+
+    var html = '';
 
     // Split panel: tree left, detail right
+    // PR #90 — wider tree panel (w-80 was w-64) + no truncate on node
+    // names. Operator screenshot showed ``TM_CC_Group_Operat_Analyti…``
+    // cut off at the 30-character mark — full setnames fit in 80
+    // characters and operators need to read them to know which subtree
+    // they're in.
     html += '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
 
     // Left panel — compact tree
-    html += '<div class="w-64 flex-shrink-0 border rounded bg-white overflow-auto">';
+    html += '<div class="w-80 flex-shrink-0 border rounded bg-white overflow-auto">';
 
     var childMap = {};
     (hier.nodes || []).forEach(function(n) {
@@ -3059,7 +3257,10 @@ import Layout from '../../components/layout/Layout.astro';
       var ch = childMap[node] || [];
       var cnt = 0;
       ch.forEach(function(c) {
-        if (c.type === 'leaf') { if (ccMap[c.value]) cnt++; }
+        // PR #90 — leafItemsMap is setclass-aware (keyed by ccode for
+        // entity hierarchies, pctr for PC, cctr for CC). Each entry
+        // is the list of CC items under that leaf — sum lengths.
+        if (c.type === 'leaf') { cnt += (leafItemsMap[c.value] || []).length; }
         else { cnt += countLeaves(c.name); }
       });
       return cnt;
@@ -3071,7 +3272,7 @@ import Layout from '../../components/layout/Layout.astro';
       var isSelected = dbHierSelectedNode === nodeName;
       var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
       out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
-      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 truncate px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
+      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
       out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
@@ -3085,10 +3286,19 @@ import Layout from '../../components/layout/Layout.astro';
 
     roots.forEach(function(root) { html += buildTree(root, 0); });
 
-    // Unassigned entry
+    // Unassigned entry — items whose hierarchy lookup key isn't in
+    // any leaf of the chosen hierarchy. Setclass-aware so picking an
+    // entity hierarchy lists CCs whose ccode isn't in the tree, etc.
     var assigned = {};
     (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-    var unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
+    var unassignedCount;
+    if (setclass === '0106') {
+      unassignedCount = items.filter(function(it) { return it.cctr && it.ccode && !assigned[it.ccode]; }).length;
+    } else if (setclass === '0104') {
+      unassignedCount = items.filter(function(it) { return it.cctr && it.pctr && !assigned[it.pctr]; }).length;
+    } else {
+      unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
+    }
     if (unassignedCount) {
       var isUA = dbHierSelectedNode === '__unassigned__';
       html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '">';

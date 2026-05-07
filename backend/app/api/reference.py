@@ -197,6 +197,142 @@ def _resolve_hierarchy_paths(
     return paths, max_depth
 
 
+def _resolve_paths_for_ccs(
+    db: Session,
+    hierarchy_id: int,
+    ccs: list,  # list[LegacyCostCenter]
+) -> tuple[dict[str, list[str]], int]:
+    """Resolve hierarchy paths for a list of cost centers, picking the
+    right lookup key based on the hierarchy's setclass.
+
+    Bug report (post-PR-#88): operator selected an Entity hierarchy
+    (``UBS_GROUP_ENT — Group → Region → Country → Type → Entity``)
+    in the Cost Centers tab and saw no L0..LX columns despite paths
+    existing. Root cause: the underlying ``_resolve_hierarchy_paths``
+    helper looked up leaves by the cctr value, but Entity-hierarchy
+    leaves store ccodes, not cctrs — so every lookup missed and
+    ``max_depth`` stayed at 0.
+
+    The fix is to pick the right field from each CC based on what the
+    hierarchy's leaves actually contain:
+
+    * ``setclass='0101'`` (CC hierarchy)     → leaves = cctrs   → use ``cc.cctr``
+    * ``setclass='0104'`` (PC hierarchy)     → leaves = pctrs   → use ``cc.pctr``
+    * ``setclass='0106'`` (Entity hierarchy) → leaves = ccodes  → use ``cc.ccode``
+
+    Returns paths keyed by ``cc.cctr`` regardless of which field was
+    used to look it up — callers always index by cctr, this helper hides
+    the indirection. CCs whose lookup field doesn't match a leaf get
+    no entry in the dict (callers fill in empty levels).
+
+    For unknown setclasses we fall back to cctr lookup, which matches
+    the previous behaviour and still works for any CC-style hierarchy
+    even if it's tagged with a custom setclass.
+    """
+    if not ccs:
+        return {}, 0
+
+    hier = db.get(Hierarchy, hierarchy_id)
+    if hier is None:
+        return {}, 0
+
+    setclass = hier.setclass or ""
+
+    # Pick the field on the CC row that matches what the hierarchy's
+    # leaves contain. Tested on real data: SAP loaders write all three
+    # fields onto LegacyCostCenter, so this is just an attribute read.
+    if setclass == "0106":
+        # Entity hierarchy — leaves are ccodes
+        key_fn = lambda cc: cc.ccode  # noqa: E731
+    elif setclass == "0104":
+        # PC hierarchy — leaves are pctrs. CCs without a pctr (or where
+        # pctr is null) won't resolve, which is the right behaviour
+        # (they're not part of any PC tree).
+        key_fn = lambda cc: cc.pctr  # noqa: E731
+    else:
+        # 0101 (CC hierarchy) or unknown — leaves are cctrs.
+        key_fn = lambda cc: cc.cctr  # noqa: E731
+
+    # Build cc.cctr → key (e.g. cctr → ccode) map so we can flip back at
+    # the end. We also de-dup the lookup keys — for entity hierarchies
+    # in particular we'd otherwise pass thousands of duplicate ccodes
+    # (every CC under the same entity).
+    cctr_to_key: dict[str, str] = {}
+    unique_keys: set[str] = set()
+    for cc in ccs:
+        k = key_fn(cc)
+        if k:
+            cctr_to_key[cc.cctr] = k
+            unique_keys.add(k)
+
+    if not unique_keys:
+        return {}, 0
+
+    # Resolve once for the unique key set, then map back to cctr-keyed
+    # response.
+    paths_by_key, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, list(unique_keys))
+    paths_by_cctr: dict[str, list[str]] = {}
+    for cctr, k in cctr_to_key.items():
+        if k in paths_by_key:
+            paths_by_cctr[cctr] = paths_by_key[k]
+    return paths_by_cctr, max_depth
+
+
+def _resolve_paths_for_pcs(
+    db: Session,
+    hierarchy_id: int,
+    pcs: list,  # list[LegacyProfitCenter]
+) -> tuple[dict[str, list[str]], int]:
+    """PC counterpart of ``_resolve_paths_for_ccs`` (PR #90).
+
+    For a profit-center listing, the same setclass-driven indirection
+    applies:
+
+    * ``setclass='0104'`` (PC hierarchy)     → leaves = pctrs   → use ``pc.pctr``
+    * ``setclass='0106'`` (Entity hierarchy) → leaves = ccodes  → use ``pc.ccode``
+    * ``setclass='0101'`` (CC hierarchy)     → no useful resolution
+      possible — PCs don't appear in CC-tree leaves. Returns empty.
+
+    Returns paths keyed by ``pc.pctr``.
+    """
+    if not pcs:
+        return {}, 0
+
+    hier = db.get(Hierarchy, hierarchy_id)
+    if hier is None:
+        return {}, 0
+
+    setclass = hier.setclass or ""
+
+    if setclass == "0106":
+        key_fn = lambda pc: pc.ccode  # noqa: E731
+    elif setclass == "0101":
+        # CC hierarchy doesn't apply to PCs — return empty rather than
+        # silently giving wrong results
+        return {}, 0
+    else:
+        # 0104 (PC) or unknown — leaves are pctrs
+        key_fn = lambda pc: pc.pctr  # noqa: E731
+
+    pctr_to_key: dict[str, str] = {}
+    unique_keys: set[str] = set()
+    for pc in pcs:
+        k = key_fn(pc)
+        if k:
+            pctr_to_key[pc.pctr] = k
+            unique_keys.add(k)
+
+    if not unique_keys:
+        return {}, 0
+
+    paths_by_key, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, list(unique_keys))
+    paths_by_pctr: dict[str, list[str]] = {}
+    for pctr, k in pctr_to_key.items():
+        if k in paths_by_key:
+            paths_by_pctr[pctr] = paths_by_key[k]
+    return paths_by_pctr, max_depth
+
+
 @router.get("/entities")
 def list_entities(
     db: Session = Depends(get_db),
@@ -293,14 +429,15 @@ def list_legacy_ccs(
     ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
     # Optional: enrich each row with its path through the requested
-    # hierarchy. Each row gets a `levels` list: [L0_setname, L1_setname,
-    # ..., leaf_setname]. CCs not in the hierarchy get an empty list.
-    # The response includes max_depth so the UI knows how many L*
-    # columns to render.
+    # hierarchy. PR #90 — uses the setclass-aware resolver, so picking
+    # an Entity hierarchy (setclass=0106) correctly resolves via
+    # cc.ccode, a PC hierarchy via cc.pctr, etc. The previous code
+    # passed cctrs straight in and silently came up empty for non-CC
+    # hierarchies.
     paths: dict[str, list[str]] = {}
     max_depth = 0
     if hierarchy_id is not None and ccs:
-        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, [c.cctr for c in ccs])
+        paths, max_depth = _resolve_paths_for_ccs(db, hierarchy_id, ccs)
 
     return {
         "total": total,
@@ -376,11 +513,13 @@ def list_legacy_pcs(
     total = db.execute(count_q).scalar() or 0
     pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
-    # Same hierarchy enrichment as the CC endpoint — see _resolve_hierarchy_paths.
+    # PR #90 — setclass-aware path resolution. Picking an Entity
+    # hierarchy on the PC tab now resolves via pc.ccode; a CC hierarchy
+    # returns empty (PCs don't appear in CC trees).
     paths: dict[str, list[str]] = {}
     max_depth = 0
     if hierarchy_id is not None and pcs:
-        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, [p.pctr for p in pcs])
+        paths, max_depth = _resolve_paths_for_pcs(db, hierarchy_id, pcs)
 
     return {
         "total": total,
@@ -757,41 +896,89 @@ def balances_by_hierarchy(
     """Aggregated balances per cost center, grouped by hierarchy path
     for the Balances → Hierarchical view (PR #89, A14).
 
-    The Balances tab in /data has tens of thousands of rows on real
-    data — too many to ever render row-by-row in a tree. Instead this
-    endpoint returns one row per cost center with the period totals
-    summed up, plus the hierarchy_path the frontend needs to nest the
-    rows correctly:
+    Operator follow-up (PR #90): the previous version JOINed
+    ``hierarchy_leaf`` on ``cctr`` only, which silently returned an
+    empty result when the operator picked an Entity hierarchy
+    (setclass=0106 — leaves are ccodes, not cctrs). The endpoint now
+    picks the right JOIN column based on the hierarchy's setclass:
 
-      ``items: [{cctr, ccode, hierarchy_path, totals: {tc_amt,
-      posting_count, rows}}, ...]``
+    * ``0101`` (CC)     → JOIN ``hierarchy_leaf.value = balance.cctr``
+    * ``0104`` (PC)     → JOIN through ``legacy_cc.pctr`` so we still
+      group by CC for the leaf table; the path tells the entity-team
+      story
+    * ``0106`` (Entity) → JOIN ``hierarchy_leaf.value = balance.ccode``
 
     The ``totals`` reflect ALL accounts and periods within the optional
     ``fiscal_year`` filter — operators in this view care about scale,
     not the per-account breakdown (the tabular view is for that).
-
-    Implementation notes:
-    * One GROUP BY query against ``balance``, optionally constrained by
-      ``fiscal_year`` and the active scope. JOINs against
-      ``hierarchy_leaf`` to limit to CCs that exist in this hierarchy
-      so we don't return strangers.
-    * Path resolution reuses ``_resolve_hierarchy_paths``, the same BFS
-      helper used by proposals-v2 and runs/{id}/data-browser.
     """
-    # 1) aggregate balance rows per CC, restricted to leaves of this hierarchy
-    bal_q = (
-        select(
-            Balance.cctr,
-            Balance.ccode,
-            func.coalesce(func.sum(Balance.tc_amt), 0).label("tc_amt"),
-            func.coalesce(func.sum(Balance.posting_count), 0).label("posting_count"),
-            func.count(Balance.id).label("rows"),
+    # Look up the hierarchy first so we can choose the JOIN strategy
+    # before issuing the aggregation query.
+    hier = db.get(Hierarchy, hierarchy_id)
+    if hier is None:
+        return {
+            "hierarchy_id": hierarchy_id,
+            "fiscal_year": fiscal_year,
+            "max_depth": 0,
+            "total_items": 0,
+            "items": [],
+        }
+
+    setclass = hier.setclass or ""
+
+    # Build the aggregation query. We always GROUP BY (cctr, ccode) so
+    # the leaf table at the bottom of the tree shows per-CC numbers
+    # regardless of hierarchy type — only the JOIN to hierarchy_leaf
+    # changes.
+    if setclass == "0106":
+        # Entity hierarchy — join via ccode
+        bal_q = (
+            select(
+                Balance.cctr,
+                Balance.ccode,
+                func.coalesce(func.sum(Balance.tc_amt), 0).label("tc_amt"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("posting_count"),
+                func.count(Balance.id).label("rows"),
+            )
+            .join(HierarchyLeaf, HierarchyLeaf.value == Balance.ccode)
+            .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
+            .group_by(Balance.cctr, Balance.ccode)
+            .order_by(Balance.cctr)
         )
-        .join(HierarchyLeaf, HierarchyLeaf.value == Balance.cctr)
-        .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
-        .group_by(Balance.cctr, Balance.ccode)
-        .order_by(Balance.cctr)
-    )
+    elif setclass == "0104":
+        # PC hierarchy — leaves are pctrs. Join through legacy_cc to
+        # get from cctr (the balance row) → pctr (the leaf key).
+        bal_q = (
+            select(
+                Balance.cctr,
+                Balance.ccode,
+                func.coalesce(func.sum(Balance.tc_amt), 0).label("tc_amt"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("posting_count"),
+                func.count(Balance.id).label("rows"),
+            )
+            .join(LegacyCostCenter, LegacyCostCenter.cctr == Balance.cctr)
+            .join(HierarchyLeaf, HierarchyLeaf.value == LegacyCostCenter.pctr)
+            .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
+            .group_by(Balance.cctr, Balance.ccode)
+            .order_by(Balance.cctr)
+        )
+    else:
+        # CC hierarchy (0101) or unknown — leaves are cctrs (the
+        # original behaviour).
+        bal_q = (
+            select(
+                Balance.cctr,
+                Balance.ccode,
+                func.coalesce(func.sum(Balance.tc_amt), 0).label("tc_amt"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("posting_count"),
+                func.count(Balance.id).label("rows"),
+            )
+            .join(HierarchyLeaf, HierarchyLeaf.value == Balance.cctr)
+            .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
+            .group_by(Balance.cctr, Balance.ccode)
+            .order_by(Balance.cctr)
+        )
+
     if scope:
         bal_q = bal_q.where(Balance.scope == scope)
     if data_category:
@@ -802,11 +989,45 @@ def balances_by_hierarchy(
     rows = db.execute(bal_q).all()
     cctrs = [r.cctr for r in rows]
 
-    # 2) Resolve hierarchy paths (one BFS pass for all CCs, not per-row)
-    paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, cctrs) if cctrs else ({}, 0)
+    # Resolve paths. For entity hierarchies we resolve by ccode; for
+    # PC hierarchies via the CC's pctr. We need the cctr→ccode and
+    # cctr→pctr maps from legacy_cc to do that — same approach as
+    # _resolve_paths_for_ccs.
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    if cctrs:
+        if setclass == "0106":
+            # Need cctr → ccode map (we already have ccode on each
+            # balance row from the GROUP BY)
+            ccode_by_cctr: dict[str, str] = {r.cctr: (r.ccode or "") for r in rows}
+            unique_ccodes = list({c for c in ccode_by_cctr.values() if c})
+            if unique_ccodes:
+                paths_by_ccode, max_depth = _resolve_hierarchy_paths(
+                    db, hierarchy_id, unique_ccodes
+                )
+                for cctr, ccode in ccode_by_cctr.items():
+                    if ccode in paths_by_ccode:
+                        paths[cctr] = paths_by_ccode[ccode]
+        elif setclass == "0104":
+            # Need cctr → pctr map (not on Balance — fetch from CC)
+            pctr_rows = db.execute(
+                select(LegacyCostCenter.cctr, LegacyCostCenter.pctr).where(
+                    LegacyCostCenter.cctr.in_(cctrs)
+                )
+            ).all()
+            pctr_by_cctr = dict(pctr_rows)
+            unique_pctrs = list({p for p in pctr_by_cctr.values() if p})
+            if unique_pctrs:
+                paths_by_pctr, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, unique_pctrs)
+                for cctr, pctr in pctr_by_cctr.items():
+                    if pctr in paths_by_pctr:
+                        paths[cctr] = paths_by_pctr[pctr]
+        else:
+            # CC hierarchy — direct cctr resolution
+            paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, cctrs)
 
-    # 3) Pull short text (txtsh) so the leaf table can show the CC name.
-    #    One IN-bounded query, no row-by-row lookup.
+    # Pull short text (txtsh) so the leaf table can show the CC name.
+    # One IN-bounded query, no row-by-row lookup.
     txtsh_map: dict[str, str] = {}
     if cctrs:
         cc_rows = db.execute(
@@ -818,6 +1039,7 @@ def balances_by_hierarchy(
 
     return {
         "hierarchy_id": hierarchy_id,
+        "hierarchy_setclass": setclass,
         "fiscal_year": fiscal_year,
         "max_depth": max_depth,
         "total_items": len(rows),
