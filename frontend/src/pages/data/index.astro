@@ -873,8 +873,11 @@ import Layout from '../../components/layout/Layout.astro';
       var sel = document.getElementById('cc-hier-picker');
       var items = d.items || [];
       var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
+      var entHiers = items.filter(function(h) { return h.setclass === '0106'; });
       var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
-      var otherHiers = items.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+      var otherHiers = items.filter(function(h) {
+        return h.setclass !== '0101' && h.setclass !== '0106' && h.setclass !== '0104';
+      });
 
       function appendGroup(label, list) {
         if (!list.length) return;
@@ -888,8 +891,12 @@ import Layout from '../../components/layout/Layout.astro';
         });
         sel.appendChild(group);
       }
-      appendGroup('Cost Center hierarchies (setclass=0101)', ccHiers);
-      appendGroup('Profit Center hierarchies (setclass=0104)', pcHiers);
+      // PR #91 — Entity hierarchies as their own group. The smart
+      // resolver makes them first-class on the CC tab (matches via
+      // cc.ccode), so they shouldn't be hidden under "Other".
+      appendGroup('Cost Center hierarchies (CC)', ccHiers);
+      appendGroup('Entity hierarchies', entHiers);
+      appendGroup('Profit Center hierarchies (PC)', pcHiers);
       appendGroup('Other', otherHiers);
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
@@ -980,8 +987,11 @@ import Layout from '../../components/layout/Layout.astro';
       var sel = document.getElementById('pc-hier-picker');
       var items = d.items || [];
       var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
+      var entHiers = items.filter(function(h) { return h.setclass === '0106'; });
       var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
-      var otherHiers = items.filter(function(h) { return h.setclass !== '0104' && h.setclass !== '0101'; });
+      var otherHiers = items.filter(function(h) {
+        return h.setclass !== '0104' && h.setclass !== '0106' && h.setclass !== '0101';
+      });
 
       function appendGroup(label, list) {
         if (!list.length) return;
@@ -995,8 +1005,12 @@ import Layout from '../../components/layout/Layout.astro';
         });
         sel.appendChild(group);
       }
-      appendGroup('Profit Center hierarchies (setclass=0104)', pcHiers);
-      appendGroup('Cost Center hierarchies (setclass=0101) — usable when CC↔PC is 1:1', ccHiers);
+      // PR #91 — explicit Entity-hierarchy group so operators don't
+      // have to dig into "Other" to find entity-based grouping (which
+      // is now first-class via the smart resolver for PCs).
+      appendGroup('Profit Center hierarchies (PC)', pcHiers);
+      appendGroup('Entity hierarchies', entHiers);
+      appendGroup('Cost Center hierarchies (usable only when CC↔PC is 1:1)', ccHiers);
       appendGroup('Other', otherHiers);
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
@@ -1204,8 +1218,15 @@ import Layout from '../../components/layout/Layout.astro';
         })(child, depth + 1);
         var label = def.labelFn ? def.labelFn(k, firstItem) : k;
         var sub = def.sublabelFn ? def.sublabelFn(k, firstItem) : '';
-        var indentClass = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
-        html += '<div class="' + indentClass + ' my-1">' +
+        // Indent via inline style instead of `ml-N` Tailwind classes.
+        // PR #91 — operator screenshot showed sub-nodes flush against
+        // their parents because Tailwind's JIT compiler only emits
+        // utilities it sees as literal strings in source; the dynamic
+        // ``'ml-' + Math.min(depth*4, 12)`` template never produced
+        // ``ml-4``/``ml-8``/``ml-12`` literals so those classes weren't
+        // in the bundle. Inline styles work regardless.
+        var indentPx = depth === 0 ? 0 : Math.min(depth * 16, 96);
+        html += '<div style="margin-left:' + indentPx + 'px" class="my-1">' +
           '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-gray-50 px-2 py-1 rounded" ' +
                  'onclick="(function(b){var t=document.getElementById(\'' + nid + '\');if(!t)return;var open=t.classList.toggle(\'hidden\');b.querySelector(\'.hier-caret\').textContent=open?\'\\u25B6\':\'\\u25BC\';})(this)">' +
             '<span class="hier-caret text-gray-400">\u25B6</span>' +
@@ -1213,12 +1234,26 @@ import Layout from '../../components/layout/Layout.astro';
             (sub ? '<span class="text-xs text-gray-500">' + esc(sub) + '</span>' : '') +
             '<span class="ml-auto text-[10px] text-gray-400">' + leafCount + ' record' + (leafCount === 1 ? '' : 's') + '</span>' +
           '</button>' +
-          '<div id="' + nid + '" class="hidden">' + renderNode(child, depth + 1) + '</div>' +
+          '<div id="' + nid + '" data-coll-tgt class="hidden">' + renderNode(child, depth + 1) + '</div>' +
           '</div>';
       });
       return html;
     }
-    el.innerHTML = renderNode(tree, 0);
+    // PR #91 — operator request: collapse-all / expand-all toolbar.
+    // Trees can be deep (5+ levels for UBS_GROUP_ENT) and the operator
+    // wants one click to fully expand or collapse rather than walking
+    // each caret manually. The buttons toggle every collapsible
+    // ``<div>`` inside the container — same target the per-row caret
+    // hits, just in bulk. Uses ``data-coll-tgt`` markers added by the
+    // node template so we don't accidentally hit unrelated elements.
+    var toolbarHtml =
+      '<div class="flex items-center gap-2 mb-2 text-xs">' +
+        '<button type="button" onclick="(function(c){c.querySelectorAll(\'[data-coll-tgt]\').forEach(function(t){t.classList.remove(\'hidden\');});c.querySelectorAll(\'.hier-caret\').forEach(function(c){c.textContent=\'\\u25BC\';});})(document.getElementById(\'' + containerId + '\'))" ' +
+                'class="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">▼ Expand all</button>' +
+        '<button type="button" onclick="(function(c){c.querySelectorAll(\'[data-coll-tgt]\').forEach(function(t){t.classList.add(\'hidden\');});c.querySelectorAll(\'.hier-caret\').forEach(function(c){c.textContent=\'\\u25B6\';});})(document.getElementById(\'' + containerId + '\'))" ' +
+                'class="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">▶ Collapse all</button>' +
+      '</div>';
+    el.innerHTML = toolbarHtml + renderNode(tree, 0);
   }
 
   // --- GL hierarchy: char[0] -> char[0:5] -> full saknr ---
@@ -1246,16 +1281,51 @@ import Layout from '../../components/layout/Layout.astro';
   };
 
   // --- CC hierarchy: built from c.levels (the picked stored hierarchy) ---
-  // When no hierarchy is picked, hierarchical view shows a one-line message
-  // pointing the user at the picker — flat list belongs in tabular view.
+  // PR #91 — picker now shows "(none — flat list)" so when no
+  // hierarchy is picked we render the flat list, not a dead-end
+  // message. Operator complaint: switching to Hierarchical view with
+  // no picker selection used to show an empty pane.
   window._renderCCHierarchy = function() {
     var el = document.getElementById('cc-hier');
-    if (!_ccHierId) {
-      el.innerHTML = '<p class="text-gray-500 text-sm">Pick a hierarchy from the dropdown above to see cost centers grouped by it.</p>';
-      return;
-    }
     if (!_ccData.length) {
       el.innerHTML = '<p class="text-gray-500 text-sm">No cost centers loaded.</p>';
+      return;
+    }
+    if (!_ccHierId) {
+      // Flat list — same columns as tabular view minus the L* cols.
+      var rows = _ccData.map(function(c) {
+        return '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1 px-2 font-mono w-32">' + esc(c.cctr) + '</td>' +
+          '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>' +
+          '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(c.txtmi) + '</td>' +
+          '<td class="py-1 px-2 font-mono">' + esc(c.ccode) + '</td>' +
+          '<td class="py-1 px-2 font-mono">' + esc(c.pctr) + '</td>' +
+          '<td class="py-1 px-2 text-xs text-gray-500">' + esc(c.responsible || '') + '</td>' +
+          '</tr>';
+      }).join('');
+      el.innerHTML = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-1.5 px-2 text-left font-medium">CC</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Short Text</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Medium Text</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Entity</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">PC</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Responsible</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+      return;
+    }
+    // PR #91 — diagnose silent empty trees: if the operator picked a
+    // hierarchy but every CC came back with empty levels, the smart
+    // resolver didn't match (e.g. the hierarchy's leaves use a key
+    // we don't have on these CCs). Surface that explicitly so the
+    // operator knows it isn't broken — the data simply doesn't link.
+    var anyMapped = _ccData.some(function(c) { return c.levels && c.levels.length; });
+    if (!anyMapped) {
+      el.innerHTML =
+        '<div class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">' +
+          '<div class="font-medium mb-1">No cost centers map to this hierarchy.</div>' +
+          '<div>None of the ' + _ccData.length + ' loaded cost centers appear as leaves in the picked hierarchy. ' +
+          'Check that the hierarchy was loaded for the same scope/category — or pick a different hierarchy.</div>' +
+        '</div>';
       return;
     }
     // Build levelDefs dynamically: one per L0..L(maxDepth-2). The leaves
@@ -1287,12 +1357,42 @@ import Layout from '../../components/layout/Layout.astro';
   // --- PC hierarchy: same pattern as CC ---
   window._renderPCHierarchy = function() {
     var el = document.getElementById('pc-hier');
-    if (!_pcHierId) {
-      el.innerHTML = '<p class="text-gray-500 text-sm">Pick a hierarchy from the dropdown above to see profit centers grouped by it.</p>';
-      return;
-    }
     if (!_pcData.length) {
       el.innerHTML = '<p class="text-gray-500 text-sm">No profit centers loaded.</p>';
+      return;
+    }
+    if (!_pcHierId) {
+      // PR #91 — flat list when no hierarchy picked.
+      var rows = _pcData.map(function(p) {
+        return '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1 px-2 font-mono w-32">' + esc(p.pctr) + '</td>' +
+          '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>' +
+          '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(p.txtmi) + '</td>' +
+          '<td class="py-1 px-2 font-mono">' + esc(p.ccode) + '</td>' +
+          '<td class="py-1 px-2 text-xs text-gray-500">' + esc(p.responsible || '') + '</td>' +
+          '</tr>';
+      }).join('');
+      el.innerHTML = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+        '<th class="py-1.5 px-2 text-left font-medium">PC</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Short Text</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Medium Text</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Entity</th>' +
+        '<th class="py-1.5 px-2 text-left font-medium">Responsible</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+      return;
+    }
+    // PR #91 — diagnostic when picked hierarchy doesn't link to any
+    // PC. Particularly likely when an Entity hierarchy is picked on
+    // PCs whose ccode isn't represented, or a CC hierarchy (which
+    // _resolve_paths_for_pcs deliberately returns empty for).
+    var anyMapped = _pcData.some(function(p) { return p.levels && p.levels.length; });
+    if (!anyMapped) {
+      el.innerHTML =
+        '<div class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">' +
+          '<div class="font-medium mb-1">No profit centers map to this hierarchy.</div>' +
+          '<div>None of the ' + _pcData.length + ' loaded profit centers appear as leaves in the picked hierarchy. ' +
+          'Profit Centers cannot be placed in Cost Center hierarchies — pick a Profit Center or Entity hierarchy instead.</div>' +
+        '</div>';
       return;
     }
     var levelDefs = [];
