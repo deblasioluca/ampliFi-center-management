@@ -65,15 +65,16 @@ def test_data_browser_without_path_hierarchy_id_returns_zero_max_depth() -> None
     db = MagicMock()
     db.get.return_value = run
 
-    # Multiple db.execute calls for proposals/ccs/balances. Returns are
-    # sequenced via side_effect.
+    # Multiple db.execute calls for count/proposals/ccs/balances.
+    count_result = MagicMock()
+    count_result.scalar.return_value = 2
     proposal_result = MagicMock()
     proposal_result.scalars.return_value.all.return_value = proposals
     cc_result = MagicMock()
     cc_result.scalars.return_value.all.return_value = ccs
     bal_result = MagicMock()
     bal_result.all.return_value = []  # no balance rows
-    db.execute.side_effect = [proposal_result, cc_result, bal_result]
+    db.execute.side_effect = [count_result, proposal_result, cc_result, bal_result]
 
     out = data_browser(
         run_id=21,
@@ -104,13 +105,15 @@ def test_data_browser_with_path_hierarchy_id_attaches_paths() -> None:
     db = MagicMock()
     db.get.return_value = run
 
+    count_result = MagicMock()
+    count_result.scalar.return_value = 2
     proposal_result = MagicMock()
     proposal_result.scalars.return_value.all.return_value = proposals
     cc_result = MagicMock()
     cc_result.scalars.return_value.all.return_value = ccs
     bal_result = MagicMock()
     bal_result.all.return_value = []
-    db.execute.side_effect = [proposal_result, cc_result, bal_result]
+    db.execute.side_effect = [count_result, proposal_result, cc_result, bal_result]
 
     # Stub the resolver — endpoint imports it inside the function so we
     # patch where it's looked up, not where it's defined.
@@ -154,13 +157,15 @@ def test_data_browser_path_hierarchy_unmatched_cctr_gets_empty_path() -> None:
     db = MagicMock()
     db.get.return_value = run
 
+    count_result = MagicMock()
+    count_result.scalar.return_value = 1
     proposal_result = MagicMock()
     proposal_result.scalars.return_value.all.return_value = proposals
     cc_result = MagicMock()
     cc_result.scalars.return_value.all.return_value = ccs
     bal_result = MagicMock()
     bal_result.all.return_value = []
-    db.execute.side_effect = [proposal_result, cc_result, bal_result]
+    db.execute.side_effect = [count_result, proposal_result, cc_result, bal_result]
 
     # Resolver returns empty paths dict — this CC isn't in the hierarchy
     with patch(

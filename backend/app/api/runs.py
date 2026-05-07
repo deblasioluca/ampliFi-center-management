@@ -557,6 +557,9 @@ def data_browser(
     run_id: int,
     include_hierarchies: bool = False,
     path_hierarchy_id: int | None = None,
+    page: int = 1,
+    size: int = 200,
+    search: str | None = None,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
@@ -590,8 +593,44 @@ def data_browser(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
+    # Total count for pagination
+    total_count = db.execute(
+        select(func.count(CenterProposal.id)).where(CenterProposal.run_id == run_id)
+    ).scalar() or 0
+
+    # Paginated query with optional search filter
+    proposals_q = (
+        select(CenterProposal)
+        .where(CenterProposal.run_id == run_id)
+        .join(LegacyCostCenter, LegacyCostCenter.id == CenterProposal.legacy_cc_id, isouter=True)
+        .order_by(LegacyCostCenter.cctr)
+    )
+    if search:
+        pattern = f"%{search}%"
+        proposals_q = proposals_q.where(
+            LegacyCostCenter.cctr.ilike(pattern)
+            | LegacyCostCenter.txtsh.ilike(pattern)
+            | LegacyCostCenter.ccode.ilike(pattern)
+            | LegacyCostCenter.responsible.ilike(pattern)
+        )
+        total_count = db.execute(
+            select(func.count(CenterProposal.id))
+            .where(CenterProposal.run_id == run_id)
+            .join(
+                LegacyCostCenter,
+                LegacyCostCenter.id == CenterProposal.legacy_cc_id,
+                isouter=True,
+            )
+            .where(
+                LegacyCostCenter.cctr.ilike(pattern)
+                | LegacyCostCenter.txtsh.ilike(pattern)
+                | LegacyCostCenter.ccode.ilike(pattern)
+                | LegacyCostCenter.responsible.ilike(pattern)
+            )
+        ).scalar() or 0
+
     proposals = (
-        db.execute(select(CenterProposal).where(CenterProposal.run_id == run_id)).scalars().all()
+        db.execute(proposals_q.offset((page - 1) * size).limit(size)).scalars().all()
     )
 
     cc_ids = [p.legacy_cc_id for p in proposals]
@@ -719,7 +758,9 @@ def data_browser(
 
     return {
         "run_id": run_id,
-        "total": len(items),
+        "total": total_count,
+        "page": page,
+        "size": size,
         "items": items,
         "pc_target_groups": pc_target_groups,
         "hierarchies": hier_trees,

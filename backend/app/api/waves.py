@@ -1220,10 +1220,10 @@ def create_review_scope(
     wave = db.get(Wave, wave_id)
     if not wave:
         raise HTTPException(status_code=404, detail="Wave not found")
-    if wave.status not in ("locked", "in_review"):
+    if wave.status not in ("proposed", "locked", "in_review"):
         raise HTTPException(
             status_code=409,
-            detail="Wave must be locked or in_review to create scopes",
+            detail="Wave must be proposed, locked, or in_review to create scopes",
         )
 
     token = secrets.token_urlsafe(32)

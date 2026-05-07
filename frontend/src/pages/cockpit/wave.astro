@@ -598,7 +598,7 @@ import Layout from '../../components/layout/Layout.astro';
       var actions = '';
       if (w.status === 'draft' || w.status === 'analysing') actions += '<button onclick="runAnalysis()" class="btn-sm bg-blue-600 text-white">Run Analysis</button>';
       if (w.status === 'proposed') actions += '<button onclick="lockWave()" class="btn-sm bg-yellow-600 text-white">Lock Proposal</button>';
-      if (w.status === 'locked') actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Invite Reviewers</button>';
+      if (w.status === 'proposed' || w.status === 'locked' || w.status === 'in_review') actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Create Scope / Invite Reviewers</button>';
       if (w.status === 'in_review') actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
       if (w.status === 'signed_off') {
         actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
@@ -1045,6 +1045,11 @@ import Layout from '../../components/layout/Layout.astro';
     });
   }
   loadScopes();
+
+  // ── "Create Scope" button handler ───────────────────────────────
+  document.getElementById('btn-create-scope').addEventListener('click', function() {
+    document.getElementById('scope-overlay').classList.remove('hidden');
+  });
 
   // ── Mount pickers for the create-scope modal ─────────────────────
   var scopeReviewerPicker = window.mountEmployeePicker('sf-reviewer-picker', {
