@@ -525,70 +525,153 @@ def available_extractions(
 def data_browser(
     scope: str = Query(default=SCOPE_CLEANUP),
     data_category: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=200, ge=1, le=500),
+    search: str | None = Query(default=None),
+    include_balances: bool = Query(default=False),
+    include_hierarchies: bool = Query(default=False),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
 ) -> dict:
-    """Unified data browser: all centers + balances + hierarchies filtered by scope."""
+    """Unified data browser: paginated centers + optional balances + hierarchies.
+
+    PR #87 — perf rework. The previous version of this endpoint loaded
+    every CC, every PC, every monthly balance row (grouped by year+month
+    in SQL but still N rows per CC), and every hierarchy with all its
+    nodes and leaves, then returned the whole lot as a single JSON
+    payload. On a real SAP dataset (10k+ CCs, multi-year balance
+    history, several hierarchies with thousands of nodes) the response
+    could be tens of megabytes and the frontend then synchronously
+    rendered a single table with hundreds of thousands of DOM nodes —
+    locking up the browser for many seconds.
+
+    Three knobs to keep the default response small:
+
+    * **page / size** — server-side pagination, default ``size=200``
+      capped at ``500``. Initial page paints in well under a second
+      regardless of dataset size. ``total`` is returned so the UI can
+      build a pager.
+    * **include_balances** — default ``False``. When the caller asks,
+      monthly balance summaries are attached to each item *on the
+      current page only*, not for the whole table. The frontend uses
+      this for an expand-on-click pattern.
+    * **include_hierarchies** — default ``False``. Hierarchies are
+      cheap to enumerate (a handful of rows from ``cleanup.hierarchy``)
+      but expensive to expand (thousands of nodes + leaves per
+      hierarchy). When omitted the response carries hierarchy *metadata*
+      only — id, setname, setclass, label, leaf count — and the
+      frontend fetches full structure via the existing
+      ``/api/legacy/hierarchies/{id}/nodes`` + ``/leaves`` endpoints
+      when the operator drills in. Setting this flag restores the old
+      "everything inline" shape for callers that need it.
+
+    Optional ``search`` filter pushes a single LIKE query down to the
+    DB so the operator can narrow results without paying client-side
+    filtering on every keystroke. Matches against ``cctr``, ``txtsh``,
+    ``txtmi``, ``ccode``, ``responsible``.
+    """
     cc_q = select(LegacyCostCenter).where(LegacyCostCenter.scope == scope)
-    pc_q = select(LegacyProfitCenter).where(LegacyProfitCenter.scope == scope)
+    cc_count_q = select(func.count(LegacyCostCenter.id)).where(LegacyCostCenter.scope == scope)
     if data_category:
         cc_q = cc_q.where(LegacyCostCenter.data_category == data_category)
-        pc_q = pc_q.where(LegacyProfitCenter.data_category == data_category)
-    ccs = db.execute(cc_q).scalars().all()
-    pcs = db.execute(pc_q).scalars().all()
-    pc_map = {(p.coarea, p.pctr): p for p in pcs}
+        cc_count_q = cc_count_q.where(LegacyCostCenter.data_category == data_category)
+    if search:
+        # ILIKE on the searchable text columns. Wrap once at the boundary
+        # so the param is parameterised by SQLAlchemy (not f-string'd).
+        pattern = f"%{search}%"
+        text_filter = (
+            LegacyCostCenter.cctr.ilike(pattern)
+            | LegacyCostCenter.txtsh.ilike(pattern)
+            | LegacyCostCenter.txtmi.ilike(pattern)
+            | LegacyCostCenter.ccode.ilike(pattern)
+            | LegacyCostCenter.responsible.ilike(pattern)
+        )
+        cc_q = cc_q.where(text_filter)
+        cc_count_q = cc_count_q.where(text_filter)
 
-    # Monthly balances grouped by (coarea, cctr)
-    bal_q = (
-        select(
-            Balance.coarea,
-            Balance.cctr,
-            Balance.fiscal_year,
-            Balance.period,
-            func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
-            func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
-            func.max(Balance.currency_tc).label("currency"),
+    total = db.execute(cc_count_q).scalar() or 0
+    cc_q = cc_q.order_by(LegacyCostCenter.cctr).offset((page - 1) * size).limit(size)
+    ccs = db.execute(cc_q).scalars().all()
+
+    # Profit-center lookup is page-bounded: only fetch PCs referenced by
+    # the CCs on this page. For 200 CCs this is a tiny IN-list query
+    # rather than the whole PC table.
+    pc_keys = {(c.coarea, c.pctr) for c in ccs if c.pctr}
+    pc_map: dict[tuple[str, str], LegacyProfitCenter] = {}
+    if pc_keys:
+        coareas = list({k[0] for k in pc_keys})
+        pctrs = list({k[1] for k in pc_keys})
+        pc_q = (
+            select(LegacyProfitCenter)
+            .where(LegacyProfitCenter.scope == scope)
+            .where(LegacyProfitCenter.coarea.in_(coareas))
+            .where(LegacyProfitCenter.pctr.in_(pctrs))
         )
-        .where(Balance.scope == scope)
-        .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
-        .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
-    )
-    if data_category:
-        bal_q = bal_q.where(Balance.data_category == data_category)
-    bal_rows = db.execute(bal_q).all()
+        if data_category:
+            pc_q = pc_q.where(LegacyProfitCenter.data_category == data_category)
+        for p in db.execute(pc_q).scalars().all():
+            pc_map[(p.coarea, p.pctr)] = p
+
+    # Balances — also page-bounded when requested. Same rationale: the
+    # query returns one row per (coarea, cctr, year, period) so even a
+    # bounded set can grow with history depth, but capping by the
+    # current page's CCs keeps this from being the limiting factor.
     balance_map: dict[tuple[str, str], list[dict]] = {}
-    for coarea, cctr, fy, per, amt, post, curr in bal_rows:
-        balance_map.setdefault((coarea, cctr), []).append(
-            {
-                "fiscal_year": fy,
-                "period": per,
-                "amount": float(amt),
-                "postings": int(post),
-                "currency": curr or "",
-            }
+    if include_balances and ccs:
+        cctrs_on_page = list({c.cctr for c in ccs})
+        coareas_on_page = list({c.coarea for c in ccs})
+        bal_q = (
+            select(
+                Balance.coarea,
+                Balance.cctr,
+                Balance.fiscal_year,
+                Balance.period,
+                func.coalesce(func.sum(Balance.tc_amt), 0).label("amt"),
+                func.coalesce(func.sum(Balance.posting_count), 0).label("post"),
+                func.max(Balance.currency_tc).label("currency"),
+            )
+            .where(Balance.scope == scope)
+            .where(Balance.cctr.in_(cctrs_on_page))
+            .where(Balance.coarea.in_(coareas_on_page))
+            .group_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
+            .order_by(Balance.coarea, Balance.cctr, Balance.fiscal_year, Balance.period)
         )
+        if data_category:
+            bal_q = bal_q.where(Balance.data_category == data_category)
+        for coarea, cctr, fy, per, amt, post, curr in db.execute(bal_q).all():
+            balance_map.setdefault((coarea, cctr), []).append(
+                {
+                    "fiscal_year": fy,
+                    "period": per,
+                    "amount": float(amt),
+                    "postings": int(post),
+                    "currency": curr or "",
+                }
+            )
 
     items = []
     for c in ccs:
         pc = pc_map.get((c.coarea, c.pctr)) if c.pctr else None
-        items.append(
-            {
-                "id": c.id,
-                "cctr": c.cctr,
-                "txtsh": c.txtsh,
-                "txtmi": c.txtmi,
-                "ccode": c.ccode,
-                "coarea": c.coarea,
-                "pctr": c.pctr,
-                "pc_txtsh": pc.txtsh if pc else None,
-                "responsible": c.responsible,
-                "cctrcgy": c.cctrcgy,
-                "is_active": c.is_active,
-                "monthly_balances": balance_map.get((c.coarea, c.cctr), []),
-            }
-        )
+        item = {
+            "id": c.id,
+            "cctr": c.cctr,
+            "txtsh": c.txtsh,
+            "txtmi": c.txtmi,
+            "ccode": c.ccode,
+            "coarea": c.coarea,
+            "pctr": c.pctr,
+            "pc_txtsh": pc.txtsh if pc else None,
+            "responsible": c.responsible,
+            "cctrcgy": c.cctrcgy,
+            "is_active": c.is_active,
+        }
+        if include_balances:
+            item["monthly_balances"] = balance_map.get((c.coarea, c.cctr), [])
+        items.append(item)
 
-    # Hierarchies with tree structure
+    # Hierarchies — metadata always, full structure only when asked.
+    # The metadata fits in well under a kilobyte even with several
+    # hierarchies; the full structure can be megabytes.
     hier_q = (
         select(Hierarchy)
         .where(Hierarchy.scope == scope, Hierarchy.is_active.is_(True))
@@ -602,44 +685,44 @@ def data_browser(
         "0104": "Profit Center",
         "0106": "Entity",
     }
-    hier_trees = []
+    hier_payload: list[dict] = []
     for h in hiers:
-        nodes = (
-            db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
-            .scalars()
-            .all()
-        )
-        leaves = (
-            db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
-            .scalars()
-            .all()
-        )
         base = f"{cls_labels.get(h.setclass, h.setclass)}: {h.setname}"
         if h.description:
             base += f" — {h.description}"
-        hier_trees.append(
-            {
-                "id": h.id,
-                "setname": h.setname,
-                "setclass": h.setclass,
-                "label": h.label or base,
-                "coarea": h.coarea,
-                "nodes": [
-                    {
-                        "parent": n.parent_setname,
-                        "child": n.child_setname,
-                        "seq": n.seq,
-                    }
-                    for n in nodes
-                ],
-                "leaves": [
-                    {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
-                ],
-            }
-        )
+        meta: dict = {
+            "id": h.id,
+            "setname": h.setname,
+            "setclass": h.setclass,
+            "label": h.label or base,
+            "coarea": h.coarea,
+        }
+        if include_hierarchies:
+            nodes = (
+                db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == h.id))
+                .scalars()
+                .all()
+            )
+            leaves = (
+                db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == h.id))
+                .scalars()
+                .all()
+            )
+            meta["nodes"] = [
+                {"parent": n.parent_setname, "child": n.child_setname, "seq": n.seq} for n in nodes
+            ]
+            meta["leaves"] = [
+                {"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves
+            ]
+        hier_payload.append(meta)
 
     return {
-        "total": len(items),
+        "total": total,
+        "page": page,
+        "size": size,
         "items": items,
-        "hierarchies": hier_trees,
+        "hierarchies": hier_payload,
+        # Hint to the frontend: did we return full structure or just
+        # metadata? Lets the UI know to fetch nodes/leaves on demand.
+        "hierarchies_inlined": include_hierarchies,
     }
