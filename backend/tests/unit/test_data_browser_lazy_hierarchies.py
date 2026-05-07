@@ -150,4 +150,6 @@ def test_data_browser_response_shape_consistent_across_flag() -> None:
     r2 = data_browser(run_id=42, include_hierarchies=True, db=db2, _user=MagicMock())
 
     assert set(r1.keys()) == set(r2.keys())
-    assert {"run_id", "total", "page", "size", "items", "pc_target_groups", "hierarchies"}.issubset(r1.keys())
+    expected = {"run_id", "total", "page", "size", "items",
+                "pc_target_groups", "hierarchies"}
+    assert expected.issubset(r1.keys())
