@@ -1154,47 +1154,124 @@ import Layout from '../../components/layout/Layout.astro';
   var simRunId = null;
   var simSelectedNodes = [];
 
+  // Track which run is currently selected so we can highlight it
+  var currentSelectedRunId = null;
+
   // Load simulation runs for this wave
   function loadSimRuns() {
     fetch('/api/waves/simulations/v2?wave_id=' + waveId, { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var el = document.getElementById('sim-runs');
-        if (!d.items || !d.items.length) {
-          el.innerHTML = '<p class="text-gray-400">No simulations yet. Click "Run Simulation" to start.</p>';
+        var items = d.items || [];
+        if (!items.length) {
+          el.innerHTML = '<p class="text-gray-400">No simulations yet. Click "Run" to start.</p>';
           return;
         }
-        var html = '<div class="space-y-3">';
-        d.items.forEach(function(r) {
+        // Wrap the list in <details> so it can collapse. Default open when
+        // no run is selected yet; collapsed once the user picks one (so the
+        // detail section below has more screen real estate).
+        var defaultOpen = currentSelectedRunId == null;
+        var html = '<details class="border rounded-lg" ' + (defaultOpen ? 'open' : '') + '>';
+        html += '<summary class="cursor-pointer px-3 py-2 select-none bg-gray-50 hover:bg-gray-100 rounded-t-lg text-sm font-semibold flex items-center justify-between">';
+        html +=   '<span>Past Simulation Runs <span class="text-gray-500 font-normal">(' + items.length + ')</span></span>';
+        html +=   '<span class="text-xs text-gray-500">click to expand / collapse</span>';
+        html += '</summary>';
+        html += '<div class="divide-y">';
+        items.forEach(function(r) {
           var modeColor = r.mode === 'activated' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700';
           var statusColor = r.status === 'completed' ? 'text-green-600' : r.status === 'failed' ? 'text-red-600' : 'text-gray-500';
-          html += '<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="viewSimRun(' + r.id + ')">';
-          html += '<div class="flex items-center justify-between">';
           var engineLabel = (r.engine_version || '').indexOf('v2') >= 0 ? 'V2' : 'V1';
           var engineColor = engineLabel === 'V2' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600';
-          html += '<div><span class="font-medium">' + esc(r.label || 'Run #' + r.id) + '</span>';
-          html += ' <span class="px-2 py-0.5 rounded text-xs ' + engineColor + '">' + engineLabel + '</span>';
-          html += ' <span class="px-2 py-0.5 rounded text-xs ' + modeColor + '">' + esc(r.mode) + '</span>';
-          html += ' <span class="' + statusColor + ' text-xs ml-1">' + esc(r.status) + '</span></div>';
-          html += '<div class="text-xs text-gray-400">' + (r.started_at || '') + '</div></div>';
-          html += '<div class="grid grid-cols-3 gap-2 mt-2 text-xs">';
-          html += '<div><span class="text-gray-500">Total:</span> <strong>' + fmt(r.total_centers) + '</strong></div>';
-          html += '<div><span class="text-gray-500">Config:</span> #' + r.config_id + '</div>';
-          if (r.excluded_scopes && r.excluded_scopes.length) {
-            html += '<div><span class="text-gray-500">Excluded waves:</span> ' + r.excluded_scopes.join(', ') + '</div>';
+          // Highlight the currently selected run with a left border + bg
+          var isSelected = (r.id === currentSelectedRunId);
+          var rowClass = isSelected
+            ? 'p-3 bg-blue-50 border-l-4 border-blue-500 cursor-pointer'
+            : 'p-3 hover:bg-gray-50 cursor-pointer';
+          html += '<div class="' + rowClass + '" data-run-id="' + r.id + '">';
+          html +=   '<div class="flex items-center justify-between">';
+          html +=     '<div class="flex-1 cursor-pointer" onclick="viewSimRun(' + r.id + ')">';
+          html +=       '<span class="font-medium">' + esc(r.label || 'Run #' + r.id) + '</span>';
+          html +=       ' <span class="px-2 py-0.5 rounded text-xs ' + engineColor + '">' + engineLabel + '</span>';
+          html +=       ' <span class="px-2 py-0.5 rounded text-xs ' + modeColor + '">' + esc(r.mode) + '</span>';
+          html +=       ' <span class="' + statusColor + ' text-xs ml-1">' + esc(r.status) + '</span>';
+          html +=     '</div>';
+          html +=     '<div class="flex items-center gap-2">';
+          html +=       '<span class="text-xs text-gray-400">' + (r.started_at || '') + '</span>';
+          // Delete button — only allowed on non-activated runs (server enforces too)
+          if (r.mode !== 'activated') {
+            html +=     '<button class="btn-sm text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded border border-red-200" ';
+            html +=       'onclick="deleteSimRun(event, ' + r.id + ', ' + JSON.stringify(r.label || ('Run #' + r.id)) + ')">Delete</button>';
           }
-          html += '</div></div>';
+          html +=     '</div>';
+          html +=   '</div>';
+          html +=   '<div class="grid grid-cols-3 gap-2 mt-2 text-xs cursor-pointer" onclick="viewSimRun(' + r.id + ')">';
+          html +=     '<div title="Number of cost/profit centers evaluated by this run"><span class="text-gray-500">Centers Analyzed:</span> <strong>' + fmt(r.total_centers) + '</strong></div>';
+          html +=     '<div><span class="text-gray-500">Config:</span> #' + r.config_id + '</div>';
+          if (r.excluded_scopes && r.excluded_scopes.length) {
+            html +=   '<div><span class="text-gray-500">Excluded waves:</span> ' + r.excluded_scopes.join(', ') + '</div>';
+          }
+          html +=   '</div>';
+          html += '</div>';
         });
-        el.innerHTML = html + '</div>';
+        html += '</div></details>';
+        el.innerHTML = html;
       });
   }
 
+  // Hard-delete a simulation run (with confirm). Cascades to proposals via FK.
+  window.deleteSimRun = async function(evt, runId, label) {
+    evt.stopPropagation();   // don't trigger the row's viewSimRun()
+    var ok = await uiConfirm({
+      title: 'Delete this simulation run?',
+      message: 'This will permanently delete "' + label + '" and all its proposals. ' +
+               'This cannot be undone. Activated runs cannot be deleted.',
+      okLabel: 'Delete',
+      okVariant: 'danger',
+    });
+    if (!ok) return;
+    var res = await fetch('/api/waves/simulations/' + runId, {
+      method: 'DELETE', headers: authHdr,
+    });
+    if (!res.ok) {
+      var err = await res.json().catch(function() { return {}; });
+      uiAlert({ title: 'Delete failed', message: err.detail || ('HTTP ' + res.status) });
+      return;
+    }
+    // If the deleted run was the one being viewed, hide the detail section
+    if (runId === currentSelectedRunId) {
+      currentSelectedRunId = null;
+      simRunId = null;
+      document.getElementById('sim-detail').classList.add('hidden');
+    }
+    loadSimRuns();
+  };
+
   // View simulation run details
   window.viewSimRun = function(runId) {
+    var firstSelection = (currentSelectedRunId == null);
     simRunId = runId;
+    currentSelectedRunId = runId;
     simPage = 1;
     document.getElementById('sim-detail').classList.remove('hidden');
     document.getElementById('sim-detail-title').textContent = 'Simulation Run #' + runId;
+    // Re-render the runs list so the new selection is highlighted (and so
+    // the <details> auto-collapses on the FIRST selection — gives the
+    // detail panel below more room).
+    if (firstSelection) {
+      loadSimRuns();
+    } else {
+      // Just update the highlight on the existing rows without re-rendering
+      // the entire list (preserves the user's expanded/collapsed choice).
+      document.querySelectorAll('#sim-runs [data-run-id]').forEach(function(el) {
+        var id = parseInt(el.getAttribute('data-run-id'), 10);
+        if (id === runId) {
+          el.className = 'p-3 bg-blue-50 border-l-4 border-blue-500 cursor-pointer';
+        } else {
+          el.className = 'p-3 hover:bg-gray-50 cursor-pointer';
+        }
+      });
+    }
     // Show activate button for simulation mode only
     fetch('/api/waves/simulations/v2?wave_id=' + waveId, { headers: authHdr })
       .then(function(r) { return r.json(); })
@@ -1267,7 +1344,7 @@ import Layout from '../../components/layout/Layout.astro';
         // KPI summary
         var kpiEl = document.getElementById('sim-kpis');
         kpiEl.innerHTML =
-          '<div class="bg-gray-50 rounded p-2 text-center"><div class="text-lg font-bold">' + fmt(d.total) + '</div><div class="text-xs text-gray-500">Total Centers</div></div>';
+          '<div class="bg-gray-50 rounded p-2 text-center"><div class="text-lg font-bold">' + fmt(d.total) + '</div><div class="text-xs text-gray-500" title="Number of cost/profit centers evaluated by this run">Centers Analyzed</div></div>';
       });
   }
 
