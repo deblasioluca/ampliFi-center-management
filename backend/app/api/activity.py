@@ -55,6 +55,33 @@ def list_activity(
     }
 
 
+@router.get("/unread-count")
+def unread_count(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(get_current_user),
+) -> dict:
+    """Lightweight count-only endpoint for the navbar's activity badge.
+
+    The frontend's ``Layout.astro`` polls this on every page load to
+    decide whether to render the red dot on the Activity link. The full
+    ``GET /api/activity`` endpoint also returns this number, but the
+    navbar wants just the count without the overhead of fetching and
+    serialising 50 activity rows on every page transition. Without this
+    endpoint the navbar fetch returned 404 (the frontend swallows it
+    silently, but the badge never lit up even when there were unread
+    items).
+
+    Same predicate as ``list_activity``: a user sees their own entries
+    plus shared system notifications (``user_id IS NULL``).
+    """
+    count = db.execute(
+        select(func.count(ActivityFeedEntry.id))
+        .where(ActivityFeedEntry.is_read.is_(False))
+        .where((ActivityFeedEntry.user_id == user.id) | (ActivityFeedEntry.user_id.is_(None)))
+    ).scalar()
+    return {"count": int(count or 0)}
+
+
 @router.post("/mark-read")
 def mark_all_read(
     db: Session = Depends(get_db),
