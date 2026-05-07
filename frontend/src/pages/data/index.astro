@@ -81,308 +81,55 @@ import Layout from '../../components/layout/Layout.astro';
 
   <!-- Tab Content -->
   <div class="card rounded-t-none border-t-0">
-    <!-- Data Browser Tab -->
+    <!-- Data Browser — rendered by DataObjectDisplay -->
     <div id="tab-data-browser">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Data Browser</h3>
-        <div class="flex items-center gap-2">
-          <button id="db-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchDataBrowserView('tabular')">Tabular</button>
-          <button id="db-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchDataBrowserView('hierarchy')">Hierarchical</button>
-          <button id="db-expand-all" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="dbExpandCollapseAll(true)">Expand All</button>
-          <button id="db-collapse-all" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="dbExpandCollapseAll(false)">Collapse All</button>
-          <input id="db-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
-          <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-        </div>
-      </div>
-      <!-- PR #90 — Hierarchy picker (applies to BOTH views).
-           In tabular view it adds L0..LX columns from the chosen
-           hierarchy. In hierarchical view it picks the tree to render.
-           Hidden until at least one hierarchy is loaded; the operator
-           clicks "+ Show hierarchy levels" to opt in (the load is
-           deferred for performance — see PR #87). -->
-      <div id="db-hier-picker-wrap" class="flex items-center gap-2 mb-2 hidden">
-        <label class="text-xs text-gray-500 whitespace-nowrap">Hierarchy:</label>
-        <select id="db-tabular-hier-picker" class="input text-xs w-72" onchange="onDbHierPickerChange()">
-          <option value="">(none — no L columns)</option>
-        </select>
-      </div>
-      <div id="db-content" class="text-xs overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">
-        <span class="text-sm text-gray-400">Loading data browser...</span>
-      </div>
+      <div id="dod-data-browser" class="text-xs"></div>
     </div>
 
-    <!-- Entities Tab -->
+    <!-- Entities — rendered by DataObjectDisplay -->
     <div id="tab-entities" class="hidden">
-      <!-- Toolbar — PR #88 split into two rows. The previous one-row
-           layout used flex-wrap, but on narrow viewports (e.g. side-by-side
-           windows on the operator's MacBook screenshot) the toggle group
-           ended up squeezed and the "Hierarchical" label got clipped to
-           a single character. Two rows is unambiguous: title + destructive
-           actions on top, view controls + search below. -->
-      <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
-        <h3 class="text-base font-semibold flex-shrink-0">Entities (Legal Entities / Company Codes)</h3>
-        <div class="flex items-center gap-2 flex-wrap ml-auto">
-          <button onclick="downloadTableCSV('entities-table','entities.csv')" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>
-          <button id="delete-all-entities" class="btn-danger text-xs flex-shrink-0">Delete All</button>
-        </div>
-      </div>
-      <div class="flex items-center gap-2 mb-3 flex-wrap">
-        <div class="inline-flex rounded-md border border-gray-300 text-xs">
-          <button id="entities-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium whitespace-nowrap" onclick="switchEntitiesView('tabular')">Tabular</button>
-          <button id="entities-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50 whitespace-nowrap border-l border-gray-300" onclick="switchEntitiesView('hierarchy')">Hierarchical</button>
-        </div>
-        <input id="search-entities" type="text" placeholder="Search..." class="input text-sm w-48 flex-shrink-0" />
-      </div>
-      <!-- Tabular -->
-      <div id="entities-table-wrap">
-        <div id="entities-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-        <div id="entities-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Hierarchical -->
-      <div id="entities-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Country &rarr; Region &rarr; Entity</span>. Click rows to expand.</p>
-        <div id="entities-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
-      </div>
+      <div id="dod-entities" class="text-xs"></div>
     </div>
 
-    <!-- Cost Centers Tab -->
+    <!-- Cost Centers — rendered by DataObjectDisplay (Legacy + Target) -->
     <div id="tab-cost-centers" class="hidden">
-      <!-- View toggle (applies to both Legacy and Target) -->
-      <div class="flex items-center justify-end mb-2">
-        <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
-          <button id="cc-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchCCView('tabular')">Tabular</button>
-          <button id="cc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchCCView('hierarchy')">Hierarchical</button>
-        </div>
-      </div>
-      <!-- Hierarchy picker (applies to BOTH views) -->
-      <div class="flex items-center justify-end mb-2 gap-2 text-xs">
-        <label for="cc-hier-picker" class="text-gray-500">Hierarchy:</label>
-        <select id="cc-hier-picker" class="input text-xs w-64">
-          <option value="">(none — flat list)</option>
-        </select>
-      </div>
-      <!-- Tabular wrap -->
-      <div id="cc-tabular-wrap">
-      <!-- Legacy Section -->
-      <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Legacy Cost Centers</h3>
-          <div class="flex items-center gap-2">
-            <input id="search-cc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <select id="filter-cc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-            <button onclick="downloadTableCSV('cc-table','legacy_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-cc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="cc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="cc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Target Section -->
+      <div id="dod-cc-legacy" class="text-xs mb-6"></div>
       <div class="border-t border-gray-200 pt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Target Cost Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
-          <div class="flex items-center gap-2">
-            <input id="search-tcc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <button onclick="downloadTableCSV('tcc-table','target_cost_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-tcc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="tcc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="tcc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      </div><!-- /cc-tabular-wrap -->
-      <!-- Hierarchical -->
-      <div id="cc-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by the hierarchy you pick above. Click rows to expand.</p>
-        <div id="cc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+        <div id="dod-cc-target" class="text-xs"></div>
       </div>
     </div>
 
-    <!-- Profit Centers Tab -->
+    <!-- Profit Centers — rendered by DataObjectDisplay (Legacy + Target) -->
     <div id="tab-profit-centers" class="hidden">
-      <!-- View toggle -->
-      <div class="flex items-center justify-end mb-2">
-        <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
-          <button id="pc-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchPCView('tabular')">Tabular</button>
-          <button id="pc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchPCView('hierarchy')">Hierarchical</button>
-        </div>
-      </div>
-      <!-- Hierarchy picker (applies to BOTH views) -->
-      <div class="flex items-center justify-end mb-2 gap-2 text-xs">
-        <label for="pc-hier-picker" class="text-gray-500">Hierarchy:</label>
-        <select id="pc-hier-picker" class="input text-xs w-64">
-          <option value="">(none — flat list)</option>
-        </select>
-      </div>
-      <!-- Tabular wrap -->
-      <div id="pc-tabular-wrap">
-      <!-- Legacy Section -->
-      <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Legacy Profit Centers</h3>
-          <div class="flex items-center gap-2">
-            <input id="search-pc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <select id="filter-pc-ccode" class="input text-sm w-32"><option value="">All Entities</option></select>
-            <button onclick="downloadTableCSV('pc-table','legacy_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-pc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="pc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="pc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Target Section -->
+      <div id="dod-pc-legacy" class="text-xs mb-6"></div>
       <div class="border-t border-gray-200 pt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold">Target Profit Centers <span class="text-xs font-normal text-amplifi-600">(ampliFi)</span></h3>
-          <div class="flex items-center gap-2">
-            <input id="search-tpc" type="text" placeholder="Search..." class="input text-sm w-48" />
-            <button onclick="downloadTableCSV('tpc-table','target_profit_centers.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-            <button id="delete-all-tpc" class="btn-danger text-xs">Delete All</button>
-          </div>
-        </div>
-        <div id="tpc-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 620px)">Loading...</div>
-        <div id="tpc-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      </div><!-- /pc-tabular-wrap -->
-      <!-- Hierarchical -->
-      <div id="pc-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by the hierarchy you pick above. Click rows to expand.</p>
-        <div id="pc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
+        <div id="dod-pc-target" class="text-xs"></div>
       </div>
     </div>
 
-    <!-- GL Accounts Tab -->
+    <!-- GL Accounts — rendered by DataObjectDisplay -->
     <div id="tab-gl-accounts" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">GL Accounts <span class="text-xs font-normal text-gray-500">(SKA1 chart-of-accounts)</span></h3>
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
-            <button id="gl-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchGLView('tabular')">Tabular</button>
-            <button id="gl-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchGLView('hierarchy')">Hierarchical</button>
-          </div>
-          <input id="search-gl" type="text" placeholder="Search saknr / text..." class="input text-sm w-48" />
-          <button onclick="downloadTableCSV('gl-table','gl_accounts.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-        </div>
-      </div>
-      <!-- Tabular -->
-      <div id="gl-tabular-wrap">
-        <div id="gl-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-        <div id="gl-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Hierarchical -->
-      <div id="gl-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">first digit (Account class) &rarr; first 5 digits (Group) &rarr; full saknr</span>. Click rows to expand.</p>
-        <div id="gl-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
-      </div>
+      <div id="dod-gl" class="text-xs"></div>
     </div>
 
-    <!-- Mapping Tab -->
+    <!-- Mapping — rendered by DataObjectDisplay -->
     <div id="tab-mapping" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Center Mapping <span class="text-xs font-normal text-gray-500">(Legacy → Target)</span></h3>
-        <div class="flex items-center gap-2">
-          <input id="search-mapping" type="text" placeholder="Search centers..." class="input text-sm w-48" />
-          <select id="filter-mapping-type" class="input text-sm w-36">
-            <option value="">All Types</option>
-            <option value="cost_center">Cost Centers</option>
-            <option value="profit_center">Profit Centers</option>
-          </select>
-          <!-- PR #89 — A13: keep auto-derive available even after the
-               table has rows, so operators can refresh mappings after
-               a new analysis run completes. -->
-          <button onclick="autoDeriveMappings()" class="btn-secondary text-xs whitespace-nowrap" title="Re-derive mappings from completed analysis runs (idempotent)">Auto-derive</button>
-          <button onclick="downloadTableCSV('mapping-table','center_mapping.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-mapping" class="btn-danger text-xs">Delete All</button>
-        </div>
-      </div>
-      <div id="mapping-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="mapping-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <div id="dod-mapping" class="text-xs"></div>
     </div>
 
-    <!-- Balances Tab -->
+    <!-- Balances — rendered by DataObjectDisplay -->
     <div id="tab-balances" class="hidden">
-      <!-- PR #89 — Hierarchical view added (A14). The Balances tab now
-           has the same Tabular/Hierarchical toggle as Entities/CC/PC.
-           In hierarchical mode the table is replaced by a tree where
-           each cost center sits under its hierarchy path and shows
-           aggregated TC_AMT + posting count for the selected fiscal
-           year. The aggregation is server-side (one GROUP BY per
-           request via /legacy/balances/by-hierarchy) so we can render
-           millions of underlying balance rows without shipping them
-           all to the browser. -->
-      <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
-        <h3 class="text-base font-semibold flex-shrink-0">Balances</h3>
-        <div class="flex items-center gap-2 flex-wrap ml-auto">
-          <button onclick="downloadTableCSV('bal-table','balances.csv')" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>
-          <button id="delete-all-bal" class="btn-danger text-xs flex-shrink-0">Delete All</button>
-        </div>
-      </div>
-      <div class="flex items-center gap-2 mb-3 flex-wrap">
-        <div class="inline-flex rounded-md border border-gray-300 text-xs">
-          <button id="bal-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium whitespace-nowrap" onclick="switchBalView('tabular')">Tabular</button>
-          <button id="bal-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50 whitespace-nowrap border-l border-gray-300" onclick="switchBalView('hierarchy')">Hierarchical</button>
-        </div>
-        <input id="filter-bal-cctr" type="text" placeholder="Cost Center..." class="input text-sm w-32" />
-        <input id="filter-bal-year" type="number" placeholder="Year..." class="input text-sm w-24" />
-        <!-- Hierarchy picker (used by hierarchical mode only) -->
-        <select id="bal-hier-picker" class="input text-xs w-64 hidden">
-          <option value="">(pick a hierarchy)</option>
-        </select>
-      </div>
-      <!-- Tabular wrap (existing) -->
-      <div id="bal-table-wrap">
-        <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-        <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
-      </div>
-      <!-- Hierarchical wrap (PR #89) -->
-      <div id="bal-hier-wrap" class="hidden">
-        <div id="bal-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Pick a hierarchy above to load aggregated balances.</div>
-      </div>
+      <div id="dod-balances" class="text-xs"></div>
     </div>
 
-    <!-- Hierarchies Tab -->
+    <!-- Hierarchies — rendered by DataObjectDisplay -->
     <div id="tab-hierarchies" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Hierarchies</h3>
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-md border border-gray-300 overflow-hidden text-xs">
-            <button id="hier-view-list" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchHierView('list')">List</button>
-            <button id="hier-view-tree" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchHierView('tree')">Tree View</button>
-          </div>
-          <button id="delete-all-hier" class="btn-danger text-xs">Delete All</button>
-        </div>
-      </div>
-      <!-- List view -->
-      <div id="hier-list-view">
-        <div id="hier-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
-      </div>
-      <!-- Tree view -->
-      <div id="hier-tree-view" class="hidden">
-        <div class="flex items-center gap-3 mb-3">
-          <select id="hier-tree-select" class="input text-sm w-64">
-            <option value="">Select a hierarchy...</option>
-          </select>
-          <button id="expand-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(true)">Expand All</button>
-          <button id="collapse-all-btn" class="btn-secondary text-xs" onclick="toggleAllNodes(false)">Collapse All</button>
-          <input id="hier-tree-search" type="text" placeholder="Search nodes/centers..." class="input text-sm w-48" />
-        </div>
-        <div id="hier-tree-container" class="text-sm text-gray-600 font-mono overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 540px)">Select a hierarchy to view its tree structure.</div>
-      </div>
+      <div id="dod-hierarchies" class="text-xs"></div>
     </div>
 
-    <!-- Employees Tab -->
+    <!-- Employees — rendered by DataObjectDisplay -->
     <div id="tab-employees" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Employees (SAP HR Master Data)</h3>
-        <div class="flex items-center gap-2">
-          <input id="search-emp" type="text" placeholder="Search GPN, name, email..." class="input text-sm w-56" />
-          <button onclick="downloadTableCSV('emp-table','employees.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-emp" class="btn-danger text-xs">Delete All</button>
-        </div>
-      </div>
-      <p class="text-xs text-gray-500 mb-3">Employee data is used to resolve cost center owners. Owner format: <strong>GPN Name</strong> (e.g. "12345 John Smith"). Upload via the Upload tab or extract from SAP.</p>
-      <div id="emp-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
-      <div id="emp-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <div id="dod-employees" class="text-xs"></div>
     </div>
 
     <!-- Upload Tab -->
@@ -505,14 +252,7 @@ import Layout from '../../components/layout/Layout.astro';
 
 <style>
   /* Sticky table headers inside scrollable containers */
-  #db-content thead th,
-  #db-hier-detail thead th,
-  #entities-table thead th,
-  #cc-table thead th,
-  #pc-table thead th,
-  #bal-table thead th,
-  #hier-table thead th,
-  #emp-table thead th {
+  .card thead th {
     position: sticky;
     top: 0;
     z-index: 10;
@@ -520,6 +260,7 @@ import Layout from '../../components/layout/Layout.astro';
   }
 </style>
 
+<script is:inline src="/data-object-display.js"></script>
 <script is:inline>
 (function() {
   var token = localStorage.getItem('amplifi_token');
@@ -552,43 +293,7 @@ import Layout from '../../components/layout/Layout.astro';
     URL.revokeObjectURL(url);
   };
 
-  // Client-side column sorting for loaded page data
-  function sortTable(tableEl) {
-    var thead = tableEl.querySelector('thead');
-    if (!thead) return;
-    thead.querySelectorAll('th').forEach(function(th, colIdx) {
-      th.style.cursor = 'pointer';
-      th.title = 'Click to sort';
-      th.addEventListener('click', function() {
-        var tbody = tableEl.querySelector('tbody');
-        if (!tbody) return;
-        var rows = Array.from(tbody.querySelectorAll('tr'));
-        var asc = th.dataset.sort !== 'asc';
-        thead.querySelectorAll('th').forEach(function(h) { delete h.dataset.sort; h.textContent = h.textContent.replace(/ [▲▼]$/, ''); });
-        th.dataset.sort = asc ? 'asc' : 'desc';
-        th.textContent += asc ? ' ▲' : ' ▼';
-        rows.sort(function(a, b) {
-          var ac = (a.cells[colIdx] || {}).textContent || '';
-          var bc = (b.cells[colIdx] || {}).textContent || '';
-          var an = parseFloat(ac.replace(/,/g, '')), bn = parseFloat(bc.replace(/,/g, ''));
-          if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
-          return asc ? ac.localeCompare(bc) : bc.localeCompare(ac);
-        });
-        rows.forEach(function(r) { tbody.appendChild(r); });
-      });
-    });
-  }
-  // Apply sorting after each table render
-  var sortObserver = new MutationObserver(function(mutations) {
-    mutations.forEach(function(m) {
-      var t = m.target.querySelector('table');
-      if (t) sortTable(t);
-    });
-  });
-  ['entities-table','cc-table','pc-table','tcc-table','tpc-table','mapping-table','bal-table','hier-table','emp-table'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) sortObserver.observe(el, { childList: true });
-  });
+
 
   var allTabs = ['data-browser','entities','cost-centers','profit-centers','gl-accounts','mapping','balances','hierarchies','employees','upload','sample-data'];
 
@@ -605,21 +310,7 @@ import Layout from '../../components/layout/Layout.astro';
     });
   });
 
-  // Refresh all browse tabs + counts after data changes
-  function refreshAllData() {
-    loadCounts();
-    if (typeof loadCC === 'function') loadCC(1);
-    if (typeof loadPC === 'function') loadPC(1);
-    if (typeof loadGL === 'function') loadGL(1);
-    if (typeof loadTargetCC === 'function') loadTargetCC(1);
-    if (typeof loadTargetPC === 'function') loadTargetPC(1);
-    if (typeof loadMapping === 'function') loadMapping(1);
-    if (typeof loadEntities === 'function') loadEntities(1);
-    if (typeof loadBalances === 'function') loadBalances(1);
-    if (typeof loadHierarchies === 'function') loadHierarchies();
-    if (typeof loadEmployees === 'function') loadEmployees(1);
-    if (typeof loadDataBrowser === 'function') loadDataBrowser();
-  }
+  var refreshAllData = function() { loadCounts(); };
 
   // Scope/category selectors
   var scopeSel = document.getElementById('scope-selector');
@@ -714,1697 +405,349 @@ import Layout from '../../components/layout/Layout.astro';
     }
   });
 
-  function pagerHtml(total, page, size, loadFn) {
-    var pages = Math.ceil(total / size) || 1;
-    var html = '<span class="text-gray-500">' + fmt(total) + ' total, page ' + page + '/' + pages + '</span><div class="flex gap-1">';
-    if (page > 1) html += '<button onclick="' + loadFn + '(' + (page-1) + ')" class="btn-sm">Prev</button>';
-    if (page < pages) html += '<button onclick="' + loadFn + '(' + (page+1) + ')" class="btn-sm">Next</button>';
-    return html + '</div>';
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Central DataObjectDisplay instances for ALL data tabs.
+  // Each tab delegates rendering, search, sort, column-filter,
+  // hierarchy picker, pagination, and CSV export to the shared class.
+  // ═══════════════════════════════════════════════════════════════════
+
+  function dodScopeParams() {
+    var p = {};
+    p.scope = getScope();
+    if (getCategory()) p.data_category = getCategory();
+    return p;
   }
+
+  function makeDeleteBtn(label, endpoint, dod) {
+    return {
+      label: label,
+      className: 'btn-danger text-xs',
+      onclick: function() {
+        if (!confirm('Delete ALL ' + label.replace('Delete All ', '') + '?')) return;
+        fetch(endpoint, { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dod.load(); });
+      }
+    };
+  }
+
+  // --- Data Browser ---
+  var dodDB = new DataObjectDisplay({
+    containerId: 'dod-data-browser',
+    objectType: 'data-browser',
+    title: 'Data Browser',
+    dataEndpoint: '/api/data/browser',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'cctr',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 200,
+    hierPageSize: 2000,
+    inlineHierarchies: true,
+    includeBalances: false,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr
+  });
+  dodDB.load();
 
   // --- Entities ---
-  window.loadEntities = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-entities').value;
-    // Larger page size so hierarchy view sees the full set; tabular still paginates the rendered table
-    var url = '/api/entities?page=' + page + '&size=500' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      window._entityData = d.items || [];
-      var el = document.getElementById('entities-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No entities found.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">Code</th><th class="py-2 px-2 text-left">Name</th>' +
-        '<th class="py-2 px-2 text-left">Country</th><th class="py-2 px-2 text-left">Region</th>' +
-        '<th class="py-2 px-2 text-left">Currency</th><th class="py-2 px-2 text-center">Active</th></tr></thead><tbody>';
-      d.items.forEach(function(e) {
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.ccode) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.name) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.country) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.region) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.currency) + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (e.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-      document.getElementById('entities-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadEntities');
-      // If hierarchy view is active, re-render with fresh data
-      var hierWrap = document.getElementById('entities-hier-wrap');
-      if (hierWrap && !hierWrap.classList.contains('hidden') && typeof _renderEntityHierarchy === 'function') {
-        _renderEntityHierarchy();
-      }
-    }).catch(function(e) { document.getElementById('entities-table').textContent = 'Error: ' + e.message; });
-  };
-  loadEntities(1);
-  document.getElementById('search-entities').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEntities(1); }, 300); });
-
-  // Normalise setclass aliases (ENT→0106, CC→0101, PC→0104)
-  var _SC_MAP = { CC: '0101', PC: '0104', ENT: '0106', ENTITY: '0106' };
-  function _normSc(raw) {
-    if (!raw) return '';
-    var u = String(raw).trim().toUpperCase();
-    return _SC_MAP[u] || u;
-  }
-
-  // --- Cost Centers ---
-  // Sortable table helper
-  var _tableSort = {};
-  window.sortTable = function(tableId, col, renderFn) {
-    var s = _tableSort[tableId] || { col: col, dir: 'asc' };
-    if (s.col === col) { s.dir = s.dir === 'asc' ? 'desc' : 'asc'; } else { s.col = col; s.dir = 'asc'; }
-    _tableSort[tableId] = s;
-    renderFn();
-  };
-  function sortTableData(tableId, data) {
-    var s = _tableSort[tableId];
-    if (!s) return data;
-    return data.slice().sort(function(a, b) {
-      var va = a[s.col], vb = b[s.col];
-      if (va == null) va = ''; if (vb == null) vb = '';
-      if (typeof va === 'string') va = va.toLowerCase();
-      if (typeof vb === 'string') vb = vb.toLowerCase();
-      return (va < vb ? -1 : va > vb ? 1 : 0) * (s.dir === 'asc' ? 1 : -1);
-    });
-  }
-  function sortIcon(tableId, col) {
-    var s = _tableSort[tableId];
-    if (!s || s.col !== col) return ' <span class="text-gray-300 text-[10px]">↕</span>';
-    return s.dir === 'asc' ? ' ↑' : ' ↓';
-  }
-  function sortTh(tableId, col, label, renderFn) {
-    return '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortTable(\'' +
-      tableId + '\',\'' + col + '\',' + renderFn + ')">' + label + sortIcon(tableId, col) + '</th>';
-  }
-
-  var _ccData = [];
-  // Track the picked hierarchy id and max_depth from the last fetch.
-  // null = no hierarchy picked → render flat (no L* columns, no tree).
-  var _ccHierId = null;
-  var _ccHierMaxDepth = 0;
-  window.loadCC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-cc').value;
-    var ccode = document.getElementById('filter-cc-ccode').value;
-    var url = '/api/legacy/cost-centers?page=' + page + '&size=500' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
-    if (_ccHierId) url += '&hierarchy_id=' + _ccHierId;
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _ccData = d.items || [];
-      _ccHierMaxDepth = d.hierarchy_max_depth || 0;
-      window._ccData = _ccData;
-      window._ccHierMaxDepth = _ccHierMaxDepth;
-      _renderCCTable();
-      document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
-      var ccHierWrap = document.getElementById('cc-hier-wrap');
-      if (ccHierWrap && !ccHierWrap.classList.contains('hidden') && typeof _renderCCHierarchy === 'function') {
-        _renderCCHierarchy();
-      }
-    }).catch(function(e) { document.getElementById('cc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderCCTable = function() {
-    var el = document.getElementById('cc-table');
-    if (!_ccData.length) { el.textContent = 'No cost centers found.'; return; }
-    var items = sortTableData('cc', _ccData);
-    var lvlCols = '';
-    for (var i = 0; i < _ccHierMaxDepth; i++) {
-      lvlCols += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50">L' + i + '</th>';
-    }
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      lvlCols +
-      sortTh('cc','cctr','CC','_renderCCTable') +
-      sortTh('cc','txtsh','Short Text','_renderCCTable') +
-      sortTh('cc','txtmi','Medium Text','_renderCCTable') +
-      sortTh('cc','ccode','Entity','_renderCCTable') +
-      sortTh('cc','coarea','CO Area','_renderCCTable') +
-      sortTh('cc','cctrcgy','Category','_renderCCTable') +
-      sortTh('cc','responsible','Responsible','_renderCCTable') +
-      sortTh('cc','pctr','PC','_renderCCTable') +
-      sortTh('cc','is_active','Active','_renderCCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(c) {
-      var lvlCells = '';
-      var levels = c.levels || [];
-      for (var j = 0; j < _ccHierMaxDepth; j++) {
-        var v = levels[j] || '';
-        // Empty cell text-muted so users can spot CCs that aren't in the
-        // selected hierarchy (or end at a higher level than the deepest).
-        lvlCells += '<td class="py-1.5 px-2 font-mono text-amplifi-700">' + esc(v) + '</td>';
-      }
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        lvlCells +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadCC(1);
-  document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
-  document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
-
-  // CC hierarchy picker. PR #88: previously filtered to setclass=0101
-  // only, which surprised operators whose imports were tagged 0104 or
-  // a custom setclass (we saw "not all hierarchies shown" reports —
-  // the picker silently dropped non-0101 ones). We now load all
-  // hierarchies and group by setclass; the picker stays useful for
-  // any reasonable hierarchy. The wave-detail and analysis pipeline
-  // resolve leaves by (hierarchy_id, value) without caring about
-  // setclass, so any of these will work for visualisation.
-  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var sel = document.getElementById('cc-hier-picker');
-      var items = d.items || [];
-      var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
-      var entHiers = items.filter(function(h) { return _normSc(h.setclass) === '0106'; });
-      var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
-      var otherHiers = items.filter(function(h) {
-        var ns = _normSc(h.setclass);
-        return ns !== '0101' && ns !== '0106' && ns !== '0104';
-      });
-
-      function appendGroup(label, list) {
-        if (!list.length) return;
-        var group = document.createElement('optgroup');
-        group.label = label;
-        list.forEach(function(h) {
-          var opt = document.createElement('option');
-          opt.value = h.id;
-          opt.textContent = h.setname + (h.description ? ' — ' + h.description : '');
-          group.appendChild(opt);
-        });
-        sel.appendChild(group);
-      }
-      // PR #91 — Entity hierarchies as their own group. The smart
-      // resolver makes them first-class on the CC tab (matches via
-      // cc.ccode), so they shouldn't be hidden under "Other".
-      appendGroup('Cost Center hierarchies (CC)', ccHiers);
-      appendGroup('Entity hierarchies', entHiers);
-      appendGroup('Profit Center hierarchies (PC)', pcHiers);
-      appendGroup('Other', otherHiers);
-      // Auto-select if only one CC hierarchy exists
-      if (ccHiers.length === 1 && !_ccHierId) {
-        _ccHierId = ccHiers[0].id;
-        sel.value = _ccHierId;
-        loadCC(1);
-      } else if (items.length === 1 && !_ccHierId) {
-        _ccHierId = items[0].id;
-        sel.value = _ccHierId;
-        loadCC(1);
-      }
-    })
-    .catch(function() { /* picker stays at "(none)" if listing fails */ });
-  document.getElementById('cc-hier-picker').addEventListener('change', function() {
-    _ccHierId = this.value ? parseInt(this.value, 10) : null;
-    loadCC(1);
+  var dodEntities = new DataObjectDisplay({
+    containerId: 'dod-entities',
+    objectType: 'entities',
+    title: 'Entities (Legal Entities / Company Codes)',
+    dataEndpoint: '/api/entities',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'ccode',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    hierarchyTypes: ['0106'],
+    showSearch: true,
+    showCSV: true,
+    pageSize: 500,
+    hierPageSize: 2000,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL entities?')) return;
+        fetch('/api/data/entities/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodEntities.load(); });
+      }}
+    ]
   });
+  dodEntities.load();
 
-  // --- Profit Centers ---
-  var _pcData = [];
-  // See _ccHierId comment — same pattern for PC.
-  var _pcHierId = null;
-  var _pcHierMaxDepth = 0;
-  window.loadPC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-pc').value;
-    var ccode = document.getElementById('filter-pc-ccode').value;
-    var url = '/api/legacy/profit-centers?page=' + page + '&size=500' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
-    if (_pcHierId) url += '&hierarchy_id=' + _pcHierId;
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _pcData = d.items || [];
-      _pcHierMaxDepth = d.hierarchy_max_depth || 0;
-      window._pcData = _pcData;
-      window._pcHierMaxDepth = _pcHierMaxDepth;
-      _renderPCTable();
-      document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
-      var pcHierWrap = document.getElementById('pc-hier-wrap');
-      if (pcHierWrap && !pcHierWrap.classList.contains('hidden') && typeof _renderPCHierarchy === 'function') {
-        _renderPCHierarchy();
-      }
-    }).catch(function(e) { document.getElementById('pc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderPCTable = function() {
-    var el = document.getElementById('pc-table');
-    if (!_pcData.length) { el.textContent = 'No profit centers found.'; return; }
-    var items = sortTableData('pc', _pcData);
-    var lvlCols = '';
-    for (var i = 0; i < _pcHierMaxDepth; i++) {
-      lvlCols += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50">L' + i + '</th>';
-    }
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      lvlCols +
-      sortTh('pc','pctr','PC','_renderPCTable') +
-      sortTh('pc','txtsh','Short Text','_renderPCTable') +
-      sortTh('pc','txtmi','Medium Text','_renderPCTable') +
-      sortTh('pc','ccode','Entity','_renderPCTable') +
-      sortTh('pc','coarea','CO Area','_renderPCTable') +
-      sortTh('pc','department','Department','_renderPCTable') +
-      sortTh('pc','responsible','Responsible','_renderPCTable') +
-      sortTh('pc','is_active','Active','_renderPCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(p) {
-      var lvlCells = '';
-      var levels = p.levels || [];
-      for (var j = 0; j < _pcHierMaxDepth; j++) {
-        var v = levels[j] || '';
-        lvlCells += '<td class="py-1.5 px-2 font-mono text-amplifi-700">' + esc(v) + '</td>';
-      }
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        lvlCells +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadPC(1);
-  document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
-  document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
-
-  // PC hierarchy picker. PR #88: previously filtered to setclass=0104
-  // only, which left the picker empty for customers whose CC↔PC
-  // mapping is 1:1 (no separate PC hierarchy imported — the CC
-  // hierarchy is the right answer there). We now load all imported
-  // hierarchies and group them so the operator can pick whichever
-  // matches their PC structure. Same approach as the V2 PC Approach
-  // picker in PR #85.
-  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var sel = document.getElementById('pc-hier-picker');
-      var items = d.items || [];
-      var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
-      var entHiers = items.filter(function(h) { return _normSc(h.setclass) === '0106'; });
-      var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
-      var otherHiers = items.filter(function(h) {
-        var ns = _normSc(h.setclass);
-        return ns !== '0104' && ns !== '0106' && ns !== '0101';
-      });
-
-      function appendGroup(label, list) {
-        if (!list.length) return;
-        var group = document.createElement('optgroup');
-        group.label = label;
-        list.forEach(function(h) {
-          var opt = document.createElement('option');
-          opt.value = h.id;
-          opt.textContent = h.setname + (h.description ? ' — ' + h.description : '');
-          group.appendChild(opt);
-        });
-        sel.appendChild(group);
-      }
-      // PR #91 — explicit Entity-hierarchy group so operators don't
-      // have to dig into "Other" to find entity-based grouping (which
-      // is now first-class via the smart resolver for PCs).
-      appendGroup('Profit Center hierarchies (PC)', pcHiers);
-      appendGroup('Entity hierarchies', entHiers);
-      appendGroup('Cost Center hierarchies (usable only when CC↔PC is 1:1)', ccHiers);
-      appendGroup('Other', otherHiers);
-      // Auto-select if only one PC hierarchy exists
-      if (pcHiers.length === 1 && !_pcHierId) {
-        _pcHierId = pcHiers[0].id;
-        sel.value = _pcHierId;
-        loadPC(1);
-      } else if (items.length === 1 && !_pcHierId) {
-        _pcHierId = items[0].id;
-        sel.value = _pcHierId;
-        loadPC(1);
-      }
-    })
-    .catch(function() { /* picker stays at "(none)" if listing fails */ });
-  document.getElementById('pc-hier-picker').addEventListener('change', function() {
-    _pcHierId = this.value ? parseInt(this.value, 10) : null;
-    loadPC(1);
+  // --- Cost Centers (Legacy) ---
+  var dodCCLegacy = new DataObjectDisplay({
+    containerId: 'dod-cc-legacy',
+    objectType: 'cost-centers',
+    title: 'Legacy Cost Centers',
+    dataEndpoint: '/api/legacy/cost-centers',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'cctr',
+    entityField: 'ccode',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    hierarchyTypes: ['0101', '0106'],
+    showSearch: true,
+    showCSV: true,
+    pageSize: 500,
+    hierPageSize: 5000,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL legacy cost centers?')) return;
+        fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodCCLegacy.load(); });
+      }}
+    ]
   });
+  dodCCLegacy.load();
 
-  // --- Target Cost Centers ---
-  var _tccData = [];
-  window.loadTargetCC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-tcc').value;
-    var url = '/api/target/cost-centers?page=' + page + '&size=50' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _tccData = d.items || [];
-      _renderTCCTable();
-      document.getElementById('tcc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetCC');
-    }).catch(function(e) { document.getElementById('tcc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderTCCTable = function() {
-    var el = document.getElementById('tcc-table');
-    if (!_tccData.length) { el.textContent = 'No target cost centers found.'; return; }
-    var items = sortTableData('tcc', _tccData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('tcc','cctr','CC','_renderTCCTable') +
-      sortTh('tcc','txtsh','Short Text','_renderTCCTable') +
-      sortTh('tcc','txtmi','Medium Text','_renderTCCTable') +
-      sortTh('tcc','ccode','Entity','_renderTCCTable') +
-      sortTh('tcc','coarea','CO Area','_renderTCCTable') +
-      sortTh('tcc','cctrcgy','Category','_renderTCCTable') +
-      sortTh('tcc','responsible','Responsible','_renderTCCTable') +
-      sortTh('tcc','pctr','PC','_renderTCCTable') +
-      sortTh('tcc','mdg_status','MDG Status','_renderTCCTable') +
-      sortTh('tcc','is_active','Active','_renderTCCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(c) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.cctrcgy) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(c.mdg_status) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (c.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadTargetCC(1);
-  document.getElementById('search-tcc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetCC(1); }, 300); });
+  // --- Cost Centers (Target) ---
+  var dodCCTarget = new DataObjectDisplay({
+    containerId: 'dod-cc-target',
+    objectType: 'target-cost-centers',
+    title: 'Target Cost Centers',
+    subtitle: '(ampliFi)',
+    dataEndpoint: '/api/target/cost-centers',
+    identityField: 'cctr',
+    showViewToggle: false,
+    showHierarchyPicker: false,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 50,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL target cost centers?')) return;
+        fetch('/api/data/target/cost-centers/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodCCTarget.load(); });
+      }}
+    ]
+  });
+  dodCCTarget.load();
 
-  // --- Target Profit Centers ---
-  var _tpcData = [];
-  window.loadTargetPC = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-tpc').value;
-    var url = '/api/target/profit-centers?page=' + page + '&size=50' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _tpcData = d.items || [];
-      _renderTPCTable();
-      document.getElementById('tpc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadTargetPC');
-    }).catch(function(e) { document.getElementById('tpc-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderTPCTable = function() {
-    var el = document.getElementById('tpc-table');
-    if (!_tpcData.length) { el.textContent = 'No target profit centers found.'; return; }
-    var items = sortTableData('tpc', _tpcData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('tpc','pctr','PC','_renderTPCTable') +
-      sortTh('tpc','txtsh','Short Text','_renderTPCTable') +
-      sortTh('tpc','txtmi','Medium Text','_renderTPCTable') +
-      sortTh('tpc','ccode','Entity','_renderTPCTable') +
-      sortTh('tpc','coarea','CO Area','_renderTPCTable') +
-      sortTh('tpc','department','Department','_renderTPCTable') +
-      sortTh('tpc','responsible','Responsible','_renderTPCTable') +
-      sortTh('tpc','is_active','Active','_renderTPCTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(p) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(p.coarea) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.department) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(p.responsible) + '</td>' +
-        '<td class="py-1.5 px-2 text-center">' + (p.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-  loadTargetPC(1);
-  document.getElementById('search-tpc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadTargetPC(1); }, 300); });
+  // --- Profit Centers (Legacy) ---
+  var dodPCLegacy = new DataObjectDisplay({
+    containerId: 'dod-pc-legacy',
+    objectType: 'profit-centers',
+    title: 'Legacy Profit Centers',
+    dataEndpoint: '/api/legacy/profit-centers',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'pctr',
+    entityField: 'ccode',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    hierarchyTypes: ['0104', '0106'],
+    showSearch: true,
+    showCSV: true,
+    pageSize: 500,
+    hierPageSize: 5000,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL legacy profit centers?')) return;
+        fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodPCLegacy.load(); });
+      }}
+    ]
+  });
+  dodPCLegacy.load();
+
+  // --- Profit Centers (Target) ---
+  var dodPCTarget = new DataObjectDisplay({
+    containerId: 'dod-pc-target',
+    objectType: 'target-profit-centers',
+    title: 'Target Profit Centers',
+    subtitle: '(ampliFi)',
+    dataEndpoint: '/api/target/profit-centers',
+    identityField: 'pctr',
+    showViewToggle: false,
+    showHierarchyPicker: false,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 50,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL target profit centers?')) return;
+        fetch('/api/data/target/profit-centers/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodPCTarget.load(); });
+      }}
+    ]
+  });
+  dodPCTarget.load();
 
   // --- GL Accounts ---
-  var _glData = [];
-  window.loadGL = function(page) {
-    page = page || 1;
-    var search = (document.getElementById('search-gl') || {}).value || '';
-    var url = '/api/legacy/gl-accounts?page=' + page + '&size=500' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _glData = d.items || [];
-      _renderGLTable();
-      _renderGLHierarchy();
-      var pager = document.getElementById('gl-pager');
-      if (pager) pager.innerHTML = pagerHtml(d.total, d.page, d.size, 'loadGL');
-    }).catch(function(e) {
-      var el = document.getElementById('gl-table');
-      if (el) el.textContent = 'Error: ' + e.message;
-    });
-  };
-  window._renderGLTable = function() {
-    var el = document.getElementById('gl-table');
-    if (!el) return;
-    if (!_glData.length) { el.textContent = 'No GL accounts found.'; return; }
-    var items = sortTableData('gl', _glData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('gl','saknr','GL Account','_renderGLTable') +
-      sortTh('gl','txt20','Short Text','_renderGLTable') +
-      sortTh('gl','txt50','Long Text','_renderGLTable') +
-      sortTh('gl','ktopl','Chart','_renderGLTable') +
-      sortTh('gl','glaccount_type','Type','_renderGLTable') +
-      sortTh('gl','func_area','Func. Area','_renderGLTable') +
-      sortTh('gl','bukrs','Bukrs','_renderGLTable') +
-      sortTh('gl','waers','Curr','_renderGLTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(g) {
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(g.saknr) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(g.txt20) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-md truncate">' + esc(g.txt50) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(g.ktopl) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(g.glaccount_type) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(g.func_area) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(g.bukrs) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(g.waers) + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
+  var dodGL = new DataObjectDisplay({
+    containerId: 'dod-gl',
+    objectType: 'gl-accounts',
+    title: 'GL Accounts',
+    subtitle: '(SKA1 chart-of-accounts)',
+    dataEndpoint: '/api/legacy/gl-accounts',
+    identityField: 'saknr',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    glHierarchyMode: true,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 500,
+    hierPageSize: 5000,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr
+  });
+  dodGL.load();
 
-  // --- Generic hierarchy rendering helper ---
-  // Buckets items by an array of key-extractor fns. Renders an expandable tree.
-  // levelDefs: [{ keyFn, labelFn, sublabelFn? }, ...]; last level renders leaves via leafRenderer(item).
-  // containerId: the DOM element id to render into.
-  function renderHierTree(containerId, items, levelDefs, leafRenderer, emptyMsg) {
-    var el = document.getElementById(containerId);
-    if (!el) return;
-    if (!items || !items.length) {
-      el.textContent = emptyMsg || 'No data.';
-      return;
-    }
-    // Build nested map
-    function bucketize(arr, depth) {
-      if (depth >= levelDefs.length) return arr;
-      var def = levelDefs[depth];
-      var groups = {};
-      var order = [];
-      arr.forEach(function(it) {
-        var k = def.keyFn(it);
-        if (k == null || k === '') k = '(blank)';
-        if (!(k in groups)) { groups[k] = []; order.push(k); }
-        groups[k].push(it);
-      });
-      order.sort();
-      var nested = {};
-      order.forEach(function(k) { nested[k] = bucketize(groups[k], depth + 1); });
-      return { __order: order, __children: nested };
-    }
-    var tree = bucketize(items, 0);
-
-    // Stable id helper for collapsibles
-    var nodeIdSeq = 0;
-    function nextId() { return containerId + '-n' + (++nodeIdSeq); }
-
-    function countDescLeaves(subtree, depth) {
-      if (depth >= levelDefs.length) return subtree.length;
-      var sum = 0;
-      subtree.__order.forEach(function(k) {
-        sum += countDescLeaves(subtree.__children[k], depth + 1);
-      });
-      return sum;
-    }
-
-    function renderNode(subtree, depth) {
-      if (depth >= levelDefs.length) {
-        // Leaves
-        var rows = subtree.map(leafRenderer).join('');
-        return '<div class="ml-6 mt-1 mb-2"><table class="w-full text-xs border border-gray-200 rounded">' + rows + '</table></div>';
-      }
-      var def = levelDefs[depth];
-      var html = '';
-      subtree.__order.forEach(function(k) {
-        var child = subtree.__children[k];
-        var nid = nextId();
-        var leafCount = countDescLeaves(child, depth + 1);
-        // Resolve label/sublabel using the first item in this bucket so labelFn can read whole-item fields
-        var firstItem = (function dive(s, d) {
-          if (d >= levelDefs.length) return s[0];
-          return dive(s.__children[s.__order[0]], d + 1);
-        })(child, depth + 1);
-        var label = def.labelFn ? def.labelFn(k, firstItem) : k;
-        var sub = def.sublabelFn ? def.sublabelFn(k, firstItem) : '';
-        // Indent via inline style instead of `ml-N` Tailwind classes.
-        // PR #91 — operator screenshot showed sub-nodes flush against
-        // their parents because Tailwind's JIT compiler only emits
-        // utilities it sees as literal strings in source; the dynamic
-        // ``'ml-' + Math.min(depth*4, 12)`` template never produced
-        // ``ml-4``/``ml-8``/``ml-12`` literals so those classes weren't
-        // in the bundle. Inline styles work regardless.
-        var indentPx = depth === 0 ? 0 : Math.min(depth * 16, 96);
-        html += '<div style="margin-left:' + indentPx + 'px" class="my-1">' +
-          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-gray-50 px-2 py-1 rounded" ' +
-                 'onclick="(function(b){var t=document.getElementById(\'' + nid + '\');if(!t)return;var open=t.classList.toggle(\'hidden\');b.querySelector(\'.hier-caret\').textContent=open?\'\\u25B6\':\'\\u25BC\';})(this)">' +
-            '<span class="hier-caret text-gray-400">\u25B6</span>' +
-            '<span class="font-mono font-medium text-gray-800">' + esc(label) + '</span>' +
-            (sub ? '<span class="text-xs text-gray-500">' + esc(sub) + '</span>' : '') +
-            '<span class="ml-auto text-[10px] text-gray-400">' + leafCount + ' record' + (leafCount === 1 ? '' : 's') + '</span>' +
-          '</button>' +
-          '<div id="' + nid + '" data-coll-tgt class="hidden">' + renderNode(child, depth + 1) + '</div>' +
-          '</div>';
-      });
-      return html;
-    }
-    // PR #91 — operator request: collapse-all / expand-all toolbar.
-    // Trees can be deep (5+ levels for UBS_GROUP_ENT) and the operator
-    // wants one click to fully expand or collapse rather than walking
-    // each caret manually. The buttons toggle every collapsible
-    // ``<div>`` inside the container — same target the per-row caret
-    // hits, just in bulk. Uses ``data-coll-tgt`` markers added by the
-    // node template so we don't accidentally hit unrelated elements.
-    var toolbarHtml =
-      '<div class="flex items-center gap-2 mb-2 text-xs">' +
-        '<button type="button" onclick="(function(c){c.querySelectorAll(\'[data-coll-tgt]\').forEach(function(t){t.classList.remove(\'hidden\');});c.querySelectorAll(\'.hier-caret\').forEach(function(c){c.textContent=\'\\u25BC\';});})(document.getElementById(\'' + containerId + '\'))" ' +
-                'class="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">▼ Expand all</button>' +
-        '<button type="button" onclick="(function(c){c.querySelectorAll(\'[data-coll-tgt]\').forEach(function(t){t.classList.add(\'hidden\');});c.querySelectorAll(\'.hier-caret\').forEach(function(c){c.textContent=\'\\u25B6\';});})(document.getElementById(\'' + containerId + '\'))" ' +
-                'class="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">▶ Collapse all</button>' +
-      '</div>';
-    el.innerHTML = toolbarHtml + renderNode(tree, 0);
-  }
-
-  // --- GL hierarchy: char[0] -> char[0:5] -> full saknr ---
-  window._renderGLHierarchy = function() {
-    var pad = function(s) { return (s || '').toString(); };
-    renderHierTree('gl-hier', _glData, [
-      {
-        keyFn: function(g) { return pad(g.saknr).charAt(0) || '?'; },
-        labelFn: function(k) { return k + 'xxxxxxxxx'; },
-        sublabelFn: function(k) { return 'Account class'; }
-      },
-      {
-        keyFn: function(g) { return pad(g.saknr).substring(0, 5) || '?'; },
-        labelFn: function(k) { return k + 'xxxxx'; },
-        sublabelFn: function(k) { return 'Account group'; }
-      }
-    ], function(g) {
-      return '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1 px-2 font-mono w-32">' + esc(g.saknr) + '</td>' +
-        '<td class="py-1 px-2">' + esc(g.txt20) + '</td>' +
-        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(g.txt50) + '</td>' +
-        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(g.glaccount_type || '') + '</td>' +
-        '</tr>';
-    }, 'No GL accounts loaded.');
-  };
-
-  // --- CC hierarchy: built from c.levels (the picked stored hierarchy) ---
-  // PR #91 — picker now shows "(none — flat list)" so when no
-  // hierarchy is picked we render the flat list, not a dead-end
-  // message. Operator complaint: switching to Hierarchical view with
-  // no picker selection used to show an empty pane.
-  window._renderCCHierarchy = function() {
-    var el = document.getElementById('cc-hier');
-    if (!_ccData.length) {
-      el.innerHTML = '<p class="text-gray-500 text-sm">No cost centers loaded.</p>';
-      return;
-    }
-    if (!_ccHierId) {
-      // Flat list — same columns as tabular view minus the L* cols.
-      var rows = _ccData.map(function(c) {
-        return '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1 px-2 font-mono w-32">' + esc(c.cctr) + '</td>' +
-          '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>' +
-          '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(c.txtmi) + '</td>' +
-          '<td class="py-1 px-2 font-mono">' + esc(c.ccode) + '</td>' +
-          '<td class="py-1 px-2 font-mono">' + esc(c.pctr) + '</td>' +
-          '<td class="py-1 px-2 text-xs text-gray-500">' + esc(c.responsible || '') + '</td>' +
-          '</tr>';
-      }).join('');
-      el.innerHTML = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-1.5 px-2 text-left font-medium">CC</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Short Text</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Medium Text</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Entity</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">PC</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Responsible</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table>';
-      return;
-    }
-    // PR #91 — diagnose silent empty trees: if the operator picked a
-    // hierarchy but every CC came back with empty levels, the smart
-    // resolver didn't match (e.g. the hierarchy's leaves use a key
-    // we don't have on these CCs). Surface that explicitly so the
-    // operator knows it isn't broken — the data simply doesn't link.
-    var anyMapped = _ccData.some(function(c) { return c.levels && c.levels.length; });
-    if (!anyMapped) {
-      el.innerHTML =
-        '<div class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">' +
-          '<div class="font-medium mb-1">No cost centers map to this hierarchy.</div>' +
-          '<div>None of the ' + _ccData.length + ' loaded cost centers appear as leaves in the picked hierarchy. ' +
-          'Check that the hierarchy was loaded for the same scope/category — or pick a different hierarchy.</div>' +
-        '</div>';
-      return;
-    }
-    // Build levelDefs dynamically: one per L0..L(maxDepth-2). The leaves
-    // of the picked hierarchy are the deepest L*, so the leaf renderer
-    // shows the actual CC row. We use (maxDepth - 1) levels of grouping
-    // because the deepest setname IS the leaf-row level.
-    var levelDefs = [];
-    for (var i = 0; i < _ccHierMaxDepth - 1; i++) {
-      (function(idx) {
-        levelDefs.push({
-          keyFn: function(c) { return (c.levels && c.levels[idx]) || '(unmapped)'; },
-          labelFn: function(k) { return k; },
-          sublabelFn: function(_k) { return 'L' + idx; },
-        });
-      })(i);
-    }
-    renderHierTree('cc-hier', _ccData || [], levelDefs, function(c) {
-      var leafSetname = (c.levels && c.levels[c.levels.length - 1]) || '';
-      return '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1 px-2 font-mono text-amplifi-700 w-40">' + esc(leafSetname) + '</td>' +
-        '<td class="py-1 px-2 font-mono w-32">' + esc(c.cctr) + '</td>' +
-        '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>' +
-        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(c.txtmi) + '</td>' +
-        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(c.responsible || '') + '</td>' +
-        '</tr>';
-    }, 'No cost centers in this hierarchy.');
-  };
-
-  // --- PC hierarchy: same pattern as CC ---
-  window._renderPCHierarchy = function() {
-    var el = document.getElementById('pc-hier');
-    if (!_pcData.length) {
-      el.innerHTML = '<p class="text-gray-500 text-sm">No profit centers loaded.</p>';
-      return;
-    }
-    if (!_pcHierId) {
-      // PR #91 — flat list when no hierarchy picked.
-      var rows = _pcData.map(function(p) {
-        return '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1 px-2 font-mono w-32">' + esc(p.pctr) + '</td>' +
-          '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>' +
-          '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(p.txtmi) + '</td>' +
-          '<td class="py-1 px-2 font-mono">' + esc(p.ccode) + '</td>' +
-          '<td class="py-1 px-2 text-xs text-gray-500">' + esc(p.responsible || '') + '</td>' +
-          '</tr>';
-      }).join('');
-      el.innerHTML = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-1.5 px-2 text-left font-medium">PC</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Short Text</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Medium Text</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Entity</th>' +
-        '<th class="py-1.5 px-2 text-left font-medium">Responsible</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table>';
-      return;
-    }
-    // PR #91 — diagnostic when picked hierarchy doesn't link to any
-    // PC. Particularly likely when an Entity hierarchy is picked on
-    // PCs whose ccode isn't represented, or a CC hierarchy (which
-    // _resolve_paths_for_pcs deliberately returns empty for).
-    var anyMapped = _pcData.some(function(p) { return p.levels && p.levels.length; });
-    if (!anyMapped) {
-      el.innerHTML =
-        '<div class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">' +
-          '<div class="font-medium mb-1">No profit centers map to this hierarchy.</div>' +
-          '<div>None of the ' + _pcData.length + ' loaded profit centers appear as leaves in the picked hierarchy. ' +
-          'Profit Centers cannot be placed in Cost Center hierarchies — pick a Profit Center or Entity hierarchy instead.</div>' +
-        '</div>';
-      return;
-    }
-    var levelDefs = [];
-    for (var i = 0; i < _pcHierMaxDepth - 1; i++) {
-      (function(idx) {
-        levelDefs.push({
-          keyFn: function(p) { return (p.levels && p.levels[idx]) || '(unmapped)'; },
-          labelFn: function(k) { return k; },
-          sublabelFn: function(_k) { return 'L' + idx; },
-        });
-      })(i);
-    }
-    renderHierTree('pc-hier', _pcData || [], levelDefs, function(p) {
-      var leafSetname = (p.levels && p.levels[p.levels.length - 1]) || '';
-      return '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1 px-2 font-mono text-amplifi-700 w-40">' + esc(leafSetname) + '</td>' +
-        '<td class="py-1 px-2 font-mono w-32">' + esc(p.pctr) + '</td>' +
-        '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>' +
-        '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(p.txtmi) + '</td>' +
-        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(p.responsible || '') + '</td>' +
-        '</tr>';
-    }, 'No profit centers in this hierarchy.');
-  };
-
-  // --- Entity hierarchy: country -> region -> ccode ---
-  // Note: _entityData is populated by loadEntities (set on window so this fn picks it up)
-  window._renderEntityHierarchy = function() {
-    var data = window._entityData || [];
-    renderHierTree('entities-hier', data, [
-      {
-        keyFn: function(e) { return e.country || '(no country)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Country'; }
-      },
-      {
-        keyFn: function(e) { return e.region || '(no region)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Region'; }
-      }
-    ], function(e) {
-      return '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1 px-2 font-mono w-24">' + esc(e.ccode) + '</td>' +
-        '<td class="py-1 px-2">' + esc(e.name) + '</td>' +
-        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(e.city || '') + '</td>' +
-        '<td class="py-1 px-2 text-xs text-gray-500">' + esc(e.currency || '') + '</td>' +
-        '</tr>';
-    }, 'No entities loaded.');
-  };
-
-  // --- View switchers (Tabular / Hierarchical) ---
-  function setToggleClasses(tabBtnId, hierBtnId, view) {
-    var on = 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium';
-    var off = 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
-    var tab = document.getElementById(tabBtnId);
-    var hier = document.getElementById(hierBtnId);
-    if (tab) tab.className = view === 'tabular' ? on : off;
-    if (hier) hier.className = view === 'hierarchy' ? on : off;
-  }
-  function showHide(showId, hideId) {
-    var s = document.getElementById(showId);
-    var h = document.getElementById(hideId);
-    if (s) s.classList.remove('hidden');
-    if (h) h.classList.add('hidden');
-  }
-  window.switchEntitiesView = function(view) {
-    setToggleClasses('entities-view-tabular', 'entities-view-hierarchy', view);
-    if (view === 'hierarchy') { showHide('entities-hier-wrap', 'entities-table-wrap'); _renderEntityHierarchy(); }
-    else { showHide('entities-table-wrap', 'entities-hier-wrap'); }
-  };
-  window.switchCCView = function(view) {
-    setToggleClasses('cc-view-tabular', 'cc-view-hierarchy', view);
-    if (view === 'hierarchy') { showHide('cc-hier-wrap', 'cc-tabular-wrap'); _renderCCHierarchy(); }
-    else { showHide('cc-tabular-wrap', 'cc-hier-wrap'); }
-  };
-  window.switchPCView = function(view) {
-    setToggleClasses('pc-view-tabular', 'pc-view-hierarchy', view);
-    if (view === 'hierarchy') { showHide('pc-hier-wrap', 'pc-tabular-wrap'); _renderPCHierarchy(); }
-    else { showHide('pc-tabular-wrap', 'pc-hier-wrap'); }
-  };
-  window.switchGLView = function(view) {
-    setToggleClasses('gl-view-tabular', 'gl-view-hierarchy', view);
-    if (view === 'hierarchy') { showHide('gl-hier-wrap', 'gl-tabular-wrap'); _renderGLHierarchy(); }
-    else { showHide('gl-tabular-wrap', 'gl-hier-wrap'); }
-  };
-  loadGL(1);
-  var _glSearch = document.getElementById('search-gl');
-  if (_glSearch) _glSearch.addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadGL(1); }, 300); });
-
-  // --- Center Mapping ---
-  var _mappingData = [];
-  var _mappingTotal = 0;
-  window.loadMapping = function(page) {
-    page = page || 1;
-    var search = document.getElementById('search-mapping').value;
-    var objType = document.getElementById('filter-mapping-type').value;
-    var url = '/api/center-mappings?page=' + page + '&size=50' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    if (objType) url += '&object_type=' + encodeURIComponent(objType);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      _mappingData = d.items || [];
-      _mappingTotal = d.total || 0;
-      _renderMappingTable();
-      document.getElementById('mapping-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadMapping');
-    }).catch(function(e) { document.getElementById('mapping-table').textContent = 'Error: ' + e.message; });
-  };
-  window._renderMappingTable = function() {
-    var el = document.getElementById('mapping-table');
-    if (!_mappingData.length) {
-      // PR #89 — A13: actionable empty state. Operator's question
-      // 'mapping is leer, wie kann diese befüllen?' was the cue that
-      // the previous one-line "No center mappings found. Upload a
-      // mapping file to get started." was too terse — it doesn't say
-      // WHERE to upload, doesn't mention auto-derivation, and gives
-      // the operator no clickable next step. Now they get both paths
-      // explained inline with buttons.
-      var search = document.getElementById('search-mapping').value;
-      var objType = document.getElementById('filter-mapping-type').value;
-      // If a filter is active and yields zero rows we shouldn't pretend
-      // the whole table is empty — show a different message.
-      if (search || objType) {
-        el.innerHTML = '<div class="text-gray-400 text-sm py-3">' +
-          'No center mappings match the current filter. ' +
-          '<button class="text-blue-600 hover:underline text-sm" onclick="document.getElementById(\'search-mapping\').value=\'\';document.getElementById(\'filter-mapping-type\').value=\'\';loadMapping(1);">Clear filters</button>' +
-          '</div>';
-        return;
-      }
-      el.innerHTML = '<div class="border-2 border-dashed border-gray-300 rounded-lg p-6 my-4">' +
-        '<h4 class="text-base font-semibold mb-2 text-gray-700">No center mappings yet</h4>' +
-        '<p class="text-sm text-gray-600 mb-4">Center mappings translate <span class="font-medium">legacy</span> CC/PC codes into their <span class="font-medium">target</span> codes for migration. There are two ways to populate this table:</p>' +
-        '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
-          // Path A — upload CSV
-          '<div class="border rounded-lg p-4 bg-blue-50">' +
-            '<div class="flex items-center gap-2 mb-2">' +
-              '<span class="text-blue-700 text-base">📄</span>' +
-              '<h5 class="font-semibold text-sm">Upload a mapping CSV</h5>' +
-            '</div>' +
-            '<p class="text-xs text-gray-600 mb-3">Use this if you already have a curated legacy → target list (e.g. from a migration spreadsheet).</p>' +
-            '<a href="/uploads" class="inline-block btn-amplifi text-xs px-3 py-1">Go to Upload page →</a>' +
-            '<a href="/api/admin/upload-templates/center_mapping/download" class="inline-block ml-2 text-xs text-blue-700 hover:underline" target="_blank">Download CSV template</a>' +
-          '</div>' +
-          // Path B — auto-derive
-          '<div class="border rounded-lg p-4 bg-amber-50">' +
-            '<div class="flex items-center gap-2 mb-2">' +
-              '<span class="text-amber-700 text-base">⚙️</span>' +
-              '<h5 class="font-semibold text-sm">Auto-derive from completed runs</h5>' +
-            '</div>' +
-            '<p class="text-xs text-gray-600 mb-3">Pull every <span class="font-mono">MERGE_MAP</span> proposal from your completed analysis runs and create mapping rows automatically.</p>' +
-            '<button id="btn-mapping-auto-derive" class="btn-amplifi text-xs px-3 py-1" onclick="autoDeriveMappings()">Auto-derive now</button>' +
-          '</div>' +
-        '</div>' +
-        '</div>';
-      return;
-    }
-    var items = sortTableData('mapping', _mappingData);
-    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-      sortTh('mapping','object_type','Type','_renderMappingTable') +
-      sortTh('mapping','legacy_coarea','Legacy CO','_renderMappingTable') +
-      sortTh('mapping','legacy_center','Legacy Center','_renderMappingTable') +
-      sortTh('mapping','legacy_name','Legacy Name','_renderMappingTable') +
-      '<th class="py-2 px-2 text-center">→</th>' +
-      sortTh('mapping','target_coarea','Target CO','_renderMappingTable') +
-      sortTh('mapping','target_center','Target Center','_renderMappingTable') +
-      sortTh('mapping','target_name','Target Name','_renderMappingTable') +
-      sortTh('mapping','mapping_type','Map Type','_renderMappingTable') +
-      sortTh('mapping','notes','Notes','_renderMappingTable') +
-      '</tr></thead><tbody>';
-    items.forEach(function(m) {
-      var typeLabel = m.object_type === 'cost_center' ? 'CC' : 'PC';
-      var typeBg = m.object_type === 'cost_center' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800';
-      html += '<tr class="border-b hover:bg-gray-50">' +
-        '<td class="py-1.5 px-2"><span class="text-[10px] font-medium px-1.5 py-0.5 rounded ' + typeBg + '">' + typeLabel + '</span></td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(m.legacy_coarea) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono font-medium">' + esc(m.legacy_center) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.legacy_name) + '</td>' +
-        '<td class="py-1.5 px-2 text-center text-gray-400">→</td>' +
-        '<td class="py-1.5 px-2 font-mono">' + esc(m.target_coarea) + '</td>' +
-        '<td class="py-1.5 px-2 font-mono font-medium text-amplifi-700">' + esc(m.target_center) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.target_name) + '</td>' +
-        '<td class="py-1.5 px-2">' + esc(m.mapping_type) + '</td>' +
-        '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(m.notes) + '</td></tr>';
-    });
-    el.innerHTML = html + '</tbody></table>';
-  };
-
-  // PR #89 — A13. Auto-derive button handler. Calls the new
-  // /api/center-mappings/auto-derive endpoint, which reads MERGE_MAP
-  // proposals from completed runs and inserts/refreshes mapping rows
-  // (idempotent — re-running is safe).
-  window.autoDeriveMappings = function() {
-    var btn = document.getElementById('btn-mapping-auto-derive');
-    if (btn) { btn.disabled = true; btn.textContent = 'Deriving…'; }
-    fetch('/api/center-mappings/auto-derive', { method: 'POST', headers: authHdr })
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); });
-        return r.json();
-      })
-      .then(function(d) {
-        var msg = 'Auto-derive complete: ' + d.created + ' created · ' + d.updated + ' updated · ' + d.skipped + ' skipped';
-        if (d.runs_consulted === 0) {
-          msg = 'No completed runs to derive from. Run a global analysis first, then come back here.';
-        } else {
-          msg += '\n(consulted ' + d.runs_consulted + ' run' + (d.runs_consulted === 1 ? '' : 's') + ')';
+  // --- Mapping ---
+  var dodMapping = new DataObjectDisplay({
+    containerId: 'dod-mapping',
+    objectType: 'center-mappings',
+    title: 'Center Mapping',
+    subtitle: '(Legacy \u2192 Target)',
+    dataEndpoint: '/api/center-mappings',
+    identityField: 'id',
+    showViewToggle: false,
+    showHierarchyPicker: false,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 50,
+    extraFilters: [
+      { id: 'mapping_type', type: 'select', className: 'w-36', options: [
+        { value: '', label: 'All Types' },
+        { value: 'cost_center', label: 'Cost Centers' },
+        { value: 'profit_center', label: 'Profit Centers' }
+      ]}
+    ],
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Auto-derive', className: 'btn-secondary text-xs',
+        title: 'Re-derive mappings from completed analysis runs (idempotent)',
+        onclick: function() {
+          fetch('/api/center-mappings/auto-derive', { method: 'POST', headers: authHdr })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              alert('Auto-derived ' + (d.created || 0) + ' mappings.');
+              dodMapping.load(); loadCounts();
+            })
+            .catch(function(e) { alert('Error: ' + e.message); });
         }
-        alert(msg);
-        loadMapping(1);
-      })
-      .catch(function(err) {
-        alert('Error: ' + err.message);
-        if (btn) { btn.disabled = false; btn.textContent = 'Auto-derive now'; }
-      });
-  };
-  loadMapping(1);
-  document.getElementById('search-mapping').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadMapping(1); }, 300); });
-  document.getElementById('filter-mapping-type').addEventListener('change', function() { loadMapping(1); });
+      },
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL center mappings?')) return;
+        fetch('/api/data/center-mappings/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodMapping.load(); });
+      }}
+    ],
+    onExtraFilterChange: function(filterId, value) {
+      if (filterId === 'mapping_type') {
+        dodMapping.extraQueryParams.mapping_type = value;
+        dodMapping._page = 1;
+        dodMapping.loadData(function() { dodMapping.render(); });
+      }
+    }
+  });
+  dodMapping.load();
 
   // --- Balances ---
-  window.loadBalances = function(page) {
-    page = page || 1;
-    var cctr = document.getElementById('filter-bal-cctr').value;
-    var year = document.getElementById('filter-bal-year').value;
-    var url = '/api/legacy/balances?page=' + page + '&size=50' + scopeParams();
-    if (cctr) url += '&cctr=' + encodeURIComponent(cctr);
-    if (year) url += '&fiscal_year=' + year;
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var el = document.getElementById('bal-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No balances found.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">CC</th><th class="py-2 px-2 text-left">Entity</th>' +
-        '<th class="py-2 px-2 text-left">Year</th><th class="py-2 px-2 text-left">Period</th>' +
-        '<th class="py-2 px-2 text-left">Account</th><th class="py-2 px-2 text-left">Class</th>' +
-        '<th class="py-2 px-2 text-right">TC Amount</th><th class="py-2 px-2 text-left">Cur</th>' +
-        '<th class="py-2 px-2 text-right">Postings</th></tr></thead><tbody>';
-      d.items.forEach(function(b) {
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(b.cctr) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(b.ccode) + '</td>' +
-          '<td class="py-1.5 px-2">' + b.fiscal_year + '</td>' +
-          '<td class="py-1.5 px-2">' + String(b.period).padStart(2,'0') + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(b.account) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(b.account_class) + '</td>' +
-          '<td class="py-1.5 px-2 text-right font-mono">' + Number(b.tc_amt).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(b.currency_tc) + '</td>' +
-          '<td class="py-1.5 px-2 text-right">' + fmt(b.posting_count) + '</td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-      document.getElementById('bal-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadBalances');
-    }).catch(function(e) { document.getElementById('bal-table').textContent = 'Error: ' + e.message; });
-  };
-  loadBalances(1);
-  document.getElementById('filter-bal-cctr').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
-  document.getElementById('filter-bal-year').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
-
-  // PR #89 — Balances hierarchical view (A14). Mirrors the
-  // Tabular/Hierarchical pattern from the other tabs. We populate the
-  // hierarchy picker on demand (first switch into the tab) and re-fetch
-  // an aggregated dataset from /legacy/balances/by-hierarchy.
-  var _balView = 'tabular';
-  var _balHierLoadedFor = null; // cache by hierarchy_id|year combo
-
-  window.switchBalView = function(view) {
-    _balView = view;
-    setToggleClasses('bal-view-tabular', 'bal-view-hierarchy', view);
-    var picker = document.getElementById('bal-hier-picker');
-    if (view === 'hierarchy') {
-      picker.classList.remove('hidden');
-      showHide('bal-hier-wrap', 'bal-table-wrap');
-      // Lazy-populate the picker the first time we enter this view
-      if (picker.options.length <= 1) {
-        fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
-          .then(function(r) { return r.json(); })
-          .then(function(d) {
-            var items = d.items || [];
-            // Group by setclass so operators see CC/PC/Entity sections clearly.
-            var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
-            var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
-            var otherHiers = items.filter(function(h) { var ns = _normSc(h.setclass); return ns !== '0101' && ns !== '0104'; });
-            function appendGroup(label, list) {
-              if (!list.length) return;
-              var g = document.createElement('optgroup');
-              g.label = label;
-              list.forEach(function(h) {
-                var o = document.createElement('option');
-                o.value = h.id;
-                o.textContent = h.setname + (h.description ? ' — ' + h.description : '');
-                g.appendChild(o);
-              });
-              picker.appendChild(g);
-            }
-            appendGroup('Cost Center hierarchies', ccHiers);
-            appendGroup('Profit Center hierarchies', pcHiers);
-            appendGroup('Other', otherHiers);
-          });
-      }
-      _renderBalHierarchy();
-    } else {
-      picker.classList.add('hidden');
-      showHide('bal-table-wrap', 'bal-hier-wrap');
-    }
-  };
-
-  document.getElementById('bal-hier-picker').addEventListener('change', _renderBalHierarchy);
-  // Year filter feeds both views — re-render hierarchy if active.
-  document.getElementById('filter-bal-year').addEventListener('input', function() {
-    if (_balView === 'hierarchy') {
-      clearTimeout(this._tHier);
-      this._tHier = setTimeout(_renderBalHierarchy, 350);
-    }
+  var dodBalances = new DataObjectDisplay({
+    containerId: 'dod-balances',
+    objectType: 'balances',
+    title: 'Balances',
+    dataEndpoint: '/api/legacy/balances',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'id',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    hierarchyTypes: ['0101', '0106'],
+    showSearch: true,
+    showCSV: true,
+    pageSize: 50,
+    hierPageSize: 5000,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL balances?')) return;
+        fetch('/api/data/balances/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodBalances.load(); });
+      }}
+    ]
   });
-
-  function _renderBalHierarchy() {
-    var hierId = document.getElementById('bal-hier-picker').value;
-    var year = document.getElementById('filter-bal-year').value;
-    var el = document.getElementById('bal-hier');
-    if (!hierId) {
-      el.innerHTML = '<span class="text-gray-400 text-xs italic">Select a hierarchy above to render aggregated balances.</span>';
-      return;
-    }
-    var cacheKey = hierId + '|' + (year || '');
-    el.innerHTML = '<div class="text-gray-500 text-xs py-3">Loading aggregated balances…</div>';
-    var url = '/api/legacy/balances/by-hierarchy?hierarchy_id=' + encodeURIComponent(hierId);
-    if (year) url += '&fiscal_year=' + encodeURIComponent(year);
-    url += scopeParams();
-    fetch(url, { headers: authHdr })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(d) {
-        _balHierLoadedFor = cacheKey;
-        renderBalTree(el, d);
-      })
-      .catch(function(e) { el.innerHTML = '<span class="text-red-500">Error: ' + esc(e.message) + '</span>'; });
-  }
-
-  function renderBalTree(el, data) {
-    var items = data.items || [];
-    if (!items.length) {
-      el.innerHTML = '<span class="text-gray-400 text-xs italic">No balances found for this hierarchy / year combination.</span>';
-      return;
-    }
-    // Build the same path-based tree structure used in the analytics
-    // hierarchical view, but with year totals at the leaves.
-    function emptyNode() { return { children: {}, leaves: [], order: [] }; }
-    var root = emptyNode();
-    items.forEach(function(it) {
-      var path = it.hierarchy_path || [];
-      if (!path.length) {
-        if (!root.children['(unassigned)']) {
-          root.children['(unassigned)'] = emptyNode();
-          root.order.push('(unassigned)');
-        }
-        root.children['(unassigned)'].leaves.push(it);
-        return;
-      }
-      var node = root;
-      for (var i = 0; i < path.length - 1; i++) {
-        var key = path[i];
-        if (!node.children[key]) {
-          node.children[key] = emptyNode();
-          node.order.push(key);
-        }
-        node = node.children[key];
-      }
-      node.leaves.push(it);
-    });
-
-    function nodeTotals(node) {
-      var t = { tc: 0, postings: 0, ccs: 0 };
-      node.leaves.forEach(function(it) {
-        t.tc += it.totals.tc_amt;
-        t.postings += it.totals.posting_count;
-        t.ccs += 1;
-      });
-      node.order.forEach(function(k) {
-        var sub = nodeTotals(node.children[k]);
-        t.tc += sub.tc; t.postings += sub.postings; t.ccs += sub.ccs;
-      });
-      return t;
-    }
-
-    var idSeq = 0;
-    function nid() { return 'bal-tree-n' + (++idSeq); }
-
-    function renderNode(node, depth) {
-      var html = '';
-      node.order.sort();
-      node.order.forEach(function(k) {
-        var child = node.children[k];
-        var id = nid();
-        var totals = nodeTotals(child);
-        var indent = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
-        var openByDefault = depth < 2;
-        var caret = openByDefault ? '\u25BC' : '\u25B6';
-        var hide = openByDefault ? '' : ' hidden';
-        var tcFmt = totals.tc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-        html += '<div class="' + indent + ' my-0.5">' +
-          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded" ' +
-                 'onclick="(function(b){var t=document.getElementById(\'' + id + '\');if(!t)return;var o=t.classList.toggle(\'hidden\');b.querySelector(\'.bal-caret\').textContent=o?\'\\u25B6\':\'\\u25BC\';})(this)">' +
-            '<span class="bal-caret text-gray-400">' + caret + '</span>' +
-            '<span class="font-mono font-semibold text-blue-700">' + esc(k) + '</span>' +
-            '<span class="ml-auto flex items-center gap-3 text-[10px] text-gray-500">' +
-              '<span>' + totals.ccs + ' CC' + (totals.ccs === 1 ? '' : 's') + '</span>' +
-              '<span class="font-mono">' + tcFmt + '</span>' +
-            '</span>' +
-          '</button>' +
-          '<div id="' + id + '" class="bal-children' + hide + '">' + renderNode(child, depth + 1) + '</div>' +
-        '</div>';
-      });
-      if (node.leaves.length) {
-        var indent2 = depth === 0 ? '' : 'ml-' + Math.min(depth * 4 + 2, 14);
-        html += '<div class="' + indent2 + ' my-1">' + balLeafTable(node.leaves) + '</div>';
-      }
-      return html;
-    }
-
-    function balLeafTable(leaves) {
-      // Sort leaves by tc_amt descending so the highest-volume CCs
-      // are visible first — this is the most common operator question
-      // ('which CCs have the most spend in this part of the tree?').
-      leaves.sort(function(a, b) { return b.totals.tc_amt - a.totals.tc_amt; });
-      var rows = leaves.map(function(it) {
-        var tcFmt = it.totals.tc_amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return '<tr class="border-b last:border-0 hover:bg-gray-50">' +
-          '<td class="py-1 px-2 font-mono text-[11px] font-medium">' + esc(it.cctr) + '</td>' +
-          '<td class="py-1 px-2 font-mono text-[11px]">' + esc(it.ccode) + '</td>' +
-          '<td class="py-1 px-2 text-[11px] truncate max-w-[260px]" title="' + esc(it.txtsh) + '">' + esc(it.txtsh) + '</td>' +
-          '<td class="py-1 px-2 text-right font-mono text-[11px]">' + tcFmt + '</td>' +
-          '<td class="py-1 px-2 text-right text-[11px] text-gray-500">' + it.totals.posting_count + '</td>' +
-          '<td class="py-1 px-2 text-right text-[11px] text-gray-400">' + it.totals.rows + '</td>' +
-          '</tr>';
-      }).join('');
-      return '<table class="w-full text-xs border border-gray-200 rounded">' +
-        '<thead><tr class="bg-gray-50 border-b text-[10px] text-gray-500">' +
-          '<th class="py-1 px-2 text-left">CC</th>' +
-          '<th class="py-1 px-2 text-left">Entity</th>' +
-          '<th class="py-1 px-2 text-left">Short Text</th>' +
-          '<th class="py-1 px-2 text-right">TC Amount (sum)</th>' +
-          '<th class="py-1 px-2 text-right">Postings</th>' +
-          '<th class="py-1 px-2 text-right">Bal rows</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table>';
-    }
-
-    var root_totals = nodeTotals(root);
-    var summary = '<div class="text-xs text-gray-500 mb-2 px-2">' +
-      'Aggregated balances · ' + root_totals.ccs + ' cost centers · ' +
-      'TC total: ' + root_totals.tc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) +
-      ' · ' + root_totals.postings + ' postings' +
-      (data.fiscal_year ? ' · year ' + data.fiscal_year : ' · all years') +
-      '</div>';
-
-    el.innerHTML = summary + renderNode(root, 0);
-  }
-
+  dodBalances.load();
 
   // --- Hierarchies ---
-  function loadHierarchies() {
-    // Use admin endpoint for labels, fallback to legacy endpoint
-    fetch('/api/admin/hierarchies?scope=' + encodeURIComponent(getScope()) + (getCategory() ? '&data_category=' + encodeURIComponent(getCategory()) : ''), { headers: authHdr }).then(function(r) {
-      if (!r.ok) return fetch('/api/legacy/hierarchies?size=100' + scopeParams(), { headers: authHdr }).then(function(r2) { return r2.json(); }).then(function(d) { return d.items || []; });
-      return r.json();
-    }).then(function(items) {
-      var el = document.getElementById('hier-table');
-      if (!items || !items.length) { el.textContent = 'No hierarchies found.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">Type</th><th class="py-2 px-2 text-left">Set Name</th>' +
-        '<th class="py-2 px-2 text-left">Label</th><th class="py-2 px-2 text-left">Description</th>' +
-        '<th class="py-2 px-2 text-left">Period</th>' +
-        '<th class="py-2 px-2 text-left">CO Area</th>' +
-        '<th class="py-2 px-2 text-center">Active</th><th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
-      items.forEach(function(h) {
-        var typeLabel = h.type_label || h.setclass;
-        var period = (h.attrs && h.attrs.period) ? h.attrs.period : '';
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' +
-            (typeLabel === 'Cost Center' ? 'bg-blue-100 text-blue-800' : typeLabel === 'Profit Center' ? 'bg-purple-100 text-purple-800' : typeLabel === 'Entity Hierarchy' ? 'bg-emerald-100 text-emerald-800' : typeLabel === 'Flat Hierarchy' ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-700') +
-            '">' + esc(typeLabel) + '</span></td>' +
-          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(h.setname) + '</td>' +
-          '<td class="py-1.5 px-2">' +
-            '<span id="hier-label-' + h.id + '-text">' + esc(h.display_label || h.label || '') + '</span>' +
-            '<input id="hier-label-' + h.id + '-input" class="border rounded px-1 py-0.5 text-xs w-44 hidden" value="' + escAttr(h.label || '') + '" data-orig="' + escAttr(h.label || '') + '" placeholder="' + escAttr(h.display_label || '') + '" />' +
-          '</td>' +
-          '<td class="py-1.5 px-2 text-gray-500">' + esc(h.description || '') + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(period) + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(h.coarea || '') + '</td>' +
-          '<td class="py-1.5 px-2 text-center">' + (h.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>' +
-          '<td class="py-1.5 px-2"><button class="text-blue-600 hover:underline text-[10px]" onclick="editHierLabel(' + h.id + ')">Edit Label</button></td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-    }).catch(function(e) { document.getElementById('hier-table').textContent = 'Error: ' + e.message; });
-  }
-  window.editHierLabel = function(hierId) {
-    var textEl = document.getElementById('hier-label-' + hierId + '-text');
-    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
-    if (!inputEl) return;
-    if (inputEl.classList.contains('hidden')) {
-      inputEl.classList.remove('hidden');
-      textEl.classList.add('hidden');
-      inputEl.focus();
-      inputEl.onkeydown = function(e) {
-        if (e.key === 'Enter') { saveHierLabel(hierId); }
-        if (e.key === 'Escape') { inputEl.classList.add('hidden'); textEl.classList.remove('hidden'); }
-      };
-      inputEl.onblur = function() { saveHierLabel(hierId); };
-    }
-  };
-  function saveHierLabel(hierId) {
-    var inputEl = document.getElementById('hier-label-' + hierId + '-input');
-    var textEl = document.getElementById('hier-label-' + hierId + '-text');
-    if (!inputEl || inputEl.classList.contains('hidden')) return;
-    var label = inputEl.value.trim();
-    var origVal = inputEl.getAttribute('data-orig') || '';
-    // Skip save if value unchanged (prevents freezing auto-labels on blur)
-    if (label === origVal) {
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-      return;
-    }
-    fetch('/api/admin/hierarchies/' + hierId + '?label=' + encodeURIComponent(label), {
-      method: 'PATCH', headers: authHdr
-    }).then(function(r) { if (!r.ok) throw new Error('Save failed'); return r.json(); }).then(function(h) {
-      textEl.textContent = h.display_label || h.label || '';
-      inputEl.value = h.label || '';
-      inputEl.setAttribute('data-orig', h.label || '');
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-    }).catch(function() {
-      inputEl.classList.add('hidden');
-      textEl.classList.remove('hidden');
-    });
-  }
-  loadHierarchies();
-
-  // --- Hierarchy Tree View ---
-  var hierTreeData = null;
-  window.switchHierView = function(view) {
-    document.getElementById('hier-list-view').classList.toggle('hidden', view !== 'list');
-    document.getElementById('hier-tree-view').classList.toggle('hidden', view !== 'tree');
-    document.getElementById('hier-view-list').className = view === 'list' ? 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium' : 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
-    document.getElementById('hier-view-tree').className = view === 'tree' ? 'px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium' : 'px-3 py-1.5 text-gray-600 hover:bg-gray-50';
-    if (view === 'tree') populateHierSelector();
-  };
-
-  function populateHierSelector() {
-    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var sel = document.getElementById('hier-tree-select');
-      sel.innerHTML = '<option value="">Select a hierarchy...</option>';
-      (d.items || []).forEach(function(h) {
-        var opt = document.createElement('option');
-        opt.value = h.id;
-        opt.textContent = h.setclass + ' / ' + h.setname + (h.description ? ' — ' + h.description : '');
-        sel.appendChild(opt);
-      });
-    }).catch(function() {});
-  }
-
-  document.getElementById('hier-tree-select').addEventListener('change', function() {
-    var hierId = this.value;
-    if (!hierId) { document.getElementById('hier-tree-container').textContent = 'Select a hierarchy to view its tree structure.'; return; }
-    document.getElementById('hier-tree-container').innerHTML = '<span class="text-gray-400">Loading tree...</span>';
-    fetch('/api/legacy/hierarchies/' + hierId + '/tree', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      hierTreeData = d;
-      renderTree(d.tree, '');
-    }).catch(function(e) { document.getElementById('hier-tree-container').textContent = 'Error: ' + e.message; });
+  var dodHierarchies = new DataObjectDisplay({
+    containerId: 'dod-hierarchies',
+    objectType: 'hierarchies',
+    title: 'Hierarchies',
+    dataEndpoint: '/api/legacy/hierarchies',
+    hierarchyEndpoint: '/api/legacy/hierarchies',
+    identityField: 'id',
+    showViewToggle: true,
+    showHierarchyPicker: true,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 200,
+    hierPageSize: 200,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL hierarchies?')) return;
+        fetch('/api/data/hierarchies/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodHierarchies.load(); });
+      }}
+    ]
   });
-
-  function renderTree(tree, filter) {
-    var container = document.getElementById('hier-tree-container');
-    if (!tree || !tree.length) { container.textContent = 'No nodes in this hierarchy.'; return; }
-    var html = '<div class="space-y-0.5">';
-    tree.forEach(function(node) { html += renderNode(node, 0, filter); });
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
-  function renderNode(node, depth, filter) {
-    var indent = depth * 24;
-    var hasChildren = node.children && node.children.length > 0;
-    var hasCCs = node.cost_centers && node.cost_centers.length > 0;
-    var matches = !filter || node.setname.toLowerCase().indexOf(filter) >= 0;
-    var childMatches = false;
-    var childHtml = '';
-    if (hasChildren) {
-      node.children.forEach(function(c) {
-        var ch = renderNode(c, depth + 1, filter);
-        if (ch) { childHtml += ch; childMatches = true; }
-      });
-    }
-    var ccHtml = '';
-    if (hasCCs) {
-      node.cost_centers.forEach(function(cc) {
-        var ccMatch = !filter || cc.cctr.toLowerCase().indexOf(filter) >= 0 || (cc.name || '').toLowerCase().indexOf(filter) >= 0;
-        if (ccMatch || matches) {
-          childMatches = true;
-          ccHtml += '<div class="flex items-center gap-2 py-0.5 text-xs" style="padding-left:' + ((depth+1)*24+16) + 'px">' +
-            '<span class="text-blue-500">&#9679;</span> ' +
-            '<span class="font-mono font-medium">' + esc(cc.cctr) + '</span>' +
-            '<span class="text-gray-500">' + esc(cc.name || '') + '</span>' +
-            (cc.ccode ? '<span class="text-gray-400 text-[10px]">[' + esc(cc.ccode) + ']</span>' : '') +
-            (cc.responsible ? '<span class="text-gray-400 text-[10px]">Owner: ' + esc(cc.responsible) + '</span>' : '') +
-            '</div>';
-        }
-      });
-    }
-    if (filter && !matches && !childMatches) return '';
-    var icon = hasChildren || hasCCs ? '<span class="tree-toggle cursor-pointer select-none text-gray-400 hover:text-gray-700 w-4 text-center inline-block" onclick="toggleTreeNode(this)">' + (hasChildren || hasCCs ? '&#9660;' : '&nbsp;') + '</span>' : '<span class="w-4 inline-block">&nbsp;</span>';
-    var typeLabel = node.type === 'leaf' ? '<span class="text-[10px] bg-green-100 text-green-700 px-1 rounded">LEAF</span>' : '<span class="text-[10px] bg-gray-100 text-gray-600 px-1 rounded">NODE</span>';
-    var ccCount = hasCCs ? '<span class="text-[10px] text-blue-500 ml-1">(' + node.cost_centers.length + ' CCs)</span>' : '';
-    var html = '<div class="tree-node">' +
-      '<div class="flex items-center gap-1 py-0.5 hover:bg-gray-50 rounded px-1" style="padding-left:' + indent + 'px">' +
-      icon + ' ' + typeLabel + ' <span class="font-mono font-medium text-sm">' + esc(node.setname) + '</span>' + ccCount +
-      '</div>';
-    if (hasChildren || hasCCs) {
-      html += '<div class="tree-children">' + childHtml + ccHtml + '</div>';
-    }
-    html += '</div>';
-    return html;
-  }
-
-  window.toggleTreeNode = function(el) {
-    var children = el.closest('.tree-node').querySelector('.tree-children');
-    if (children) {
-      var hidden = children.classList.toggle('hidden');
-      el.innerHTML = hidden ? '&#9654;' : '&#9660;';
-    }
-  };
-
-  window.toggleAllNodes = function(expand) {
-    document.querySelectorAll('.tree-children').forEach(function(el) {
-      el.classList.toggle('hidden', !expand);
-    });
-    document.querySelectorAll('.tree-toggle').forEach(function(el) {
-      el.innerHTML = expand ? '&#9660;' : '&#9654;';
-    });
-  };
-
-  document.getElementById('hier-tree-search').addEventListener('input', function() {
-    var filter = this.value.toLowerCase().trim();
-    if (hierTreeData) renderTree(hierTreeData.tree, filter);
-  });
+  dodHierarchies.load();
 
   // --- Employees ---
-  var empPage = 1;
-  window.loadEmployees = function(page) {
-    empPage = page || 1;
-    var search = document.getElementById('search-emp').value;
-    var url = '/api/employees?page=' + empPage + '&size=50' + scopeParams();
-    if (search) url += '&search=' + encodeURIComponent(search);
-    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var el = document.getElementById('emp-table');
-      if (!d.items || !d.items.length) { el.textContent = 'No employees found. Upload employee data via the Upload tab or extract from SAP.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">GPN</th>' +
-        '<th class="py-2 px-2 text-left">Name</th>' +
-        '<th class="py-2 px-2 text-left">Email</th>' +
-        '<th class="py-2 px-2 text-left">Status</th>' +
-        '<th class="py-2 px-2 text-left">Org Unit</th>' +
-        '<th class="py-2 px-2 text-left">Cost Center</th>' +
-        '<th class="py-2 px-2 text-left">Company</th>' +
-        '<th class="py-2 px-2 text-left">Job</th>' +
-        '<th class="py-2 px-2 text-left">Location</th>' +
-        '<th class="py-2 px-2 text-left">Manager</th>' +
-        '</tr></thead><tbody>';
-      d.items.forEach(function(e) {
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2 font-mono font-medium">' + esc(e.gpn) + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.display_name || e.bs_name || '') + '</td>' +
-          '<td class="py-1.5 px-2 text-blue-600">' + esc(e.email_address || '') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.emp_status || '') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.ou_cd || '') + (e.ou_desc ? ' <span class="text-gray-400">' + esc(e.ou_desc) + '</span>' : '') + '</td>' +
-          '<td class="py-1.5 px-2 font-mono">' + esc(e.local_cc_cd || '') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.gcrs_comp_cd || '') + '</td>' +
-          '<td class="py-1.5 px-2 text-xs">' + esc(e.job_desc || '') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(e.locn_city_name_1 || '') + '</td>' +
-          '<td class="py-1.5 px-2">' + (e.lm_gpn ? esc(e.lm_gpn) + ' ' + esc((e.lm_bs_firstname || '') + ' ' + (e.lm_bs_lastname || '')) : '') + '</td>' +
-          '</tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-      document.getElementById('emp-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadEmployees');
-    }).catch(function(e) { document.getElementById('emp-table').textContent = 'Error: ' + e.message; });
-  };
-  loadEmployees(1);
-  document.getElementById('search-emp').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEmployees(1); }, 300); });
+  var dodEmployees = new DataObjectDisplay({
+    containerId: 'dod-employees',
+    objectType: 'employees',
+    title: 'Employees (SAP HR Master Data)',
+    dataEndpoint: '/api/employees',
+    identityField: 'gpn',
+    showViewToggle: false,
+    showHierarchyPicker: false,
+    showSearch: true,
+    showCSV: true,
+    pageSize: 50,
+    extraQueryParams: dodScopeParams(),
+    authHeaders: authHdr,
+    toolbarButtons: [
+      { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
+        if (!confirm('Delete ALL employee records?')) return;
+        fetch('/api/data/employees/all', { method: 'DELETE', headers: authHdr })
+          .then(function() { loadCounts(); dodEmployees.load(); });
+      }}
+    ]
+  });
+  dodEmployees.load();
 
-  // Populate entity filters
-  fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-    ['filter-cc-ccode','filter-pc-ccode'].forEach(function(id) {
-      var sel = document.getElementById(id);
-      (d.items || []).forEach(function(e) {
-        var opt = document.createElement('option');
-        opt.value = e.ccode; opt.textContent = e.ccode + ' - ' + (e.name || '');
-        sel.appendChild(opt);
-      });
+  // Keep all DOD instances in a registry for scope/category refresh
+  var _allDODs = [dodDB, dodEntities, dodCCLegacy, dodCCTarget,
+                  dodPCLegacy, dodPCTarget, dodGL, dodMapping,
+                  dodBalances, dodHierarchies, dodEmployees];
+
+  // Override refreshAllData to reload all DOD instances
+  refreshAllData = function() {
+    loadCounts();
+    var sp = dodScopeParams();
+    _allDODs.forEach(function(d) {
+      d.extraQueryParams = Object.assign({}, d.extraQueryParams, sp);
+      d.load();
     });
-  }).catch(function() {});
-
-  // --- Upload with progress bar ---
-  document.getElementById('upload-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var fileInput = document.getElementById('upload-file');
-    var uScope = document.getElementById('upload-scope').value;
-    var uCat = document.getElementById('upload-category').value;
-    var type = document.getElementById('upload-type').value;
-    var resultEl = document.getElementById('upload-result');
-    var progressEl = document.getElementById('upload-progress');
-    var progressBar = document.getElementById('upload-progress-bar');
-    var progressText = document.getElementById('upload-progress-text');
-    resultEl.classList.add('hidden');
-    if (!uScope) { alert('Please select a scope.'); return; }
-    if (!uCat) { alert('Please select a data category.'); return; }
-    if (!type) { alert('Please select a data type.'); return; }
-    if (!fileInput.files[0]) return;
-    if (!token) { alert('Please log in first to upload data.'); return; }
-    // Map object type keys to upload kind values
-    var kindMap = {
-      cost_center: 'cost_centers', profit_center: 'profit_centers',
-      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
-      entity: 'entities',
-      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat', entity_hierarchy: 'entity_hierarchy',
-      balance: 'balances', balance_gcr: 'balances_gcr',
-      employee: 'employees'
-    };
-    var uploadKind = kindMap[type] || type;
-    if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';
-    if (uCat === 'target' && type === 'profit_center') uploadKind = 'target_profit_centers';
-
-    var formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    document.getElementById('upload-btn').disabled = true;
-    document.getElementById('upload-btn').textContent = 'Uploading...';
-    progressEl.classList.remove('hidden');
-    progressBar.style.width = '0%';
-    progressText.textContent = '0%';
-
-    var xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', function(ev) {
-      if (ev.lengthComputable) {
-        var pct = Math.round((ev.loaded / ev.total) * 100);
-        progressBar.style.width = pct + '%';
-        progressText.textContent = pct + '%';
-      }
-    });
-    xhr.addEventListener('load', function() {
-      progressEl.classList.add('hidden');
-      document.getElementById('upload-btn').disabled = false;
-      document.getElementById('upload-btn').textContent = 'Upload';
-      try {
-        var data = JSON.parse(xhr.responseText);
-        if (xhr.status === 401 || xhr.status === 403) {
-          resultEl.textContent = 'Error: Session expired — please log in again.';
-          resultEl.className = 'text-sm text-red-600';
-        } else if (xhr.status >= 400) {
-          resultEl.textContent = 'Error: ' + (data.detail || 'Upload failed');
-          resultEl.className = 'text-sm text-red-600';
-        } else {
-          resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
-          resultEl.className = 'text-sm text-green-600';
-          refreshAllData(); loadUploadHistory();
-        }
-      } catch(err) {
-        resultEl.textContent = 'Error: Upload failed';
-        resultEl.className = 'text-sm text-red-600';
-      }
-      resultEl.classList.remove('hidden');
-    });
-    xhr.addEventListener('error', function() {
-      progressEl.classList.add('hidden');
-      document.getElementById('upload-btn').disabled = false;
-      document.getElementById('upload-btn').textContent = 'Upload';
-      resultEl.textContent = 'Error: Network error during upload';
-      resultEl.className = 'text-sm text-red-600';
-      resultEl.classList.remove('hidden');
-    });
-    var uploadUrl = '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) + '&scope=' + encodeURIComponent(uScope) + '&data_category=' + encodeURIComponent(uCat);
-    if (uploadKind === 'cc_with_hierarchy') {
-      var sheetName = document.getElementById('cc-hier-sheet').value || 'Database';
-      var headerRow = document.getElementById('cc-hier-header-row').value || '2';
-      var loadCc = document.getElementById('cc-hier-load-cc').checked;
-      var loadExt = document.getElementById('cc-hier-load-ext').checked;
-      var loadCema = document.getElementById('cc-hier-load-cema').checked;
-      uploadUrl += '&sheet_name=' + encodeURIComponent(sheetName) + '&header_row=' + encodeURIComponent(headerRow) + '&load_cc=' + loadCc + '&load_ext_hier=' + loadExt + '&load_cema_hier=' + loadCema;
-    }
-    xhr.open('POST', uploadUrl);
-    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-    xhr.send(formData);
-  });
-
-  function loadUploadHistory() {
-    fetch('/api/admin/uploads?size=20', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
-      var el = document.getElementById('upload-history');
-      var items = d.items || [];
-      if (!items.length) { el.textContent = 'No uploads yet.'; return; }
-      var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
-        '<th class="py-2 px-2 text-left">ID</th><th class="py-2 px-2 text-left">Scope</th>' +
-        '<th class="py-2 px-2 text-left">Category</th><th class="py-2 px-2 text-left">Type</th>' +
-        '<th class="py-2 px-2 text-left">Source</th><th class="py-2 px-2 text-left">Status</th>' +
-        '<th class="py-2 px-2 text-right">Rows</th><th class="py-2 px-2 text-right">Valid</th>' +
-        '<th class="py-2 px-2 text-right">Errors</th><th class="py-2 px-2 text-right">Loaded</th>' +
-        '<th class="py-2 px-2 text-left">Actions</th></tr></thead><tbody>';
-      items.forEach(function(u) {
-        var statusColor = u.status === 'loaded' ? 'text-green-600' : u.status === 'failed' ? 'text-red-600' : (u.status === 'validating' || u.status === 'loading') ? 'text-yellow-600' : 'text-gray-600';
-        var actions = '';
-        if (u.status === 'uploaded' || u.status === 'failed') {
-          actions = '<button onclick="validateUpload(' + u.id + ')" class="text-blue-600 hover:underline mr-2">Validate</button>';
-        } else if (u.status === 'validated') {
-          actions = '<button onclick="loadUpload(' + u.id + ')" class="text-green-600 hover:underline mr-2">Load</button>';
-        } else if (u.status === 'loaded') {
-          actions = '<button onclick="rollbackUpload(' + u.id + ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
-        } else if (u.status === 'validating' || u.status === 'loading') {
-          var pct = (u.rows_total > 0 && u.rows_processed != null) ? Math.round((u.rows_processed / u.rows_total) * 100) : 0;
-          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
-          actions = '<div class="inline-flex items-center gap-2">' +
-            '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" title="' + fmt(u.rows_processed || 0) + ' / ' + fmt(u.rows_total) + ' rows">' +
-            '<div class="bg-yellow-500 h-3 rounded-full transition-all duration-300" style="width:' + pct + '%"></div></div>' +
-            '<span class="text-yellow-700 text-[10px] font-medium whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
-            '</div> ' +
-            '<button onclick="resetUpload(' + u.id + ')" class="text-orange-600 hover:underline text-xs mr-2" title="Reset stuck batch">Reset</button>';
-        }
-        actions += '<button onclick="deleteUpload(' + u.id + ')" class="text-red-500 hover:underline text-xs" title="Delete this upload batch">Delete</button>';
-        var scopeLabel = { cleanup: 'CM Cleanup', housekeeping: 'CM Housekeeping', explorer: 'Data Explorer' };
-        var sourceInfo = (u.source_method || 'file') + (u.source_detail ? ': ' + u.source_detail : '');
-        html += '<tr class="border-b hover:bg-gray-50">' +
-          '<td class="py-1.5 px-2">' + u.id + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(scopeLabel[u.scope] || u.scope || '-') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(u.data_category || '-') + '</td>' +
-          '<td class="py-1.5 px-2">' + esc(u.kind) + '</td>' +
-          '<td class="py-1.5 px-2 text-[10px]">' + esc(sourceInfo) + '</td>' +
-          '<td class="py-1.5 px-2 ' + statusColor + ' font-medium">' + esc(u.status) + '</td>' +
-          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_total) + '</td>' +
-          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_valid) + '</td>' +
-          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_error) + '</td>' +
-          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_loaded) + '</td>' +
-          '<td class="py-1.5 px-2">' + actions + '</td></tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-    }).catch(function(e) { document.getElementById('upload-history').textContent = 'Error loading uploads.'; });
-  }
-  loadUploadHistory();
-
-  function pollBatchStatus(id, targetStatuses, label) {
-    return new Promise(function(resolve) {
-      loadUploadHistory();
-      var attempts = 0;
-      var maxAttempts = 180; // 6 minutes at 2s intervals
-      var interval = setInterval(function() {
-        attempts++;
-        fetch('/api/admin/uploads/' + id, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(b) {
-          loadUploadHistory();
-          if (targetStatuses.indexOf(b.status) !== -1) {
-            clearInterval(interval);
-            resolve(b);
-          } else if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            resolve(null);
-          }
-        }).catch(function() {
-          if (attempts >= maxAttempts) { clearInterval(interval); resolve(null); }
-        });
-      }, 2000);
-    });
-  }
-  window.validateUpload = async function(id) {
-    if (!token) { alert('Please log in first.'); return; }
-    var res = await fetch('/api/admin/uploads/' + id + '/validate', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
-    var d = await res.json();
-    if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    loadUploadHistory();
-    var result = await pollBatchStatus(id, ['validated', 'failed'], 'Validating');
-    if (!result) { alert('Validation timed out — check status manually.'); return; }
-    if (result.status === 'failed') {
-      alert('Validation failed — check upload errors for details.');
-    } else {
-      alert('Validation: ' + result.status + (result.rows_error ? ' (' + result.rows_error + ' errors)' : '') + ' — ' + (result.rows_valid || 0) + ' valid rows');
-    }
-    loadUploadHistory();
   };
-  window.loadUpload = async function(id) {
-    if (!token) { alert('Please log in first.'); return; }
-    var res = await fetch('/api/admin/uploads/' + id + '/load', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
-    var d = await res.json();
-    if (!res.ok) { alert('Load error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    loadUploadHistory();
-    var result = await pollBatchStatus(id, ['loaded', 'failed'], 'Loading');
-    if (!result) { alert('Load timed out — check status manually.'); return; }
-    if (result.status === 'failed') {
-      alert('Load failed — check upload errors for details.');
-    } else {
-      alert('Load: ' + result.status + (result.rows_loaded ? ' (' + result.rows_loaded + ' rows)' : ''));
-    }
-    loadUploadHistory(); refreshAllData();
-  };
-  window.rollbackUpload = async function(id) {
-    if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
-    if (!token) { alert('Please log in first.'); return; }
-    var res = await fetch('/api/admin/uploads/' + id + '/rollback', { method: 'POST', headers: authHdr });
-    if (res.status === 401 || res.status === 403) { alert('Session expired — please log in again.'); return; }
-    var d = await res.json();
-    if (!res.ok) { alert('Rollback error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
-    alert('Rollback: ' + d.status + (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
-    loadUploadHistory(); refreshAllData();
-  };
-  window.deleteUpload = async function(id) {
-    if (!confirm('Delete this upload batch? If data was loaded, it will remain in the system — use Rollback first to remove loaded data.')) return;
-    try {
-      var res = await fetch('/api/data/uploads', {
-        method: 'DELETE', headers: jsonHdr,
-        body: JSON.stringify({ ids: [id] })
-      });
-      var d = await res.json();
-      if (!res.ok) throw new Error(d.detail || 'Delete failed');
-      loadUploadHistory(); refreshAllData();
-    } catch(e) { alert('Error: ' + e.message); }
-  };
-
-  window.resetUpload = async function(id) {
-    if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
-    if (!token) { alert('Please log in first.'); return; }
-    try {
-      var res = await fetch('/api/admin/uploads/' + id + '/reset', { method: 'POST', headers: authHdr });
-      var d = await res.json();
-      if (!res.ok) throw new Error(d.detail || 'Reset failed');
-      alert(d.message || 'Batch reset successfully.');
-      loadUploadHistory();
-    } catch(e) { alert('Error: ' + e.message); }
-  };
-
-  // --- Download upload template ---
-  document.getElementById('download-template-btn').addEventListener('click', async function() {
-    var kind = document.getElementById('upload-type').value;
-    try {
-      var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
-      if (!res.ok) { alert('Failed to fetch template'); return; }
-      var d = await res.json();
-      var blob = new Blob([d.content], { type: 'text/csv' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = kind + '_template.csv';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch(e) { alert('Error: ' + e.message); }
-  });
-
-  // --- Delete all buttons ---
-  document.getElementById('delete-all-entities').addEventListener('click', function() {
-    if (!confirm('Delete ALL entities?')) return;
-    fetch('/api/data/entities/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadEntities(1); });
-  });
-  document.getElementById('delete-all-cc').addEventListener('click', function() {
-    if (!confirm('Delete ALL cost centers?')) return;
-    fetch('/api/data/legacy/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadCC(1); });
-  });
-  document.getElementById('delete-all-pc').addEventListener('click', function() {
-    if (!confirm('Delete ALL legacy profit centers?')) return;
-    fetch('/api/data/legacy/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadPC(1); });
-  });
-  document.getElementById('delete-all-tcc').addEventListener('click', function() {
-    if (!confirm('Delete ALL target cost centers?')) return;
-    fetch('/api/data/target/cost-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetCC(1); });
-  });
-  document.getElementById('delete-all-tpc').addEventListener('click', function() {
-    if (!confirm('Delete ALL target profit centers?')) return;
-    fetch('/api/data/target/profit-centers/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadTargetPC(1); });
-  });
-  document.getElementById('delete-all-mapping').addEventListener('click', function() {
-    if (!confirm('Delete ALL center mappings?')) return;
-    fetch('/api/data/center-mappings/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadMapping(1); });
-  });
-  document.getElementById('delete-all-bal').addEventListener('click', function() {
-    if (!confirm('Delete ALL balances?')) return;
-    fetch('/api/data/balances/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadBalances(1); });
-  });
-  document.getElementById('delete-all-hier').addEventListener('click', function() {
-    if (!confirm('Delete ALL hierarchies?')) return;
-    fetch('/api/data/hierarchies/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadHierarchies(); });
-  });
-  document.getElementById('delete-all-emp').addEventListener('click', function() {
-    if (!confirm('Delete ALL employee records?')) return;
-    fetch('/api/data/employees/all', { method: 'DELETE', headers: authHdr }).then(function() { loadCounts(); loadEmployees(1); });
-  });
 
   // --- Sample Data ---
   function loadSampleStatus() {
@@ -2650,876 +993,6 @@ import Layout from '../../components/layout/Layout.astro';
       }
     };
   })();
-
-  // ─── Data Browser (unified view) ───────────────────────────────────
-  // PR #87 — perf rework. Default load is now bounded: 200 rows max,
-  // no balances inline, no hierarchy nodes/leaves inline. Pagination,
-  // search and hierarchy drill-down all happen as separate small
-  // fetches so the UI stays responsive on large datasets.
-  var dbData = null;
-  var dbView = 'tabular';
-  var dbSort = { col: 'cctr', dir: 'asc' };
-  var dbColFilters = {};
-  var dbPage = 1;
-  var dbSize = 200;
-  var dbSearchTimer = null;
-  var _dbTreeIdSeq = 0;
-  // PR #90 — selected hierarchy for L0..LX columns in tabular AND for
-  // tree view in hierarchical. Defaults to the first CC hierarchy
-  // when one is loaded; nullable for "no L cols" mode.
-  var dbSelectedHierarchyId = null;
-  var _dbHierPickerPopulated = false;
-
-  // PR #90 — populate the Data Browser hierarchy picker from the
-  // hierarchies that came back inlined. Operator opt-in: stays hidden
-  // until at least one hierarchy is loaded (which happens after the
-  // operator clicks "+ Show hierarchy levels" or switches to the
-  // hierarchical view). Same kind labels (CC/PC/Entity) as elsewhere.
-  function populateDbHierPicker() {
-    var sel = document.getElementById('db-tabular-hier-picker');
-    var wrap = document.getElementById('db-hier-picker-wrap');
-    if (!sel || !wrap) return;
-    var hiers = (dbData && dbData.hierarchies) || [];
-    if (!hiers.length) {
-      wrap.classList.add('hidden');
-      _dbHierPickerPopulated = false;
-      return;
-    }
-    wrap.classList.remove('hidden');
-    if (_dbHierPickerPopulated) return;
-    _dbHierPickerPopulated = true;
-    var ccHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; });
-    var pcHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0104'; });
-    var entHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0106'; });
-    var otherHiers = hiers.filter(function(h) {
-      var ns = _normSc(h.setclass);
-      return ns !== '0101' && ns !== '0104' && ns !== '0106';
-    });
-    sel.innerHTML = '<option value="">(none — no L columns)</option>';
-    function appendGroup(label, list) {
-      if (!list.length) return;
-      var g = document.createElement('optgroup');
-      g.label = label;
-      list.forEach(function(h) {
-        var o = document.createElement('option');
-        o.value = h.id;
-        o.textContent = (h.label || h.setname) + (h.description ? ' — ' + h.description : '');
-        g.appendChild(o);
-      });
-      sel.appendChild(g);
-    }
-    appendGroup('Cost Center hierarchies (CC)', ccHiers);
-    appendGroup('Profit Center hierarchies (PC)', pcHiers);
-    appendGroup('Entity hierarchies', entHiers);
-    appendGroup('Other', otherHiers);
-    // Auto-pick the first CC hierarchy as default
-    if (ccHiers.length && !dbSelectedHierarchyId) {
-      dbSelectedHierarchyId = ccHiers[0].id;
-      sel.value = dbSelectedHierarchyId;
-    }
-  }
-
-  window.onDbHierPickerChange = function() {
-    var sel = document.getElementById('db-tabular-hier-picker');
-    var v = sel ? sel.value : '';
-    dbSelectedHierarchyId = v ? parseInt(v, 10) : null;
-    _cachedHierMap = null;
-    dbHierSelectedNode = null;
-    renderDB();
-  };
-
-  function loadDataBrowser() {
-    var el = document.getElementById('db-content');
-    el.innerHTML = '<span class="text-gray-400">Loading data browser…</span>';
-    var search = (document.getElementById('db-search').value || '').trim();
-    var dbParams = '?scope=' + encodeURIComponent(getScope()) +
-      '&page=' + dbPage + '&size=' + dbSize;
-    if (getCategory()) dbParams += '&data_category=' + encodeURIComponent(getCategory());
-    if (search) dbParams += '&search=' + encodeURIComponent(search);
-    if (dbIncludeBalances) dbParams += '&include_balances=true';
-    if (dbIncludeHierarchies) dbParams += '&include_hierarchies=true';
-    // Hierarchies fetched separately on demand by the hierarchical view —
-    // keep the metadata-only payload here so we don't pay the nodes+leaves
-    // cost on every page-of-200 fetch.
-    (window.apiFetch || fetch)('/api/data/browser' + dbParams)
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(d) {
-        dbData = d;
-        dbColFilters = {};
-        dbHierSelectedNode = null;
-        _cachedHierMap = null;
-        // PR #90 — populate the tabular hierarchy picker once
-        // hierarchies are inlined. Hidden by default until the
-        // operator clicks "+ Show hierarchy levels" — same pattern
-        // as the existing balances toggle.
-        populateDbHierPicker();
-        renderDB();
-      })
-      .catch(function(err) {
-        el.innerHTML = '<span class="text-red-500">Error: ' + esc(err.message) + '</span>';
-      });
-  }
-
-  window.dbExpandCollapseAll = function(expand) {
-    var el = document.getElementById('db-content');
-    if (!el) return;
-    el.querySelectorAll('.tree-children').forEach(function(tc) {
-      if (expand) tc.classList.remove('hidden'); else tc.classList.add('hidden');
-    });
-    el.querySelectorAll('[data-db-toggle]').forEach(function(tog) {
-      tog.innerHTML = expand ? '&#9660;' : '&#9654;';
-    });
-  };
-
-  window.switchDataBrowserView = function(view) {
-    dbView = view;
-    var tabBtn = document.getElementById('db-view-tabular');
-    var hierBtn = document.getElementById('db-view-hierarchy');
-    if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-    // Show/hide expand/collapse buttons
-    var expBtn = document.getElementById('db-expand-all');
-    var colBtn = document.getElementById('db-collapse-all');
-    if (expBtn) { if (view === 'hierarchy') expBtn.classList.remove('hidden'); else expBtn.classList.add('hidden'); }
-    if (colBtn) { if (view === 'hierarchy') colBtn.classList.remove('hidden'); else colBtn.classList.add('hidden'); }
-    // Hierarchical view needs:
-    //   1. hier.nodes / hier.leaves to walk the tree (PR #87 — kept
-    //      initial load fast).
-    //   2. ALL items to count & display (the default page is 200 rows;
-    //      with 100k+ CCs hierarchy nodes show counts based on the
-    //      current page only and most click-to-view-detail produced
-    //      "no cost centers under X" — operator complaint
-    //      post-PR-#88).
-    // PR #90 — flip both flags + bump page size so hierarchical mode
-    // gets the full set in one fetch. Tabular returns to size=200 on
-    // switch back.
-    if (view === 'hierarchy') {
-      var needFetch = false;
-      if (!dbIncludeHierarchies) { dbIncludeHierarchies = true; needFetch = true; }
-      if (dbSize !== 10000) { dbSize = 10000; needFetch = true; }
-      if (needFetch) { loadDataBrowser(); return; }
-    } else {
-      // Tabular — back to paginated default if we'd bumped size for hierarchy
-      if (dbSize === 10000) { dbSize = 200; loadDataBrowser(); return; }
-    }
-    renderDB();
-  };
-
-  window.sortDB = function(col) {
-    if (dbSort.col === col) {
-      dbSort.dir = dbSort.dir === 'asc' ? 'desc' : 'asc';
-    } else {
-      dbSort.col = col;
-      dbSort.dir = 'asc';
-    }
-    if (dbView === 'hierarchy' && dbHierSelectedNode) {
-      renderHierDetail();
-    } else {
-      renderDB();
-    }
-  };
-
-  function dbSortArrow(col) {
-    if (dbSort.col !== col) return ' <span class="text-gray-300">&#8597;</span>';
-    return dbSort.dir === 'asc' ? ' &#8593;' : ' &#8595;';
-  }
-
-  function dbSortItems(items) {
-    var col = dbSort.col, dir = dbSort.dir === 'asc' ? 1 : -1;
-    var isHierCol = col && col.indexOf('hier_') === 0;
-    var hierMap = isHierCol ? getCachedHierMap().map : null;
-    return items.slice().sort(function(a, b) {
-      var va, vb;
-      if (isHierCol) {
-        va = (hierMap[a.cctr] || {})[col] || '';
-        vb = (hierMap[b.cctr] || {})[col] || '';
-      } else {
-        va = a[col]; vb = b[col];
-      }
-      if (va == null) va = '';
-      if (vb == null) vb = '';
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
-      if (va < vb) return -1 * dir;
-      if (va > vb) return 1 * dir;
-      return 0;
-    });
-  }
-
-  window.setDbFilter = function(col, val) {
-    if (val === '') { delete dbColFilters[col]; } else { dbColFilters[col] = val; }
-    renderDB();
-  };
-
-  var _cachedHierMap = null;
-  function getCachedHierMap() {
-    if (!_cachedHierMap) _cachedHierMap = buildHierLevelMap();
-    return _cachedHierMap;
-  }
-
-  function getFilteredItems() {
-    var search = (document.getElementById('db-search').value || '').toLowerCase();
-    var items = (dbData && dbData.items) || [];
-    var hierMap = getCachedHierMap().map;
-    if (search) {
-      items = items.filter(function(it) {
-        return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtmi || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.ccode || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.pctr || '').toLowerCase().indexOf(search) >= 0;
-      });
-    }
-    Object.keys(dbColFilters).forEach(function(col) {
-      var fv = dbColFilters[col];
-      if (!fv) return;
-      items = items.filter(function(it) {
-        if (col === 'is_active') return String(it.is_active) === fv;
-        if (col.indexOf('hier_') === 0) {
-          var hm = hierMap[it.cctr] || {};
-          return String(hm[col] || '') === fv;
-        }
-        return String(it[col] || '') === fv;
-      });
-    });
-    return items;
-  }
-
-  window.renderDB = renderDB;
-  function renderDB() {
-    if (!dbData) return;
-    var el = document.getElementById('db-content');
-    var items = getFilteredItems();
-    if (dbView === 'tabular') {
-      renderDBTabular(el, items);
-    } else {
-      renderDBHierarchical(el, items);
-    }
-  }
-
-  function buildHierLevelMap() {
-    // When the picker is explicitly set to "(none)", return no levels.
-    if (dbSelectedHierarchyId == null) return { levels: [], map: {} };
-    var hiers = (dbData && dbData.hierarchies) || [];
-    var hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
-    if (!hier) return { levels: [], map: {} };
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    // Find roots
-    var allChildren = {};
-    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
-
-    // DFS to build paths: CC value -> [level0, level1, level2, ...]
-    var ccPaths = {};
-    var maxDepth = 0;
-    function dfs(nodeName, path) {
-      var children = childMap[nodeName] || [];
-      children.forEach(function(c) {
-        if (c.type === 'leaf') {
-          ccPaths[c.value] = path.slice();
-          if (path.length > maxDepth) maxDepth = path.length;
-        } else {
-          dfs(c.name, path.concat([c.name]));
-        }
-      });
-    }
-    roots.forEach(function(r) { dfs(r, [r]); });
-
-    var levelCols = [];
-    for (var i = 0; i < maxDepth; i++) {
-      levelCols.push('L' + (i + 1));
-    }
-
-    // Build map: cctr -> { L1: 'X', L2: 'Y', ... }
-    // PR #90 — setclass-aware mapping. ``ccPaths`` is keyed by the
-    // hierarchy's leaf value (cctr / ccode / pctr depending on
-    // setclass). Tabular-view rows are always keyed by cctr, so we
-    // walk the loaded items to flip the key:
-    //   * 0101 (CC)     → leaf is cctr, identity map
-    //   * 0106 (Entity) → leaf is ccode, look up by it.cctr → it.ccode
-    //   * 0104 (PC)     → leaf is pctr, look up by it.cctr → it.pctr
-    var ccLevelMap = {};
-    var setclass = _normSc(hier.setclass);
-    var allItems = (dbData && dbData.items) || [];
-    function levelObj(p) {
-      var obj = {};
-      for (var i = 0; i < maxDepth; i++) {
-        obj['hier_L' + (i + 1)] = p[i] || '';
-      }
-      return obj;
-    }
-    if (setclass === '0106') {
-      allItems.forEach(function(it) {
-        if (it.cctr && it.ccode && ccPaths[it.ccode]) {
-          ccLevelMap[it.cctr] = levelObj(ccPaths[it.ccode]);
-        }
-      });
-    } else if (setclass === '0104') {
-      allItems.forEach(function(it) {
-        if (it.cctr && it.pctr && ccPaths[it.pctr]) {
-          ccLevelMap[it.cctr] = levelObj(ccPaths[it.pctr]);
-        }
-      });
-    } else {
-      // 0101 / unknown — leaf key IS cctr
-      Object.keys(ccPaths).forEach(function(cctr) {
-        ccLevelMap[cctr] = levelObj(ccPaths[cctr]);
-      });
-    }
-
-    return { levels: levelCols, map: ccLevelMap, hierLabel: hier.label || hier.setname || 'Hierarchy' };
-  }
-
-  function renderDBTabular(el, items) {
-    var allItems = (dbData && dbData.items) || [];
-    if (!allItems.length) {
-      el.innerHTML = '<span class="text-gray-400">No cost centers loaded for this scope/category. ' +
-        'Try clearing the search or selecting another scope.</span>';
-      return;
-    }
-    var sorted = dbSortItems(items);
-
-    // Build hierarchy level data only when a hierarchy is selected
-    // AND hierarchies are inlined. When picker is "(none)" or no
-    // hierarchy data is loaded, skip L columns entirely.
-    var hierInfo = (dbSelectedHierarchyId != null && dbData.hierarchies_inlined && (dbData.hierarchies || []).some(function(h) { return h.nodes; }))
-      ? buildHierLevelMap()
-      : { levels: [], map: {} };
-    var hierLevels = hierInfo.levels;
-    var hierMap = hierInfo.map;
-
-    // Balance period columns: only when balances are inlined. Default
-    // response doesn't carry balances; the operator opts in via the
-    // "Show monthly balances" toggle (which sets dbIncludeBalances and
-    // re-fetches the page with include_balances=true).
-    var hasBalances = (dbData.items || []).some(function(it) { return it.monthly_balances; });
-    var periods = {};
-    var currencyForPeriod = {};
-    if (hasBalances) {
-      allItems.forEach(function(it) {
-        (it.monthly_balances || []).forEach(function(b) {
-          var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-          periods[key] = 1;
-          if (b.currency) currencyForPeriod[key] = b.currency;
-        });
-      });
-    }
-    var pKeys = Object.keys(periods).sort();
-
-    var cols = [
-      { key: 'cctr', label: 'CC' },
-      { key: 'txtsh', label: 'Short Text' },
-      { key: 'ccode', label: 'Entity' },
-      { key: 'coarea', label: 'CO Area' },
-      { key: 'pctr', label: 'Profit Ctr' },
-      { key: 'pc_txtsh', label: 'PC Text' },
-      { key: 'responsible', label: 'Responsible' },
-      { key: 'is_active', label: 'Active' }
-    ];
-    var hierCols = hierLevels.map(function(lvl, i) {
-      return { key: 'hier_L' + (i + 1), label: lvl };
-    });
-    var allCols = cols.concat(hierCols);
-
-    var html = '<table class="w-full text-xs border-collapse"><thead>';
-    html += '<tr class="border-b bg-gray-50">';
-    allCols.forEach(function(c) {
-      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" ' +
-        'onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
-    });
-    pKeys.forEach(function(pk) {
-      var curr = currencyForPeriod[pk];
-      var label = curr ? pk + ' (' + curr + ')' : pk;
-      html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(label) + '</th>';
-    });
-    html += '</tr></thead><tbody>';
-    // Note: per-column auto-filter dropdowns were removed in PR #87.
-    // Building one <select> per column with thousands of distinct
-    // values for thousands of rows was the dominant cost in
-    // renderDBTabular (DOM measured in 100k+ nodes for a real SAP
-    // dataset, locking up the browser for many seconds). Use the
-    // top-of-page search box for filtering — it goes through the
-    // server (LIKE on cctr / txtsh / txtmi / ccode / responsible)
-    // and is consistent across pages.
-
-    if (!sorted.length) {
-      html += '<tr><td colspan="' + (allCols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">' +
-        'No rows match the search on this page.</td></tr>';
-    }
-
-    sorted.forEach(function(it) {
-      var balMap = {};
-      (it.monthly_balances || []).forEach(function(b) {
-        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
-      });
-      var hm = hierMap[it.cctr] || {};
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
-      html += '<td class="py-1 px-2 text-center">' + (it.is_active ? '<span class="text-green-600">Yes</span>' : '<span class="text-red-500">No</span>') + '</td>';
-      hierCols.forEach(function(c) {
-        html += '<td class="py-1 px-2 text-xs text-gray-600">' + esc(hm[c.key] || '') + '</td>';
-      });
-      pKeys.forEach(function(pk) {
-        var b = balMap[pk];
-        if (b) {
-          var amt = b.amount >= 0
-            ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})
-            : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-          var curr = b.currency ? ' <span class="text-gray-400 text-[9px]">' + esc(b.currency) + '</span>' : '';
-          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + curr + '</td>';
-        } else {
-          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
-        }
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-
-    // Pager (server-side pagination).
-    var total = (dbData && dbData.total) || 0;
-    var page = (dbData && dbData.page) || 1;
-    var size = (dbData && dbData.size) || dbSize;
-    var totalPages = Math.max(1, Math.ceil(total / size));
-    var start = total === 0 ? 0 : (page - 1) * size + 1;
-    var end = Math.min(page * size, total);
-    var pager = '<div class="flex items-center justify-between mt-3 text-xs text-gray-600">' +
-      '<div>Showing <strong>' + start + '–' + end + '</strong> of <strong>' + total + '</strong> rows' +
-      (hasBalances ? '' : ' &nbsp;·&nbsp; <button onclick="dbToggleBalances()" class="text-amplifi-600 hover:underline">+ Show monthly balances</button>') +
-      (dbData.hierarchies_inlined ? '' : ' &nbsp;·&nbsp; <button onclick="dbToggleHierarchies()" class="text-amplifi-600 hover:underline">+ Show hierarchy levels</button>') +
-      '</div>' +
-      '<div class="flex items-center gap-1">' +
-      (page > 1 ? '<button onclick="dbGoToPage(1)" class="px-2 py-1 hover:bg-gray-100 rounded">« First</button>' : '') +
-      (page > 1 ? '<button onclick="dbGoToPage(' + (page - 1) + ')" class="px-2 py-1 hover:bg-gray-100 rounded">‹ Prev</button>' : '') +
-      '<span class="px-2">Page ' + page + ' / ' + totalPages + '</span>' +
-      (page < totalPages ? '<button onclick="dbGoToPage(' + (page + 1) + ')" class="px-2 py-1 hover:bg-gray-100 rounded">Next ›</button>' : '') +
-      (page < totalPages ? '<button onclick="dbGoToPage(' + totalPages + ')" class="px-2 py-1 hover:bg-gray-100 rounded">Last »</button>' : '') +
-      '</div></div>';
-
-    el.innerHTML = html + pager;
-  }
-
-  // Opt-in toggles for the heavy parts of the response. The first
-  // click makes a fetch with the relevant include_X=true; from then on
-  // all paginated fetches keep that flag on (per dbIncludeBalances /
-  // dbIncludeHierarchies state).
-  var dbIncludeBalances = false;
-  var dbIncludeHierarchies = false;
-  window.dbToggleBalances = function() {
-    dbIncludeBalances = true;
-    loadDataBrowser();
-  };
-  window.dbToggleHierarchies = function() {
-    dbIncludeHierarchies = true;
-    loadDataBrowser();
-  };
-
-  var dbHierSelectedNode = null;
-
-  window.resetHierSelection = function() {
-    dbHierSelectedNode = null;
-    renderDB();
-  };
-
-  window.selectHierNode = function(nodeName) {
-    // Remove highlight from previous selection
-    var prev = document.querySelector('[data-hier-node].bg-blue-50');
-    if (prev) {
-      prev.classList.remove('font-bold', 'text-blue-700', 'bg-blue-50');
-      prev.classList.add(prev.dataset.hierNode === '__unassigned__' ? 'text-gray-500' : 'text-gray-800');
-    }
-    dbHierSelectedNode = nodeName;
-    // Add highlight to new selection
-    var cur = document.querySelector('[data-hier-node="' + CSS.escape(nodeName) + '"]');
-    if (cur) {
-      cur.classList.add('font-bold', 'text-blue-700', 'bg-blue-50');
-      cur.classList.remove('text-gray-800', 'text-gray-500');
-    }
-    renderHierDetail();
-  };
-
-  function renderHierDetail() {
-    var detailEl = document.getElementById('db-hier-detail');
-    if (!detailEl || !dbData) return;
-    var items = getFilteredItems();
-
-    var hiers = dbData.hierarchies || [];
-    // PR #90 — use the unified picker selection (same as
-    // renderDBHierarchical above). Was reading from `db-hier-select`
-    // which is now removed in favour of `db-tabular-hier-picker`.
-    var hier = null;
-    if (dbSelectedHierarchyId != null) {
-      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
-    }
-    if (!hier) {
-      hier = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; })[0] || hiers[0];
-    }
-    if (!hier) return;
-
-    // PR #90 — setclass-aware leafItemsMap. See renderDBHierarchical
-    // for the full rationale.
-    var leafItemsMap = {};
-    var setclass = _normSc(hier.setclass);
-    if (setclass === '0106') {
-      items.forEach(function(it) {
-        if (!it.ccode) return;
-        if (!leafItemsMap[it.ccode]) leafItemsMap[it.ccode] = [];
-        leafItemsMap[it.ccode].push(it);
-      });
-    } else if (setclass === '0104') {
-      items.forEach(function(it) {
-        if (!it.pctr) return;
-        if (!leafItemsMap[it.pctr]) leafItemsMap[it.pctr] = [];
-        leafItemsMap[it.pctr].push(it);
-      });
-    } else {
-      items.forEach(function(it) {
-        if (it.cctr) leafItemsMap[it.cctr] = [it];
-      });
-    }
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    // Collect all leaf CCs under the selected node (recursively).
-    // Uses leafItemsMap so entity hierarchies surface every CC under
-    // the picked entity, etc.
-    var leafCCs = [];
-    function collectLeaves(node) {
-      var ch = childMap[node] || [];
-      ch.forEach(function(c) {
-        if (c.type === 'leaf') {
-          (leafItemsMap[c.value] || []).forEach(function(it) { leafCCs.push(it); });
-        }
-        else { collectLeaves(c.name); }
-      });
-    }
-
-    if (dbHierSelectedNode === '__unassigned__') {
-      // For unassigned: items whose lookup key isn't in any leaf
-      var assigned = {};
-      (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-      if (setclass === '0106') {
-        leafCCs = items.filter(function(it) { return it.cctr && it.ccode && !assigned[it.ccode]; });
-      } else if (setclass === '0104') {
-        leafCCs = items.filter(function(it) { return it.cctr && it.pctr && !assigned[it.pctr]; });
-      } else {
-        leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
-      }
-    } else if (dbHierSelectedNode && dbHierSelectedNode.indexOf('__leaf__') === 0) {
-      // Clicked on a leaf directly in the tree
-      var leafVal = dbHierSelectedNode.substring(8);
-      leafCCs = leafItemsMap[leafVal] || [];
-    } else if (dbHierSelectedNode) {
-      collectLeaves(dbHierSelectedNode);
-    } else {
-      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
-      return;
-    }
-
-    if (!leafCCs.length) {
-      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No cost centers under <b>' + esc(dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode) + '</b></div>';
-      return;
-    }
-
-    // Build table similar to tabular view
-    var periods = {};
-    leafCCs.forEach(function(it) {
-      (it.monthly_balances || []).forEach(function(b) {
-        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-        periods[key] = 1;
-      });
-    });
-    var pKeys = Object.keys(periods).sort();
-    var sorted = dbSortItems(leafCCs);
-
-    var label = dbHierSelectedNode === '__unassigned__' ? 'Unassigned' : dbHierSelectedNode;
-    var html = '<div class="mb-2 flex items-center gap-2"><span class="font-semibold text-sm text-blue-800">' + esc(label) + '</span>';
-    html += '<span class="text-xs text-gray-500">(' + leafCCs.length + ' cost center' + (leafCCs.length !== 1 ? 's' : '') + ')</span></div>';
-    html += '<div class="overflow-auto" style="max-height:calc(100vh - 480px)"><table class="w-full text-xs border-collapse"><thead>';
-    html += '<tr class="border-b bg-gray-50 sticky top-0">';
-    var cols = [
-      { key: 'cctr', label: 'CC' },
-      { key: 'txtsh', label: 'Short Text' },
-      { key: 'ccode', label: 'Entity' },
-      { key: 'coarea', label: 'CO Area' },
-      { key: 'pctr', label: 'Profit Ctr' },
-      { key: 'pc_txtsh', label: 'PC Text' },
-      { key: 'responsible', label: 'Responsible' }
-    ];
-    cols.forEach(function(c) {
-      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap bg-gray-50" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
-    });
-    html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">Total</th>';
-    pKeys.forEach(function(pk) {
-      html += '<th class="py-2 px-2 text-right whitespace-nowrap bg-gray-50">' + esc(pk) + '</th>';
-    });
-    html += '</tr></thead><tbody>';
-
-    sorted.forEach(function(it) {
-      var balMap = {};
-      var total = 0;
-      (it.monthly_balances || []).forEach(function(b) {
-        balMap[b.fiscal_year + '/' + String(b.period).padStart(2, '0')] = b;
-        total += b.amount;
-      });
-      html += '<tr class="border-b hover:bg-gray-50">';
-      html += '<td class="py-1 px-2 font-mono font-medium">' + esc(it.cctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.txtsh) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.ccode) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.coarea) + '</td>';
-      html += '<td class="py-1 px-2 font-mono">' + esc(it.pctr) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.pc_txtsh) + '</td>';
-      html += '<td class="py-1 px-2">' + esc(it.responsible) + '</td>';
-      var totalStr = total.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-      html += '<td class="py-1 px-2 text-right font-mono font-semibold' + (total < 0 ? ' text-red-600' : '') + '">' + totalStr + '</td>';
-      pKeys.forEach(function(pk) {
-        var b = balMap[pk];
-        if (b) {
-          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
-          html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + '</td>';
-        } else {
-          html += '<td class="py-1 px-2 text-right text-gray-300">-</td>';
-        }
-      });
-      html += '</tr>';
-    });
-    detailEl.innerHTML = html + '</tbody></table></div>';
-  }
-
-  function renderDBHierarchical(el, items) {
-    var hiers = (dbData.hierarchies || []);
-    if (!hiers.length) { el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchies via SAP extraction or upload.</span>'; return; }
-
-    var ccMap = {};
-    items.forEach(function(it) { if (it.cctr) ccMap[it.cctr] = it; });
-
-    // PR #90 — use the unified dbSelectedHierarchyId picker at the
-    // top of the Data Browser tab instead of a second inline picker
-    // here. The previous inline picker confused operators ("two
-    // hierarchy dropdowns?") and didn't share selection with tabular.
-    var hier = null;
-    if (dbSelectedHierarchyId != null) {
-      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
-    }
-    if (!hier) {
-      hier = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; })[0] || hiers[0];
-    }
-    if (!hier) {
-      el.innerHTML = '<span class="text-gray-400">Select a hierarchy from the picker above to drill into it.</span>';
-      return;
-    }
-
-    // Setclass-aware ccMap with normalised setclass.
-    var leafItemsMap = {};
-    var setclass = _normSc(hier.setclass);
-    if (setclass === '0106') {
-      items.forEach(function(it) {
-        if (!it.ccode) return;
-        if (!leafItemsMap[it.ccode]) leafItemsMap[it.ccode] = [];
-        leafItemsMap[it.ccode].push(it);
-      });
-    } else if (setclass === '0104') {
-      items.forEach(function(it) {
-        if (!it.pctr) return;
-        if (!leafItemsMap[it.pctr]) leafItemsMap[it.pctr] = [];
-        leafItemsMap[it.pctr].push(it);
-      });
-    } else {
-      items.forEach(function(it) {
-        if (it.cctr) leafItemsMap[it.cctr] = [it];
-      });
-    }
-
-    var html = '';
-
-    // Split panel: tree left, detail right
-    // PR #90 — wider tree panel (w-80 was w-64) + no truncate on node
-    // names. Operator screenshot showed ``TM_CC_Group_Operat_Analyti…``
-    // cut off at the 30-character mark — full setnames fit in 80
-    // characters and operators need to read them to know which subtree
-    // they're in.
-    html += '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
-
-    // Left panel — compact tree
-    html += '<div class="w-80 flex-shrink-0 border rounded bg-white overflow-auto">';
-
-    var childMap = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childMap[n.parent]) childMap[n.parent] = [];
-      childMap[n.parent].push({ type: 'node', name: n.child, seq: n.seq });
-    });
-    (hier.leaves || []).forEach(function(lf) {
-      if (!childMap[lf.setname]) childMap[lf.setname] = [];
-      childMap[lf.setname].push({ type: 'leaf', value: lf.value, seq: lf.seq });
-    });
-
-    var allChildren = {};
-    (hier.nodes || []).forEach(function(n) { allChildren[n.child] = 1; });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren[n.parent] && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length && hier.nodes && hier.nodes.length) roots.push(hier.nodes[0].parent);
-
-    function countLeaves(node) {
-      var ch = childMap[node] || [];
-      var cnt = 0;
-      ch.forEach(function(c) {
-        // PR #90 — leafItemsMap is setclass-aware (keyed by ccode for
-        // entity hierarchies, pctr for PC, cctr for CC). Each entry
-        // is the list of CC items under that leaf — sum lengths.
-        if (c.type === 'leaf') { cnt += (leafItemsMap[c.value] || []).length; }
-        else { cnt += countLeaves(c.name); }
-      });
-      return cnt;
-    }
-
-    function buildTree(nodeName, depth) {
-      var pad = depth * 12;
-      var lc = countLeaves(nodeName);
-      var isSelected = dbHierSelectedNode === nodeName;
-      var nodeToggleId = 'db-tn-' + (++_dbTreeIdSeq);
-      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
-      out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" data-db-toggle="' + escAttr(nodeToggleId) + '">&#9660;</span>';
-      out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
-      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
-      var children = childMap[nodeName] || [];
-      children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
-      out += '<div id="' + escAttr(nodeToggleId) + '" class="tree-children">';
-      children.forEach(function(c) {
-        if (c.type === 'node') {
-          out += buildTree(c.name, depth + 1);
-        } else if (c.type === 'leaf') {
-          // Render leaf items directly in the tree
-          var leafItems = leafItemsMap[c.value] || [];
-          var leafPad = (depth + 1) * 12;
-          if (leafItems.length) {
-            leafItems.forEach(function(item) {
-              var idField = item.cctr || c.value;
-              var label = item.txtsh || item.name || '';
-              out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
-                '<span data-hier-node="__leaf__' + escAttr(c.value) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded font-medium text-gray-700">' +
-                esc(idField) + (label ? ' — ' + esc(label) : '') +
-                '</span></div>';
-            });
-          } else {
-            out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
-              '<span class="text-xs text-gray-400 px-1">' + esc(c.value) + ' (no match)</span></div>';
-          }
-        }
-      });
-      out += '</div>';
-      return out;
-    }
-
-    roots.forEach(function(root) { html += buildTree(root, 0); });
-
-    // Unassigned entry — items whose hierarchy lookup key isn't in
-    // any leaf of the chosen hierarchy. Setclass-aware so picking an
-    // entity hierarchy lists CCs whose ccode isn't in the tree, etc.
-    var assigned = {};
-    (hier.leaves || []).forEach(function(lf) { assigned[lf.value] = 1; });
-    var unassignedCount;
-    if (setclass === '0106') {
-      unassignedCount = items.filter(function(it) { return it.cctr && it.ccode && !assigned[it.ccode]; }).length;
-    } else if (setclass === '0104') {
-      unassignedCount = items.filter(function(it) { return it.cctr && it.pctr && !assigned[it.pctr]; }).length;
-    } else {
-      unassignedCount = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; }).length;
-    }
-    if (unassignedCount) {
-      var isUA = dbHierSelectedNode === '__unassigned__';
-      html += '<div data-hier-node="__unassigned__" class="mt-2 pt-2 border-t px-2 py-1 cursor-pointer hover:bg-gray-50' + (isUA ? ' bg-blue-50 font-bold text-blue-700' : ' text-gray-500') + '">';
-      html += 'Unassigned (' + unassignedCount + ')</div>';
-    }
-
-    html += '</div>';
-
-    // Right panel — detail table
-    html += '<div class="flex-1 border rounded bg-white overflow-auto" id="db-hier-detail">';
-    html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view its cost centers.</div>';
-    html += '</div>';
-
-    html += '</div>';
-    el.innerHTML = html;
-
-    // Bind click handlers via addEventListener (avoids XSS from inline onclick with dynamic data)
-    el.querySelectorAll('[data-hier-node]').forEach(function(nodeEl) {
-      nodeEl.addEventListener('click', function() {
-        selectHierNode(this.dataset.hierNode);
-      });
-    });
-
-    // Bind toggle (expand/collapse) handlers
-    el.querySelectorAll('[data-db-toggle]').forEach(function(toggleEl) {
-      toggleEl.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var targetId = this.dataset.dbToggle;
-        var target = document.getElementById(targetId);
-        if (target) {
-          target.classList.toggle('hidden');
-          this.innerHTML = target.classList.contains('hidden') ? '&#9654;' : '&#9660;';
-        }
-      });
-    });
-
-    // If a node was previously selected, render its detail
-    if (dbHierSelectedNode) renderHierDetail();
-  }
-
-  // Wire search — fires a server-side fetch (paginated). Debounced so
-  // we don't spam the API on every keystroke. Resets to page 1 on
-  // every change since the previous page may not exist for the new
-  // result set.
-  document.getElementById('db-search').addEventListener('input', function() {
-    clearTimeout(dbSearchTimer);
-    dbSearchTimer = setTimeout(function() {
-      dbPage = 1;
-      loadDataBrowser();
-    }, 350);
-  });
-
-  // Pager actions (called from the rendered pager HTML)
-  window.dbGoToPage = function(p) {
-    if (p < 1) p = 1;
-    dbPage = p;
-    loadDataBrowser();
-  };
-
-  // Load on page init
-  loadDataBrowser();
 
 })();
 </script>

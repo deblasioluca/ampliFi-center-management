@@ -82,6 +82,7 @@
     this.showViewToggle = opts.showViewToggle !== false;
     this.showSearch = opts.showSearch !== false;
     this.showPagination = opts.showPagination !== false;
+    this.subtitle = opts.subtitle || '';
     this.showCSV = opts.showCSV !== false;
     this.pageSize = opts.pageSize || 200;
     this.hierPageSize = opts.hierPageSize || 10000;
@@ -283,7 +284,9 @@
     if (this.title || this.toolbarButtons.length) {
       html += '<div class="flex items-center justify-between mb-2 gap-3 flex-wrap">';
       if (this.title) {
-        html += '<h3 class="text-base font-semibold flex-shrink-0">' + esc(this.title) + '</h3>';
+        html += '<h3 class="text-base font-semibold flex-shrink-0">' + esc(this.title);
+        if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
+        html += '</h3>';
       }
       if (this.toolbarButtons.length) {
         html += '<div class="flex items-center gap-2 flex-wrap ml-auto">';
