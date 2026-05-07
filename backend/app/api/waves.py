@@ -32,6 +32,40 @@ from app.models.core import (
 
 log = logging.getLogger(__name__)
 
+
+def _resolve_entity_by_ccode(db: Session, ccode: str) -> Entity | None:
+    """Resolve an Entity by its ccode, picking the right one when multiple exist.
+
+    The ``Entity`` table has a unique constraint on ``(scope, ccode)`` —
+    so the same ccode can legitimately appear for both the legacy SAP
+    source ("cleanup" scope) and target/explorer scopes. The wave UI
+    selects entities by ccode alone (the picker doesn't expose scope),
+    which under ``.scalar_one_or_none()`` would either return None or
+    raise ``MultipleResultsFound`` depending on how many rows exist —
+    both failure modes silently dropping the entity on wave creation.
+
+    This helper picks deterministically: prefer the cleanup-scope row
+    (which is the analysis source), then fall back to whatever exists
+    so a wave can still be created in test environments where only
+    target rows are loaded.
+    """
+    rows = (
+        db.execute(select(Entity).where(Entity.ccode == ccode).order_by(Entity.scope))
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return None
+    # Prefer cleanup scope (default scope for legacy SAP source), then
+    # any other row. This matches "the wave's entities are the ones
+    # whose CCs we'll cleanse" — the analysis pipeline reads from the
+    # cleanup-scope CCs.
+    for r in rows:
+        if r.scope == "cleanup":
+            return r
+    return rows[0]
+
+
 router = APIRouter()
 
 logger = __import__("structlog").get_logger()
@@ -254,10 +288,17 @@ def create_wave(
     )
     db.add(wave)
     db.flush()
+    # Track which ccodes we couldn't resolve so the response can warn
+    # the user — silent loss was the bug behind "I selected entities
+    # but the wave has 0 entities" reports.
+    missing_ccodes: list[str] = []
     for ccode in body.entity_ccodes:
-        entity = db.execute(select(Entity).where(Entity.ccode == ccode)).scalar_one_or_none()
+        entity = _resolve_entity_by_ccode(db, ccode)
         if entity:
             db.add(WaveEntity(wave_id=wave.id, entity_id=entity.id))
+        else:
+            missing_ccodes.append(ccode)
+            log.warning("create_wave: ccode '%s' not found in Entity table", ccode)
     for hs in body.hierarchy_scopes:
         db.add(
             WaveHierarchyScope(
@@ -272,7 +313,7 @@ def create_wave(
         db.execute(select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == wave.id)).scalar()
         or 0
     )
-    return WaveOut(
+    out = WaveOut(
         id=wave.id,
         code=wave.code,
         name=wave.name,
@@ -280,9 +321,16 @@ def create_wave(
         status=wave.status,
         is_full_scope=wave.is_full_scope,
         exclude_prior=wave.exclude_prior,
+        is_archived=wave.is_archived,
         entity_count=ec,
         config=wave.config,
     )
+    # Inject the diagnostic into the response. Pydantic strips unknown
+    # fields by default, so we serialise + augment manually.
+    payload = out.model_dump()
+    if missing_ccodes:
+        payload["missing_ccodes"] = missing_ccodes
+    return payload
 
 
 # --- Wave Templates (must be defined before /{wave_id} to avoid shadowing) ---
@@ -690,9 +738,12 @@ def add_wave_entities(
         raise HTTPException(status_code=409, detail="Cannot modify entities in this state")
     ccodes = body.get("ccodes", [])
     added = 0
+    missing_ccodes: list[str] = []
     for ccode in ccodes:
-        entity = db.execute(select(Entity).where(Entity.ccode == ccode)).scalar_one_or_none()
+        entity = _resolve_entity_by_ccode(db, ccode)
         if not entity:
+            missing_ccodes.append(ccode)
+            log.warning("add_wave_entities: ccode '%s' not found", ccode)
             continue
         existing = db.execute(
             select(WaveEntity).where(
@@ -704,7 +755,128 @@ def add_wave_entities(
             db.add(WaveEntity(wave_id=wave_id, entity_id=entity.id))
             added += 1
     db.commit()
-    return {"added": added}
+    return {"added": added, "missing_ccodes": missing_ccodes}
+
+
+@router.get("/{wave_id}/hierarchy-scopes")
+def list_wave_hierarchy_scopes(
+    wave_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """List the hierarchy nodes that bound a wave's scope.
+
+    A wave's scope can be defined by a list of entities (company codes,
+    via WaveEntity rows) AND/OR a list of hierarchy nodes — pick all
+    cost centers that fall under any of those nodes. The hierarchy
+    side was previously written by ``create_wave`` but never read back
+    by any endpoint, so the wave-detail UI couldn't display existing
+    scopes or remove them. This GET surfaces them.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    rows = (
+        db.execute(select(WaveHierarchyScope).where(WaveHierarchyScope.wave_id == wave_id))
+        .scalars()
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "wave_id": r.wave_id,
+            "hierarchy_id": r.hierarchy_id,
+            "node_setname": r.node_setname,
+        }
+        for r in rows
+    ]
+    return {"wave_id": wave_id, "items": items}
+
+
+class WaveHierarchyScopeIn(BaseModel):
+    hierarchy_id: int
+    node_setname: str
+
+
+@router.post("/{wave_id}/hierarchy-scopes")
+def add_wave_hierarchy_scope(
+    wave_id: int,
+    body: WaveHierarchyScopeIn,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Add a hierarchy node to the wave's scope.
+
+    Replaces the previous (broken) approach of ``PATCH /api/waves/{id}``
+    with a ``config: {hierarchy_scope: [...]}`` body — Pydantic was
+    silently dropping the unknown ``config`` field on WaveUpdate, so
+    nothing was ever persisted. This endpoint writes to the
+    ``WaveHierarchyScope`` table directly, which the analysis pipeline
+    now reads when filtering cost centers by scope.
+
+    Idempotent on (hierarchy_id, node_setname): re-adding the same
+    node is a no-op and returns the existing row.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("draft", "analysing"):
+        raise HTTPException(status_code=409, detail="Cannot modify scope in this state")
+    existing = db.execute(
+        select(WaveHierarchyScope).where(
+            WaveHierarchyScope.wave_id == wave_id,
+            WaveHierarchyScope.hierarchy_id == body.hierarchy_id,
+            WaveHierarchyScope.node_setname == body.node_setname,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return {
+            "id": existing.id,
+            "wave_id": existing.wave_id,
+            "hierarchy_id": existing.hierarchy_id,
+            "node_setname": existing.node_setname,
+            "created": False,
+        }
+    row = WaveHierarchyScope(
+        wave_id=wave_id,
+        hierarchy_id=body.hierarchy_id,
+        node_setname=body.node_setname,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "wave_id": row.wave_id,
+        "hierarchy_id": row.hierarchy_id,
+        "node_setname": row.node_setname,
+        "created": True,
+    }
+
+
+@router.delete("/{wave_id}/hierarchy-scopes/{scope_id}")
+def delete_wave_hierarchy_scope(
+    wave_id: int,
+    scope_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Remove a hierarchy node from the wave's scope.
+
+    Used when the operator changes their mind about which subtree
+    bounds the wave. The scope is gone from the next analysis run; any
+    in-flight runs aren't affected.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("draft", "analysing"):
+        raise HTTPException(status_code=409, detail="Cannot modify scope in this state")
+    row = db.get(WaveHierarchyScope, scope_id)
+    if not row or row.wave_id != wave_id:
+        raise HTTPException(status_code=404, detail="Scope not found on this wave")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True, "id": scope_id}
 
 
 @router.get("/{wave_id}/runs")

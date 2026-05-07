@@ -522,8 +522,23 @@ import Layout from '../../components/layout/Layout.astro';
         var body = { code: code, name: name, description: desc, entity_ccodes: entity_ccodes, hierarchy_scopes: hierarchy_scopes, is_full_scope: fullScope };
         var res = await fetch('/api/waves', { method: 'POST', headers: headers, body: JSON.stringify(body) });
         if (!res.ok) { var b = await res.json().catch(function(){return {};}); throw new Error(b.detail || 'Failed'); }
+        // PR #85: backend now reports which ccodes failed to resolve so
+        // the user knows when a silent partial failure happened (multiple
+        // Entity rows for the same ccode used to crash the lookup; now
+        // the helper picks deterministically but really-missing ccodes
+        // still get surfaced here).
+        var resp = await res.json().catch(function(){ return {}; });
         document.getElementById('new-wave-modal').classList.add('hidden');
         loadWaves();
+        if (resp && resp.missing_ccodes && resp.missing_ccodes.length) {
+          var miss = resp.missing_ccodes.slice(0, 8).join(', ');
+          if (resp.missing_ccodes.length > 8) miss += ', …';
+          alert('Wave created — but ' + resp.missing_ccodes.length +
+            ' of the ' + entity_ccodes.length + ' selected entities could not be ' +
+            'resolved and were skipped:\n\n' + miss + '\n\n' +
+            'Check the Entity master — these company codes may not exist or ' +
+            'may be in a non-cleanup scope.');
+        }
       } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
     });
   })();

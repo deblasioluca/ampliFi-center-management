@@ -355,7 +355,27 @@ def _execute_v2_pipeline(
     if wave_id is not None:
         # Wave-scoped: only include centers from wave entities (empty wave = 0 centers)
         # But full-scope waves should include all centers
-        from app.models.core import Entity
+        # PR #85: also include centers covered by WaveHierarchyScope rows so
+        # waves defined purely by hierarchy nodes work in V2 too. See the
+        # docstring on _scope_query in analysis.py for the full reasoning.
+        from app.models.core import Entity, HierarchyLeaf, WaveHierarchyScope
+
+        # Hierarchy half — collect cctr values under any of the wave's
+        # hierarchy_scopes, if any.
+        hier_cctr_rows = (
+            db.execute(
+                select(HierarchyLeaf.value)
+                .join(
+                    WaveHierarchyScope,
+                    (WaveHierarchyScope.hierarchy_id == HierarchyLeaf.hierarchy_id)
+                    & (WaveHierarchyScope.node_setname == HierarchyLeaf.setname),
+                )
+                .where(WaveHierarchyScope.wave_id == wave_id)
+            )
+            .scalars()
+            .all()
+        )
+        hier_cctrs = list(set(hier_cctr_rows))
 
         if wave_entity_ids:
             entity_ccodes = (
@@ -363,8 +383,20 @@ def _execute_v2_pipeline(
                 .scalars()
                 .all()
             )
+            entity_filter = LegacyCostCenter.ccode.in_(entity_ccodes)
+            if hier_cctrs:
+                # Union: a CC is in scope if entity-side OR hierarchy-side matches.
+                centers = (
+                    db.execute(base_q.where(entity_filter | LegacyCostCenter.cctr.in_(hier_cctrs)))
+                    .scalars()
+                    .all()
+                )
+            else:
+                centers = db.execute(base_q.where(entity_filter)).scalars().all()
+        elif hier_cctrs:
+            # Wave is defined purely by hierarchy nodes — no entities pinned.
             centers = (
-                db.execute(base_q.where(LegacyCostCenter.ccode.in_(entity_ccodes))).scalars().all()
+                db.execute(base_q.where(LegacyCostCenter.cctr.in_(hier_cctrs))).scalars().all()
             )
         elif wave and wave.is_full_scope:
             centers = db.execute(base_q).scalars().all()
