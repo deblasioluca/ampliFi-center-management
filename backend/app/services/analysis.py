@@ -176,7 +176,33 @@ def _build_context(cc: LegacyCostCenter, db: Session, inactivity_months: int = 2
 
 
 def _scope_query(wave: Wave, db: Session):
-    """Build the cost center query based on wave scope."""
+    """Build the cost center query based on wave scope.
+
+    A wave's scope is a union of two sources:
+
+    * **WaveEntity** — pinned company codes. Each row points to an
+      Entity, and the CCs under those company codes are in scope.
+    * **WaveHierarchyScope** — hierarchy nodes. For each (hierarchy_id,
+      node_setname) tuple, all CCs that appear as ``hierarchy_leaf``
+      under that node are in scope. This is what powers the operator's
+      "give me everything under EUROPE/DACH" workflow without forcing
+      them to enumerate company codes by hand.
+
+    Until PR #85 the hierarchy half was effectively a no-op: the API
+    accepted it on wave creation, the rows were written to the table,
+    but ``_scope_query`` only looked at WaveEntity. So a wave defined
+    purely by hierarchy nodes returned zero CCs and the analysis run
+    came back empty — that's the "I added hierarchy but can't continue"
+    bug operators were hitting.
+
+    Semantics: the two filters are **OR-combined** — a CC is in scope
+    if it matches the entity filter OR the hierarchy filter. This
+    matches operator intuition ("widen the net by adding hierarchy
+    nodes"). Combining with AND would surprise people who add a
+    hierarchy expecting it to extend the wave, not narrow it.
+    """
+    from app.models.core import HierarchyLeaf, WaveHierarchyScope
+
     entity_ids = select(WaveEntity.entity_id).where(WaveEntity.wave_id == wave.id)
     entity_ccodes = select(Entity.ccode).where(Entity.id.in_(entity_ids))
 
@@ -190,8 +216,39 @@ def _scope_query(wave: Wave, db: Session):
             )
             prior_ccodes = select(Entity.ccode).where(Entity.id.in_(prior_entity_ids))
             cc_query = cc_query.where(LegacyCostCenter.ccode.notin_(prior_ccodes))
+        return cc_query
+
+    # Build the hierarchy half: every CC that's a leaf under any of
+    # the wave's WaveHierarchyScope rows. Two-step subquery — first
+    # collect the (hierarchy_id, setname) tuples this wave selects,
+    # then look up their leaf values from hierarchy_leaf.
+    has_hierarchy_scope = (
+        db.execute(
+            select(func.count(WaveHierarchyScope.id)).where(WaveHierarchyScope.wave_id == wave.id)
+        ).scalar()
+        or 0
+    ) > 0
+
+    entity_filter = LegacyCostCenter.ccode.in_(entity_ccodes)
+
+    if has_hierarchy_scope:
+        # Subquery: cctr values that fall under any of the wave's
+        # selected hierarchy nodes. Joined to WaveHierarchyScope so
+        # the operator can scope by multiple nodes at once and we
+        # union them naturally.
+        hier_cctrs = (
+            select(HierarchyLeaf.value)
+            .join(
+                WaveHierarchyScope,
+                (WaveHierarchyScope.hierarchy_id == HierarchyLeaf.hierarchy_id)
+                & (WaveHierarchyScope.node_setname == HierarchyLeaf.setname),
+            )
+            .where(WaveHierarchyScope.wave_id == wave.id)
+        )
+        hier_filter = LegacyCostCenter.cctr.in_(hier_cctrs)
+        cc_query = select(LegacyCostCenter).where(entity_filter | hier_filter)
     else:
-        cc_query = select(LegacyCostCenter).where(LegacyCostCenter.ccode.in_(entity_ccodes))
+        cc_query = select(LegacyCostCenter).where(entity_filter)
 
     return cc_query
 

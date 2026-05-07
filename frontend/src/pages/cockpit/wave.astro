@@ -136,9 +136,12 @@ import Layout from '../../components/layout/Layout.astro';
                 outside the selected nodes default to 1:1.
               </p>
               <p>
-                If the dropdown below is empty, you don't have any Profit
-                Center hierarchies imported yet — go to <em>Data → PC</em>
-                and import one with <code>setclass = 0104</code>.
+                If the dropdown below is empty, you don't have any
+                hierarchies imported yet — go to <em>Data → PC</em> and
+                import one with <code>setclass = 0104</code>, or use an
+                existing Cost Center hierarchy (<code>setclass = 0101</code>)
+                if your CC↔PC mapping is 1:1 — both setclasses are
+                selectable here.
               </p>
             </div>
           </details>
@@ -704,7 +707,11 @@ import Layout from '../../components/layout/Layout.astro';
   });
 
   // --- Hierarchy Scope Picker ---
-  var selectedHierNodes = [];
+  // Selection state lives on the server now (PR #85 — WaveHierarchyScope
+  // table, surfaced via /api/waves/{id}/hierarchy-scopes). The client
+  // doesn't track a parallel selectedHierNodes array anymore — that was
+  // the source of the bug where adding from the modal looked OK but
+  // didn't survive a page reload.
   document.getElementById('btn-add-hier').addEventListener('click', function() {
     document.getElementById('hier-overlay').classList.remove('hidden');
     var hierSel = document.getElementById('hier-select');
@@ -738,33 +745,91 @@ import Layout from '../../components/layout/Layout.astro';
     });
   });
 
+  // Add selected hierarchy nodes via the proper API (PR #85).
+  // Previously this PATCH'ed wave.config.hierarchy_scope but
+  // WaveUpdate's Pydantic model doesn't accept `config`, so the
+  // payload was silently dropped — the UI looked like it worked but
+  // nothing was persisted, and on the next page load the chips
+  // disappeared. The new endpoint writes WaveHierarchyScope rows
+  // which the analysis pipeline (V1 _scope_query and V2) now reads
+  // when building the cost-center filter.
   document.getElementById('btn-save-hier-scope').addEventListener('click', async function() {
     var cbs = document.querySelectorAll('.hier-node-cb:checked');
-    var nodes = []; cbs.forEach(function(cb) { nodes.push(cb.value); });
-    if (!nodes.length) return;
-    selectedHierNodes = selectedHierNodes.concat(nodes);
-    // Update wave config with hierarchy scope
-    await fetch('/api/waves/' + waveId, {
-      method: 'PATCH', headers: jsonHdr,
-      body: JSON.stringify({ config: { hierarchy_scope: selectedHierNodes } })
-    });
+    if (!cbs.length) {
+      document.getElementById('hier-overlay').classList.add('hidden');
+      return;
+    }
+    // Each checkbox has both the setname (value) and the hierarchy_id
+    // (data-hier) so the wave can scope by nodes from multiple
+    // hierarchies if needed.
+    var failures = [];
+    for (var i = 0; i < cbs.length; i++) {
+      var cb = cbs[i];
+      var hierId = parseInt(cb.getAttribute('data-hier'), 10);
+      var setname = cb.value;
+      if (!hierId || !setname) continue;
+      try {
+        var r = await fetch('/api/waves/' + waveId + '/hierarchy-scopes', {
+          method: 'POST', headers: jsonHdr,
+          body: JSON.stringify({ hierarchy_id: hierId, node_setname: setname }),
+        });
+        if (!r.ok) {
+          var d = await r.json().catch(function(){return {};});
+          failures.push(setname + ': ' + (d.detail || 'HTTP ' + r.status));
+        }
+      } catch (e) {
+        failures.push(setname + ': ' + e.message);
+      }
+    }
+    if (failures.length) {
+      uiAlert({ message: 'Some nodes could not be added:\n' + failures.join('\n'), kind: 'danger' });
+    }
     document.getElementById('hier-overlay').classList.add('hidden');
-    // Display selected nodes
-    var el = document.getElementById('scope-hier-nodes');
-    el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
-      return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
-    }).join('') + '</div>';
+    loadHierScope();
   });
 
-  // Load hierarchy scope from wave config
+  // Load the wave's hierarchy scopes from the server and render them
+  // as chips with × buttons. Each × calls the DELETE endpoint and
+  // re-renders. Replaces the previous client-only state — chips now
+  // survive a page reload because they reflect real DB rows.
   function loadHierScope() {
-    if (wave && wave.config && wave.config.hierarchy_scope) {
-      selectedHierNodes = wave.config.hierarchy_scope;
-      var el = document.getElementById('scope-hier-nodes');
-      el.innerHTML = '<div class="flex flex-wrap gap-2">' + selectedHierNodes.map(function(n) {
-        return '<span class="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' + esc(n) + '</span>';
-      }).join('') + '</div>';
-    }
+    var el = document.getElementById('scope-hier-nodes');
+    fetch('/api/waves/' + waveId + '/hierarchy-scopes', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = (data && data.items) || [];
+        if (!items.length) {
+          el.innerHTML = '<span class="text-xs text-gray-400 italic">No hierarchy nodes in scope.</span>';
+          return;
+        }
+        var chips = items.map(function(it) {
+          return '<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono">' +
+            esc(it.node_setname) +
+            ' <button data-scope-id="' + it.id + '" data-setname="' + esc(it.node_setname) + '" ' +
+              'class="hier-scope-remove text-blue-500 hover:text-red-600 ml-1" title="Remove from scope">×</button>' +
+            '</span>';
+        }).join(' ');
+        el.innerHTML = '<div class="flex flex-wrap gap-2">' + chips + '</div>';
+        el.querySelectorAll('.hier-scope-remove').forEach(function(btn) {
+          btn.addEventListener('click', async function() {
+            var sid = btn.getAttribute('data-scope-id');
+            var sname = btn.getAttribute('data-setname');
+            if (!confirm('Remove "' + sname + '" from the wave scope?')) return;
+            var r = await fetch('/api/waves/' + waveId + '/hierarchy-scopes/' + sid, {
+              method: 'DELETE', headers: authHdr,
+            });
+            if (!r.ok) {
+              var d = await r.json().catch(function(){return {};});
+              uiAlert({ message: d.detail || 'Failed to remove', kind: 'danger' });
+              return;
+            }
+            loadHierScope();
+          });
+        });
+      })
+      .catch(function() {
+        el.innerHTML = '<span class="text-xs text-red-500">Failed to load hierarchy scope.</span>';
+      });
   }
 
   // --- Analysis ---
@@ -1497,11 +1562,14 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('btn-run-sim').addEventListener('click', function() {
     var panel = document.getElementById('sim-config-panel');
     panel.classList.toggle('hidden');
-    // Load available hierarchies for node picker. Filter to Profit
-    // Center hierarchies only (setclass=0104) — the dropdown is for
-    // PC approach, so showing CC hierarchies here would be confusing
-    // (and selecting one would produce nonsense in the V2 engine).
-    fetch('/api/waves/hierarchy-nodes?setclass=0104', { headers: authHdr })
+    // Load available hierarchies for node picker. PR #85: previously
+    // we filtered to setclass=0104 (Profit Center hierarchies only),
+    // but operators with a 1:1 CC↔PC mapping have no separate PC
+    // hierarchy — and using the CC hierarchy (setclass=0101) is the
+    // correct answer in that case. We now fetch all imported
+    // hierarchies and let the operator pick whichever matches their
+    // PC structure. Tree resolution is identical for either setclass.
+    fetch('/api/waves/hierarchy-nodes', { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var sel = document.getElementById('sim-hier-select');
@@ -1509,22 +1577,38 @@ import Layout from '../../components/layout/Layout.astro';
         if (!hiers.length) {
           // Empty state: explain why and how to fix, instead of leaving
           // an inert dropdown that looks broken.
-          sel.innerHTML = '<option value="">(no Profit Center hierarchies imported)</option>';
+          sel.innerHTML = '<option value="">(no hierarchies imported)</option>';
           sel.disabled = true;
           var tree = document.getElementById('sim-hier-tree');
           if (tree) {
             tree.innerHTML = '<p class="text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">' +
-              'No PC hierarchies found. To use 1:n PC treatment, import a Profit Center hierarchy ' +
-              '(setclass=0104) under <strong>Data → PC</strong>. Without one, all centers will use ' +
-              '1:1 PC mapping by default.</p>';
+              'No hierarchies found. To use 1:n PC treatment, import either a Profit Center hierarchy ' +
+              '(setclass=0104) under <strong>Data → PC</strong>, or — if your CC↔PC mapping is 1:1 — ' +
+              'use the existing Cost Center hierarchy (setclass=0101) imported under <strong>Data → CC</strong>. ' +
+              'Without any hierarchy, all centers will use 1:1 PC mapping by default.</p>';
           }
           return;
         }
         sel.disabled = false;
         sel.innerHTML = '<option value="">Select hierarchy...</option>';
-        hiers.forEach(function(h) {
-          sel.innerHTML += '<option value="' + h.id + '">' + esc(h.label || h.setname) + ' (' + h.setclass + ')</option>';
-        });
+        // Group by setclass so the operator sees CC hierarchies and PC
+        // hierarchies in clearly labeled buckets — but both are
+        // selectable.
+        var ccHiers = hiers.filter(function(h) { return h.setclass === '0101'; });
+        var pcHiers = hiers.filter(function(h) { return h.setclass === '0104'; });
+        var otherHiers = hiers.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+        function appendGroup(label, list) {
+          if (!list.length) return;
+          var group = '<optgroup label="' + label + '">';
+          list.forEach(function(h) {
+            group += '<option value="' + h.id + '">' + esc(h.label || h.setname) + '</option>';
+          });
+          group += '</optgroup>';
+          sel.insertAdjacentHTML('beforeend', group);
+        }
+        appendGroup('Profit Center hierarchies (setclass=0104)', pcHiers);
+        appendGroup('Cost Center hierarchies (setclass=0101)', ccHiers);
+        appendGroup('Other', otherHiers);
       });
     // Load waves for exclusion
     fetch('/api/waves/?status=signed_off,closed', { headers: authHdr })
