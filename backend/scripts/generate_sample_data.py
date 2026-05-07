@@ -65,6 +65,7 @@ from app.infra.db.session import SessionLocal  # noqa: E402
 from app.models.core import (  # noqa: E402
     Balance,
     Entity,
+    GLAccountSKA1,
     Hierarchy,
     HierarchyLeaf,
     HierarchyNode,
@@ -1013,6 +1014,9 @@ def reset_scope(session: Session, *, purge_waves: bool = False) -> dict[str, int
         or 0
     )
     counts["employee"] = _delete_by_scope(session, Employee)
+    counts["gl_account_ska1"] = (
+        session.execute(delete(GLAccountSKA1).where(GLAccountSKA1.scope == SCOPE)).rowcount or 0
+    )
 
     # 3. Entity last — wave_entity rows CASCADE-delete with it.
     counts["entity"] = session.execute(delete(Entity).where(Entity.scope == SCOPE)).rowcount or 0
@@ -1226,6 +1230,7 @@ def insert_balances(
     ccs: list[GeneratedCC],
     months: int,
     today: date,
+    gl_accounts: list[str] | None = None,
 ) -> None:
     """Generate `months` months of balance data per cost center.
 
@@ -1234,6 +1239,8 @@ def insert_balances(
       * NCL / retire candidates have zero or near-zero amounts.
       * Posting count correlates with activity level.
       * Per-period currency = entity currency; gc_amt translated to USD.
+      * When gl_accounts is provided, each CC gets 1-5 accounts assigned from
+        the pool so balance rows reference real GL account numbers.
     """
     started = time.monotonic()
     fx_to_usd = {
@@ -1281,56 +1288,236 @@ def insert_balances(
         baseline_usd = scale * cc.activity_level * rng.uniform(0.4, 1.6)
         baselines.append(baseline_usd)
 
+    # Assign 1-5 GL accounts per cost center for realistic balance splits.
+    # Map first 2 digits of account to class code for account_class column.
+    prefix_to_class = {p: c for c, p, _, _ in GL_ACCOUNT_CLASSES}
+    cc_accounts: list[list[tuple[str, str]]] = []
+    for _cc in ccs:
+        if gl_accounts:
+            n_accts = rng.randint(1, 5)
+            chosen = rng.sample(gl_accounts, min(n_accts, len(gl_accounts)))
+            cc_accounts.append([(a, prefix_to_class.get(a[:2], "OTHER")) for a in chosen])
+        else:
+            cc_accounts.append([("9000", "PERS")])
+
     rows_buffer: list[dict] = []
     n = 0
-    total = len(ccs) * len(periods)
+    n_accts_per_cc = [len(a) for a in cc_accounts]
+    total = sum(c * len(periods) for c in n_accts_per_cc)
     batch_size = 5000
 
-    for cc, baseline_usd in zip(ccs, baselines, strict=True):
+    for cc_idx, (cc, baseline_usd) in enumerate(zip(ccs, baselines, strict=True)):
         currency = cc.entity.country.currency
         fx = fx_to_usd.get(currency, 1.0)
+        accts = cc_accounts[cc_idx]
+        # Split baseline across accounts (personnel gets 60%, rest shared)
+        acct_weights = []
+        for _acct_nr, acct_cls in accts:
+            w = 0.6 if acct_cls == "PERS" else 0.4 / max(1, len(accts) - 1)
+            acct_weights.append(w)
+        total_w = sum(acct_weights) or 1.0
+        acct_weights = [w / total_w for w in acct_weights]
+
         for fy, period in periods:
-            # Monthly variation: ±25% noise around baseline, plus a slight
-            # uptrend through the year (real cost growth).
-            noise = rng.gauss(1.0, 0.12)
-            trend = 1.0 + (period - 6) * 0.005
-            monthly_usd = max(0.0, baseline_usd * noise * trend)
-            tc_amt = Decimal(str(round(monthly_usd / fx, 2))) if fx else Decimal("0.00")
-            gc_amt = Decimal(str(round(monthly_usd, 2)))
-            posting_count = (
-                0
-                if cc.will_retire and rng.random() < 0.85
-                else max(0, int(rng.gauss(40 * cc.activity_level, 8)))
-            )
-            rows_buffer.append(
-                {
-                    "scope": SCOPE,
-                    "data_category": DATA_CATEGORY,
-                    "coarea": COAREA,
-                    "cctr": cc.cctr,
-                    "ccode": cc.entity.ccode,
-                    "fiscal_year": fy,
-                    "period": period,
-                    "account": "9000",  # synthetic personnel cost account
-                    "account_class": "PERS",
-                    "tc_amt": tc_amt,
-                    "gc_amt": gc_amt,
-                    "currency_tc": currency,
-                    "currency_gc": "USD",
-                    "posting_count": posting_count,
-                }
-            )
-            if len(rows_buffer) >= batch_size:
-                session.bulk_insert_mappings(Balance, rows_buffer)
-                n += len(rows_buffer)
-                rows_buffer.clear()
-                progress("balances", n, total, started)
+            for (acct_nr, acct_cls), acct_w in zip(accts, acct_weights, strict=True):
+                noise = rng.gauss(1.0, 0.12)
+                trend = 1.0 + (period - 6) * 0.005
+                monthly_usd = max(0.0, baseline_usd * acct_w * noise * trend)
+                tc_amt = Decimal(str(round(monthly_usd / fx, 2))) if fx else Decimal("0.00")
+                gc_amt = Decimal(str(round(monthly_usd, 2)))
+                posting_count = (
+                    0
+                    if cc.will_retire and rng.random() < 0.85
+                    else max(0, int(rng.gauss(40 * cc.activity_level * acct_w, 4)))
+                )
+                rows_buffer.append(
+                    {
+                        "scope": SCOPE,
+                        "data_category": DATA_CATEGORY,
+                        "coarea": COAREA,
+                        "cctr": cc.cctr,
+                        "ccode": cc.entity.ccode,
+                        "fiscal_year": fy,
+                        "period": period,
+                        "account": acct_nr,
+                        "account_class": acct_cls,
+                        "tc_amt": tc_amt,
+                        "gc_amt": gc_amt,
+                        "currency_tc": currency,
+                        "currency_gc": "USD",
+                        "posting_count": posting_count,
+                    }
+                )
+                if len(rows_buffer) >= batch_size:
+                    session.bulk_insert_mappings(Balance, rows_buffer)
+                    n += len(rows_buffer)
+                    rows_buffer.clear()
+                    progress("balances", n, total, started)
 
     if rows_buffer:
         session.bulk_insert_mappings(Balance, rows_buffer)
         n += len(rows_buffer)
         progress("balances", n, total, started)
     session.commit()
+
+
+# ── GL Accounts ───────────────────────────────────────────────────────────
+
+# SAP-style account class ranges (first 1-2 digits define the class).
+GL_ACCOUNT_CLASSES: list[tuple[str, str, str, float]] = [
+    # (class_code, prefix_start, description_prefix, weight)
+    ("BS-A", "10", "Cash & Bank Accounts", 0.04),
+    ("BS-A", "11", "Short-term Investments", 0.03),
+    ("BS-A", "12", "Receivables — Trade", 0.04),
+    ("BS-A", "13", "Receivables — Intercompany", 0.03),
+    ("BS-A", "14", "Provisions & Accruals — Assets", 0.02),
+    ("BS-A", "15", "Prepaid Expenses", 0.02),
+    ("BS-A", "16", "Fixed Assets — Tangible", 0.03),
+    ("BS-A", "17", "Fixed Assets — Intangible", 0.02),
+    ("BS-L", "20", "Payables — Trade", 0.04),
+    ("BS-L", "21", "Payables — Intercompany", 0.03),
+    ("BS-L", "22", "Tax Liabilities", 0.02),
+    ("BS-L", "23", "Accrued Liabilities", 0.03),
+    ("BS-L", "24", "Long-term Debt", 0.02),
+    ("BS-L", "25", "Equity — Capital", 0.01),
+    ("BS-L", "26", "Equity — Retained Earnings", 0.01),
+    ("PL", "30", "Revenue — Fee Income", 0.06),
+    ("PL", "31", "Revenue — Interest Income", 0.04),
+    ("PL", "32", "Revenue — Trading Income", 0.03),
+    ("PL", "33", "Revenue — Other Operating", 0.02),
+    ("PERS", "40", "Personnel — Salaries & Wages", 0.10),
+    ("PERS", "41", "Personnel — Bonuses", 0.06),
+    ("PERS", "42", "Personnel — Social Security", 0.04),
+    ("PERS", "43", "Personnel — Pension", 0.03),
+    ("PERS", "44", "Personnel — Other Benefits", 0.02),
+    ("MAT", "50", "Materials & Supplies", 0.03),
+    ("MAT", "51", "IT Hardware & Software", 0.04),
+    ("MAT", "52", "Consulting & Professional Fees", 0.03),
+    ("DEPR", "60", "Depreciation — Tangible", 0.03),
+    ("DEPR", "61", "Depreciation — Intangible", 0.02),
+    ("DEPR", "62", "Amortization", 0.02),
+    ("OTHER", "70", "Travel & Entertainment", 0.02),
+    ("OTHER", "71", "Rent & Occupancy", 0.03),
+    ("OTHER", "72", "Communication & Postage", 0.01),
+    ("OTHER", "73", "Insurance", 0.01),
+    ("OTHER", "74", "Regulatory & Compliance", 0.01),
+    ("OTHER", "80", "Extraordinary Items", 0.01),
+    ("OTHER", "81", "Currency Translation", 0.01),
+    ("OTHER", "90", "Statistical Accounts", 0.01),
+]
+
+GL_ACCOUNT_DESCRIPTIONS = {
+    "10": ["Cash in Hand {}", "Bank Account — {} Main", "Cash Pool {}", "Nostro Account {}"],
+    "11": ["Money Market Deposit {}", "Short-term Bond {}", "Treasury Bill {}"],
+    "12": ["Trade Receivable {}", "Client Receivable {}", "Brokerage Receivable {}"],
+    "13": ["IC Receivable — {}", "Intercompany Loan {}", "IC Settlement {}"],
+    "14": ["Provision for Doubtful {}", "Asset Accrual {}", "Valuation Adjustment {}"],
+    "15": ["Prepaid Rent {}", "Prepaid Insurance {}", "Deferred Charge {}"],
+    "16": ["Buildings {}", "IT Equipment {}", "Furniture & Fixtures {}", "Leasehold {}"],
+    "17": ["Software License {}", "Goodwill {}", "Client Relationships {}"],
+    "20": ["Trade Payable {}", "Vendor Payable {}", "AP — External {}"],
+    "21": ["IC Payable — {}", "IC Settlement {}", "IC Loan Received {}"],
+    "22": ["VAT Payable {}", "Corporate Tax {}", "Withholding Tax {}"],
+    "23": ["Accrued Salary {}", "Accrued Bonus {}", "Accrued Interest {}"],
+    "24": ["Term Loan {}", "Bond Issued {}", "Subordinated Debt {}"],
+    "25": ["Share Capital {}", "Additional Paid-in Capital {}"],
+    "26": ["Retained Earnings {}", "Other Comprehensive Income {}"],
+    "30": ["Advisory Fee {}", "Mgmt Fee {}", "Commission {}"],
+    "31": ["Interest Income — {}", "Loan Interest {}", "Bond Coupon {}"],
+    "32": ["FX Trading {}", "Equity Trading {}", "Derivatives {}"],
+    "33": ["Dividend Income {}", "Rental Income {}", "Other Revenue {}"],
+    "40": ["Base Salary {}", "Overtime {}", "Shift Allowance {}"],
+    "41": ["Discretionary Bonus {}", "Performance Award {}", "Deferred Comp {}"],
+    "42": ["Employer SSC {}", "Unemployment Ins {}", "Health Ins Contrib {}"],
+    "43": ["Pension Contrib {}", "Defined Benefit {}", "Retirement Fund {}"],
+    "44": ["Employee Training {}", "Relocation {}", "Company Car {}"],
+    "50": ["Office Supplies {}", "Cleaning Materials {}", "Printed Forms {}"],
+    "51": ["Server Hardware {}", "Desktop Licenses {}", "Cloud Hosting {}"],
+    "52": ["Legal Counsel {}", "Audit Fees {}", "IT Consulting {}"],
+    "60": ["Depr — Buildings {}", "Depr — Equipment {}", "Depr — Vehicles {}"],
+    "61": ["Amort — Software {}", "Amort — Licenses {}", "Amort — Goodwill {}"],
+    "62": ["Amort — Leasehold {}", "Amort — Patents {}"],
+    "70": ["Business Travel {}", "Client Entertainment {}", "Conference {}"],
+    "71": ["Office Rent {}", "Parking {}", "Building Maintenance {}"],
+    "72": ["Telephone {}", "Internet {}", "Postal {}"],
+    "73": ["Property Insurance {}", "Liability Insurance {}"],
+    "74": ["Regulatory Fee {}", "Compliance System {}", "AML Screening {}"],
+    "80": ["One-off Restructuring {}", "Litigation Settlement {}"],
+    "81": ["FX Revaluation {}", "Translation Difference {}"],
+    "90": ["Statistical Headcount {}", "FTE Counter {}", "Desk Count {}"],
+}
+
+
+def generate_gl_accounts(
+    session: Session,
+    rng: random.Random,
+    n_accounts: int = 100_000,
+) -> list[str]:
+    """Generate n_accounts GL accounts (10-digit SAP SAKNR) and insert as SKA1 rows.
+
+    Returns the list of generated account numbers for use in balance generation.
+    """
+    print(f"Generating {n_accounts:,} GL accounts...")
+    started = time.monotonic()
+
+    # Distribute accounts across classes by weight.
+    total_weight = sum(w for _, _, _, w in GL_ACCOUNT_CLASSES)
+    class_counts: list[int] = []
+    remainder = n_accounts
+    for i, (_, _, _, w) in enumerate(GL_ACCOUNT_CLASSES):
+        if i == len(GL_ACCOUNT_CLASSES) - 1:
+            class_counts.append(remainder)
+        else:
+            cnt = round(n_accounts * w / total_weight)
+            class_counts.append(cnt)
+            remainder -= cnt
+
+    accounts: list[str] = []
+    rows_buffer: list[dict] = []
+    batch_size = 5000
+    n_inserted = 0
+
+    for (cls_code, prefix, _desc_prefix, _w), count in zip(
+        GL_ACCOUNT_CLASSES, class_counts, strict=True
+    ):
+        descs = GL_ACCOUNT_DESCRIPTIONS.get(prefix, ["{} General"])
+        for seq in range(count):
+            # Build a 10-digit account: prefix (2 digits) + 8-digit sequence
+            suffix = str(seq).zfill(8)
+            saknr = prefix + suffix
+            desc_template = descs[seq % len(descs)]
+            txt20 = desc_template.format(seq + 1)[:20]
+            txt50 = desc_template.format(seq + 1)[:50]
+
+            accounts.append(saknr)
+            rows_buffer.append(
+                {
+                    "scope": SCOPE,
+                    "data_category": DATA_CATEGORY,
+                    "ktopl": "UBS01",
+                    "saknr": saknr,
+                    "xbilk": "X" if prefix < "30" else "",
+                    "ktoks": cls_code,
+                    "glaccount_type": "X" if prefix < "30" else "N",
+                    "txt20": txt20,
+                    "txt50": txt50,
+                }
+            )
+
+            if len(rows_buffer) >= batch_size:
+                session.bulk_insert_mappings(GLAccountSKA1, rows_buffer)
+                n_inserted += len(rows_buffer)
+                rows_buffer.clear()
+                progress("GL accounts", n_inserted, n_accounts, started)
+
+    if rows_buffer:
+        session.bulk_insert_mappings(GLAccountSKA1, rows_buffer)
+        n_inserted += len(rows_buffer)
+        progress("GL accounts", n_inserted, n_accounts, started)
+
+    session.commit()
+    print(f"  → {len(accounts):,} GL accounts inserted.")
+    return accounts
 
 
 # ── Hierarchies ───────────────────────────────────────────────────────────
@@ -1649,7 +1836,7 @@ def main() -> int:
         if args.reset:
             reset_scope(session, purge_waves=args.purge)
 
-        print("\n[4/6] Inserting entities + employees...")
+        print("\n[4/7] Inserting entities + employees...")
         insert_entities(session, entities)
         # Employees MUST be inserted before cost centers because the CC
         # responsible_employee_id FK references the now-real employee row
@@ -1657,12 +1844,15 @@ def main() -> int:
         # db_id field so the CC inserts can pick it up.
         insert_employees(session, employees)
 
-        print("\n[5/6] Inserting cost centers + profit centers...")
+        print("\n[5/7] Inserting cost centers + profit centers...")
         insert_cost_centers(session, ccs, today)
         insert_profit_centers(session, ccs)
 
-        print("\n[6/6] Inserting balances + hierarchies...")
-        insert_balances(session, rng, ccs, args.months, today)
+        print("\n[6/7] Generating GL accounts...")
+        gl_accounts = generate_gl_accounts(session, rng, n_accounts=100_000)
+
+        print("\n[7/7] Inserting balances + hierarchies...")
+        insert_balances(session, rng, ccs, args.months, today, gl_accounts=gl_accounts)
         build_entity_hierarchy(session, entities)
         build_cc_hierarchy(session, ccs)
 

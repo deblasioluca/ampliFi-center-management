@@ -398,6 +398,7 @@ import Layout from '../../components/layout/Layout.astro';
   <div id="scope-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
       <h2 class="text-lg font-semibold mb-4">Create Review Scope</h2>
+      <p class="text-xs text-gray-500 mb-3">Define a scope first, then assign a reviewer to it separately.</p>
       <form id="scope-form" class="space-y-3">
         <div><label class="block text-xs font-medium mb-1">Scope Name</label><input id="sf-name" class="input text-sm" required /></div>
         <div><label class="block text-xs font-medium mb-1">Scope Type</label>
@@ -408,14 +409,8 @@ import Layout from '../../components/layout/Layout.astro';
           </select>
           <p id="sf-type-help" class="text-[11px] text-gray-500 mt-1"></p>
         </div>
-        <div>
-          <label class="block text-xs font-medium mb-1">Reviewer</label>
-          <div id="sf-reviewer-picker"></div>
-          <input type="hidden" id="sf-reviewer" />
-          <input type="hidden" id="sf-email" />
-        </div>
         <div id="sf-entity-wrap">
-          <label class="block text-xs font-medium mb-1">Entity Filter</label>
+          <label class="block text-xs font-medium mb-1">Entity Filter <span class="text-gray-400 font-normal">(restricted to wave entities)</span></label>
           <div id="sf-entity-picker"></div>
         </div>
         <div id="sf-hier-wrap" class="hidden">
@@ -436,6 +431,26 @@ import Layout from '../../components/layout/Layout.astro';
       </form>
     </div>
   </div>
+
+  <!-- Assign Reviewer Modal -->
+  <div id="assign-reviewer-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <h2 class="text-lg font-semibold mb-4">Assign Reviewer</h2>
+      <p class="text-xs text-gray-500 mb-3">Search for an employee to assign as the reviewer for this scope.</p>
+      <form id="assign-reviewer-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium mb-1">Reviewer</label>
+          <div id="assign-reviewer-picker"></div>
+          <input type="hidden" id="ar-name" />
+          <input type="hidden" id="ar-email" />
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('assign-reviewer-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
+          <button type="submit" class="btn-amplifi">Assign</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </Layout>
 
 <script src="/ui-prompts.js" is:inline></script>
@@ -449,6 +464,8 @@ import Layout from '../../components/layout/Layout.astro';
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
   function escAttr(t) { return esc(t).replace(/"/g, '&quot;'); }
   function fmt(n) { return (n || 0).toLocaleString(); }
+  var _SC_MAP = { CC: '0101', PC: '0104', ENT: '0106', ENTITY: '0106' };
+  function _normSc(raw) { if (!raw) return ''; var u = String(raw).trim().toUpperCase(); return _SC_MAP[u] || u; }
 
   var params = new URLSearchParams(window.location.search);
   var waveId = params.get('id');
@@ -1022,15 +1039,26 @@ import Layout from '../../components/layout/Layout.astro';
   function loadScopes() {
     fetch('/api/waves/' + waveId + '/scopes', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('review-scopes');
-      if (!d.items || !d.items.length) { el.textContent = 'No review scopes yet. Lock the proposal first.'; return; }
+      if (!d.items || !d.items.length) { el.textContent = 'No review scopes yet.'; return; }
       var html = '<div class="space-y-3">';
       d.items.forEach(function(s) {
         var pct = s.total_items ? Math.round(s.decided_items / s.total_items * 100) : 0;
+        var canDelete = s.status !== 'completed' && s.status !== 'signed_off';
         html += '<div class="border rounded-lg p-4"><div class="flex items-center justify-between">' +
           '<div><span class="font-semibold">' + esc(s.name) + '</span>' +
           ' <span class="text-xs text-gray-500 ml-2">' + esc(s.scope_type) + '</span></div>' +
-          '<span class="text-xs ' + (s.status === 'completed' ? 'text-green-600' : 'text-gray-500') + '">' + s.status + '</span></div>';
-        if (s.reviewer_name) html += '<p class="text-xs text-gray-500 mt-1">Reviewer: ' + esc(s.reviewer_name) + (s.reviewer_email ? ' (' + esc(s.reviewer_email) + ')' : '') + '</p>';
+          '<div class="flex items-center gap-2">' +
+          '<span class="text-xs ' + (s.status === 'completed' ? 'text-green-600' : 'text-gray-500') + '">' + s.status + '</span>' +
+          (canDelete ? '<button onclick="deleteScope(' + s.id + ', \'' + escAttr(s.name) + '\')" class="text-red-400 hover:text-red-600 text-xs" title="Delete scope">&times;</button>' : '') +
+          '</div></div>';
+        // Reviewer line with assign button
+        if (s.reviewer_name) {
+          html += '<p class="text-xs text-gray-500 mt-1">Reviewer: ' + esc(s.reviewer_name) + (s.reviewer_email ? ' (' + esc(s.reviewer_email) + ')' : '') +
+            (canDelete ? ' <button onclick="openAssignReviewer(' + s.id + ')" class="text-blue-600 hover:underline ml-1">change</button>' : '') + '</p>';
+        } else {
+          html += '<p class="text-xs text-orange-600 mt-1">No reviewer assigned ' +
+            (canDelete ? '<button onclick="openAssignReviewer(' + s.id + ')" class="text-blue-600 hover:underline ml-1">Assign Reviewer</button>' : '') + '</p>';
+        }
         html += '<div class="mt-2"><div class="h-2 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full" style="width:' + pct + '%"></div></div>' +
           '<p class="text-xs text-gray-400 mt-1">' + s.decided_items + '/' + s.total_items + ' decided (' + pct + '%)</p></div>';
         if (s.token) html += '<p class="text-xs mt-2"><span class="text-gray-500">Review link:</span> <a href="/review/' + s.token + '" class="text-blue-600 hover:underline">/review/' + s.token.substring(0,16) + '...</a>' +
@@ -1046,22 +1074,56 @@ import Layout from '../../components/layout/Layout.astro';
   }
   loadScopes();
 
+  // Delete a review scope
+  window.deleteScope = async function(scopeId, scopeName) {
+    if (!await uiConfirm({
+      title: 'Delete scope "' + scopeName + '"?',
+      message: 'This will remove the scope and all associated review items. This cannot be undone.',
+      okLabel: 'Delete',
+      cancelLabel: 'Keep',
+      danger: true,
+    })) return;
+    var res = await fetch('/api/waves/scopes/' + scopeId, { method: 'DELETE', headers: authHdr });
+    if (!res.ok) { var d = await res.json().catch(function() { return {}; }); uiAlert({ message: d.detail || 'Failed to delete scope', kind: 'danger' }); return; }
+    loadScopes(); loadWave();
+  };
+
+  // Assign reviewer to an existing scope
+  var _assignScopeId = null;
+  window.openAssignReviewer = function(scopeId) {
+    _assignScopeId = scopeId;
+    document.getElementById('assign-reviewer-overlay').classList.remove('hidden');
+  };
+
   // ── "Create Scope" button handler ───────────────────────────────
   document.getElementById('btn-create-scope').addEventListener('click', function() {
     document.getElementById('scope-overlay').classList.remove('hidden');
   });
 
   // ── Mount pickers for the create-scope modal ─────────────────────
-  var scopeReviewerPicker = window.mountEmployeePicker('sf-reviewer-picker', {
-    placeholder: 'Search reviewer by name, GPN, or email…',
-    onChange: function(emp) {
-      document.getElementById('sf-reviewer').value = emp ? (emp.display_name || emp.bs_name || '') : '';
-      document.getElementById('sf-email').value = emp ? (emp.email_address || '') : '';
-    },
-  });
   var scopeEntityPicker = window.mountEntityPicker('sf-entity-picker', {
     multi: true,
     placeholder: 'Pick entities…',
+  });
+
+  // Restrict entity picker to wave entities (review scope <= wave scope)
+  fetch('/api/waves/' + waveId + '/entities', { headers: authHdr })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var ccodes = (d.items || []).map(function(e) { return e.ccode; });
+      if (ccodes.length && scopeEntityPicker.setAllowedCcodes) {
+        scopeEntityPicker.setAllowedCcodes(ccodes);
+      }
+    })
+    .catch(function() {});
+
+  // Mount reviewer picker for assign-reviewer overlay
+  var assignReviewerPicker = window.mountEmployeePicker('assign-reviewer-picker', {
+    placeholder: 'Search reviewer by name, GPN, or email…',
+    onChange: function(emp) {
+      document.getElementById('ar-name').value = emp ? (emp.display_name || emp.bs_name || '') : '';
+      document.getElementById('ar-email').value = emp ? (emp.email_address || '') : '';
+    },
   });
 
   // ── Scope-form context-sensitive UX ──────────────────────────────
@@ -1132,36 +1194,70 @@ import Layout from '../../components/layout/Layout.astro';
       });
   });
 
+  var _scopeCreating = false;
   document.getElementById('scope-form').addEventListener('submit', async function(e) {
     e.preventDefault();
-    var type = document.getElementById('sf-type').value;
-    var body = {
-      name: document.getElementById('sf-name').value,
-      scope_type: type,
-      reviewer_name: document.getElementById('sf-reviewer').value || null,
-      reviewer_email: document.getElementById('sf-email').value || null,
-      scope_filter: {},
-    };
-    if (type === 'hierarchy_node') {
-      var hierId = document.getElementById('sf-hier-id').value;
-      var nodeSetname = document.getElementById('sf-hier-node').value;
-      if (!hierId) {
-        uiAlert({ message: 'Pick a hierarchy first.', kind: 'warning' });
-        return;
+    if (_scopeCreating) return;
+    _scopeCreating = true;
+    var submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating…';
+    try {
+      var type = document.getElementById('sf-type').value;
+      var body = {
+        name: document.getElementById('sf-name').value,
+        scope_type: type,
+        scope_filter: {},
+      };
+      if (type === 'hierarchy_node') {
+        var hierId = document.getElementById('sf-hier-id').value;
+        var nodeSetname = document.getElementById('sf-hier-node').value;
+        if (!hierId) {
+          uiAlert({ message: 'Pick a hierarchy first.', kind: 'warning' });
+          return;
+        }
+        body.scope_filter.hierarchy_id = parseInt(hierId, 10);
+        if (nodeSetname) body.scope_filter.node_setname = nodeSetname;
+      } else {
+        var ccodes = scopeEntityPicker.getCcodes();
+        if (ccodes.length) body.scope_filter.entity_ccodes = ccodes;
       }
-      body.scope_filter.hierarchy_id = parseInt(hierId, 10);
-      if (nodeSetname) body.scope_filter.node_setname = nodeSetname;
-    } else {
-      // entity / list — read ccodes from the picker (PR #61)
-      var ccodes = scopeEntityPicker.getCcodes();
-      if (ccodes.length) body.scope_filter.entity_ccodes = ccodes;
+      var res = await fetch('/api/waves/' + waveId + '/scopes', {
+        method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
+      });
+      if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail, kind: 'danger' }); return; }
+      document.getElementById('scope-overlay').classList.add('hidden');
+      document.getElementById('sf-name').value = '';
+      loadScopes(); loadWave();
+    } finally {
+      _scopeCreating = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create';
     }
-    var res = await fetch('/api/waves/' + waveId + '/scopes', {
-      method: 'POST', headers: jsonHdr, body: JSON.stringify(body)
-    });
-    if (!res.ok) { var d = await res.json(); uiAlert({ message: d.detail, kind: 'danger' }); return; }
-    document.getElementById('scope-overlay').classList.add('hidden');
-    loadScopes(); loadWave();
+  });
+
+  // Assign reviewer form submit
+  document.getElementById('assign-reviewer-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!_assignScopeId) return;
+    var btn = this.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      var res = await fetch('/api/waves/scopes/' + _assignScopeId + '/reviewer', {
+        method: 'PATCH', headers: jsonHdr,
+        body: JSON.stringify({
+          reviewer_name: document.getElementById('ar-name').value || null,
+          reviewer_email: document.getElementById('ar-email').value || null,
+        })
+      });
+      if (!res.ok) { var d = await res.json().catch(function() { return {}; }); uiAlert({ message: d.detail || 'Failed to assign reviewer', kind: 'danger' }); return; }
+      document.getElementById('assign-reviewer-overlay').classList.add('hidden');
+      loadScopes();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Assign';
+    }
   });
 
   // Wave lifecycle actions
@@ -1754,9 +1850,9 @@ import Layout from '../../components/layout/Layout.astro';
         // Group by setclass so the operator sees CC hierarchies and PC
         // hierarchies in clearly labeled buckets — but both are
         // selectable.
-        var ccHiers = hiers.filter(function(h) { return h.setclass === '0101'; });
-        var pcHiers = hiers.filter(function(h) { return h.setclass === '0104'; });
-        var otherHiers = hiers.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+        var ccHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; });
+        var pcHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0104'; });
+        var otherHiers = hiers.filter(function(h) { var ns = _normSc(h.setclass); return ns !== '0101' && ns !== '0104'; });
         function appendGroup(label, list) {
           if (!list.length) return;
           var group = '<optgroup label="' + label + '">';

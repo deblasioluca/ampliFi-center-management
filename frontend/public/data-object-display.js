@@ -54,6 +54,17 @@
     return (n || 0).toLocaleString();
   }
 
+  // Normalise setclass codes — uploaded data may use short aliases
+  // (CC, PC, ENT) instead of the standard 4-digit SAP codes.
+  var SETCLASS_ALIASES = {
+    'CC': '0101', 'PC': '0104', 'ENT': '0106', 'ENTITY': '0106'
+  };
+  function normaliseSetclass(raw) {
+    if (!raw) return '';
+    var upper = String(raw).trim().toUpperCase();
+    return SETCLASS_ALIASES[upper] || upper;
+  }
+
   // ── DataObjectDisplay constructor ───────────────────────────────────
 
   function DataObjectDisplay(opts) {
@@ -73,10 +84,22 @@
     this.showPagination = opts.showPagination !== false;
     this.showCSV = opts.showCSV !== false;
     this.pageSize = opts.pageSize || 200;
+    this.hierPageSize = opts.hierPageSize || 10000; // bumped for hierarchical (need all items)
     this.extraColumns = opts.extraColumns || [];
     this.extraQueryParams = opts.extraQueryParams || {};
     this.hierarchyTypes = opts.hierarchyTypes || null; // null = show all
     this.glHierarchyMode = opts.glHierarchyMode || null; // 'type_a' or 'type_b' for GL accounts
+    // Fallback column definitions when no display config exists
+    this.columns = opts.columns || null; // [{key:'cctr', label:'CC'}, ...]
+    // If true, the data endpoint returns hierarchies inline (Data Browser mode).
+    // The loader will pass include_hierarchies=true to get nodes/leaves.
+    this.inlineHierarchies = opts.inlineHierarchies || false;
+    // If true, fetch with include_balances=true
+    this.includeBalances = opts.includeBalances || false;
+    // Callback after data loads (so caller can react, e.g. update pager)
+    this.onDataLoad = opts.onDataLoad || null;
+    // Balance column formatting
+    this.showBalanceColumns = opts.showBalanceColumns || false;
 
     // State
     this._view = 'tabular';          // 'tabular' or 'hierarchy'
@@ -93,6 +116,7 @@
     this._allExpanded = true;
     this._selectedHierNode = null;   // selected node in tree panel
     this._idSeq = 0;
+    this._hierInlined = false;       // whether hierarchy data is currently inline
   }
 
   // ── Display config loading ──────────────────────────────────────────
@@ -113,24 +137,37 @@
       });
   };
 
-  // ── Column label resolution ─────────────────────────────────────────
-
-  DataObjectDisplay.prototype.colLabel = function (col) {
-    if (!this._displayConfig) return col;
-    var labels = this._displayConfig.column_labels || {};
-    return labels[col] || col;
-  };
-
   // ── Get effective table columns ─────────────────────────────────────
 
   DataObjectDisplay.prototype.getTableColumns = function () {
-    if (!this._displayConfig) return [];
-    var cols = this._displayConfig.table_columns;
-    if (!cols || !cols.length) {
-      // Fallback: use first N columns from all_columns
+    // Check display config first
+    if (this._displayConfig) {
+      var cols = this._displayConfig.table_columns;
+      if (cols && cols.length) return cols;
       cols = (this._displayConfig.all_columns || []).slice(0, 10);
+      if (cols.length) return cols;
     }
-    return cols;
+    // Fallback: use caller-specified columns
+    if (this.columns && this.columns.length) {
+      return this.columns.map(function (c) { return c.key || c; });
+    }
+    return [];
+  };
+
+  // Column label — checks display config, then fallback columns, then raw key
+  DataObjectDisplay.prototype.colLabel = function (col) {
+    if (this._displayConfig) {
+      var labels = this._displayConfig.column_labels || {};
+      if (labels[col]) return labels[col];
+    }
+    if (this.columns) {
+      for (var i = 0; i < this.columns.length; i++) {
+        if ((this.columns[i].key || this.columns[i]) === col) {
+          return this.columns[i].label || col;
+        }
+      }
+    }
+    return col;
   };
 
   // ── Hierarchy picker loading ────────────────────────────────────────
@@ -171,7 +208,7 @@
       return html;
     }
 
-    // Group by setclass
+    // Group by normalised setclass
     var groups = { '0101': [], '0106': [], '0104': [], other: [] };
     var groupLabels = {
       '0101': 'Cost Center hierarchies (CC)',
@@ -182,8 +219,9 @@
 
     var filterTypes = this.hierarchyTypes;
     items.forEach(function (h) {
-      if (filterTypes && filterTypes.indexOf(h.setclass) < 0) return;
-      var key = groups[h.setclass] ? h.setclass : 'other';
+      var norm = normaliseSetclass(h.setclass);
+      if (filterTypes && filterTypes.indexOf(norm) < 0) return;
+      var key = groups[norm] ? norm : 'other';
       groups[key].push(h);
     });
 
@@ -266,14 +304,29 @@
     var self = this;
     if (!this.dataEndpoint) { if (cb) cb(null); return; }
 
+    // Use larger page size in hierarchical mode
+    var effectiveSize = (this._view === 'hierarchy') ? this.hierPageSize : this.pageSize;
+
     var params = [];
     params.push('page=' + this._page);
-    params.push('size=' + this.pageSize);
+    params.push('size=' + effectiveSize);
     if (this._search) params.push('search=' + encodeURIComponent(this._search));
 
     // Add hierarchy_id if selected (for server-side path resolution)
     if (this._hierPickerId && typeof this._hierPickerId === 'number') {
       params.push('hierarchy_id=' + this._hierPickerId);
+    }
+
+    // For inline hierarchy mode, always request include_hierarchies
+    // so the picker is populated and tree data is available.
+    if (this.inlineHierarchies) {
+      params.push('include_hierarchies=true');
+      this._hierInlined = true;
+    }
+
+    // Include balances
+    if (this.includeBalances) {
+      params.push('include_balances=true');
     }
 
     // Add extra query params
@@ -282,8 +335,10 @@
       if (eq[k] != null && eq[k] !== '') params.push(k + '=' + encodeURIComponent(eq[k]));
     });
 
-    fetch(this.apiBase + this.dataEndpoint + '?' + params.join('&'), {
-      headers: this.authHeaders,
+    var fetchHeaders = Object.assign({}, this.authHeaders);
+    var fetchFn = window.apiFetch || fetch;
+    fetchFn(this.apiBase + this.dataEndpoint + '?' + params.join('&'), {
+      headers: fetchHeaders,
     })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -291,6 +346,18 @@
       })
       .then(function (d) {
         self._data = d;
+        // For inline hierarchies, populate hierarchy options from response
+        if (self.inlineHierarchies && d.hierarchies) {
+          self._hierOptions = d.hierarchies;
+          // If hierarchies are inlined with nodes/leaves, use them for tree
+          if (d.hierarchies_inlined && self._hierPickerId) {
+            var picked = d.hierarchies.filter(function (h) { return h.id === self._hierPickerId; })[0];
+            if (picked && picked.nodes) {
+              self._hierData = picked;
+            }
+          }
+        }
+        if (self.onDataLoad) self.onDataLoad(d);
         if (cb) cb(d);
       })
       .catch(function (err) {
@@ -320,6 +387,9 @@
   // ── Build hierarchy level map for tabular view ──────────────────────
 
   DataObjectDisplay.prototype.buildHierLevelMap = function () {
+    // When no hierarchy is selected, return empty
+    if (!this._hierPickerId) return { levels: [], map: {} };
+
     // For GL artificial hierarchies
     if (this._hierPickerId === '__gl_type_a' || this._hierPickerId === '__gl_type_b') {
       return this._buildGLHierLevelMap();
@@ -328,9 +398,9 @@
     var data = this._data;
     if (!data || !data.items) return { levels: [], map: {} };
 
-    // If the server returned levels per item (from hierarchy_id param)
+    // Mode 1: Server returned levels per item (from hierarchy_id param)
     var maxDepth = data.hierarchy_max_depth || 0;
-    if (maxDepth > 0) {
+    if (maxDepth > 0 && data.items.length && data.items[0].levels) {
       var levelCols = [];
       for (var i = 0; i < maxDepth; i++) {
         levelCols.push('L' + i);
@@ -350,7 +420,109 @@
       return { levels: levelCols, map: map };
     }
 
-    return { levels: [], map: {} };
+    // Mode 2: Inline hierarchies — build paths client-side from
+    // nodes/leaves data (Data Browser mode)
+    var hiers = (data.hierarchies) || [];
+    var hier = null;
+    for (var h = 0; h < hiers.length; h++) {
+      if (hiers[h].id === this._hierPickerId) { hier = hiers[h]; break; }
+    }
+    if (!hier || !hier.nodes) return { levels: [], map: {} };
+
+    return this._buildClientSideHierLevelMap(hier);
+  };
+
+  // Build L0..Lx map from inline hierarchy nodes/leaves (same logic
+  // that was previously duplicated in data/index.astro's buildHierLevelMap)
+  DataObjectDisplay.prototype._buildClientSideHierLevelMap = function (hier) {
+    var self = this;
+    var childMap = {};
+    (hier.nodes || []).forEach(function (n) {
+      var parent = n.parent_setname || n.parent;
+      var child = n.child_setname || n.child;
+      if (!childMap[parent]) childMap[parent] = [];
+      childMap[parent].push({ type: 'node', name: child, seq: n.seq || 0 });
+    });
+    (hier.leaves || []).forEach(function (lf) {
+      var parent = lf.setname || lf.parent;
+      if (!childMap[parent]) childMap[parent] = [];
+      childMap[parent].push({ type: 'leaf', value: lf.value, seq: lf.seq || 0 });
+    });
+
+    // Find roots
+    var allChildren = {};
+    (hier.nodes || []).forEach(function (n) {
+      allChildren[n.child_setname || n.child] = 1;
+    });
+    var roots = [];
+    (hier.nodes || []).forEach(function (n) {
+      var p = n.parent_setname || n.parent;
+      if (!allChildren[p] && roots.indexOf(p) < 0) roots.push(p);
+    });
+    if (!roots.length && hier.nodes && hier.nodes.length) {
+      roots.push(hier.nodes[0].parent_setname || hier.nodes[0].parent);
+    }
+
+    // DFS to build paths: leaf value -> [L0, L1, ..., Ln]
+    var leafPaths = {};
+    var maxDepth = 0;
+    function dfs(nodeName, path) {
+      var children = childMap[nodeName] || [];
+      children.forEach(function (c) {
+        if (c.type === 'leaf') {
+          leafPaths[c.value] = path.slice();
+          if (path.length > maxDepth) maxDepth = path.length;
+        } else {
+          dfs(c.name, path.concat([c.name]));
+        }
+      });
+    }
+    roots.forEach(function (r) { dfs(r, [r]); });
+
+    var levelCols = [];
+    for (var i = 0; i < maxDepth; i++) {
+      levelCols.push('L' + i);
+    }
+
+    // Map items to their level columns, respecting setclass for key lookup
+    var normSetclass = normaliseSetclass(hier.setclass);
+    var result = {};
+    var allItems = (this._data && this._data.items) || [];
+
+    function levelObj(p) {
+      var obj = {};
+      for (var i = 0; i < maxDepth; i++) {
+        obj['L' + i] = p[i] || '';
+      }
+      return obj;
+    }
+
+    if (normSetclass === '0106') {
+      // Entity hierarchy — leaf key is ccode
+      allItems.forEach(function (it) {
+        var key = it[self.identityField] || it.id;
+        var lookup = it[self.entityField];
+        if (key && lookup && leafPaths[lookup]) {
+          result[key] = levelObj(leafPaths[lookup]);
+        }
+      });
+    } else if (normSetclass === '0104') {
+      // PC hierarchy — leaf key is pctr
+      allItems.forEach(function (it) {
+        var key = it[self.identityField] || it.id;
+        var lookup = it[self.profitCenterField];
+        if (key && lookup && leafPaths[lookup]) {
+          result[key] = levelObj(leafPaths[lookup]);
+        }
+      });
+    } else {
+      // CC hierarchy — leaf key IS identity field
+      Object.keys(leafPaths).forEach(function (leafVal) {
+        result[leafVal] = levelObj(leafPaths[leafVal]);
+      });
+    }
+
+    return { levels: levelCols, map: result, hierLabel: hier.label || hier.setname || 'Hierarchy' };
   };
 
   // ── GL artificial hierarchy map ─────────────────────────────────────
@@ -554,20 +726,25 @@
       return this._renderGLHierarchical(items);
     }
 
-    // Need a selected hierarchy with tree data
-    if (!this._hierPickerId || !this._hierData) {
-      if (this._hierPickerId && !this._hierData) {
+    // Need a selected hierarchy with tree data. Try inline first.
+    var hierData = this._hierData;
+    if (!hierData && this._hierPickerId && this.inlineHierarchies && this._data && this._data.hierarchies) {
+      var inlineHier = this._data.hierarchies.filter(function (h) { return h.id === self._hierPickerId; })[0];
+      if (inlineHier && inlineHier.nodes) hierData = inlineHier;
+    }
+    if (!this._hierPickerId || !hierData) {
+      if (this._hierPickerId && !hierData) {
         return '<span class="text-gray-400 text-sm">Loading hierarchy tree...</span>';
       }
       return '<span class="text-gray-400 text-sm">Select a hierarchy from the picker above to view hierarchical display.</span>';
     }
 
-    var hierData = this._hierData;
     var setclass = hierData.setclass || '';
 
-    // Build leaf-items map based on setclass
+    // Build leaf-items map based on normalised setclass
     var leafItemsMap = {};
-    if (setclass === '0106') {
+    var normSetclass = normaliseSetclass(setclass);
+    if (normSetclass === '0106') {
       // Entity hierarchy — leaves are ccodes
       items.forEach(function (it) {
         var key = it[self.entityField];
@@ -575,7 +752,7 @@
         if (!leafItemsMap[key]) leafItemsMap[key] = [];
         leafItemsMap[key].push(it);
       });
-    } else if (setclass === '0104') {
+    } else if (normSetclass === '0104') {
       // PC hierarchy — leaves are pctrs
       items.forEach(function (it) {
         var key = it[self.profitCenterField];
@@ -706,9 +883,9 @@
     var assigned = {};
     leaves.forEach(function (lf) { assigned[lf.value] = 1; });
     var unassignedItems;
-    if (setclass === '0106') {
+    if (normSetclass === '0106') {
       unassignedItems = items.filter(function (it) { return it[self.entityField] && !assigned[it[self.entityField]]; });
-    } else if (setclass === '0104') {
+    } else if (normSetclass === '0104') {
       unassignedItems = items.filter(function (it) { return it[self.profitCenterField] && !assigned[it[self.profitCenterField]]; });
     } else {
       unassignedItems = items.filter(function (it) { return it[self.identityField] && !assigned[it[self.identityField]]; });
@@ -748,7 +925,7 @@
     if (selected === '__unassigned__') {
       var assigned = {};
       leaves.forEach(function (lf) { assigned[lf.value] = 1; });
-      var setclass = (this._hierData && this._hierData.setclass) || '';
+      var setclass = normaliseSetclass((this._hierData && this._hierData.setclass) || '');
       if (setclass === '0106') {
         detailItems = items.filter(function (it) { return it[self.entityField] && !assigned[it[self.entityField]]; });
       } else if (setclass === '0104') {
@@ -872,16 +1049,26 @@
     var hierBtn = container.querySelector('[data-dod-role="view-hierarchy"]');
     if (tabBtn) tabBtn.addEventListener('click', function () {
       self._view = 'tabular';
-      self.render();
+      self._page = 1;
+      // Re-fetch with normal page size
+      self.loadData(function () { self.render(); });
     });
     if (hierBtn) hierBtn.addEventListener('click', function () {
       self._view = 'hierarchy';
-      // Load hierarchy tree if needed
-      if (self._hierPickerId && !self._hierData && typeof self._hierPickerId === 'number') {
-        self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
+      self._page = 1;
+      // Re-fetch with large page size + inline hierarchies if needed
+      if (self.inlineHierarchies || (self._hierPickerId && !self._hierData && typeof self._hierPickerId === 'number')) {
+        self.loadData(function () {
+          // Also load tree data if needed and not inline
+          if (!self.inlineHierarchies && self._hierPickerId && !self._hierData && typeof self._hierPickerId === 'number') {
+            self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
+          } else {
+            self.render();
+          }
+        });
         return;
       }
-      self.render();
+      self.loadData(function () { self.render(); });
     });
 
     // Search
@@ -918,14 +1105,15 @@
           self._hierData = null;
         }
 
-        if (self._view === 'hierarchy' && self._hierPickerId && typeof self._hierPickerId === 'number') {
-          self.loadHierarchyTree(self._hierPickerId, function () {
-            // Also reload data with hierarchy_id for tabular levels
-            self.loadData(function () { self.render(); });
-          });
-        } else {
-          self.loadData(function () { self.render(); });
-        }
+        // Always re-fetch data (for hierarchy_id param or inline hierarchies)
+        self.loadData(function () {
+          // For non-inline mode, also load tree data when in hierarchical view
+          if (!self.inlineHierarchies && self._view === 'hierarchy' && self._hierPickerId && typeof self._hierPickerId === 'number') {
+            self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
+          } else {
+            self.render();
+          }
+        });
       });
     }
 
@@ -1081,12 +1269,14 @@
       tryRender();
     });
 
-    if (this.showHierarchyPicker) {
+    if (this.showHierarchyPicker && !this.inlineHierarchies) {
+      // Non-inline mode: fetch hierarchy options separately
       this.loadHierarchyOptions(function () {
         hiersLoaded = true;
         tryRender();
       });
     } else {
+      // Inline mode: hierarchies come from the data endpoint
       hiersLoaded = true;
       tryRender();
     }

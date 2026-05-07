@@ -120,6 +120,25 @@ def _run_duplicate_check_in_thread(
 # backend filters stay consistent.
 SETCLASS_COST_CENTER = "0101"
 SETCLASS_PROFIT_CENTER = "0104"
+SETCLASS_ENTITY = "0106"
+
+# Uploaded data may use short aliases (CC, PC, ENT) instead of the
+# standard 4-digit SAP setclass codes. Normalise so all downstream
+# comparisons can use the canonical codes.
+_SETCLASS_ALIASES: dict[str, str] = {
+    "CC": SETCLASS_COST_CENTER,
+    "PC": SETCLASS_PROFIT_CENTER,
+    "ENT": SETCLASS_ENTITY,
+    "ENTITY": SETCLASS_ENTITY,
+}
+
+
+def normalise_setclass(raw: str | None) -> str:
+    """Return the canonical SAP setclass code for a given raw value."""
+    if not raw:
+        return ""
+    upper = raw.strip().upper()
+    return _SETCLASS_ALIASES.get(upper, upper)
 
 
 def _resolve_hierarchy_paths(
@@ -236,15 +255,15 @@ def _resolve_paths_for_ccs(
     if hier is None:
         return {}, 0
 
-    setclass = hier.setclass or ""
+    setclass = normalise_setclass(hier.setclass)
 
     # Pick the field on the CC row that matches what the hierarchy's
     # leaves contain. Tested on real data: SAP loaders write all three
     # fields onto LegacyCostCenter, so this is just an attribute read.
-    if setclass == "0106":
+    if setclass == SETCLASS_ENTITY:
         # Entity hierarchy — leaves are ccodes
         key_fn = lambda cc: cc.ccode  # noqa: E731
-    elif setclass == "0104":
+    elif setclass == SETCLASS_PROFIT_CENTER:
         # PC hierarchy — leaves are pctrs. CCs without a pctr (or where
         # pctr is null) won't resolve, which is the right behaviour
         # (they're not part of any PC tree).
@@ -302,11 +321,11 @@ def _resolve_paths_for_pcs(
     if hier is None:
         return {}, 0
 
-    setclass = hier.setclass or ""
+    setclass = normalise_setclass(hier.setclass)
 
-    if setclass == "0106":
+    if setclass == SETCLASS_ENTITY:
         key_fn = lambda pc: pc.ccode  # noqa: E731
-    elif setclass == "0101":
+    elif setclass == SETCLASS_COST_CENTER:
         # CC hierarchy doesn't apply to PCs — return empty rather than
         # silently giving wrong results
         return {}, 0
@@ -924,13 +943,13 @@ def balances_by_hierarchy(
             "items": [],
         }
 
-    setclass = hier.setclass or ""
+    setclass = normalise_setclass(hier.setclass)
 
     # Build the aggregation query. We always GROUP BY (cctr, ccode) so
     # the leaf table at the bottom of the tree shows per-CC numbers
     # regardless of hierarchy type — only the JOIN to hierarchy_leaf
     # changes.
-    if setclass == "0106":
+    if setclass == SETCLASS_ENTITY:
         # Entity hierarchy — join via ccode
         bal_q = (
             select(
@@ -945,7 +964,7 @@ def balances_by_hierarchy(
             .group_by(Balance.cctr, Balance.ccode)
             .order_by(Balance.cctr)
         )
-    elif setclass == "0104":
+    elif setclass == SETCLASS_PROFIT_CENTER:
         # PC hierarchy — leaves are pctrs. Join through legacy_cc to
         # get from cctr (the balance row) → pctr (the leaf key).
         bal_q = (
@@ -996,7 +1015,7 @@ def balances_by_hierarchy(
     paths: dict[str, list[str]] = {}
     max_depth = 0
     if cctrs:
-        if setclass == "0106":
+        if setclass == SETCLASS_ENTITY:
             # Need cctr → ccode map (we already have ccode on each
             # balance row from the GROUP BY)
             ccode_by_cctr: dict[str, str] = {r.cctr: (r.ccode or "") for r in rows}
@@ -1008,7 +1027,7 @@ def balances_by_hierarchy(
                 for cctr, ccode in ccode_by_cctr.items():
                     if ccode in paths_by_ccode:
                         paths[cctr] = paths_by_ccode[ccode]
-        elif setclass == "0104":
+        elif setclass == SETCLASS_PROFIT_CENTER:
             # Need cctr → pctr map (not on Balance — fetch from CC)
             pctr_rows = db.execute(
                 select(LegacyCostCenter.cctr, LegacyCostCenter.pctr).where(

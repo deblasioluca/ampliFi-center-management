@@ -758,6 +758,14 @@ import Layout from '../../components/layout/Layout.astro';
   loadEntities(1);
   document.getElementById('search-entities').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadEntities(1); }, 300); });
 
+  // Normalise setclass aliases (ENT→0106, CC→0101, PC→0104)
+  var _SC_MAP = { CC: '0101', PC: '0104', ENT: '0106', ENTITY: '0106' };
+  function _normSc(raw) {
+    if (!raw) return '';
+    var u = String(raw).trim().toUpperCase();
+    return _SC_MAP[u] || u;
+  }
+
   // --- Cost Centers ---
   // Sortable table helper
   var _tableSort = {};
@@ -874,11 +882,12 @@ import Layout from '../../components/layout/Layout.astro';
     .then(function(d) {
       var sel = document.getElementById('cc-hier-picker');
       var items = d.items || [];
-      var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
-      var entHiers = items.filter(function(h) { return h.setclass === '0106'; });
-      var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
+      var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
+      var entHiers = items.filter(function(h) { return _normSc(h.setclass) === '0106'; });
+      var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
       var otherHiers = items.filter(function(h) {
-        return h.setclass !== '0101' && h.setclass !== '0106' && h.setclass !== '0104';
+        var ns = _normSc(h.setclass);
+        return ns !== '0101' && ns !== '0106' && ns !== '0104';
       });
 
       function appendGroup(label, list) {
@@ -998,11 +1007,12 @@ import Layout from '../../components/layout/Layout.astro';
     .then(function(d) {
       var sel = document.getElementById('pc-hier-picker');
       var items = d.items || [];
-      var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
-      var entHiers = items.filter(function(h) { return h.setclass === '0106'; });
-      var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
+      var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
+      var entHiers = items.filter(function(h) { return _normSc(h.setclass) === '0106'; });
+      var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
       var otherHiers = items.filter(function(h) {
-        return h.setclass !== '0104' && h.setclass !== '0106' && h.setclass !== '0101';
+        var ns = _normSc(h.setclass);
+        return ns !== '0104' && ns !== '0106' && ns !== '0101';
       });
 
       function appendGroup(label, list) {
@@ -1688,9 +1698,9 @@ import Layout from '../../components/layout/Layout.astro';
           .then(function(d) {
             var items = d.items || [];
             // Group by setclass so operators see CC/PC/Entity sections clearly.
-            var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
-            var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
-            var otherHiers = items.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+            var ccHiers = items.filter(function(h) { return _normSc(h.setclass) === '0101'; });
+            var pcHiers = items.filter(function(h) { return _normSc(h.setclass) === '0104'; });
+            var otherHiers = items.filter(function(h) { var ns = _normSc(h.setclass); return ns !== '0101' && ns !== '0104'; });
             function appendGroup(label, list) {
               if (!list.length) return;
               var g = document.createElement('optgroup');
@@ -2678,11 +2688,12 @@ import Layout from '../../components/layout/Layout.astro';
     wrap.classList.remove('hidden');
     if (_dbHierPickerPopulated) return;
     _dbHierPickerPopulated = true;
-    var ccHiers = hiers.filter(function(h) { return h.setclass === '0101'; });
-    var pcHiers = hiers.filter(function(h) { return h.setclass === '0104'; });
-    var entHiers = hiers.filter(function(h) { return h.setclass === '0106'; });
+    var ccHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; });
+    var pcHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0104'; });
+    var entHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0106'; });
     var otherHiers = hiers.filter(function(h) {
-      return h.setclass !== '0101' && h.setclass !== '0104' && h.setclass !== '0106';
+      var ns = _normSc(h.setclass);
+      return ns !== '0101' && ns !== '0104' && ns !== '0106';
     });
     sel.innerHTML = '<option value="">(none — no L columns)</option>';
     function appendGroup(label, list) {
@@ -2947,7 +2958,7 @@ import Layout from '../../components/layout/Layout.astro';
     //   * 0106 (Entity) → leaf is ccode, look up by it.cctr → it.ccode
     //   * 0104 (PC)     → leaf is pctr, look up by it.cctr → it.pctr
     var ccLevelMap = {};
-    var setclass = hier.setclass || '';
+    var setclass = _normSc(hier.setclass);
     var allItems = (dbData && dbData.items) || [];
     function levelObj(p) {
       var obj = {};
@@ -3165,14 +3176,14 @@ import Layout from '../../components/layout/Layout.astro';
       hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
     }
     if (!hier) {
-      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+      hier = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; })[0] || hiers[0];
     }
     if (!hier) return;
 
     // PR #90 — setclass-aware leafItemsMap. See renderDBHierarchical
     // for the full rationale.
     var leafItemsMap = {};
-    var setclass = hier.setclass || '';
+    var setclass = _normSc(hier.setclass);
     if (setclass === '0106') {
       items.forEach(function(it) {
         if (!it.ccode) return;
@@ -3323,22 +3334,16 @@ import Layout from '../../components/layout/Layout.astro';
       hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
     }
     if (!hier) {
-      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
+      hier = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; })[0] || hiers[0];
     }
     if (!hier) {
       el.innerHTML = '<span class="text-gray-400">Select a hierarchy from the picker above to drill into it.</span>';
       return;
     }
 
-    // Setclass-aware ccMap. The tree's leaf values match what the
-    // hierarchy stores (cctr / ccode / pctr); we want clicking a
-    // tree node to surface the cost centers under it. So the lookup
-    // map is keyed by leaf-value-type, not always cctr.
-    //   * 0106 (Entity) → leaf=ccode → group items by ccode
-    //   * 0104 (PC)     → leaf=pctr  → group items by pctr
-    //   * else          → leaf=cctr  → identity
+    // Setclass-aware ccMap with normalised setclass.
     var leafItemsMap = {};
-    var setclass = hier.setclass || '';
+    var setclass = _normSc(hier.setclass);
     if (setclass === '0106') {
       items.forEach(function(it) {
         if (!it.ccode) return;

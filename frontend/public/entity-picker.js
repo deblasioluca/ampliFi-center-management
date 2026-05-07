@@ -349,12 +349,28 @@
       renderDropdown();
     }
 
+    function setAllowedCcodes(ccodes) {
+      var allowed = new Set(ccodes || []);
+      state.entities = state.entities.filter(function (e) {
+        return allowed.has(e.ccode);
+      });
+      // Remove any currently selected codes that are no longer allowed
+      var toRemove = [];
+      state.selected.forEach(function (c) {
+        if (!allowed.has(c)) toRemove.push(c);
+      });
+      toRemove.forEach(function (c) { state.selected.delete(c); });
+      renderChips();
+      renderDropdown();
+      renderStatus();
+    }
+
     // ── Boot ──────────────────────────────────────────────────────────
     renderChips();
     renderStatus();
     loadEntities();
 
-    return { getCcodes: getCcodes, setCcodes: setCcodes, setEnabled: setEnabled };
+    return { getCcodes: getCcodes, setCcodes: setCcodes, setEnabled: setEnabled, setAllowedCcodes: setAllowedCcodes };
   }
 
   window.mountEntityPicker = mountEntityPicker;

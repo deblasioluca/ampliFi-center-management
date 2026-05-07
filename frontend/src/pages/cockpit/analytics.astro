@@ -260,6 +260,8 @@ import Layout from '../../components/layout/Layout.astro';
   function fmt(n) { if (n == null) return '--'; if (typeof n === 'string') return n; return Number(n).toLocaleString(); }
   function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
   function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  var _SC_MAP = { CC: '0101', PC: '0104', ENT: '0106', ENTITY: '0106' };
+  function _normSc(raw) { if (!raw) return ''; var u = String(raw).trim().toUpperCase(); return _SC_MAP[u] || u; }
 
   // Entity name lookup
   var _entityNames = {};
@@ -1595,7 +1597,7 @@ import Layout from '../../components/layout/Layout.astro';
             .then(function(r) { return r.json(); })
             .then(function(hd) {
               browserHierarchyOptions = (hd.items || []).map(function(h) {
-                var setclass = h.setclass || '';
+                var setclass = _normSc(h.setclass);
                 var kind = setclass === '0101' ? 'CC' : setclass === '0104' ? 'PC' : setclass === '0106' ? 'Entity' : setclass;
                 return {
                   id: h.id,
