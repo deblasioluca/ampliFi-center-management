@@ -273,6 +273,10 @@ import Layout from '../../components/layout/Layout.astro';
             <option value="cost_center">Cost Centers</option>
             <option value="profit_center">Profit Centers</option>
           </select>
+          <!-- PR #89 — A13: keep auto-derive available even after the
+               table has rows, so operators can refresh mappings after
+               a new analysis run completes. -->
+          <button onclick="autoDeriveMappings()" class="btn-secondary text-xs whitespace-nowrap" title="Re-derive mappings from completed analysis runs (idempotent)">Auto-derive</button>
           <button onclick="downloadTableCSV('mapping-table','center_mapping.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
           <button id="delete-all-mapping" class="btn-danger text-xs">Delete All</button>
         </div>
@@ -283,17 +287,43 @@ import Layout from '../../components/layout/Layout.astro';
 
     <!-- Balances Tab -->
     <div id="tab-balances" class="hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold">Balances</h3>
-        <div class="flex items-center gap-2">
-          <input id="filter-bal-cctr" type="text" placeholder="Cost Center..." class="input text-sm w-32" />
-          <input id="filter-bal-year" type="number" placeholder="Year..." class="input text-sm w-24" />
-          <button onclick="downloadTableCSV('bal-table','balances.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
-          <button id="delete-all-bal" class="btn-danger text-xs">Delete All</button>
+      <!-- PR #89 — Hierarchical view added (A14). The Balances tab now
+           has the same Tabular/Hierarchical toggle as Entities/CC/PC.
+           In hierarchical mode the table is replaced by a tree where
+           each cost center sits under its hierarchy path and shows
+           aggregated TC_AMT + posting count for the selected fiscal
+           year. The aggregation is server-side (one GROUP BY per
+           request via /legacy/balances/by-hierarchy) so we can render
+           millions of underlying balance rows without shipping them
+           all to the browser. -->
+      <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
+        <h3 class="text-base font-semibold flex-shrink-0">Balances</h3>
+        <div class="flex items-center gap-2 flex-wrap ml-auto">
+          <button onclick="downloadTableCSV('bal-table','balances.csv')" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>
+          <button id="delete-all-bal" class="btn-danger text-xs flex-shrink-0">Delete All</button>
         </div>
       </div>
-      <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
-      <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <div class="inline-flex rounded-md border border-gray-300 text-xs">
+          <button id="bal-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium whitespace-nowrap" onclick="switchBalView('tabular')">Tabular</button>
+          <button id="bal-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50 whitespace-nowrap border-l border-gray-300" onclick="switchBalView('hierarchy')">Hierarchical</button>
+        </div>
+        <input id="filter-bal-cctr" type="text" placeholder="Cost Center..." class="input text-sm w-32" />
+        <input id="filter-bal-year" type="number" placeholder="Year..." class="input text-sm w-24" />
+        <!-- Hierarchy picker (used by hierarchical mode only) -->
+        <select id="bal-hier-picker" class="input text-xs w-64 hidden">
+          <option value="">(pick a hierarchy)</option>
+        </select>
+      </div>
+      <!-- Tabular wrap (existing) -->
+      <div id="bal-table-wrap">
+        <div id="bal-table" class="text-sm text-gray-500 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">Loading...</div>
+        <div id="bal-pager" class="flex items-center justify-between mt-3 text-sm"></div>
+      </div>
+      <!-- Hierarchical wrap (PR #89) -->
+      <div id="bal-hier-wrap" class="hidden">
+        <div id="bal-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Pick a hierarchy above to load aggregated balances.</div>
+      </div>
     </div>
 
     <!-- Hierarchies Tab -->
@@ -1341,6 +1371,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   // --- Center Mapping ---
   var _mappingData = [];
+  var _mappingTotal = 0;
   window.loadMapping = function(page) {
     page = page || 1;
     var search = document.getElementById('search-mapping').value;
@@ -1350,13 +1381,59 @@ import Layout from '../../components/layout/Layout.astro';
     if (objType) url += '&object_type=' + encodeURIComponent(objType);
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _mappingData = d.items || [];
+      _mappingTotal = d.total || 0;
       _renderMappingTable();
       document.getElementById('mapping-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadMapping');
     }).catch(function(e) { document.getElementById('mapping-table').textContent = 'Error: ' + e.message; });
   };
   window._renderMappingTable = function() {
     var el = document.getElementById('mapping-table');
-    if (!_mappingData.length) { el.textContent = 'No center mappings found. Upload a mapping file to get started.'; return; }
+    if (!_mappingData.length) {
+      // PR #89 — A13: actionable empty state. Operator's question
+      // 'mapping is leer, wie kann diese befüllen?' was the cue that
+      // the previous one-line "No center mappings found. Upload a
+      // mapping file to get started." was too terse — it doesn't say
+      // WHERE to upload, doesn't mention auto-derivation, and gives
+      // the operator no clickable next step. Now they get both paths
+      // explained inline with buttons.
+      var search = document.getElementById('search-mapping').value;
+      var objType = document.getElementById('filter-mapping-type').value;
+      // If a filter is active and yields zero rows we shouldn't pretend
+      // the whole table is empty — show a different message.
+      if (search || objType) {
+        el.innerHTML = '<div class="text-gray-400 text-sm py-3">' +
+          'No center mappings match the current filter. ' +
+          '<button class="text-blue-600 hover:underline text-sm" onclick="document.getElementById(\'search-mapping\').value=\'\';document.getElementById(\'filter-mapping-type\').value=\'\';loadMapping(1);">Clear filters</button>' +
+          '</div>';
+        return;
+      }
+      el.innerHTML = '<div class="border-2 border-dashed border-gray-300 rounded-lg p-6 my-4">' +
+        '<h4 class="text-base font-semibold mb-2 text-gray-700">No center mappings yet</h4>' +
+        '<p class="text-sm text-gray-600 mb-4">Center mappings translate <span class="font-medium">legacy</span> CC/PC codes into their <span class="font-medium">target</span> codes for migration. There are two ways to populate this table:</p>' +
+        '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+          // Path A — upload CSV
+          '<div class="border rounded-lg p-4 bg-blue-50">' +
+            '<div class="flex items-center gap-2 mb-2">' +
+              '<span class="text-blue-700 text-base">📄</span>' +
+              '<h5 class="font-semibold text-sm">Upload a mapping CSV</h5>' +
+            '</div>' +
+            '<p class="text-xs text-gray-600 mb-3">Use this if you already have a curated legacy → target list (e.g. from a migration spreadsheet).</p>' +
+            '<a href="/uploads" class="inline-block btn-amplifi text-xs px-3 py-1">Go to Upload page →</a>' +
+            '<a href="/api/admin/upload-templates/center_mapping/download" class="inline-block ml-2 text-xs text-blue-700 hover:underline" target="_blank">Download CSV template</a>' +
+          '</div>' +
+          // Path B — auto-derive
+          '<div class="border rounded-lg p-4 bg-amber-50">' +
+            '<div class="flex items-center gap-2 mb-2">' +
+              '<span class="text-amber-700 text-base">⚙️</span>' +
+              '<h5 class="font-semibold text-sm">Auto-derive from completed runs</h5>' +
+            '</div>' +
+            '<p class="text-xs text-gray-600 mb-3">Pull every <span class="font-mono">MERGE_MAP</span> proposal from your completed analysis runs and create mapping rows automatically.</p>' +
+            '<button id="btn-mapping-auto-derive" class="btn-amplifi text-xs px-3 py-1" onclick="autoDeriveMappings()">Auto-derive now</button>' +
+          '</div>' +
+        '</div>' +
+        '</div>';
+      return;
+    }
     var items = sortTableData('mapping', _mappingData);
     var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
       sortTh('mapping','object_type','Type','_renderMappingTable') +
@@ -1386,6 +1463,34 @@ import Layout from '../../components/layout/Layout.astro';
         '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(m.notes) + '</td></tr>';
     });
     el.innerHTML = html + '</tbody></table>';
+  };
+
+  // PR #89 — A13. Auto-derive button handler. Calls the new
+  // /api/center-mappings/auto-derive endpoint, which reads MERGE_MAP
+  // proposals from completed runs and inserts/refreshes mapping rows
+  // (idempotent — re-running is safe).
+  window.autoDeriveMappings = function() {
+    var btn = document.getElementById('btn-mapping-auto-derive');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deriving…'; }
+    fetch('/api/center-mappings/auto-derive', { method: 'POST', headers: authHdr })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Failed'); });
+        return r.json();
+      })
+      .then(function(d) {
+        var msg = 'Auto-derive complete: ' + d.created + ' created · ' + d.updated + ' updated · ' + d.skipped + ' skipped';
+        if (d.runs_consulted === 0) {
+          msg = 'No completed runs to derive from. Run a global analysis first, then come back here.';
+        } else {
+          msg += '\n(consulted ' + d.runs_consulted + ' run' + (d.runs_consulted === 1 ? '' : 's') + ')';
+        }
+        alert(msg);
+        loadMapping(1);
+      })
+      .catch(function(err) {
+        alert('Error: ' + err.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Auto-derive now'; }
+      });
   };
   loadMapping(1);
   document.getElementById('search-mapping').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadMapping(1); }, 300); });
@@ -1427,6 +1532,208 @@ import Layout from '../../components/layout/Layout.astro';
   loadBalances(1);
   document.getElementById('filter-bal-cctr').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
   document.getElementById('filter-bal-year').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadBalances(1); }, 300); });
+
+  // PR #89 — Balances hierarchical view (A14). Mirrors the
+  // Tabular/Hierarchical pattern from the other tabs. We populate the
+  // hierarchy picker on demand (first switch into the tab) and re-fetch
+  // an aggregated dataset from /legacy/balances/by-hierarchy.
+  var _balView = 'tabular';
+  var _balHierLoadedFor = null; // cache by hierarchy_id|year combo
+
+  window.switchBalView = function(view) {
+    _balView = view;
+    setToggleClasses('bal-view-tabular', 'bal-view-hierarchy', view);
+    var picker = document.getElementById('bal-hier-picker');
+    if (view === 'hierarchy') {
+      picker.classList.remove('hidden');
+      showHide('bal-hier-wrap', 'bal-table-wrap');
+      // Lazy-populate the picker the first time we enter this view
+      if (picker.options.length <= 1) {
+        fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var items = d.items || [];
+            // Group by setclass so operators see CC/PC/Entity sections clearly.
+            var ccHiers = items.filter(function(h) { return h.setclass === '0101'; });
+            var pcHiers = items.filter(function(h) { return h.setclass === '0104'; });
+            var otherHiers = items.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+            function appendGroup(label, list) {
+              if (!list.length) return;
+              var g = document.createElement('optgroup');
+              g.label = label;
+              list.forEach(function(h) {
+                var o = document.createElement('option');
+                o.value = h.id;
+                o.textContent = h.setname + (h.description ? ' — ' + h.description : '');
+                g.appendChild(o);
+              });
+              picker.appendChild(g);
+            }
+            appendGroup('Cost Center hierarchies', ccHiers);
+            appendGroup('Profit Center hierarchies', pcHiers);
+            appendGroup('Other', otherHiers);
+          });
+      }
+      _renderBalHierarchy();
+    } else {
+      picker.classList.add('hidden');
+      showHide('bal-table-wrap', 'bal-hier-wrap');
+    }
+  };
+
+  document.getElementById('bal-hier-picker').addEventListener('change', _renderBalHierarchy);
+  // Year filter feeds both views — re-render hierarchy if active.
+  document.getElementById('filter-bal-year').addEventListener('input', function() {
+    if (_balView === 'hierarchy') {
+      clearTimeout(this._tHier);
+      this._tHier = setTimeout(_renderBalHierarchy, 350);
+    }
+  });
+
+  function _renderBalHierarchy() {
+    var hierId = document.getElementById('bal-hier-picker').value;
+    var year = document.getElementById('filter-bal-year').value;
+    var el = document.getElementById('bal-hier');
+    if (!hierId) {
+      el.innerHTML = '<span class="text-gray-400 text-xs italic">Select a hierarchy above to render aggregated balances.</span>';
+      return;
+    }
+    var cacheKey = hierId + '|' + (year || '');
+    el.innerHTML = '<div class="text-gray-500 text-xs py-3">Loading aggregated balances…</div>';
+    var url = '/api/legacy/balances/by-hierarchy?hierarchy_id=' + encodeURIComponent(hierId);
+    if (year) url += '&fiscal_year=' + encodeURIComponent(year);
+    url += scopeParams();
+    fetch(url, { headers: authHdr })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(d) {
+        _balHierLoadedFor = cacheKey;
+        renderBalTree(el, d);
+      })
+      .catch(function(e) { el.innerHTML = '<span class="text-red-500">Error: ' + esc(e.message) + '</span>'; });
+  }
+
+  function renderBalTree(el, data) {
+    var items = data.items || [];
+    if (!items.length) {
+      el.innerHTML = '<span class="text-gray-400 text-xs italic">No balances found for this hierarchy / year combination.</span>';
+      return;
+    }
+    // Build the same path-based tree structure used in the analytics
+    // hierarchical view, but with year totals at the leaves.
+    function emptyNode() { return { children: {}, leaves: [], order: [] }; }
+    var root = emptyNode();
+    items.forEach(function(it) {
+      var path = it.hierarchy_path || [];
+      if (!path.length) {
+        if (!root.children['(unassigned)']) {
+          root.children['(unassigned)'] = emptyNode();
+          root.order.push('(unassigned)');
+        }
+        root.children['(unassigned)'].leaves.push(it);
+        return;
+      }
+      var node = root;
+      for (var i = 0; i < path.length - 1; i++) {
+        var key = path[i];
+        if (!node.children[key]) {
+          node.children[key] = emptyNode();
+          node.order.push(key);
+        }
+        node = node.children[key];
+      }
+      node.leaves.push(it);
+    });
+
+    function nodeTotals(node) {
+      var t = { tc: 0, postings: 0, ccs: 0 };
+      node.leaves.forEach(function(it) {
+        t.tc += it.totals.tc_amt;
+        t.postings += it.totals.posting_count;
+        t.ccs += 1;
+      });
+      node.order.forEach(function(k) {
+        var sub = nodeTotals(node.children[k]);
+        t.tc += sub.tc; t.postings += sub.postings; t.ccs += sub.ccs;
+      });
+      return t;
+    }
+
+    var idSeq = 0;
+    function nid() { return 'bal-tree-n' + (++idSeq); }
+
+    function renderNode(node, depth) {
+      var html = '';
+      node.order.sort();
+      node.order.forEach(function(k) {
+        var child = node.children[k];
+        var id = nid();
+        var totals = nodeTotals(child);
+        var indent = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
+        var openByDefault = depth < 2;
+        var caret = openByDefault ? '\u25BC' : '\u25B6';
+        var hide = openByDefault ? '' : ' hidden';
+        var tcFmt = totals.tc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        html += '<div class="' + indent + ' my-0.5">' +
+          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded" ' +
+                 'onclick="(function(b){var t=document.getElementById(\'' + id + '\');if(!t)return;var o=t.classList.toggle(\'hidden\');b.querySelector(\'.bal-caret\').textContent=o?\'\\u25B6\':\'\\u25BC\';})(this)">' +
+            '<span class="bal-caret text-gray-400">' + caret + '</span>' +
+            '<span class="font-mono font-semibold text-blue-700">' + esc(k) + '</span>' +
+            '<span class="ml-auto flex items-center gap-3 text-[10px] text-gray-500">' +
+              '<span>' + totals.ccs + ' CC' + (totals.ccs === 1 ? '' : 's') + '</span>' +
+              '<span class="font-mono">' + tcFmt + '</span>' +
+            '</span>' +
+          '</button>' +
+          '<div id="' + id + '" class="bal-children' + hide + '">' + renderNode(child, depth + 1) + '</div>' +
+        '</div>';
+      });
+      if (node.leaves.length) {
+        var indent2 = depth === 0 ? '' : 'ml-' + Math.min(depth * 4 + 2, 14);
+        html += '<div class="' + indent2 + ' my-1">' + balLeafTable(node.leaves) + '</div>';
+      }
+      return html;
+    }
+
+    function balLeafTable(leaves) {
+      // Sort leaves by tc_amt descending so the highest-volume CCs
+      // are visible first — this is the most common operator question
+      // ('which CCs have the most spend in this part of the tree?').
+      leaves.sort(function(a, b) { return b.totals.tc_amt - a.totals.tc_amt; });
+      var rows = leaves.map(function(it) {
+        var tcFmt = it.totals.tc_amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '<tr class="border-b last:border-0 hover:bg-gray-50">' +
+          '<td class="py-1 px-2 font-mono text-[11px] font-medium">' + esc(it.cctr) + '</td>' +
+          '<td class="py-1 px-2 font-mono text-[11px]">' + esc(it.ccode) + '</td>' +
+          '<td class="py-1 px-2 text-[11px] truncate max-w-[260px]" title="' + esc(it.txtsh) + '">' + esc(it.txtsh) + '</td>' +
+          '<td class="py-1 px-2 text-right font-mono text-[11px]">' + tcFmt + '</td>' +
+          '<td class="py-1 px-2 text-right text-[11px] text-gray-500">' + it.totals.posting_count + '</td>' +
+          '<td class="py-1 px-2 text-right text-[11px] text-gray-400">' + it.totals.rows + '</td>' +
+          '</tr>';
+      }).join('');
+      return '<table class="w-full text-xs border border-gray-200 rounded">' +
+        '<thead><tr class="bg-gray-50 border-b text-[10px] text-gray-500">' +
+          '<th class="py-1 px-2 text-left">CC</th>' +
+          '<th class="py-1 px-2 text-left">Entity</th>' +
+          '<th class="py-1 px-2 text-left">Short Text</th>' +
+          '<th class="py-1 px-2 text-right">TC Amount (sum)</th>' +
+          '<th class="py-1 px-2 text-right">Postings</th>' +
+          '<th class="py-1 px-2 text-right">Bal rows</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    var root_totals = nodeTotals(root);
+    var summary = '<div class="text-xs text-gray-500 mb-2 px-2">' +
+      'Aggregated balances · ' + root_totals.ccs + ' cost centers · ' +
+      'TC total: ' + root_totals.tc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) +
+      ' · ' + root_totals.postings + ' postings' +
+      (data.fiscal_year ? ' · year ' + data.fiscal_year : ' · all years') +
+      '</div>';
+
+    el.innerHTML = summary + renderNode(root, 0);
+  }
+
 
   // --- Hierarchies ---
   function loadHierarchies() {
