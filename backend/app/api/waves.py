@@ -1408,6 +1408,68 @@ def remind_reviewer(
     return {"status": "reminder_sent", "scope_id": scope_id}
 
 
+@router.delete("/scopes/{scope_id}")
+def delete_review_scope(
+    scope_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if scope.status in ("completed", "signed_off"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete scope in status {scope.status}",
+        )
+    db.delete(scope)
+    db.commit()
+    return {"deleted": True, "id": scope_id}
+
+
+class AssignReviewerBody(BaseModel):
+    reviewer_name: str | None = None
+    reviewer_email: str | None = None
+
+
+@router.patch("/scopes/{scope_id}/reviewer")
+def assign_reviewer_to_scope(
+    scope_id: int,
+    body: AssignReviewerBody,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst")),
+) -> dict:
+    """Assign or update the reviewer on an existing scope."""
+    scope = db.get(ReviewScope, scope_id)
+    if not scope:
+        raise HTTPException(status_code=404, detail="Scope not found")
+    if scope.status in ("completed", "signed_off"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot change reviewer on scope in status {scope.status}",
+        )
+    scope.reviewer_name = body.reviewer_name
+    scope.reviewer_email = body.reviewer_email
+    # Resolve user ID from email
+    if body.reviewer_email:
+        reviewer_user = (
+            db.execute(select(AppUser).where(AppUser.email == body.reviewer_email))
+            .scalars()
+            .first()
+        )
+        if reviewer_user:
+            scope.reviewer_user_id = reviewer_user.id
+    else:
+        scope.reviewer_user_id = None
+    db.commit()
+    db.refresh(scope)
+    return {
+        "id": scope.id,
+        "reviewer_name": scope.reviewer_name,
+        "reviewer_email": scope.reviewer_email,
+    }
+
+
 @router.post("/{wave_id}/proposals/{proposal_id}/override")
 def override_proposal(
     wave_id: int,
