@@ -36,40 +36,54 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </details>
 
-  <!-- Selectors — single row -->
-  <div class="bg-white border rounded-lg px-4 py-2 mb-2 flex items-center gap-3 flex-wrap">
-    <div class="flex items-center gap-1">
-      <label class="text-xs text-gray-500 whitespace-nowrap">Scope:</label>
-      <select id="sel-wave" class="input text-xs py-1 w-40">
-        <option value="">Select Wave...</option>
-        <option value="__global__">Global (all data)</option>
-      </select>
+  <!-- Selectors — split into two lines (PR #88).
+       Line 1 = "view existing analysis": pick a scope + a run to display.
+       Line 2 = "start a new analysis": pick the engine + config and click Run.
+       This separation matches operator intuition — "I want to look at what's
+       already there" vs "I want to kick off a fresh analysis" are different
+       intents and used to share one cluttered toolbar that confused new
+       users about which dropdown affected which action. -->
+  <div class="bg-white border rounded-lg px-4 py-2 mb-2 space-y-2">
+    <!-- Line 1: View existing analysis -->
+    <div class="flex items-center gap-3 flex-wrap">
+      <span class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold w-20 shrink-0">View</span>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-500 whitespace-nowrap">Scope:</label>
+        <select id="sel-wave" class="input text-xs py-1 w-40">
+          <option value="">Select Wave...</option>
+          <option value="__global__">Global (all data)</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-500 whitespace-nowrap">Run:</label>
+        <select id="sel-run" class="input text-xs py-1 w-72">
+          <option value="">Select Run...</option>
+        </select>
+      </div>
+      <a id="btn-open-wave" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs hidden no-underline px-3 py-1 rounded" href="#" title="Wave-scoped analyses run on the wave's own Decision Tree tab">Open Wave Decision Tree →</a>
+      <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-xs hidden ml-auto" title="Delete selected run">Delete Run</button>
     </div>
-    <div class="flex items-center gap-1">
-      <label class="text-xs text-gray-500 whitespace-nowrap" title="Used only when starting a new run with the button on the right. Existing runs already have their own config baked in — selecting a different Config here does NOT re-render the displayed numbers.">Config (for new runs):</label>
-      <select id="sel-config" class="input text-xs py-1 w-40" title="Configuration used when you click 'Run Global Analysis'. Doesn't affect already-saved runs shown below.">
-        <option value="">Default Config</option>
-      </select>
+    <!-- Line 2: Start a new analysis -->
+    <div class="flex items-center gap-3 flex-wrap pt-2 border-t border-gray-100">
+      <span class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold w-20 shrink-0">New run</span>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-500 whitespace-nowrap" title="Filter the Run dropdown by engine version. The dashboard's KPI cards use V1 outcome vocabulary (KEEP/RETIRE/MERGE_MAP/REDESIGN), so V1 is the default. V2 runs use a different vocabulary and the visuals will show 'OTHER' for them.">Engine:</label>
+        <select id="sel-engine-filter" class="input text-xs py-1 w-20" title="Filter runs by engine version">
+          <option value="v1" selected>V1</option>
+          <option value="v2">V2</option>
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-500 whitespace-nowrap" title="Configuration used when you click 'Run Global Analysis'. Doesn't affect already-saved runs shown above.">Config:</label>
+        <select id="sel-config" class="input text-xs py-1 w-40" title="Configuration used when you click 'Run Global Analysis'. Doesn't affect already-saved runs shown above.">
+          <option value="">Default Config</option>
+        </select>
+      </div>
+      <button id="btn-run-global" class="btn-amplifi text-xs py-1 px-3 whitespace-nowrap">Run Global Analysis</button>
+      <button id="btn-cancel-run" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs hidden" title="Cancel running analysis">Cancel</button>
+      <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs ml-auto" title="Manage configurations">Configs</button>
     </div>
-    <div class="flex items-center gap-1">
-      <label class="text-xs text-gray-500 whitespace-nowrap" title="Filter the Run dropdown by engine version. The dashboard's KPI cards use V1 outcome vocabulary (KEEP/RETIRE/MERGE_MAP/REDESIGN), so V1 is the default. V2 runs use a different vocabulary (MIGRATE_1_1, etc.) and the visuals will show 'OTHER' for them.">Engine:</label>
-      <select id="sel-engine-filter" class="input text-xs py-1 w-20" title="Filter runs by engine version">
-        <option value="v1" selected>V1</option>
-        <option value="v2">V2</option>
-        <option value="">All</option>
-      </select>
-    </div>
-    <div class="flex items-center gap-1">
-      <label class="text-xs text-gray-500 whitespace-nowrap">Run:</label>
-      <select id="sel-run" class="input text-xs py-1 w-72">
-        <option value="">Select Run...</option>
-      </select>
-    </div>
-    <button id="btn-run-global" class="btn-amplifi text-xs py-1 px-3 whitespace-nowrap">Run Global Analysis</button>
-    <a id="btn-open-wave" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs hidden no-underline px-3 py-1 rounded" href="#" title="Wave-scoped analyses run on the wave's own Decision Tree tab">Open Wave Decision Tree →</a>
-    <button id="btn-cancel-run" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs hidden" title="Cancel running analysis">Cancel</button>
-    <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-xs hidden" title="Delete selected run">Delete Run</button>
-    <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs" title="Manage configurations">Configs</button>
   </div>
 
   <!-- Run Progress Strip (hidden until a run is dispatched) -->
@@ -191,10 +205,20 @@ import Layout from '../../components/layout/Layout.astro';
     <div class="card mb-4">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold">Results Browser</h3>
-        <div class="flex gap-2">
-          <button id="btn-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchBrowserView('tabular')">Tabular</button>
-          <button id="btn-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('hierarchy')">Hierarchical</button>
-          <button id="btn-view-mapping" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchBrowserView('mapping')">CC → PC Mapping</button>
+        <div class="flex items-center gap-2">
+          <!-- View toggle group — PR #88: rendered as a single segmented
+               control so the active view is unambiguous. The previous
+               three loose buttons with subtle blue/gray colour swap
+               were easy to overlook ("man sieht nicht welche view
+               aktiv ist"). -->
+          <div class="inline-flex rounded-md border border-gray-300 overflow-hidden text-xs" role="tablist">
+            <button id="btn-view-tabular" type="button" onclick="switchBrowserView('tabular')"
+              class="db-view-btn px-3 py-1 bg-blue-600 text-white font-semibold">Tabular</button>
+            <button id="btn-view-hierarchy" type="button" onclick="switchBrowserView('hierarchy')"
+              class="db-view-btn px-3 py-1 bg-white text-gray-700 hover:bg-gray-50 border-l border-gray-300">Hierarchical</button>
+            <button id="btn-view-mapping" type="button" onclick="switchBrowserView('mapping')"
+              class="db-view-btn px-3 py-1 bg-white text-gray-700 hover:bg-gray-50 border-l border-gray-300">CC → PC Mapping</button>
+          </div>
           <input id="browser-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
         </div>
       </div>
@@ -1415,6 +1439,16 @@ import Layout from '../../components/layout/Layout.astro';
   var browserData = null;
   var browserView = 'tabular';
   var browserSort = { col: 'cctr', dir: 'asc' };
+  // PR #88 — selected hierarchy for L0..LX columns in the tabular view.
+  // null means "no hierarchy picked, no L cols rendered". Picking one
+  // re-fetches the data-browser response with ?path_hierarchy_id=N so
+  // the backend computes paths server-side (cheap BFS, see
+  // _resolve_hierarchy_paths in api/reference.py).
+  var browserPathHierarchyId = null;
+  // Cache of available hierarchies (id, label, setclass) so the picker
+  // can render without re-fetching every time the user opens the
+  // dropdown. Populated alongside browserData.
+  var browserHierarchyOptions = [];
   var OUTCOME_BADGES = {
     KEEP: 'bg-green-100 text-green-800',
     RETIRE: 'bg-red-100 text-red-800',
@@ -1424,9 +1458,6 @@ import Layout from '../../components/layout/Layout.astro';
 
   function loadDataBrowser(runId) {
     var el = document.getElementById('data-browser-content');
-    // More informative loading state — the response can take a while
-    // on slower hardware (e.g. a Raspberry Pi) because the endpoint
-    // computes balance aggregations across the whole CC universe.
     el.innerHTML = '<div class="text-gray-500 text-sm py-4">' +
       '<div class="flex items-center gap-2">' +
       '<svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
@@ -1434,10 +1465,11 @@ import Layout from '../../components/layout/Layout.astro';
       '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>' +
       '<span>Loading centers + balance history… this may take 5–30 seconds depending on data volume.</span>' +
       '</div></div>';
-    // Default fetch: skip the hierarchies block (the expensive part).
-    // Hierarchies are re-fetched only when the user switches to the
-    // Hierarchical view tab — see switchBrowserView below.
-    fetch('/api/runs/' + runId + '/data-browser', { headers: authHdr })
+    var url = '/api/runs/' + runId + '/data-browser';
+    if (browserPathHierarchyId != null) {
+      url += '?path_hierarchy_id=' + encodeURIComponent(browserPathHierarchyId);
+    }
+    fetch(url, { headers: authHdr })
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
@@ -1448,7 +1480,29 @@ import Layout from '../../components/layout/Layout.astro';
           el.innerHTML = '<span class="text-gray-400">No proposals found for this run. Run analysis first to see data.</span>';
           return;
         }
-        renderBrowser();
+        // Populate the hierarchy picker options on first load. Uses
+        // /api/legacy/hierarchies (already used elsewhere) to enumerate
+        // available CC/PC/Entity hierarchies — cheap query, returns
+        // metadata only.
+        if (!browserHierarchyOptions.length) {
+          fetch('/api/legacy/hierarchies?size=100', { headers: authHdr })
+            .then(function(r) { return r.json(); })
+            .then(function(hd) {
+              browserHierarchyOptions = (hd.items || []).map(function(h) {
+                var setclass = h.setclass || '';
+                var kind = setclass === '0101' ? 'CC' : setclass === '0104' ? 'PC' : setclass === '0106' ? 'Entity' : setclass;
+                return {
+                  id: h.id,
+                  label: (h.label || h.setname) + ' (' + kind + ')',
+                  setclass: setclass,
+                };
+              });
+              renderBrowser();
+            })
+            .catch(function() { renderBrowser(); });
+        } else {
+          renderBrowser();
+        }
       })
       .catch(function(err) {
         el.innerHTML = '<span class="text-red-500">Error loading data browser: ' + esc(err.message) + '</span>';
@@ -1461,13 +1515,17 @@ import Layout from '../../components/layout/Layout.astro';
 
   window.switchBrowserView = function(view) {
     browserView = view;
-    ['tabular', 'hierarchy', 'mapping'].forEach(function(v) {
+    // PR #88: segmented control. The active button gets the solid blue
+    // fill, inactive ones a quiet white background — far easier for the
+    // operator to spot than the old subtle blue/gray colour swap.
+    ['tabular', 'hierarchy', 'mapping'].forEach(function(v, i) {
       var btn = document.getElementById('btn-view-' + v);
-      if (btn) {
-        btn.className = v === view
-          ? 'btn-sm bg-blue-600 text-white text-xs'
-          : 'btn-sm bg-gray-200 text-gray-700 text-xs';
-      }
+      if (!btn) return;
+      var active = (v === view);
+      var border = i > 0 ? ' border-l border-gray-300' : '';
+      btn.className = 'db-view-btn px-3 py-1' + border + (active
+        ? ' bg-blue-600 text-white font-semibold'
+        : ' bg-white text-gray-700 hover:bg-gray-50');
     });
     // Hierarchical view needs the hierarchies payload that we don't
     // load by default. Fetch it on demand the first time the user
@@ -1500,6 +1558,17 @@ import Layout from '../../components/layout/Layout.astro';
       browserSort.dir = 'asc';
     }
     renderBrowser();
+  };
+
+  // PR #88 — hierarchy picker change handler. Triggers a re-fetch of
+  // the data-browser response with the new path_hierarchy_id; the
+  // backend computes paths server-side. We refetch (rather than reuse
+  // cached items) because paths aren't on the row otherwise.
+  window.onBrowserPathHierChange = function() {
+    var sel = document.getElementById('browser-path-hier');
+    var v = sel ? sel.value : '';
+    browserPathHierarchyId = v ? parseInt(v, 10) : null;
+    if (_currentRunId) loadDataBrowser(_currentRunId);
   };
 
   function renderBrowser() {
@@ -1577,11 +1646,38 @@ import Layout from '../../components/layout/Layout.astro';
       { key: 'confidence', label: 'Confidence' }
     ];
 
-    var html = '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
+    // PR #88 — hierarchy picker for L0..LX columns. Sits above the
+    // table so the operator can swap between CC / PC / Entity
+    // hierarchies and see how each frames the same proposals. Picking
+    // a value triggers a re-fetch with ?path_hierarchy_id=N.
+    var maxDepth = (browserData && browserData.path_max_depth) || 0;
+    var pickerHtml = '<div class="flex items-center justify-between gap-2 mb-2 text-xs">' +
+      '<div class="flex items-center gap-2">' +
+        '<label class="text-gray-500 whitespace-nowrap">Hierarchy columns:</label>' +
+        '<select id="browser-path-hier" class="input text-xs py-1 w-64" onchange="onBrowserPathHierChange()">' +
+          '<option value=""' + (browserPathHierarchyId == null ? ' selected' : '') + '>(none — no L columns)</option>' +
+          browserHierarchyOptions.map(function(h) {
+            return '<option value="' + h.id + '"' + (browserPathHierarchyId == h.id ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>' +
+      (browserPathHierarchyId != null && maxDepth > 0
+        ? '<span class="text-gray-400 text-[11px]">Showing L0..L' + (maxDepth - 1) + ' as columns</span>'
+        : '<span class="text-gray-400 text-[11px]">Pick a hierarchy to add L0..LX columns</span>') +
+      '</div>';
+
+    var html = pickerHtml;
+    html += '<table class="w-full text-xs border-collapse"><thead><tr class="border-b bg-gray-50">';
     cols.forEach(function(c) {
       html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-100" onclick="sortBrowser(\'' + c.key + '\')">' +
         esc(c.label) + sortArrow(c.key) + '</th>';
     });
+    // PR #88 — L0..LX header columns. maxDepth comes from the response,
+    // so the column count stays stable across pages and reflects what
+    // the backend actually computed.
+    for (var li = 0; li < maxDepth; li++) {
+      html += '<th class="py-2 px-2 text-left whitespace-nowrap text-gray-500">L' + li + '</th>';
+    }
     html += '<th class="py-2 px-2 text-center whitespace-nowrap">Why?</th>';
     // Balance period headers
     periods.forEach(function(p) {
@@ -1598,6 +1694,17 @@ import Layout from '../../components/layout/Layout.astro';
         balByPeriod[key] = b;
       });
 
+      // L0..LX cells: pad with em-dash when path is shorter than the
+      // table-wide max, so the grid stays aligned.
+      var pathCells = '';
+      var path = it.hierarchy_path || [];
+      for (var li = 0; li < maxDepth; li++) {
+        var v = path[li] != null ? path[li] : '';
+        pathCells += '<td class="py-1.5 px-2 font-mono text-[10px] text-gray-600">' +
+          (v ? esc(v) : '<span class="text-gray-300">—</span>') +
+          '</td>';
+      }
+
       html += '<tr class="border-b hover:bg-gray-50">' +
         '<td class="py-1.5 px-2 font-mono font-medium whitespace-nowrap">' + esc(it.cctr) + '</td>' +
         '<td class="py-1.5 px-2 max-w-[200px] truncate" title="' + escAttr(it.txtmi || it.txtsh || '') + '">' + esc(it.txtsh) + '</td>' +
@@ -1609,6 +1716,7 @@ import Layout from '../../components/layout/Layout.astro';
         '<td class="py-1.5 px-2">' + esc(it.target_object || '-') + '</td>' +
         '<td class="py-1.5 px-2 font-mono font-medium">' + (it.merge_into_cctr ? esc(it.merge_into_cctr) : '<span class="text-gray-300">-</span>') + '</td>' +
         '<td class="py-1.5 px-2 text-right">' + (it.confidence ? Number(it.confidence).toFixed(2) : '-') + '</td>' +
+        pathCells +
         '<td class="py-1.5 px-2 text-center"><button class="text-blue-600 hover:text-blue-800 underline text-[10px]" onclick="showWhyPanel(' + it.id + ')">Why?</button>' +
         (it.rule_path && it.rule_path.steps && it.rule_path.steps.length ? '<div class="text-[9px] text-gray-400 mt-0.5">' + it.rule_path.steps.map(function(s) { return (s.routine || s.code || '?'); }).join(' → ') + '</div>' : '') +
         '</td>';
