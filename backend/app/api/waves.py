@@ -2036,10 +2036,28 @@ def list_v2_proposals(
     approach: str | None = None,
     page: int = 1,
     per_page: int = 50,
+    include_paths: bool = False,
+    hierarchy_id: int | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst", "viewer")),
 ) -> dict:
-    """List V2 proposals with migration details."""
+    """List V2 proposals with migration details.
+
+    When ``include_paths=true`` is set, each item also gets a
+    ``hierarchy_path`` array (the chain of node setnames from root to
+    leaf) and the response carries a top-level ``hierarchy_max_depth``
+    so the frontend knows how many ``L0..LX`` columns to render.
+
+    The hierarchy used for path resolution is:
+    * the hierarchy passed via ``hierarchy_id`` (explicit),
+    * or the wave's first ``WaveHierarchyScope`` row (most relevant
+      to the operator who scoped the wave by hierarchy),
+    * or the first active CC hierarchy (setclass=0101),
+    * or no path resolution at all (empty paths) if none exist.
+
+    The default is ``include_paths=false`` so existing callers don't
+    pay the resolution cost; the wave-detail simulation view opts in.
+    """
     run = db.get(AnalysisRun, run_id)
     if not run or run.wave_id != wave_id:
         raise HTTPException(status_code=404, detail="Run not found for this wave")
@@ -2064,13 +2082,17 @@ def list_v2_proposals(
     )
 
     items = []
+    page_cctrs: list[str] = []
     for p in proposals:
         attrs = p.attrs or {}
         legacy = db.get(LegacyCostCenter, p.legacy_cc_id)
+        cctr = legacy.cctr if legacy else ""
+        if cctr:
+            page_cctrs.append(cctr)
         items.append(
             {
                 "id": p.id,
-                "legacy_cctr": legacy.cctr if legacy else "",
+                "legacy_cctr": cctr,
                 "legacy_name": legacy.txtsh if legacy else "",
                 "coarea": legacy.coarea if legacy else "",
                 "ccode": legacy.ccode if legacy else "",
@@ -2085,12 +2107,56 @@ def list_v2_proposals(
             }
         )
 
-    return {
+    response: dict = {
         "total": total,
         "page": page,
         "per_page": per_page,
         "items": items,
     }
+
+    if include_paths and page_cctrs:
+        from app.api.reference import _resolve_hierarchy_paths
+        from app.models.core import Hierarchy
+
+        resolved_hier_id = hierarchy_id
+        if resolved_hier_id is None:
+            # Prefer a hierarchy the operator explicitly scoped this wave by
+            wh_row = (
+                db.execute(
+                    select(WaveHierarchyScope).where(WaveHierarchyScope.wave_id == wave_id).limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if wh_row is not None:
+                resolved_hier_id = wh_row.hierarchy_id
+        if resolved_hier_id is None:
+            # Fallback: first active CC hierarchy
+            cc_hier = (
+                db.execute(
+                    select(Hierarchy)
+                    .where(Hierarchy.is_active.is_(True))
+                    .where(Hierarchy.setclass == "0101")
+                    .order_by(Hierarchy.id)
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if cc_hier is not None:
+                resolved_hier_id = cc_hier.id
+
+        if resolved_hier_id is not None:
+            paths, max_depth = _resolve_hierarchy_paths(db, resolved_hier_id, page_cctrs)
+            for it in items:
+                it["hierarchy_path"] = paths.get(it["legacy_cctr"], [])
+            response["hierarchy_id"] = resolved_hier_id
+            response["hierarchy_max_depth"] = max_depth
+        else:
+            response["hierarchy_id"] = None
+            response["hierarchy_max_depth"] = 0
+
+    return response
 
 
 # ── Global simulation endpoint ───────────────────────────────────────────
