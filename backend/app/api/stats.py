@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import distinct, func, select, text
+from sqlalchemy import distinct, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
@@ -73,7 +73,22 @@ def wave_stats(wave_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/coverage")
 def scope_coverage(db: Session = Depends(get_db)) -> dict:
-    """How much of the CC/entity universe is covered by waves."""
+    """How much of the CC/entity universe is covered by waves.
+
+    Coverage is split between **scoped waves** (real units of cleansing
+    work — each one targets a specific subset of the entity universe)
+    and **global analysis** (the full-scope wave row plus any analysis
+    runs that aren't tied to any wave). Mixing the two distorts the
+    completeness picture: a single full-scope wave with all 608
+    entities makes "100%" coverage even when no actual cleansing work
+    has happened.
+
+    The response keeps the legacy top-level ``covered_entities`` /
+    ``covered_cc`` / ``entity_pct`` / ``cc_pct`` fields for backwards
+    compatibility, but they now reflect the **scoped** subset only —
+    the meaningful progress metric for wave-based work. New ``scoped``
+    and ``global`` blocks expose both views explicitly.
+    """
     total_entities = db.execute(select(func.count(Entity.id))).scalar() or 0
     total_cc = (
         db.execute(
@@ -82,12 +97,68 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
         or 0
     )
 
-    # Entities covered: distinct entity_ids across all wave_entity rows
-    covered_entities = db.execute(select(func.count(distinct(WaveEntity.entity_id)))).scalar() or 0
+    # Identify wave rows by full-scope flag — that's the authoritative
+    # split between "global reference" rows (full scope) and real
+    # scoped waves.
+    scoped_wave_ids = (
+        db.execute(select(Wave.id).where(Wave.is_full_scope.is_(False))).scalars().all()
+    )
+    global_wave_ids = (
+        db.execute(select(Wave.id).where(Wave.is_full_scope.is_(True))).scalars().all()
+    )
 
-    # CCs covered: distinct legacy_cc_ids from completed run proposals
-    # Only count CCs that are still active to avoid >100%
-    covered_cc = (
+    # Entities covered by scoped waves (the real progress metric).
+    scoped_covered_entities = 0
+    if scoped_wave_ids:
+        scoped_covered_entities = (
+            db.execute(
+                select(func.count(distinct(WaveEntity.entity_id))).where(
+                    WaveEntity.wave_id.in_(scoped_wave_ids)
+                )
+            ).scalar()
+            or 0
+        )
+
+    # Entities covered by global waves (separate view — typically all of them).
+    global_covered_entities = 0
+    if global_wave_ids:
+        global_covered_entities = (
+            db.execute(
+                select(func.count(distinct(WaveEntity.entity_id))).where(
+                    WaveEntity.wave_id.in_(global_wave_ids)
+                )
+            ).scalar()
+            or 0
+        )
+
+    # CCs analysed in scoped wave runs (the real progress metric).
+    scoped_covered_cc = 0
+    if scoped_wave_ids:
+        scoped_covered_cc = (
+            db.execute(
+                select(func.count(distinct(CenterProposal.legacy_cc_id)))
+                .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
+                .join(
+                    LegacyCostCenter,
+                    CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+                )
+                .where(
+                    AnalysisRun.status == "completed",
+                    AnalysisRun.wave_id.in_(scoped_wave_ids),
+                    LegacyCostCenter.is_active.is_(True),
+                )
+            ).scalar()
+            or 0
+        )
+
+    # CCs analysed by global runs — that's both the full-scope wave's
+    # runs AND any wave_id-IS-NULL runs (e.g. from POST /api/runs/global).
+    global_run_filters = []
+    if global_wave_ids:
+        global_run_filters.append(AnalysisRun.wave_id.in_(global_wave_ids))
+    global_run_filters.append(AnalysisRun.wave_id.is_(None))
+
+    global_covered_cc = (
         db.execute(
             select(func.count(distinct(CenterProposal.legacy_cc_id)))
             .join(AnalysisRun, CenterProposal.run_id == AnalysisRun.id)
@@ -99,13 +170,16 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
                 AnalysisRun.status == "completed",
                 LegacyCostCenter.is_active.is_(True),
             )
+            .where(or_(*global_run_filters))
         ).scalar()
         or 0
     )
 
-    # Per-wave breakdown
+    # Per-wave breakdown — same shape as before but split into two arrays
+    # so the UI can render them in separate sections.
     waves = db.execute(select(Wave).order_by(Wave.created_at.desc())).scalars().all()
-    wave_details = []
+    scoped_wave_details: list[dict] = []
+    global_wave_details: list[dict] = []
     for w in waves:
         w_entity_count = (
             db.execute(select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == w.id)).scalar()
@@ -127,18 +201,19 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
             ).scalar()
             or 0
         )
-        wave_details.append(
-            {
-                "id": w.id,
-                "code": w.code,
-                "status": w.status,
-                "entities_covered": w_entity_count,
-                "cc_covered": w_cc_count,
-                "is_full_scope": w.is_full_scope,
-            }
-        )
+        entry = {
+            "id": w.id,
+            "code": w.code,
+            "status": w.status,
+            "entities_covered": w_entity_count,
+            "cc_covered": w_cc_count,
+            "is_full_scope": w.is_full_scope,
+        }
+        (global_wave_details if w.is_full_scope else scoped_wave_details).append(entry)
 
-    # Unassigned runs (wave_id IS NULL) — include so numbers add up
+    # Wave-id-IS-NULL runs (typically POST /api/runs/global from the
+    # Analytics Dashboard). Surfaced under the global block so they
+    # don't get mixed into wave coverage.
     unassigned_cc = (
         db.execute(
             select(func.count(distinct(CenterProposal.legacy_cc_id)))
@@ -156,10 +231,10 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
         or 0
     )
     if unassigned_cc > 0:
-        wave_details.append(
+        global_wave_details.append(
             {
                 "id": None,
-                "code": "Unassigned",
+                "code": "Unassigned global runs",
                 "status": "n/a",
                 "entities_covered": 0,
                 "cc_covered": unassigned_cc,
@@ -167,14 +242,48 @@ def scope_coverage(db: Session = Depends(get_db)) -> dict:
             }
         )
 
+    scoped_entity_pct = (
+        round(scoped_covered_entities / total_entities * 100, 1) if total_entities else 0
+    )
+    scoped_cc_pct = round(scoped_covered_cc / total_cc * 100, 1) if total_cc else 0
+    global_entity_pct = (
+        round(global_covered_entities / total_entities * 100, 1) if total_entities else 0
+    )
+    global_cc_pct = round(global_covered_cc / total_cc * 100, 1) if total_cc else 0
+
     return {
         "total_entities": total_entities,
         "total_cc": total_cc,
-        "covered_entities": covered_entities,
-        "covered_cc": covered_cc,
-        "entity_pct": round(covered_entities / total_entities * 100, 1) if total_entities else 0,
-        "cc_pct": round(covered_cc / total_cc * 100, 1) if total_cc else 0,
-        "waves": wave_details,
+        # New: explicit split.
+        "scoped": {
+            "covered_entities": scoped_covered_entities,
+            "covered_cc": scoped_covered_cc,
+            "entity_pct": scoped_entity_pct,
+            "cc_pct": scoped_cc_pct,
+            "wave_count": len(scoped_wave_details),
+        },
+        "global": {
+            "covered_entities": global_covered_entities,
+            "covered_cc": global_covered_cc,
+            "entity_pct": global_entity_pct,
+            "cc_pct": global_cc_pct,
+            "wave_count": len([w for w in global_wave_details if w["id"] is not None]),
+            "unassigned_run_cc": unassigned_cc,
+        },
+        # Backwards-compat: the legacy top-level fields now reflect the
+        # SCOPED subset (the meaningful "progress" metric). Existing
+        # callers that just wanted a total can switch to ``global`` for
+        # the equivalent of the old behaviour.
+        "covered_entities": scoped_covered_entities,
+        "covered_cc": scoped_covered_cc,
+        "entity_pct": scoped_entity_pct,
+        "cc_pct": scoped_cc_pct,
+        # Per-wave breakdown — split.
+        "scoped_waves": scoped_wave_details,
+        "global_waves": global_wave_details,
+        # Backwards-compat: the old combined ``waves`` array, scoped
+        # first then global.
+        "waves": scoped_wave_details + global_wave_details,
     }
 
 
