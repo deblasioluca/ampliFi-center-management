@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC
+import logging
+import threading
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +17,7 @@ from app.infra.db.session import get_db
 from app.models.core import AnalysisRun, AppUser, CenterProposal
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 _HIER_CLS = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
 
@@ -36,8 +39,69 @@ class RunOut(BaseModel):
     kpis: dict | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    # Progress counters — populated as the engine processes each cost
+    # center. The frontend polls /api/runs/{id} to drive a progress bar
+    # without holding the original POST connection open.
+    total_centers: int = 0
+    completed_centers: int = 0
 
     model_config = {"from_attributes": True}
+
+
+def _run_global_in_thread(run_id: int, config_id: int, user_id: int) -> None:
+    """Daemon-thread runner for the V1 global analysis pipeline.
+
+    Creates its own DB session (the request session is closed by the time
+    we get here), drives the existing ``execute_analysis_for_run`` engine
+    against the row identified by ``run_id``, and updates the row to
+    ``completed`` or ``failed``.
+
+    Why threading and not Celery: Celery is configured (see
+    ``app.workers.tasks.run_analysis``) but isn't required by any
+    deployment yet, and operators that don't run a Celery worker would
+    otherwise see runs stuck in 'queued' forever. Threading keeps the
+    same single-process deployment story while moving the work off the
+    request handler.
+
+    Trade-off: if the API process restarts mid-analysis, the thread dies
+    and the run is left in 'running' status. This matches the previous
+    behaviour of the synchronous endpoint (a request timeout would
+    leave the same orphaned row), but operators who want survivability
+    should switch to the Celery dispatch path.
+    """
+    from app.infra.db.session import SessionLocal
+    from app.services.analysis import execute_analysis_for_run
+
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run_id)
+        if not run:
+            log.warning("global_run_thread.not_found run_id=%s", run_id)
+            return
+        execute_analysis_for_run(
+            run=run,
+            wave_id=None,
+            config_id=config_id,
+            user_id=user_id,
+            mode="simulation",
+            label=None,
+            excluded_scopes=None,
+            db=db,
+        )
+        # execute_analysis_for_run commits internally on the success path.
+    except Exception as e:  # noqa: BLE001 — log everything, mark run failed
+        log.exception("global_run_thread.failed run_id=%s", run_id)
+        try:
+            run = db.get(AnalysisRun, run_id)
+            if run:
+                run.status = "failed"
+                run.error = str(e)[:500]
+                run.finished_at = datetime.now(UTC)
+                db.commit()
+        except Exception:
+            log.exception("global_run_thread.failure_persist_failed run_id=%s", run_id)
+    finally:
+        db.close()
 
 
 @router.post("/global")
@@ -46,24 +110,48 @@ def run_global_analysis(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "analyst")),
 ) -> dict:
-    """Run analysis on ALL cost centers (not scoped to any wave)."""
-    from app.services.analysis import execute_analysis, get_or_create_default_config
+    """Kick off a V1 analysis on ALL cost centers (no wave scope).
+
+    The endpoint creates the AnalysisRun row in 'queued' status,
+    dispatches the actual pipeline work to a background thread, and
+    returns the run_id immediately. Clients poll ``GET /api/runs/{id}``
+    to drive a progress UI; ``total_centers`` and ``completed_centers``
+    on the response let them render a progress bar.
+
+    Cancel via ``POST /api/runs/{id}/cancel`` — the engine checks every
+    10 centers and exits cleanly if it sees ``status=cancelled``.
+    """
+    from app.services.analysis import get_or_create_default_config
 
     if config_id is None:
         config = get_or_create_default_config(db)
         config_id = config.id
 
-    try:
-        run = execute_analysis(None, config_id, user.id, db)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}") from None
+    run = AnalysisRun(
+        wave_id=None,
+        config_id=config_id,
+        status="queued",
+        started_at=datetime.now(UTC),
+        triggered_by=user.id,
+        engine_version="v1",
+        mode="simulation",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    thread = threading.Thread(
+        target=_run_global_in_thread,
+        args=(run.id, config_id, user.id),
+        daemon=True,
+        name=f"global_run_{run.id}",
+    )
+    thread.start()
 
     return {
         "run_id": run.id,
         "status": run.status,
-        "kpis": run.kpis,
         "started_at": str(run.started_at) if run.started_at else None,
-        "finished_at": str(run.finished_at) if run.finished_at else None,
     }
 
 
@@ -109,6 +197,8 @@ def get_run(run_id: int, db: Session = Depends(get_db)) -> RunOut:
         kpis=run.kpis,
         started_at=str(run.started_at) if run.started_at else None,
         finished_at=str(run.finished_at) if run.finished_at else None,
+        total_centers=run.total_centers or 0,
+        completed_centers=run.completed_centers or 0,
     )
 
 

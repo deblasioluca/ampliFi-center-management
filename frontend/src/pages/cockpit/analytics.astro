@@ -11,6 +11,31 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 
+  <!-- What does this page do? -->
+  <details class="bg-blue-50 border border-blue-200 rounded-lg mb-3">
+    <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-blue-900 select-none">
+      ℹ️ What does this dashboard do?
+    </summary>
+    <div class="px-4 pb-3 pt-1 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+      <p>
+        This is the read-only overview for the <strong>V1 decision tree</strong>
+        (outcomes: <em>KEEP, RETIRE, MERGE_MAP, REDESIGN</em>). It runs the cleansing
+        pipeline against all cost centers — no wave scope — and stores the result as
+        an immutable analysis run.
+      </p>
+      <p>
+        <strong>Run Global Analysis</strong> kicks off a new run in the background
+        and returns immediately. Use the progress bar to track it; the Run dropdown
+        repopulates when it completes. Charts and the Data Browser tab below
+        populate from the proposals the engine produces (one per cost center).
+      </p>
+      <p>
+        For wave-scoped V2 analysis (MIGRATE/RETIRE with 1:1 vs 1:n approach), use
+        a wave's <em>Decision Tree</em> tab instead.
+      </p>
+    </div>
+  </details>
+
   <!-- Selectors — single row -->
   <div class="bg-white border rounded-lg px-4 py-2 mb-2 flex items-center gap-3 flex-wrap">
     <div class="flex items-center gap-1">
@@ -33,8 +58,20 @@ import Layout from '../../components/layout/Layout.astro';
       </select>
     </div>
     <button id="btn-run-global" class="btn-amplifi text-xs py-1 px-3 whitespace-nowrap">Run Global Analysis</button>
+    <button id="btn-cancel-run" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs hidden" title="Cancel running analysis">Cancel</button>
     <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-xs hidden" title="Delete selected run">Delete Run</button>
     <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs" title="Manage configurations">Configs</button>
+  </div>
+
+  <!-- Run Progress Strip (hidden until a run is dispatched) -->
+  <div id="run-progress" class="hidden bg-white border border-blue-200 rounded-lg px-4 py-2 mb-2">
+    <div class="flex items-center justify-between text-xs mb-1">
+      <span class="font-medium text-blue-900" id="run-progress-label">Run starting…</span>
+      <span class="text-gray-500" id="run-progress-counts">—</span>
+    </div>
+    <div class="h-1.5 bg-blue-100 rounded-full overflow-hidden">
+      <div id="run-progress-bar" class="h-full bg-blue-500 transition-all" style="width:0%"></div>
+    </div>
   </div>
 
   <!-- Config Manager Panel (hidden by default) -->
@@ -519,7 +556,7 @@ import Layout from '../../components/layout/Layout.astro';
     if (val === '__global__') { loadGlobalRuns(); } else { loadWaveRuns(val); }
   }
 
-  function loadGlobalRuns() {
+  function loadGlobalRuns(preferredRunId) {
     fetch('/api/runs/global/list?size=50', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var sel = document.getElementById('sel-run');
       sel.innerHTML = '<option value="">Select Run...</option>';
@@ -529,7 +566,23 @@ import Layout from '../../components/layout/Layout.astro';
         opt.textContent = 'Global Run #' + r.id + (r.kpis ? ' (' + r.kpis.total_centers + ' centers)' : '');
         sel.appendChild(opt);
       });
-      if (sel.options.length > 1) { sel.selectedIndex = 1; loadRunVisuals(sel.value, null); }
+      // If the caller asked for a specific run (typically the one that
+      // just completed), prefer it. Otherwise, default to the newest.
+      var picked = false;
+      if (preferredRunId) {
+        for (var i = 0; i < sel.options.length; i++) {
+          if (parseInt(sel.options[i].value, 10) === preferredRunId) {
+            sel.selectedIndex = i;
+            loadRunVisuals(sel.value, null);
+            picked = true;
+            break;
+          }
+        }
+      }
+      if (!picked && sel.options.length > 1) {
+        sel.selectedIndex = 1;
+        loadRunVisuals(sel.value, null);
+      }
     });
   }
 
@@ -611,7 +664,35 @@ import Layout from '../../components/layout/Layout.astro';
       .then(function(d) {
         var items = d.items || [];
         if (!items.length) {
-          document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-gray-400">No proposals found for this run</span>';
+          // Diagnostic: if the run has KPIs showing centers analysed but
+          // no proposals come back, that's an inconsistent state — the
+          // run probably failed to commit proposals. Surface it clearly
+          // so the user doesn't think the dashboard is broken.
+          fetch('/api/runs/' + runId, { headers: authHdr })
+            .then(function(r) { return r.json(); })
+            .then(function(run) {
+              var k = run.kpis || {};
+              var kpiTotal = k.total_centers || 0;
+              var msg;
+              if (kpiTotal > 0) {
+                msg = 'Run #' + runId + ' shows ' + kpiTotal + ' centers in KPIs but ' +
+                      'no proposals were returned. The run may have failed to commit ' +
+                      'its results, or the proposals were deleted. Try re-running the analysis ' +
+                      'or check the server logs.';
+              } else if (run.status === 'queued' || run.status === 'running') {
+                msg = 'Run #' + runId + ' is still ' + run.status + '. Charts will appear once it completes.';
+              } else if (run.status === 'failed') {
+                msg = 'Run #' + runId + ' failed: ' + (run.error || 'see server logs');
+              } else {
+                msg = 'No proposals found for this run.';
+              }
+              document.getElementById('chart-outcome-donut').innerHTML =
+                '<span class="text-sm text-amber-700">' + msg + '</span>';
+            })
+            .catch(function() {
+              document.getElementById('chart-outcome-donut').innerHTML =
+                '<span class="text-sm text-gray-400">No proposals found for this run</span>';
+            });
           document.getElementById('chart-target-bar').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
           document.getElementById('chart-entity-heatmap').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
           document.getElementById('chart-sankey').innerHTML = '<span class="text-sm text-gray-400">No data</span>';
@@ -663,7 +744,18 @@ import Layout from '../../components/layout/Layout.astro';
 
         // -- ML Confidence Distribution --
         var confs = items.filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
-        drawConfidenceHist('chart-ml-hist', confs);
+        if (confs.length === 0 && items.length > 0) {
+          // We have proposals but none of them have ML confidence. Most
+          // likely the pipeline didn't include the ml.classify_outcome
+          // routine, or the ML model failed to load and the engine fell
+          // back to rule-only. Either way, point the user at the cause.
+          document.getElementById('chart-ml-hist').innerHTML =
+            '<span class="text-sm text-amber-700">No ML confidence values on this run\'s ' + items.length +
+            ' proposals. Likely cause: the analysis config doesn\'t include the <code>ml.classify_outcome</code> ' +
+            'routine, or the ML model failed to load. Check the run\'s pipeline config.</span>';
+        } else {
+          drawConfidenceHist('chart-ml-hist', confs);
+        }
       })
       .catch(function(err) {
         console.error('Proposals fetch error:', err);
@@ -1123,29 +1215,119 @@ import Layout from '../../components/layout/Layout.astro';
   loadConfigs();
 
   // Global Analysis button — pass selected config_id
+  // Tracks the currently-polling run so Cancel and the polling loop know
+  // which run to act on. Cleared when the run completes / fails / is
+  // cancelled.
+  var _activeRunId = null;
+  var _pollTimer = null;
+
+  function _resetRunProgressUI() {
+    document.getElementById('run-progress').classList.add('hidden');
+    document.getElementById('btn-cancel-run').classList.add('hidden');
+    var btn = document.getElementById('btn-run-global');
+    btn.disabled = false;
+    btn.textContent = 'Run Global Analysis';
+    if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  }
+
+  function _renderRunProgress(run) {
+    var total = run.total_centers || 0;
+    var done = run.completed_centers || 0;
+    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('run-progress').classList.remove('hidden');
+    document.getElementById('run-progress-bar').style.width = pct + '%';
+
+    var label;
+    if (run.status === 'queued') {
+      label = 'Run #' + run.id + ' queued — preparing…';
+    } else if (run.status === 'running') {
+      label = total > 0
+        ? 'Run #' + run.id + ' running — ' + done + ' / ' + total + ' centers (' + pct + '%)'
+        : 'Run #' + run.id + ' running — initializing…';
+    } else if (run.status === 'completed') {
+      label = 'Run #' + run.id + ' completed';
+    } else if (run.status === 'cancelled') {
+      label = 'Run #' + run.id + ' cancelled';
+    } else if (run.status === 'failed') {
+      label = 'Run #' + run.id + ' failed';
+    } else {
+      label = 'Run #' + run.id + ' — ' + run.status;
+    }
+    document.getElementById('run-progress-label').textContent = label;
+    document.getElementById('run-progress-counts').textContent = total
+      ? done + ' of ' + total
+      : '';
+  }
+
+  function _pollRun(runId) {
+    fetch('/api/runs/' + runId, { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(run) {
+        _renderRunProgress(run);
+        if (run.status === 'queued' || run.status === 'running') {
+          _pollTimer = setTimeout(function() { _pollRun(runId); }, 2000);
+        } else {
+          // Terminal state — finish up.
+          _activeRunId = null;
+          document.getElementById('btn-cancel-run').classList.add('hidden');
+          var btn = document.getElementById('btn-run-global');
+          btn.disabled = false;
+          btn.textContent = 'Run Global Analysis';
+          // Reload the run list so the new run appears + auto-select it.
+          loadGlobalRuns(runId);
+          // Hide the progress strip after a brief delay so the user sees
+          // the final state (Completed / Cancelled / Failed) before it
+          // disappears.
+          setTimeout(function() {
+            document.getElementById('run-progress').classList.add('hidden');
+          }, 4000);
+        }
+      })
+      .catch(function(err) {
+        console.error('Poll error:', err);
+        // Don't bail — try again in 5s in case it was transient.
+        _pollTimer = setTimeout(function() { _pollRun(runId); }, 5000);
+      });
+  }
+
   document.getElementById('btn-run-global').addEventListener('click', function() {
     var btn = this;
     btn.disabled = true;
-    btn.textContent = 'Running...';
+    btn.textContent = 'Starting…';
     var configId = document.getElementById('sel-config').value;
     var url = '/api/runs/global' + (configId ? '?config_id=' + configId : '');
-    fetch(url, {
-      method: 'POST',
-      headers: jsonHdr,
-    }).then(function(r) {
-      if (!r.ok) return r.json().then(function(b) { throw new Error(b.detail || 'Failed'); });
-      return r.json();
-    }).then(function(d) {
-      btn.textContent = 'Run Global Analysis';
-      btn.disabled = false;
-      alert('Global analysis completed — Run #' + d.run_id + ' (' + (d.kpis ? d.kpis.total_centers : '?') + ' centers)');
-      document.getElementById('sel-wave').value = '__global__';
-      loadGlobalRuns();
-    }).catch(function(err) {
-      btn.textContent = 'Run Global Analysis';
-      btn.disabled = false;
-      alert('Error: ' + err.message);
+    fetch(url, { method: 'POST', headers: jsonHdr })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(b) { throw new Error(b.detail || 'Failed'); });
+        return r.json();
+      })
+      .then(function(d) {
+        _activeRunId = d.run_id;
+        btn.textContent = 'Running…';
+        // Show progress strip + cancel button immediately, even before
+        // the first poll, so the user knows something happened.
+        _renderRunProgress({ id: d.run_id, status: d.status, total_centers: 0, completed_centers: 0 });
+        document.getElementById('btn-cancel-run').classList.remove('hidden');
+        _pollRun(d.run_id);
+      })
+      .catch(function(err) {
+        _resetRunProgressUI();
+        alert('Error starting run: ' + err.message);
+      });
+  });
+
+  document.getElementById('btn-cancel-run').addEventListener('click', async function() {
+    if (!_activeRunId) return;
+    var ok = await uiConfirm({
+      title: 'Cancel this analysis run?',
+      message: 'The engine checks for cancellation every 10 cost centers, so it may take a few seconds to stop. Partial progress will be preserved on the run row.',
+      okLabel: 'Cancel run',
+      okVariant: 'danger',
     });
+    if (!ok) return;
+    fetch('/api/runs/' + _activeRunId + '/cancel', { method: 'POST', headers: authHdr })
+      .catch(function(err) { console.error('Cancel error:', err); });
+    // The poll will pick up status=cancelled and clean up the UI.
   });
 
   // ========== DATA BROWSER ==========

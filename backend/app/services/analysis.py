@@ -340,7 +340,27 @@ def execute_analysis_for_run(
     registry = get_registry()
     inactivity_months = params.get("inactivity_threshold_months", 24)
 
-    for cc in cost_centers:
+    # Initialise progress counters so polling clients see them right away
+    # (rather than waiting until the first commit-flush cycle below).
+    run.total_centers = len(cost_centers)
+    run.completed_centers = 0
+    db.flush()
+
+    for idx, cc in enumerate(cost_centers):
+        # Cooperative cancellation: between iterations, check if someone
+        # flipped the run's status (e.g. via POST /api/runs/{id}/cancel).
+        # We re-read from the DB every 10 centers so we don't pay the
+        # round-trip cost on every single one.
+        if idx % 10 == 0:
+            db.refresh(run)
+            if run.status == "cancelled":
+                log.info("analysis.cancelled run_id=%s after %s centers", run.id, idx)
+                run.finished_at = datetime.now(UTC)
+                run.kpis = kpis
+                db.commit()
+                db.refresh(run)
+                return run
+
         features = _build_features(cc, db, inactivity_months)
         if use_pipeline:
             ctx = _build_context(cc, db, inactivity_months)
@@ -440,6 +460,12 @@ def execute_analysis_for_run(
             target_key = f"target_{result.target_object.value.lower()}"
             if target_key in kpis:
                 kpis[target_key] += 1
+
+        # Update progress counter. Flush every 10 centers so polling
+        # clients see movement without paying a round-trip on every CC.
+        run.completed_centers = idx + 1
+        if (idx + 1) % 10 == 0:
+            db.flush()
 
     run.status = "completed"
     run.finished_at = datetime.now(UTC)
