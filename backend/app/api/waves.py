@@ -1963,6 +1963,38 @@ def list_simulations(
     return {"items": items, "total": len(items)}
 
 
+@router.delete("/simulations/{run_id}")
+def delete_simulation(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Hard-delete a simulation run and all its proposals.
+
+    Children rows in ``center_proposal``, ``llm_call``, ``run_step``, and
+    similar tables that reference ``analysis_run.id`` are removed
+    automatically by ``ON DELETE CASCADE`` on those FKs (see model
+    definitions). Activated runs cannot be deleted — they represent
+    committed state and require an explicit revert flow that doesn't
+    exist yet.
+
+    Wave status is intentionally NOT changed by this operation. If the
+    wave was bumped to ``analysing`` because of this run, the operator
+    needs to roll the wave status back manually if appropriate.
+    """
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.mode == "activated":
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete an activated run — revert it first",
+        )
+    db.delete(run)
+    db.commit()
+    return {"status": "deleted", "id": run_id}
+
+
 @router.post("/simulations/{run_id}/activate")
 def activate_v2_simulation(
     run_id: int,

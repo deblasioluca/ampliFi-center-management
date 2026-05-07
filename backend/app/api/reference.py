@@ -595,7 +595,28 @@ def list_hierarchy_nodes(
     hier_id: int,
     db: Session = Depends(get_db),
 ) -> dict:
-    nodes = (
+    """List the distinct setnames in a hierarchy, with depth level and parent.
+
+    Hierarchy data is stored as parent→child edges in ``hierarchy_node``;
+    the same setname can appear as a child of multiple parents in some
+    SAP setups, but UI consumers want a deduplicated list of selectable
+    nodes ordered by depth. This endpoint walks the edge list once,
+    computes BFS depth from the root(s), and returns:
+
+    * ``setname`` — the node identifier
+    * ``parent`` — the parent setname (or empty string for roots)
+    * ``level`` — 0 for root, 1 for direct children, etc.
+    * ``description`` — only populated for the hierarchy's root setname
+      (which lives in the ``hierarchy`` table, not ``hierarchy_node``).
+      Per-node descriptions aren't stored in the schema today.
+
+    Returned items are sorted by (level, setname) for predictable display.
+    """
+    hier = db.get(Hierarchy, hier_id)
+    if not hier:
+        raise HTTPException(status_code=404, detail="Hierarchy not found")
+
+    edges = (
         db.execute(
             select(HierarchyNode)
             .where(HierarchyNode.hierarchy_id == hier_id)
@@ -604,12 +625,53 @@ def list_hierarchy_nodes(
         .scalars()
         .all()
     )
+
+    # Build children map + collect all setnames seen as children
+    children_map: dict[str, list[str]] = {}
+    all_children: set[str] = set()
+    for e in edges:
+        children_map.setdefault(e.parent_setname, []).append(e.child_setname)
+        all_children.add(e.child_setname)
+
+    # Roots are parents that are not themselves children of anything.
+    # Fallback: the hierarchy's own setname if no edges exist.
+    all_parents = set(children_map.keys())
+    roots = sorted(all_parents - all_children)
+    if not roots:
+        roots = [hier.setname]
+
+    # BFS to compute depth + parent for every reachable setname.
+    # If a setname appears under multiple parents (rare but valid in SAP),
+    # we keep the FIRST parent encountered and the SHALLOWEST depth.
+    levels: dict[str, int] = {}
+    parents: dict[str, str] = {}
+    queue: list[tuple[str, int, str]] = [(r, 0, "") for r in roots]
+    while queue:
+        setname, depth, parent = queue.pop(0)
+        if setname in levels:
+            continue
+        levels[setname] = depth
+        parents[setname] = parent
+        for child in children_map.get(setname, []):
+            if child not in levels:
+                queue.append((child, depth + 1, setname))
+
+    items = [
+        {
+            "setname": s,
+            "parent": parents[s],
+            "level": levels[s],
+            # Only the root carries a description (from the hierarchy row itself);
+            # individual nodes don't have descriptions in the current schema.
+            "description": (hier.description if s in roots else None),
+        }
+        for s in sorted(levels.keys(), key=lambda x: (levels[x], x))
+    ]
+
     return {
         "hierarchy_id": hier_id,
-        "items": [
-            {"id": n.id, "parent": n.parent_setname, "child": n.child_setname, "seq": n.seq}
-            for n in nodes
-        ],
+        "setname": hier.setname,
+        "items": items,
     }
 
 
