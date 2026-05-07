@@ -594,9 +594,12 @@ def data_browser(
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Total count for pagination
-    total_count = db.execute(
-        select(func.count(CenterProposal.id)).where(CenterProposal.run_id == run_id)
-    ).scalar() or 0
+    total_count = (
+        db.execute(
+            select(func.count(CenterProposal.id)).where(CenterProposal.run_id == run_id)
+        ).scalar()
+        or 0
+    )
 
     # Paginated query with optional search filter
     proposals_q = (
@@ -613,25 +616,26 @@ def data_browser(
             | LegacyCostCenter.ccode.ilike(pattern)
             | LegacyCostCenter.responsible.ilike(pattern)
         )
-        total_count = db.execute(
-            select(func.count(CenterProposal.id))
-            .where(CenterProposal.run_id == run_id)
-            .join(
-                LegacyCostCenter,
-                LegacyCostCenter.id == CenterProposal.legacy_cc_id,
-                isouter=True,
-            )
-            .where(
-                LegacyCostCenter.cctr.ilike(pattern)
-                | LegacyCostCenter.txtsh.ilike(pattern)
-                | LegacyCostCenter.ccode.ilike(pattern)
-                | LegacyCostCenter.responsible.ilike(pattern)
-            )
-        ).scalar() or 0
+        total_count = (
+            db.execute(
+                select(func.count(CenterProposal.id))
+                .where(CenterProposal.run_id == run_id)
+                .join(
+                    LegacyCostCenter,
+                    LegacyCostCenter.id == CenterProposal.legacy_cc_id,
+                    isouter=True,
+                )
+                .where(
+                    LegacyCostCenter.cctr.ilike(pattern)
+                    | LegacyCostCenter.txtsh.ilike(pattern)
+                    | LegacyCostCenter.ccode.ilike(pattern)
+                    | LegacyCostCenter.responsible.ilike(pattern)
+                )
+            ).scalar()
+            or 0
+        )
 
-    proposals = (
-        db.execute(proposals_q.offset((page - 1) * size).limit(size)).scalars().all()
-    )
+    proposals = db.execute(proposals_q.offset((page - 1) * size).limit(size)).scalars().all()
 
     cc_ids = [p.legacy_cc_id for p in proposals]
     cc_map: dict[int, LegacyCostCenter] = {}
