@@ -140,7 +140,7 @@ import Layout from '../components/layout/Layout.astro';
 
   try {
     var ud = JSON.parse(localStorage.getItem('amplifi_user') || '{}');
-    isAdmin = ud.role === 'admin';
+    isAdmin = (ud.role || '').split(',').map(function(r){return r.trim();}).indexOf('admin') >= 0;
     if (!isAdmin) {
       ['qa-cockpit', 'qa-data', 'qa-admin', 'qa-hk'].forEach(function(id) {
         var el = document.getElementById(id);

@@ -75,21 +75,21 @@ def _check_sensitive_access(object_type: str, user: AppUser | None) -> None:
             status_code=401,
             detail=(
                 f"Authentication required for object type '{object_type}'. "
-                "Sign in as an analyst or admin to access this data."
+                "Sign in as a data_manager or admin to access this data."
             ),
         )
-    if (
-        object_type in _SENSITIVE_OBJECT_TYPES
-        and user is not None
-        and user.role not in ("analyst", "admin", "data_manager")
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"Role '{user.role}' is not permitted to access "
-                f"'{object_type}'. Contact an admin if you need access."
-            ),
-        )
+    if object_type in _SENSITIVE_OBJECT_TYPES and user is not None:
+        from app.api.deps import _user_roles
+
+        ur = _user_roles(user)
+        if not ur & {"data_manager", "admin"}:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Role '{user.role}' is not permitted to access "
+                    f"'{object_type}'. Contact an admin if you need access."
+                ),
+            )
 
 
 router = APIRouter()

@@ -40,7 +40,7 @@ class UserCreate(BaseModel):
     email: str | None = None
     display_name: str
     password: str
-    role: str = "analyst"
+    role: str = "data_manager"
 
 
 class UserUpdate(BaseModel):
@@ -126,8 +126,13 @@ def update_user(
     if user.id == _user.id:
         if body.is_active is not None and not body.is_active:
             raise HTTPException(status_code=409, detail="Cannot deactivate your own account")
-        if body.role is not None and body.role != "admin":
-            raise HTTPException(status_code=409, detail="Cannot demote your own account")
+        if body.role is not None:
+            new_roles = {r.strip() for r in body.role.split(",")}
+            if "admin" not in new_roles:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cannot remove admin from own account",
+                )
     if body.display_name is not None:
         user.display_name = body.display_name
     if body.role is not None:
@@ -692,7 +697,7 @@ class ObjectBindingCreate(BaseModel):
 def list_object_bindings(
     conn_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> list[dict]:
     """List object bindings for a SAP connection."""
     from app.models.core import SAPObjectBinding
@@ -895,7 +900,7 @@ def extract_via_binding(
     binding_id: int,
     body: ExtractionParams | None = None,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
     """Extract data from SAP using a specific binding's configuration."""
     from app.models.core import SAPObjectBinding
@@ -945,7 +950,7 @@ def extract_via_binding(
 def lookup_co_areas(
     conn_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> list[dict]:
     """Fetch available controlling areas from SAP (table TKA01)."""
     conn = db.get(SAPConnection, conn_id)
@@ -993,7 +998,7 @@ def lookup_hierarchies(
     conn_id: int,
     co_area: str | None = None,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst")),
+    _user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> list[dict]:
     """Fetch available hierarchies from SAP (table SETHEADER)."""
     conn = db.get(SAPConnection, conn_id)
@@ -1069,7 +1074,7 @@ def _hier_label(h: object, labels: dict[str, str] | None = None) -> str:
 @router.get("/hierarchies")
 def list_hierarchies(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
     scope: str | None = None,
     data_category: str | None = None,
 ) -> list[dict]:
@@ -1143,7 +1148,7 @@ def update_hierarchy(
 
 @router.get("/upload-rules")
 def get_upload_rules(
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Return allowed scope/category/object combinations for the upload form."""
     return {"rules": SCOPE_UPLOAD_RULES}
@@ -1161,7 +1166,7 @@ def create_upload(
     load_cema_hier: bool = Query(default=True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     import json
     import pathlib
@@ -1223,7 +1228,7 @@ def create_upload(
 @router.get("/uploads")
 def list_uploads(
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
     pag: PaginationParams = Depends(pagination),
 ) -> dict:
     total = db.execute(select(func.count(UploadBatch.id))).scalar() or 0
@@ -1264,7 +1269,7 @@ def list_uploads(
 def get_upload(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
@@ -1359,7 +1364,7 @@ def validate_upload_batch(
     batch_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
@@ -1381,7 +1386,7 @@ def load_upload_batch(
     batch_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     batch = db.get(UploadBatch, batch_id)
     if not batch:
@@ -1402,7 +1407,7 @@ def load_upload_batch(
 def rollback_upload_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     from app.services.upload_processor import rollback_upload
 
@@ -1416,7 +1421,7 @@ def rollback_upload_batch(
 def reset_upload_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Reset a stuck batch (validating/loading) back to a retryable state."""
     batch = db.get(UploadBatch, batch_id)
@@ -1440,7 +1445,7 @@ def reset_upload_batch(
 def list_upload_errors(
     batch_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
     pag: PaginationParams = Depends(pagination),
 ) -> dict:
     total = (
@@ -2313,7 +2318,7 @@ UPLOAD_TEMPLATES: dict[str, dict] = {
 
 @router.get("/upload-templates")
 def list_upload_templates(
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """List available upload templates."""
     return {
@@ -2327,7 +2332,7 @@ def list_upload_templates(
 @router.get("/upload-templates/{kind}")
 def download_upload_template(
     kind: str,
-    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
 ) -> dict:
     """Get CSV content for an upload template."""
     tmpl = UPLOAD_TEMPLATES.get(kind)

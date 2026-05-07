@@ -192,7 +192,7 @@ import Layout from '../components/layout/Layout.astro';
   function checkAdmin() {
     var el = document.getElementById('admin-status');
     fetch('/api/auth/me', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
-      if (d.role === 'admin') {
+      if ((d.role || '').split(',').map(function(r){return r.trim();}).indexOf('admin') >= 0) {
         el.innerHTML = '<span class="text-green-600 font-medium">Admin account active: ' + (d.email || d.display_name) + '</span>';
         document.getElementById('btn-next-2').disabled = false;
       } else {
