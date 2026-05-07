@@ -259,14 +259,83 @@ import Layout from '../../components/layout/Layout.astro';
       return;
     }
     container.innerHTML = state.configs.map(c => `
-      <div class="px-2 py-2 hover:bg-gray-50 rounded cursor-pointer config-item" data-config-id="${c.id}">
-        <div class="font-medium text-sm">${c.name}</div>
-        <div class="text-xs text-gray-500">${c.code} · v${c.version}</div>
+      <div class="px-2 py-2 hover:bg-gray-50 rounded config-item flex items-start justify-between gap-2" data-config-id="${c.id}" data-config-code="${c.code}" data-config-name="${c.name}">
+        <div class="flex-1 cursor-pointer min-w-0">
+          <div class="font-medium text-sm truncate">${c.name}</div>
+          <div class="text-xs text-gray-500 truncate">${c.code} · v${c.version}</div>
+        </div>
+        <button type="button" class="btn-delete-config text-xs text-red-600 hover:bg-red-50 px-1.5 py-0.5 rounded border border-red-200 self-start opacity-60 hover:opacity-100" title="Delete this variant (and all versions)">×</button>
       </div>
     `).join('');
-    container.querySelectorAll('.config-item').forEach(el => {
-      el.addEventListener('click', () => loadConfig(el.getAttribute('data-config-id')));
+    // Click on the row body opens the variant for editing.
+    container.querySelectorAll('.config-item .flex-1').forEach(el => {
+      el.addEventListener('click', () => {
+        const row = el.closest('.config-item');
+        loadConfig(row.getAttribute('data-config-id'));
+      });
     });
+    // Delete button is bound separately so its click doesn't open the variant.
+    container.querySelectorAll('.btn-delete-config').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const row = btn.closest('.config-item');
+        deleteVariant(row.getAttribute('data-config-code'), row.getAttribute('data-config-name'));
+      });
+    });
+  }
+
+  // Delete a variant by code. The backend protects against deleting
+  // configs that are still referenced by analysis_run rows; on 409 we
+  // re-prompt the user with the actual run count and offer the
+  // force-delete path (which also removes the orphan runs).
+  async function deleteVariant(code, name) {
+    if (!confirm(`Delete variant "${name}" (${code}) and all its versions?\n\nThis cannot be undone.`)) {
+      return;
+    }
+    try {
+      let res = await fetch(`/api/configs/${encodeURIComponent(code)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('amplifi_token') || '') },
+      });
+      if (res.status === 409) {
+        // Conflict — config has runs referencing it. Show the count
+        // from the structured 409 detail and ask for force-confirm.
+        const body = await res.json();
+        const detail = body.detail || {};
+        const runCount = detail.referencing_runs || 0;
+        const confirmMsg =
+          `"${name}" is referenced by ${runCount} analysis run(s).\n\n` +
+          `Force delete will remove the variant AND those ${runCount} runs ` +
+          `(plus their proposals and audit history). This is irreversible.\n\n` +
+          `Continue with force delete?`;
+        if (!confirm(confirmMsg)) return;
+        res = await fetch(`/api/configs/${encodeURIComponent(code)}?force=true`, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('amplifi_token') || '') },
+        });
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert('Delete failed: ' + (body.detail?.message || body.detail || res.statusText));
+        return;
+      }
+      const summary = await res.json();
+      // Show what was actually removed so the user knows what happened.
+      let msg = `Deleted variant "${name}" (${summary.versions_deleted} version(s))`;
+      if (summary.runs_deleted) msg += ` and ${summary.runs_deleted} run(s)`;
+      alert(msg + '.');
+      // Refresh the list. If the deleted variant was loaded in the
+      // editor, blank that out.
+      if (state.currentConfig && state.currentConfig.code === code) {
+        state.currentConfig = null;
+        state.currentConfigId = null;
+        document.getElementById('editor-form').classList.add('hidden');
+        document.getElementById('editor-empty').classList.remove('hidden');
+      }
+      boot();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
   }
 
   function renderPresetsList() {
