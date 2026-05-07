@@ -88,6 +88,8 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="flex items-center gap-2">
           <button id="db-view-tabular" class="btn-sm bg-blue-600 text-white text-xs" onclick="switchDataBrowserView('tabular')">Tabular</button>
           <button id="db-view-hierarchy" class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="switchDataBrowserView('hierarchy')">Hierarchical</button>
+          <button id="db-expand-all" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="dbExpandCollapseAll(true)">Expand All</button>
+          <button id="db-collapse-all" class="btn-sm bg-gray-200 text-gray-700 text-xs hidden" onclick="dbExpandCollapseAll(false)">Collapse All</button>
           <input id="db-search" type="text" placeholder="Filter by CC, name, entity..." class="border rounded px-2 py-0.5 text-xs w-48" />
           <button onclick="downloadTableCSV('db-content','data_browser.csv')" class="btn-secondary text-xs" title="Download as CSV">CSV</button>
         </div>
@@ -898,6 +900,16 @@ import Layout from '../../components/layout/Layout.astro';
       appendGroup('Entity hierarchies', entHiers);
       appendGroup('Profit Center hierarchies (PC)', pcHiers);
       appendGroup('Other', otherHiers);
+      // Auto-select if only one CC hierarchy exists
+      if (ccHiers.length === 1 && !_ccHierId) {
+        _ccHierId = ccHiers[0].id;
+        sel.value = _ccHierId;
+        loadCC(1);
+      } else if (items.length === 1 && !_ccHierId) {
+        _ccHierId = items[0].id;
+        sel.value = _ccHierId;
+        loadCC(1);
+      }
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
   document.getElementById('cc-hier-picker').addEventListener('change', function() {
@@ -1012,6 +1024,16 @@ import Layout from '../../components/layout/Layout.astro';
       appendGroup('Entity hierarchies', entHiers);
       appendGroup('Cost Center hierarchies (usable only when CC↔PC is 1:1)', ccHiers);
       appendGroup('Other', otherHiers);
+      // Auto-select if only one PC hierarchy exists
+      if (pcHiers.length === 1 && !_pcHierId) {
+        _pcHierId = pcHiers[0].id;
+        sel.value = _pcHierId;
+        loadPC(1);
+      } else if (items.length === 1 && !_pcHierId) {
+        _pcHierId = items[0].id;
+        sel.value = _pcHierId;
+        loadPC(1);
+      }
     })
     .catch(function() { /* picker stays at "(none)" if listing fails */ });
   document.getElementById('pc-hier-picker').addEventListener('change', function() {
@@ -2631,6 +2653,7 @@ import Layout from '../../components/layout/Layout.astro';
   var dbPage = 1;
   var dbSize = 200;
   var dbSearchTimer = null;
+  var _dbTreeIdSeq = 0;
   // PR #90 — selected hierarchy for L0..LX columns in tabular AND for
   // tree view in hierarchical. Defaults to the first CC hierarchy
   // when one is loaded; nullable for "no L cols" mode.
@@ -2729,12 +2752,28 @@ import Layout from '../../components/layout/Layout.astro';
       });
   }
 
+  window.dbExpandCollapseAll = function(expand) {
+    var el = document.getElementById('db-content');
+    if (!el) return;
+    el.querySelectorAll('.tree-children').forEach(function(tc) {
+      if (expand) tc.classList.remove('hidden'); else tc.classList.add('hidden');
+    });
+    el.querySelectorAll('[data-db-toggle]').forEach(function(tog) {
+      tog.innerHTML = expand ? '&#9660;' : '&#9654;';
+    });
+  };
+
   window.switchDataBrowserView = function(view) {
     dbView = view;
     var tabBtn = document.getElementById('db-view-tabular');
     var hierBtn = document.getElementById('db-view-hierarchy');
     if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
     if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    // Show/hide expand/collapse buttons
+    var expBtn = document.getElementById('db-expand-all');
+    var colBtn = document.getElementById('db-collapse-all');
+    if (expBtn) { if (view === 'hierarchy') expBtn.classList.remove('hidden'); else expBtn.classList.add('hidden'); }
+    if (colBtn) { if (view === 'hierarchy') colBtn.classList.remove('hidden'); else colBtn.classList.add('hidden'); }
     // Hierarchical view needs:
     //   1. hier.nodes / hier.leaves to walk the tree (PR #87 — kept
     //      initial load fast).
@@ -2853,17 +2892,10 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   function buildHierLevelMap() {
+    // When the picker is explicitly set to "(none)", return no levels.
+    if (dbSelectedHierarchyId == null) return { levels: [], map: {} };
     var hiers = (dbData && dbData.hierarchies) || [];
-    // PR #90 — pick the hierarchy the operator selected via the picker
-    // (or auto-defaulted to the first CC hierarchy at load time).
-    // Falls back to the previous "first CC" behaviour if no selection.
-    var hier;
-    if (dbSelectedHierarchyId != null) {
-      hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
-    }
-    if (!hier) {
-      hier = hiers.filter(function(h) { return h.setclass === '0101'; })[0] || hiers[0];
-    }
+    var hier = hiers.filter(function(h) { return h.id === dbSelectedHierarchyId; })[0];
     if (!hier) return { levels: [], map: {} };
 
     var childMap = {};
@@ -2955,11 +2987,10 @@ import Layout from '../../components/layout/Layout.astro';
     }
     var sorted = dbSortItems(items);
 
-    // Build hierarchy level data only when we actually have hierarchies
-    // inlined (PR #87: default response carries metadata only). When
-    // not inlined we skip the L1..LX columns entirely — the hierarchical
-    // view is the place to drill into the tree.
-    var hierInfo = (dbData.hierarchies_inlined && (dbData.hierarchies || []).some(function(h) { return h.nodes; }))
+    // Build hierarchy level data only when a hierarchy is selected
+    // AND hierarchies are inlined. When picker is "(none)" or no
+    // hierarchy data is loaded, skip L columns entirely.
+    var hierInfo = (dbSelectedHierarchyId != null && dbData.hierarchies_inlined && (dbData.hierarchies || []).some(function(h) { return h.nodes; }))
       ? buildHierLevelMap()
       : { levels: [], map: {} };
     var hierLevels = hierInfo.levels;
@@ -3195,6 +3226,10 @@ import Layout from '../../components/layout/Layout.astro';
       } else {
         leafCCs = items.filter(function(it) { return it.cctr && !assigned[it.cctr]; });
       }
+    } else if (dbHierSelectedNode && dbHierSelectedNode.indexOf('__leaf__') === 0) {
+      // Clicked on a leaf directly in the tree
+      var leafVal = dbHierSelectedNode.substring(8);
+      leafCCs = leafItemsMap[leafVal] || [];
     } else if (dbHierSelectedNode) {
       collectLeaves(dbHierSelectedNode);
     } else {
@@ -3370,15 +3405,35 @@ import Layout from '../../components/layout/Layout.astro';
       var pad = depth * 12;
       var lc = countLeaves(nodeName);
       var isSelected = dbHierSelectedNode === nodeName;
+      var nodeToggleId = 'db-tn-' + (++_dbTreeIdSeq);
       var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
-      out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" onclick="var tc=this.parentElement.nextElementSibling;if(tc)tc.classList.toggle(\'hidden\');var a=this;a.textContent=tc&&tc.classList.contains(\'hidden\')?\'\\u25B6\':\'\\u25BC\'">&#9660;</span>';
+      out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" data-db-toggle="' + escAttr(nodeToggleId) + '">&#9660;</span>';
       out += '<span data-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' + (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
       out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
       var children = childMap[nodeName] || [];
       children.sort(function(a, b) { return (a.seq || 0) - (b.seq || 0); });
-      out += '<div class="tree-children">';
+      out += '<div id="' + escAttr(nodeToggleId) + '" class="tree-children">';
       children.forEach(function(c) {
-        if (c.type === 'node') out += buildTree(c.name, depth + 1);
+        if (c.type === 'node') {
+          out += buildTree(c.name, depth + 1);
+        } else if (c.type === 'leaf') {
+          // Render leaf items directly in the tree
+          var leafItems = leafItemsMap[c.value] || [];
+          var leafPad = (depth + 1) * 12;
+          if (leafItems.length) {
+            leafItems.forEach(function(item) {
+              var idField = item.cctr || c.value;
+              var label = item.txtsh || item.name || '';
+              out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
+                '<span data-hier-node="__leaf__' + escAttr(c.value) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded font-medium text-gray-700">' +
+                esc(idField) + (label ? ' — ' + esc(label) : '') +
+                '</span></div>';
+            });
+          } else {
+            out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
+              '<span class="text-xs text-gray-400 px-1">' + esc(c.value) + ' (no match)</span></div>';
+          }
+        }
       });
       out += '</div>';
       return out;
@@ -3419,6 +3474,19 @@ import Layout from '../../components/layout/Layout.astro';
     el.querySelectorAll('[data-hier-node]').forEach(function(nodeEl) {
       nodeEl.addEventListener('click', function() {
         selectHierNode(this.dataset.hierNode);
+      });
+    });
+
+    // Bind toggle (expand/collapse) handlers
+    el.querySelectorAll('[data-db-toggle]').forEach(function(toggleEl) {
+      toggleEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var targetId = this.dataset.dbToggle;
+        var target = document.getElementById(targetId);
+        if (target) {
+          target.classList.toggle('hidden');
+          this.innerHTML = target.classList.contains('hidden') ? '&#9654;' : '&#9660;';
+        }
       });
     });
 

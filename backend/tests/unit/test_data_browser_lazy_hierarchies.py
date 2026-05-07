@@ -29,9 +29,9 @@ def _mock_db(
     hierarchies: list,
 ) -> MagicMock:
     """Mock a SQLAlchemy session matching the call sequence in
-    ``data_browser``: get(run), execute(proposals), execute(ccs),
-    execute(balance), then optionally execute(hierarchies) and
-    execute(nodes/leaves) per hierarchy.
+    ``data_browser``: get(run), execute(count), execute(proposals),
+    execute(ccs), execute(balance), then optionally
+    execute(hierarchies) and execute(nodes/leaves) per hierarchy.
     """
     db = MagicMock()
     db.get.return_value = run_obj
@@ -39,6 +39,12 @@ def _mock_db(
     # Each db.execute(...) returns a result object. We sequence them.
     results = []
 
+    # 1) COUNT query for total_count
+    count_result = MagicMock()
+    count_result.scalar.return_value = len(proposals)
+    results.append(count_result)
+
+    # 2) Paginated proposals query
     proposals_result = MagicMock()
     proposals_result.scalars.return_value.all.return_value = proposals
     results.append(proposals_result)
@@ -87,9 +93,9 @@ def test_data_browser_default_omits_hierarchies() -> None:
 
     assert result["hierarchies"] == []
     # The Hierarchy/HierarchyNode/HierarchyLeaf queries should NOT
-    # have been executed. With no proposals there's only the proposals
-    # SELECT (1 call). Adding hierarchies would be at least 1 more.
-    assert db.execute.call_count == 1
+    # have been executed. With no proposals there's the count query
+    # + proposals SELECT (2 calls). Adding hierarchies would add more.
+    assert db.execute.call_count == 2
 
 
 def test_data_browser_with_flag_loads_hierarchies() -> None:
@@ -144,4 +150,5 @@ def test_data_browser_response_shape_consistent_across_flag() -> None:
     r2 = data_browser(run_id=42, include_hierarchies=True, db=db2, _user=MagicMock())
 
     assert set(r1.keys()) == set(r2.keys())
-    assert {"run_id", "total", "items", "pc_target_groups", "hierarchies"}.issubset(r1.keys())
+    expected = {"run_id", "total", "page", "size", "items", "pc_target_groups", "hierarchies"}
+    assert expected.issubset(r1.keys())

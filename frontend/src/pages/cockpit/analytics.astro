@@ -1512,6 +1512,10 @@ import Layout from '../../components/layout/Layout.astro';
   var browserData = null;
   var browserView = 'tabular';
   var browserSort = { col: 'cctr', dir: 'asc' };
+  var browserPage = 1;
+  var browserSize = 200;
+  var browserSearch = '';
+  var _browserSearchTimer = null;
   // PR #88 — selected hierarchy for L0..LX columns in the tabular view.
   // null means "no hierarchy picked, no L cols rendered". Picking one
   // re-fetches the data-browser response with ?path_hierarchy_id=N so
@@ -1561,12 +1565,16 @@ import Layout from '../../components/layout/Layout.astro';
       '<svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
       '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
       '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>' +
-      '<span>Loading centers + balance history… this may take 5–30 seconds depending on data volume.</span>' +
+      '<span>Loading centers…</span>' +
       '</div></div>';
-    var url = '/api/runs/' + runId + '/data-browser';
+    var params = ['page=' + browserPage, 'size=' + browserSize];
     if (browserPathHierarchyId != null) {
-      url += '?path_hierarchy_id=' + encodeURIComponent(browserPathHierarchyId);
+      params.push('path_hierarchy_id=' + encodeURIComponent(browserPathHierarchyId));
     }
+    if (browserSearch) {
+      params.push('search=' + encodeURIComponent(browserSearch));
+    }
+    var url = '/api/runs/' + runId + '/data-browser?' + params.join('&');
     fetch(url, { headers: authHdr })
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1672,21 +1680,7 @@ import Layout from '../../components/layout/Layout.astro';
   function renderBrowser() {
     if (!browserData) return;
     var el = document.getElementById('data-browser-content');
-    var search = (document.getElementById('browser-search').value || '').toLowerCase();
     var items = browserData.items || [];
-
-    // Top-of-page search (existing) — broad, hits multiple fields.
-    if (search) {
-      items = items.filter(function(it) {
-        return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtsh || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.txtmi || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.ccode || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
-          (it.merge_into_cctr || '').toLowerCase().indexOf(search) >= 0;
-      });
-    }
 
     // PR #89 — per-column filters (A6). Each tabular column has a
     // small text input in the sub-header row; typing applies a
@@ -1720,7 +1714,24 @@ import Layout from '../../components/layout/Layout.astro';
     } else if (browserView === 'mapping') {
       renderMapping(el, items);
     }
+    // Pagination controls
+    var total = browserData.total || 0;
+    var totalPages = Math.ceil(total / browserSize) || 1;
+    var pagerHtml = '<div class="flex items-center justify-between mt-3 text-xs text-gray-600">';
+    pagerHtml += '<span>Showing ' + items.length + ' of ' + total + ' proposals (page ' + browserPage + '/' + totalPages + ')</span>';
+    pagerHtml += '<div class="flex gap-1">';
+    if (browserPage > 1) pagerHtml += '<button onclick="window._browserGoPage(1)" class="px-2 py-1 border rounded hover:bg-gray-100">First</button>';
+    if (browserPage > 1) pagerHtml += '<button onclick="window._browserGoPage(' + (browserPage - 1) + ')" class="px-2 py-1 border rounded hover:bg-gray-100">Prev</button>';
+    if (browserPage < totalPages) pagerHtml += '<button onclick="window._browserGoPage(' + (browserPage + 1) + ')" class="px-2 py-1 border rounded hover:bg-gray-100">Next</button>';
+    if (browserPage < totalPages) pagerHtml += '<button onclick="window._browserGoPage(' + totalPages + ')" class="px-2 py-1 border rounded hover:bg-gray-100">Last</button>';
+    pagerHtml += '</div></div>';
+    el.insertAdjacentHTML('beforeend', pagerHtml);
   }
+
+  window._browserGoPage = function(p) {
+    browserPage = p;
+    if (_currentRunId) loadDataBrowser(_currentRunId);
+  };
 
   function sortArrow(col) {
     if (browserSort.col !== col) return ' <span class="text-gray-300">↕</span>';
@@ -2286,8 +2297,12 @@ import Layout from '../../components/layout/Layout.astro';
 
   // Wire search filter
   document.getElementById('browser-search').addEventListener('input', function() {
-    clearTimeout(this._t);
-    var self = this;
-    this._t = setTimeout(function() { renderBrowser(); }, 300);
+    clearTimeout(_browserSearchTimer);
+    var val = this.value;
+    _browserSearchTimer = setTimeout(function() {
+      browserSearch = val;
+      browserPage = 1;
+      if (_currentRunId) loadDataBrowser(_currentRunId);
+    }, 400);
   });
 </script>
