@@ -214,7 +214,7 @@ import Layout from '../../components/layout/Layout.astro';
         <div id="sim-tabular-view">
           <div class="overflow-x-auto">
             <table class="w-full text-xs">
-              <thead class="bg-gray-50 sticky top-0">
+              <thead id="sim-table-head" class="bg-gray-50 sticky top-0">
                 <tr>
                   <th class="px-2 py-2 text-left">Legacy CC</th>
                   <th class="px-2 py-2 text-left">Description</th>
@@ -574,11 +574,16 @@ import Layout from '../../components/layout/Layout.astro';
   function loadWave() {
     fetch('/api/waves/' + waveId, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(w) {
       wave = w;
+      // Render header in the standard cockpit-subpage pattern: small
+      // back link top-left, page title below it, no right-side back
+      // button (the wave's right side already has wave-status / actions).
       document.getElementById('wave-header').innerHTML =
-        '<div class="flex items-center justify-between">' +
-        '<div><h1 class="text-2xl font-bold text-gray-900">' + esc(w.name) + '</h1>' +
-        '<p class="text-sm text-gray-500 mt-1">Code: ' + esc(w.code) + (w.is_full_scope ? ' (Full Scope)' : '') + ' | ' + w.entity_count + ' entities</p></div>' +
-        '<a href="/cockpit" class="btn-secondary text-sm">Back to Cockpit</a></div>';
+        '<a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">\u2190 Back to Cockpit</a>' +
+        '<div class="mt-2">' +
+          '<h1 class="text-2xl font-bold text-gray-900">' + esc(w.name) + '</h1>' +
+          '<p class="text-sm text-gray-500 mt-1">Code: ' + esc(w.code) +
+            (w.is_full_scope ? ' (Full Scope)' : '') + ' | ' + w.entity_count + ' entities</p>' +
+        '</div>';
 
       var badge = document.getElementById('wave-status-badge');
       badge.textContent = w.status.toUpperCase().replace('_', ' ');
@@ -1418,21 +1423,27 @@ import Layout from '../../components/layout/Layout.astro';
     loadSimProposals();
   };
 
-  // Load proposals for a simulation run
+  // Load proposals for a simulation run.
+  // PR #86: opt into include_paths=true so the response includes a
+  // hierarchy_path (chain of setnames from root to leaf) per row + a
+  // top-level hierarchy_max_depth so we can build the L0..LX columns
+  // dynamically. The hierarchy used is whichever the wave was scoped
+  // by, falling back to the first active CC hierarchy. See
+  // _resolve_hierarchy_paths in backend/app/api/reference.py.
   function loadSimProposals() {
     if (!simRunId) return;
     var migrate = document.getElementById('sim-filter-migrate').value;
     var approach = document.getElementById('sim-filter-approach').value;
     var search = document.getElementById('sim-search').value;
-    var url = '/api/waves/' + waveId + '/runs/' + simRunId + '/proposals-v2?page=' + simPage + '&per_page=50';
+    var url = '/api/waves/' + waveId + '/runs/' + simRunId +
+      '/proposals-v2?page=' + simPage + '&per_page=50&include_paths=true';
     if (migrate) url += '&migrate=' + migrate;
     if (approach) url += '&approach=' + approach;
     fetch(url, { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        // KPIs
-        var migrateY = 0, migrateN = 0, approach11 = 0, approach1n = 0;
         // Render table
+        var thead = document.getElementById('sim-table-head');
         var body = document.getElementById('sim-table-body');
         var items = d.items || [];
         // Client-side search filter
@@ -1444,14 +1455,53 @@ import Layout from '../../components/layout/Layout.astro';
                    (p.pc_name || '').toLowerCase().includes(q);
           });
         }
+
+        // Build dynamic L0..LX header. We size from the response's
+        // max_depth so columns stay stable across pages — without this
+        // a deep page would suddenly add columns and the table would
+        // jump. If no hierarchy was resolved we just skip the L cols
+        // and the table looks the way it did pre-PR #86.
+        var maxDepth = d.hierarchy_max_depth || 0;
+        var lvlHeaders = '';
+        for (var li = 0; li < maxDepth; li++) {
+          lvlHeaders += '<th class="px-2 py-2 text-left">L' + li + '</th>';
+        }
+        if (thead) {
+          thead.innerHTML =
+            '<tr>' +
+              '<th class="px-2 py-2 text-left">Legacy CC</th>' +
+              '<th class="px-2 py-2 text-left">Description</th>' +
+              '<th class="px-2 py-2 text-left">Entity</th>' +
+              lvlHeaders +
+              '<th class="px-2 py-2 text-left">Migrate</th>' +
+              '<th class="px-2 py-2 text-left">Approach</th>' +
+              '<th class="px-2 py-2 text-left">PC ID</th>' +
+              '<th class="px-2 py-2 text-left">PC Name</th>' +
+              '<th class="px-2 py-2 text-left">CC ID</th>' +
+              '<th class="px-2 py-2 text-left">CC Name</th>' +
+              '<th class="px-2 py-2 text-left">Group</th>' +
+            '</tr>';
+        }
+
         var html = '';
         items.forEach(function(p) {
           var migrateClass = p.migrate === 'Y' ? 'text-green-600 font-semibold' : 'text-red-500';
           var approachClass = p.approach === '1:n' ? 'text-purple-600 font-semibold' : '';
+          // Build L cells: pad short paths with — so the column grid
+          // stays aligned across rows of different depths.
+          var path = p.hierarchy_path || [];
+          var lvlCells = '';
+          for (var li = 0; li < maxDepth; li++) {
+            var v = path[li] != null ? path[li] : '';
+            lvlCells += '<td class="px-2 py-1.5 font-mono text-[10px] text-gray-600">' +
+              (v ? esc(v) : '<span class="text-gray-300">—</span>') +
+              '</td>';
+          }
           html += '<tr class="border-b hover:bg-gray-50">';
           html += '<td class="px-2 py-1.5 font-mono">' + esc(p.legacy_cctr) + '</td>';
           html += '<td class="px-2 py-1.5">' + esc(p.legacy_name) + '</td>';
           html += '<td class="px-2 py-1.5">' + esc(p.ccode) + '</td>';
+          html += lvlCells;
           html += '<td class="px-2 py-1.5 ' + migrateClass + '">' + esc(p.migrate) + '</td>';
           html += '<td class="px-2 py-1.5 ' + approachClass + '">' + esc(p.approach) + '</td>';
           html += '<td class="px-2 py-1.5 font-mono">' + esc(p.pc_id) + '</td>';
@@ -1461,7 +1511,9 @@ import Layout from '../../components/layout/Layout.astro';
           html += '<td class="px-2 py-1.5 text-xs text-gray-500">' + esc(p.cleansing_outcome) + '</td>';
           html += '</tr>';
         });
-        body.innerHTML = html || '<tr><td colspan="10" class="text-center py-4 text-gray-400">No results</td></tr>';
+        var emptyColspan = 10 + maxDepth;
+        body.innerHTML = html ||
+          '<tr><td colspan="' + emptyColspan + '" class="text-center py-4 text-gray-400">No results</td></tr>';
 
         // Pager
         var totalPages = Math.ceil(d.total / d.per_page);
@@ -1504,57 +1556,160 @@ import Layout from '../../components/layout/Layout.astro';
     loadSimTree();
   });
 
-  // Hierarchical tree view
+  // Hierarchical tree view.
+  // PR #86: previously this just grouped by Outcome → Approach → flat
+  // list of centers, which the operator (correctly) flagged as not
+  // actually hierarchical — the levels of the cost-center hierarchy
+  // (L0..LX setnames) weren't shown at all. We now fetch with
+  // include_paths=true and assemble a proper tree using each
+  // proposal's hierarchy_path. Centers that aren't part of the
+  // resolved hierarchy are bucketed under "(unassigned)" so they
+  // don't disappear silently.
   function loadSimTree() {
     if (!simRunId) return;
     var el = document.getElementById('sim-tree-content');
-    el.innerHTML = '<p class="text-gray-400">Loading hierarchical view...</p>';
+    el.innerHTML = '<p class="text-gray-400">Loading hierarchical view…</p>';
     // Fetch all proposals (no pagination for tree)
-    fetch('/api/waves/' + waveId + '/runs/' + simRunId + '/proposals-v2?page=1&per_page=10000', { headers: authHdr })
+    fetch('/api/waves/' + waveId + '/runs/' + simRunId +
+      '/proposals-v2?page=1&per_page=10000&include_paths=true', { headers: authHdr })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var items = d.items || [];
-        // Group by approach group_key or entity
-        var groups = {};
+        var maxDepth = d.hierarchy_max_depth || 0;
+        if (!maxDepth) {
+          el.innerHTML =
+            '<div class="text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 text-xs">' +
+              'No hierarchy is available for this wave. Either no CC hierarchy is imported, ' +
+              'or the wave was not scoped by a hierarchy. Use the Tabular view, or:' +
+              '<ul class="list-disc ml-5 mt-1 space-y-0.5">' +
+                '<li>Import a CC hierarchy (<code>setclass=0101</code>) under <strong>Data → CC</strong>;</li>' +
+                '<li>or attach a hierarchy node to this wave\'s scope under <strong>Add Hierarchy Nodes</strong>.</li>' +
+              '</ul>' +
+            '</div>';
+          return;
+        }
+
+        // Build nested tree: each node holds children-by-setname and a
+        // proposals[] bucket for leaves landing exactly there. We
+        // index by full path so two distinct subtrees with the same
+        // last-level name don't collide.
+        var root = { children: {}, proposals: [], setname: '(root)', counts: {} };
+        function ensureNode(parent, key, setname) {
+          if (!parent.children[key]) {
+            parent.children[key] = { children: {}, proposals: [], setname: setname, counts: {} };
+          }
+          return parent.children[key];
+        }
+
+        var unassigned = [];
         items.forEach(function(p) {
-          var key = p.cleansing_outcome || 'Other';
-          if (!groups[key]) groups[key] = [];
-          groups[key].push(p);
+          var path = p.hierarchy_path || [];
+          if (!path.length) {
+            unassigned.push(p);
+            return;
+          }
+          var node = root;
+          var fullKey = '';
+          for (var i = 0; i < path.length; i++) {
+            fullKey += '/' + path[i];
+            node = ensureNode(node, fullKey, path[i]);
+          }
+          node.proposals.push(p);
         });
-        var html = '';
-        Object.keys(groups).sort().forEach(function(g) {
-          var group = groups[g];
-          var color = g === 'KEEP' ? 'text-green-700' : g === 'RETIRE' ? 'text-red-600' : 'text-gray-700';
-          html += '<details class="mb-2" open>';
-          html += '<summary class="cursor-pointer font-medium ' + color + '">' + esc(g) + ' (' + group.length + ')</summary>';
-          html += '<div class="ml-4 mt-1 space-y-0.5">';
-          // Sub-group by approach
-          var byApproach = {};
-          group.forEach(function(p) {
-            var a = p.approach || '1:1';
-            if (!byApproach[a]) byApproach[a] = [];
-            byApproach[a].push(p);
+
+        // Bubble outcome counts upward — every node knows the count
+        // of each outcome under its subtree. Cheap because the tree
+        // is bounded by the hierarchy (a few hundred nodes typically).
+        function aggregate(node) {
+          var counts = {};
+          node.proposals.forEach(function(p) {
+            var k = p.cleansing_outcome || 'Other';
+            counts[k] = (counts[k] || 0) + 1;
           });
-          Object.keys(byApproach).sort().forEach(function(a) {
-            var aGroup = byApproach[a];
-            var aColor = a === '1:n' ? 'text-purple-600' : 'text-blue-600';
-            html += '<details class="mb-1">';
-            html += '<summary class="cursor-pointer ' + aColor + '">' + esc(a) + ' (' + aGroup.length + ')</summary>';
-            html += '<div class="ml-4 mt-1">';
-            aGroup.forEach(function(p) {
-              html += '<div class="flex gap-2 py-0.5 border-b border-gray-100">';
-              html += '<span class="font-mono w-24">' + esc(p.legacy_cctr) + '</span>';
-              html += '<span class="w-32 truncate">' + esc(p.legacy_name) + '</span>';
-              html += '<span class="font-mono w-16">' + esc(p.pc_id) + '</span>';
-              html += '<span class="w-32 truncate">' + esc(p.pc_name) + '</span>';
-              html += '<span class="font-mono w-16">' + esc(p.cc_id) + '</span>';
-              html += '</div>';
+          Object.keys(node.children).forEach(function(k) {
+            var childCounts = aggregate(node.children[k]);
+            Object.keys(childCounts).forEach(function(o) {
+              counts[o] = (counts[o] || 0) + childCounts[o];
             });
-            html += '</div></details>';
+          });
+          node.counts = counts;
+          return counts;
+        }
+        aggregate(root);
+
+        function countsBadge(counts) {
+          var palette = {
+            'KEEP':      'bg-green-100 text-green-700',
+            'RETIRE':    'bg-red-100 text-red-700',
+            'MERGE_MAP': 'bg-orange-100 text-orange-700',
+            'REDESIGN':  'bg-blue-100 text-blue-700',
+          };
+          return Object.keys(counts).sort().map(function(k) {
+            var cls = palette[k] || 'bg-gray-100 text-gray-700';
+            return '<span class="' + cls + ' px-1.5 py-0.5 rounded text-[10px] font-medium">' +
+              esc(k) + ': ' + counts[k] + '</span>';
+          }).join(' ');
+        }
+
+        function renderNode(node, depth) {
+          var lvl = 'L' + depth;
+          var childKeys = Object.keys(node.children).sort();
+          var hasContent = childKeys.length > 0 || node.proposals.length > 0;
+          var total = Object.values(node.counts).reduce(function(a, b) { return a + b; }, 0);
+          var nodeOpen = depth < 2 ? ' open' : ''; // pre-expand top two levels
+          var s = '<details class="ml-' + Math.min(depth * 4, 24) + '"' + nodeOpen + '>';
+          s += '<summary class="cursor-pointer py-0.5 px-1 hover:bg-blue-50 rounded">' +
+            '<span class="text-[10px] text-gray-400 font-mono mr-1">' + lvl + '</span>' +
+            '<span class="font-semibold text-blue-700">' + esc(node.setname) + '</span>' +
+            ' <span class="text-gray-500 text-xs">(' + total + ' centers)</span>' +
+            ' <span class="ml-2">' + countsBadge(node.counts) + '</span>' +
+            '</summary>';
+          if (hasContent) {
+            s += '<div class="ml-3 border-l border-gray-200 pl-2 mt-1">';
+            childKeys.forEach(function(k) { s += renderNode(node.children[k], depth + 1); });
+            // Centers that land directly at this node (leaf level)
+            node.proposals.forEach(function(p) {
+              var outcomeCls = p.cleansing_outcome === 'KEEP' ? 'text-green-700' :
+                p.cleansing_outcome === 'RETIRE' ? 'text-red-600' :
+                p.cleansing_outcome === 'MERGE_MAP' ? 'text-orange-700' :
+                p.cleansing_outcome === 'REDESIGN' ? 'text-blue-700' : 'text-gray-700';
+              s += '<div class="flex gap-2 py-0.5 text-[11px] hover:bg-gray-50">' +
+                '<span class="font-mono w-20 text-gray-700">' + esc(p.legacy_cctr) + '</span>' +
+                '<span class="w-48 truncate" title="' + esc(p.legacy_name) + '">' + esc(p.legacy_name) + '</span>' +
+                '<span class="' + outcomeCls + ' font-medium w-20">' + esc(p.cleansing_outcome) + '</span>' +
+                '<span class="font-mono w-16">' + esc(p.approach || '') + '</span>' +
+                (p.pc_id ? '<span class="font-mono text-gray-500">→ PC ' + esc(p.pc_id) + '</span>' : '') +
+              '</div>';
+            });
+            s += '</div>';
+          }
+          s += '</details>';
+          return s;
+        }
+
+        var html = '';
+        Object.keys(root.children).sort().forEach(function(k) {
+          html += renderNode(root.children[k], 0);
+        });
+
+        if (unassigned.length) {
+          html += '<details class="mt-3 border-t pt-2"><summary class="cursor-pointer text-amber-700 text-xs">' +
+            '⚠ Unassigned (' + unassigned.length + ' centers without a path in the resolved hierarchy)' +
+            '</summary><div class="ml-3 mt-1">';
+          unassigned.forEach(function(p) {
+            html += '<div class="flex gap-2 py-0.5 text-[11px]">' +
+              '<span class="font-mono w-20 text-gray-700">' + esc(p.legacy_cctr) + '</span>' +
+              '<span class="w-48 truncate">' + esc(p.legacy_name) + '</span>' +
+              '<span class="text-gray-700 w-20">' + esc(p.cleansing_outcome) + '</span>' +
+            '</div>';
           });
           html += '</div></details>';
-        });
+        }
+
         el.innerHTML = html || '<p class="text-gray-400">No proposals found</p>';
+      })
+      .catch(function(err) {
+        el.innerHTML = '<p class="text-red-500 text-xs">Failed to load tree view: ' + esc(err.message || String(err)) + '</p>';
       });
   }
 
