@@ -2370,7 +2370,7 @@ def list_v2_proposals(
                 db.execute(
                     select(Hierarchy)
                     .where(Hierarchy.is_active.is_(True))
-                    .where(Hierarchy.setclass == "0101")
+                    .where(Hierarchy.setclass.in_(["0101", "CC"]))
                     .order_by(Hierarchy.id)
                     .limit(1)
                 )

@@ -464,6 +464,8 @@ import Layout from '../../components/layout/Layout.astro';
   function esc(t) { var d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
   function escAttr(t) { return esc(t).replace(/"/g, '&quot;'); }
   function fmt(n) { return (n || 0).toLocaleString(); }
+  var _SC_MAP = { CC: '0101', PC: '0104', ENT: '0106', ENTITY: '0106' };
+  function _normSc(raw) { if (!raw) return ''; var u = String(raw).trim().toUpperCase(); return _SC_MAP[u] || u; }
 
   var params = new URLSearchParams(window.location.search);
   var waveId = params.get('id');
@@ -1848,9 +1850,9 @@ import Layout from '../../components/layout/Layout.astro';
         // Group by setclass so the operator sees CC hierarchies and PC
         // hierarchies in clearly labeled buckets — but both are
         // selectable.
-        var ccHiers = hiers.filter(function(h) { return h.setclass === '0101'; });
-        var pcHiers = hiers.filter(function(h) { return h.setclass === '0104'; });
-        var otherHiers = hiers.filter(function(h) { return h.setclass !== '0101' && h.setclass !== '0104'; });
+        var ccHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0101'; });
+        var pcHiers = hiers.filter(function(h) { return _normSc(h.setclass) === '0104'; });
+        var otherHiers = hiers.filter(function(h) { var ns = _normSc(h.setclass); return ns !== '0101' && ns !== '0104'; });
         function appendGroup(label, list) {
           if (!list.length) return;
           var group = '<optgroup label="' + label + '">';
