@@ -132,6 +132,13 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="cc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchCCView('hierarchy')">Hierarchical</button>
         </div>
       </div>
+      <!-- Hierarchy picker (applies to BOTH views) -->
+      <div class="flex items-center justify-end mb-2 gap-2 text-xs">
+        <label for="cc-hier-picker" class="text-gray-500">Hierarchy:</label>
+        <select id="cc-hier-picker" class="input text-xs w-64">
+          <option value="">(none — flat list)</option>
+        </select>
+      </div>
       <!-- Tabular wrap -->
       <div id="cc-tabular-wrap">
       <!-- Legacy Section -->
@@ -164,7 +171,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div><!-- /cc-tabular-wrap -->
       <!-- Hierarchical -->
       <div id="cc-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Entity (ccode) &rarr; Category &rarr; Cost Center</span>. Click rows to expand. Shows Legacy cost centers; switch to Tabular view to see Target side-by-side.</p>
+        <p class="text-xs text-gray-500 mb-2">Grouped by the hierarchy you pick above. Click rows to expand.</p>
         <div id="cc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
       </div>
     </div>
@@ -177,6 +184,13 @@ import Layout from '../../components/layout/Layout.astro';
           <button id="pc-view-tabular" class="px-3 py-1.5 bg-amplifi-50 text-amplifi-700 font-medium" onclick="switchPCView('tabular')">Tabular</button>
           <button id="pc-view-hierarchy" class="px-3 py-1.5 text-gray-600 hover:bg-gray-50" onclick="switchPCView('hierarchy')">Hierarchical</button>
         </div>
+      </div>
+      <!-- Hierarchy picker (applies to BOTH views) -->
+      <div class="flex items-center justify-end mb-2 gap-2 text-xs">
+        <label for="pc-hier-picker" class="text-gray-500">Hierarchy:</label>
+        <select id="pc-hier-picker" class="input text-xs w-64">
+          <option value="">(none — flat list)</option>
+        </select>
       </div>
       <!-- Tabular wrap -->
       <div id="pc-tabular-wrap">
@@ -210,7 +224,7 @@ import Layout from '../../components/layout/Layout.astro';
       </div><!-- /pc-tabular-wrap -->
       <!-- Hierarchical -->
       <div id="pc-hier-wrap" class="hidden">
-        <p class="text-xs text-gray-500 mb-2">Grouped by <span class="font-medium">Entity (ccode) &rarr; Segment &rarr; Profit Center</span>. Click rows to expand. Shows Legacy profit centers; switch to Tabular view to see Target side-by-side.</p>
+        <p class="text-xs text-gray-500 mb-2">Grouped by the hierarchy you pick above. Click rows to expand.</p>
         <div id="pc-hier" class="text-sm text-gray-700 overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 500px)">Loading...</div>
       </div>
     </div>
@@ -723,6 +737,10 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   var _ccData = [];
+  // Track the picked hierarchy id and max_depth from the last fetch.
+  // null = no hierarchy picked → render flat (no L* columns, no tree).
+  var _ccHierId = null;
+  var _ccHierMaxDepth = 0;
   window.loadCC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-cc').value;
@@ -730,9 +748,12 @@ import Layout from '../../components/layout/Layout.astro';
     var url = '/api/legacy/cost-centers?page=' + page + '&size=500' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
+    if (_ccHierId) url += '&hierarchy_id=' + _ccHierId;
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _ccData = d.items || [];
+      _ccHierMaxDepth = d.hierarchy_max_depth || 0;
       window._ccData = _ccData;
+      window._ccHierMaxDepth = _ccHierMaxDepth;
       _renderCCTable();
       document.getElementById('cc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadCC');
       var ccHierWrap = document.getElementById('cc-hier-wrap');
@@ -745,7 +766,12 @@ import Layout from '../../components/layout/Layout.astro';
     var el = document.getElementById('cc-table');
     if (!_ccData.length) { el.textContent = 'No cost centers found.'; return; }
     var items = sortTableData('cc', _ccData);
+    var lvlCols = '';
+    for (var i = 0; i < _ccHierMaxDepth; i++) {
+      lvlCols += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50">L' + i + '</th>';
+    }
     var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      lvlCols +
       sortTh('cc','cctr','CC','_renderCCTable') +
       sortTh('cc','txtsh','Short Text','_renderCCTable') +
       sortTh('cc','txtmi','Medium Text','_renderCCTable') +
@@ -757,7 +783,16 @@ import Layout from '../../components/layout/Layout.astro';
       sortTh('cc','is_active','Active','_renderCCTable') +
       '</tr></thead><tbody>';
     items.forEach(function(c) {
+      var lvlCells = '';
+      var levels = c.levels || [];
+      for (var j = 0; j < _ccHierMaxDepth; j++) {
+        var v = levels[j] || '';
+        // Empty cell text-muted so users can spot CCs that aren't in the
+        // selected hierarchy (or end at a higher level than the deepest).
+        lvlCells += '<td class="py-1.5 px-2 font-mono text-amplifi-700">' + esc(v) + '</td>';
+      }
       html += '<tr class="border-b hover:bg-gray-50">' +
+        lvlCells +
         '<td class="py-1.5 px-2 font-mono font-medium">' + esc(c.cctr) + '</td>' +
         '<td class="py-1.5 px-2">' + esc(c.txtsh) + '</td>' +
         '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(c.txtmi) + '</td>' +
@@ -774,8 +809,32 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('search-cc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadCC(1); }, 300); });
   document.getElementById('filter-cc-ccode').addEventListener('change', function() { loadCC(1); });
 
+  // Populate CC hierarchy picker with all setclass=0101 hierarchies, then
+  // wire change → reload (which in turn re-fetches with hierarchy_id and
+  // re-renders both views).
+  fetch('/api/legacy/hierarchies?setclass=0101&size=200', { headers: authHdr })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var sel = document.getElementById('cc-hier-picker');
+      (d.items || []).forEach(function(h) {
+        var label = h.setname + (h.description ? ' — ' + h.description : '');
+        var opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+    })
+    .catch(function() { /* picker stays at "(none)" if listing fails */ });
+  document.getElementById('cc-hier-picker').addEventListener('change', function() {
+    _ccHierId = this.value ? parseInt(this.value, 10) : null;
+    loadCC(1);
+  });
+
   // --- Profit Centers ---
   var _pcData = [];
+  // See _ccHierId comment — same pattern for PC.
+  var _pcHierId = null;
+  var _pcHierMaxDepth = 0;
   window.loadPC = function(page) {
     page = page || 1;
     var search = document.getElementById('search-pc').value;
@@ -783,9 +842,12 @@ import Layout from '../../components/layout/Layout.astro';
     var url = '/api/legacy/profit-centers?page=' + page + '&size=500' + scopeParams();
     if (search) url += '&search=' + encodeURIComponent(search);
     if (ccode) url += '&ccode=' + encodeURIComponent(ccode);
+    if (_pcHierId) url += '&hierarchy_id=' + _pcHierId;
     fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       _pcData = d.items || [];
+      _pcHierMaxDepth = d.hierarchy_max_depth || 0;
       window._pcData = _pcData;
+      window._pcHierMaxDepth = _pcHierMaxDepth;
       _renderPCTable();
       document.getElementById('pc-pager').innerHTML = pagerHtml(d.total, d.page, d.size, 'loadPC');
       var pcHierWrap = document.getElementById('pc-hier-wrap');
@@ -798,7 +860,12 @@ import Layout from '../../components/layout/Layout.astro';
     var el = document.getElementById('pc-table');
     if (!_pcData.length) { el.textContent = 'No profit centers found.'; return; }
     var items = sortTableData('pc', _pcData);
+    var lvlCols = '';
+    for (var i = 0; i < _pcHierMaxDepth; i++) {
+      lvlCols += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50">L' + i + '</th>';
+    }
     var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">' +
+      lvlCols +
       sortTh('pc','pctr','PC','_renderPCTable') +
       sortTh('pc','txtsh','Short Text','_renderPCTable') +
       sortTh('pc','txtmi','Medium Text','_renderPCTable') +
@@ -809,7 +876,14 @@ import Layout from '../../components/layout/Layout.astro';
       sortTh('pc','is_active','Active','_renderPCTable') +
       '</tr></thead><tbody>';
     items.forEach(function(p) {
+      var lvlCells = '';
+      var levels = p.levels || [];
+      for (var j = 0; j < _pcHierMaxDepth; j++) {
+        var v = levels[j] || '';
+        lvlCells += '<td class="py-1.5 px-2 font-mono text-amplifi-700">' + esc(v) + '</td>';
+      }
       html += '<tr class="border-b hover:bg-gray-50">' +
+        lvlCells +
         '<td class="py-1.5 px-2 font-mono font-medium">' + esc(p.pctr) + '</td>' +
         '<td class="py-1.5 px-2">' + esc(p.txtsh) + '</td>' +
         '<td class="py-1.5 px-2 max-w-xs truncate">' + esc(p.txtmi) + '</td>' +
@@ -824,6 +898,25 @@ import Layout from '../../components/layout/Layout.astro';
   loadPC(1);
   document.getElementById('search-pc').addEventListener('input', function() { clearTimeout(this._t); this._t = setTimeout(function() { loadPC(1); }, 300); });
   document.getElementById('filter-pc-ccode').addEventListener('change', function() { loadPC(1); });
+
+  // PC hierarchy picker — same pattern as CC, but setclass=0104.
+  fetch('/api/legacy/hierarchies?setclass=0104&size=200', { headers: authHdr })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var sel = document.getElementById('pc-hier-picker');
+      (d.items || []).forEach(function(h) {
+        var label = h.setname + (h.description ? ' — ' + h.description : '');
+        var opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+    })
+    .catch(function() { /* picker stays at "(none)" if listing fails */ });
+  document.getElementById('pc-hier-picker').addEventListener('change', function() {
+    _pcHierId = this.value ? parseInt(this.value, 10) : null;
+    loadPC(1);
+  });
 
   // --- Target Cost Centers ---
   var _tccData = [];
@@ -1065,50 +1158,76 @@ import Layout from '../../components/layout/Layout.astro';
     }, 'No GL accounts loaded.');
   };
 
-  // --- CC hierarchy: ccode -> cctrcgy -> cctr ---
+  // --- CC hierarchy: built from c.levels (the picked stored hierarchy) ---
+  // When no hierarchy is picked, hierarchical view shows a one-line message
+  // pointing the user at the picker — flat list belongs in tabular view.
   window._renderCCHierarchy = function() {
-    renderHierTree('cc-hier', _ccData || [], [
-      {
-        keyFn: function(c) { return c.ccode || '(no entity)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Entity'; }
-      },
-      {
-        keyFn: function(c) { return c.cctrcgy || '(no category)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Category'; }
-      }
-    ], function(c) {
+    var el = document.getElementById('cc-hier');
+    if (!_ccHierId) {
+      el.innerHTML = '<p class="text-gray-500 text-sm">Pick a hierarchy from the dropdown above to see cost centers grouped by it.</p>';
+      return;
+    }
+    if (!_ccData.length) {
+      el.innerHTML = '<p class="text-gray-500 text-sm">No cost centers loaded.</p>';
+      return;
+    }
+    // Build levelDefs dynamically: one per L0..L(maxDepth-2). The leaves
+    // of the picked hierarchy are the deepest L*, so the leaf renderer
+    // shows the actual CC row. We use (maxDepth - 1) levels of grouping
+    // because the deepest setname IS the leaf-row level.
+    var levelDefs = [];
+    for (var i = 0; i < _ccHierMaxDepth - 1; i++) {
+      (function(idx) {
+        levelDefs.push({
+          keyFn: function(c) { return (c.levels && c.levels[idx]) || '(unmapped)'; },
+          labelFn: function(k) { return k; },
+          sublabelFn: function(_k) { return 'L' + idx; },
+        });
+      })(i);
+    }
+    renderHierTree('cc-hier', _ccData || [], levelDefs, function(c) {
+      var leafSetname = (c.levels && c.levels[c.levels.length - 1]) || '';
       return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono text-amplifi-700 w-40">' + esc(leafSetname) + '</td>' +
         '<td class="py-1 px-2 font-mono w-32">' + esc(c.cctr) + '</td>' +
         '<td class="py-1 px-2">' + esc(c.txtsh) + '</td>' +
         '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(c.txtmi) + '</td>' +
         '<td class="py-1 px-2 text-xs text-gray-500">' + esc(c.responsible || '') + '</td>' +
         '</tr>';
-    }, 'No cost centers loaded.');
+    }, 'No cost centers in this hierarchy.');
   };
 
-  // --- PC hierarchy: ccode -> segment -> pctr ---
+  // --- PC hierarchy: same pattern as CC ---
   window._renderPCHierarchy = function() {
-    renderHierTree('pc-hier', _pcData || [], [
-      {
-        keyFn: function(p) { return p.ccode || '(no entity)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Entity'; }
-      },
-      {
-        keyFn: function(p) { return p.segment || '(no segment)'; },
-        labelFn: function(k) { return k; },
-        sublabelFn: function(k) { return 'Segment'; }
-      }
-    ], function(p) {
+    var el = document.getElementById('pc-hier');
+    if (!_pcHierId) {
+      el.innerHTML = '<p class="text-gray-500 text-sm">Pick a hierarchy from the dropdown above to see profit centers grouped by it.</p>';
+      return;
+    }
+    if (!_pcData.length) {
+      el.innerHTML = '<p class="text-gray-500 text-sm">No profit centers loaded.</p>';
+      return;
+    }
+    var levelDefs = [];
+    for (var i = 0; i < _pcHierMaxDepth - 1; i++) {
+      (function(idx) {
+        levelDefs.push({
+          keyFn: function(p) { return (p.levels && p.levels[idx]) || '(unmapped)'; },
+          labelFn: function(k) { return k; },
+          sublabelFn: function(_k) { return 'L' + idx; },
+        });
+      })(i);
+    }
+    renderHierTree('pc-hier', _pcData || [], levelDefs, function(p) {
+      var leafSetname = (p.levels && p.levels[p.levels.length - 1]) || '';
       return '<tr class="border-b hover:bg-gray-50">' +
+        '<td class="py-1 px-2 font-mono text-amplifi-700 w-40">' + esc(leafSetname) + '</td>' +
         '<td class="py-1 px-2 font-mono w-32">' + esc(p.pctr) + '</td>' +
         '<td class="py-1 px-2">' + esc(p.txtsh) + '</td>' +
         '<td class="py-1 px-2 max-w-md truncate text-gray-500">' + esc(p.txtmi) + '</td>' +
         '<td class="py-1 px-2 text-xs text-gray-500">' + esc(p.responsible || '') + '</td>' +
         '</tr>';
-    }, 'No profit centers loaded.');
+    }, 'No profit centers in this hierarchy.');
   };
 
   // --- Entity hierarchy: country -> region -> ccode ---

@@ -28,6 +28,88 @@ from app.models.core import (
 router = APIRouter()
 
 
+# Setclass codes used by SAP for the two hierarchy types we surface in
+# the data browser. Documented here so the frontend code paths and the
+# backend filters stay consistent.
+SETCLASS_COST_CENTER = "0101"
+SETCLASS_PROFIT_CENTER = "0104"
+
+
+def _resolve_hierarchy_paths(
+    db: Session, hierarchy_id: int, leaf_values: list[str]
+) -> tuple[dict[str, list[str]], int]:
+    """For each ``leaf_value`` (a CC or PC code), return the list of
+    setnames from the root of the given hierarchy down to the leaf.
+
+    Returns ``(paths, max_depth)``:
+
+    * ``paths`` — ``{leaf_value: [L0_setname, L1_setname, ..., leaf_setname]}``
+      Leaves with no entry in ``hierarchy_leaf`` (i.e. not part of this
+      hierarchy at all) are NOT included in the dict — callers can fill
+      them in with empty levels.
+    * ``max_depth`` — the deepest path length seen across all leaves,
+      which the API uses to size the L0..Lx column header list. Always
+      at least 0 even if no leaves resolved.
+
+    The walk is done in Python after pulling all edges + leaves for the
+    hierarchy in two queries, so the cost is O(edges + leaves) per
+    request rather than per-leaf. For a typical SAP hierarchy with a
+    few thousand nodes this is negligible.
+    """
+    if not leaf_values:
+        return {}, 0
+
+    # Pull the entire hierarchy structure in two queries
+    edges = (
+        db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == hierarchy_id))
+        .scalars()
+        .all()
+    )
+    leaves = (
+        db.execute(
+            select(HierarchyLeaf)
+            .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
+            .where(HierarchyLeaf.value.in_(leaf_values))
+        )
+        .scalars()
+        .all()
+    )
+
+    # parent_of[child_setname] = parent_setname (first one wins if
+    # duplicated — same convention as the /nodes endpoint)
+    parent_of: dict[str, str] = {}
+    for e in edges:
+        parent_of.setdefault(e.child_setname, e.parent_setname)
+
+    # leaf_value → setname it hangs under (same first-wins convention).
+    # SAP hierarchies in practice have one leaf-to-setname mapping but
+    # the schema doesn't enforce uniqueness.
+    leaf_setname: dict[str, str] = {}
+    for lf in leaves:
+        leaf_setname.setdefault(lf.value, lf.setname)
+
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    for value, setname in leaf_setname.items():
+        # Walk from the leaf-bound setname up to the root, collecting
+        # ancestors. Cycle-guarded to avoid infinite loops on malformed
+        # data (shouldn't happen, but cheap to be safe).
+        chain: list[str] = []
+        seen: set[str] = set()
+        cur = setname
+        while cur and cur not in seen:
+            seen.add(cur)
+            chain.append(cur)
+            cur = parent_of.get(cur, "")
+        # chain currently goes leaf-to-root; reverse so [0] is the root
+        chain.reverse()
+        paths[value] = chain
+        if len(chain) > max_depth:
+            max_depth = len(chain)
+
+    return paths, max_depth
+
+
 @router.get("/entities")
 def list_entities(
     db: Session = Depends(get_db),
@@ -89,6 +171,7 @@ def list_legacy_ccs(
     search: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
+    hierarchy_id: int | None = None,
 ) -> dict:
     query = select(LegacyCostCenter).order_by(LegacyCostCenter.cctr)
     count_q = select(func.count(LegacyCostCenter.id))
@@ -121,10 +204,23 @@ def list_legacy_ccs(
         )
     total = db.execute(count_q).scalar() or 0
     ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+
+    # Optional: enrich each row with its path through the requested
+    # hierarchy. Each row gets a `levels` list: [L0_setname, L1_setname,
+    # ..., leaf_setname]. CCs not in the hierarchy get an empty list.
+    # The response includes max_depth so the UI knows how many L*
+    # columns to render.
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    if hierarchy_id is not None and ccs:
+        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, [c.cctr for c in ccs])
+
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
+        "hierarchy_id": hierarchy_id,
+        "hierarchy_max_depth": max_depth,
         "items": [
             {
                 "id": c.id,
@@ -146,6 +242,7 @@ def list_legacy_ccs(
                 "land1": c.land1,
                 "nkost": c.nkost,
                 "is_active": c.is_active,
+                "levels": paths.get(c.cctr, []),
             }
             for c in ccs
         ],
@@ -161,6 +258,7 @@ def list_legacy_pcs(
     search: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
+    hierarchy_id: int | None = None,
 ) -> dict:
     query = select(LegacyProfitCenter).order_by(LegacyProfitCenter.pctr)
     count_q = select(func.count(LegacyProfitCenter.id))
@@ -190,10 +288,19 @@ def list_legacy_pcs(
         )
     total = db.execute(count_q).scalar() or 0
     pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+
+    # Same hierarchy enrichment as the CC endpoint — see _resolve_hierarchy_paths.
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    if hierarchy_id is not None and pcs:
+        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, [p.pctr for p in pcs])
+
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
+        "hierarchy_id": hierarchy_id,
+        "hierarchy_max_depth": max_depth,
         "items": [
             {
                 "id": p.id,
@@ -212,6 +319,7 @@ def list_legacy_pcs(
                 "name1": p.name1,
                 "name2": p.name2,
                 "is_active": p.is_active,
+                "levels": paths.get(p.pctr, []),
             }
             for p in pcs
         ],
