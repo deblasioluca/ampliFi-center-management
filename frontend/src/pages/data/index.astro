@@ -2156,16 +2156,31 @@ import Layout from '../../components/layout/Layout.astro';
   })();
 
   // ─── Data Browser (unified view) ───────────────────────────────────
+  // PR #87 — perf rework. Default load is now bounded: 200 rows max,
+  // no balances inline, no hierarchy nodes/leaves inline. Pagination,
+  // search and hierarchy drill-down all happen as separate small
+  // fetches so the UI stays responsive on large datasets.
   var dbData = null;
   var dbView = 'tabular';
   var dbSort = { col: 'cctr', dir: 'asc' };
   var dbColFilters = {};
+  var dbPage = 1;
+  var dbSize = 200;
+  var dbSearchTimer = null;
 
   function loadDataBrowser() {
     var el = document.getElementById('db-content');
-    el.innerHTML = '<span class="text-gray-400">Loading data browser...</span>';
-    var dbParams = '?scope=' + encodeURIComponent(getScope());
+    el.innerHTML = '<span class="text-gray-400">Loading data browser…</span>';
+    var search = (document.getElementById('db-search').value || '').trim();
+    var dbParams = '?scope=' + encodeURIComponent(getScope()) +
+      '&page=' + dbPage + '&size=' + dbSize;
     if (getCategory()) dbParams += '&data_category=' + encodeURIComponent(getCategory());
+    if (search) dbParams += '&search=' + encodeURIComponent(search);
+    if (dbIncludeBalances) dbParams += '&include_balances=true';
+    if (dbIncludeHierarchies) dbParams += '&include_hierarchies=true';
+    // Hierarchies fetched separately on demand by the hierarchical view —
+    // keep the metadata-only payload here so we don't pay the nodes+leaves
+    // cost on every page-of-200 fetch.
     (window.apiFetch || fetch)('/api/data/browser' + dbParams)
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -2189,6 +2204,16 @@ import Layout from '../../components/layout/Layout.astro';
     var hierBtn = document.getElementById('db-view-hierarchy');
     if (tabBtn) tabBtn.className = view === 'tabular' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
     if (hierBtn) hierBtn.className = view === 'hierarchy' ? 'btn-sm bg-blue-600 text-white text-xs' : 'btn-sm bg-gray-200 text-gray-700 text-xs';
+    // Hierarchical view needs hier.nodes / hier.leaves to walk the
+    // tree, which the default response doesn't ship (PR #87 — kept
+    // initial load fast). When the operator switches to hierarchical
+    // for the first time we re-fetch with include_hierarchies=true;
+    // subsequent switches reuse the already-loaded data.
+    if (view === 'hierarchy' && !dbIncludeHierarchies) {
+      dbIncludeHierarchies = true;
+      loadDataBrowser();
+      return;
+    }
     renderDB();
   };
 
@@ -2347,25 +2372,40 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   function renderDBTabular(el, items) {
-    if (!items.length && !Object.keys(dbColFilters).length) { el.innerHTML = '<span class="text-gray-400">No cost centers loaded.</span>'; return; }
-    var allItems = dbData.items || [];
+    var allItems = (dbData && dbData.items) || [];
+    if (!allItems.length) {
+      el.innerHTML = '<span class="text-gray-400">No cost centers loaded for this scope/category. ' +
+        'Try clearing the search or selecting another scope.</span>';
+      return;
+    }
     var sorted = dbSortItems(items);
 
-    // Build hierarchy level data
-    var hierInfo = buildHierLevelMap();
+    // Build hierarchy level data only when we actually have hierarchies
+    // inlined (PR #87: default response carries metadata only). When
+    // not inlined we skip the L1..LX columns entirely — the hierarchical
+    // view is the place to drill into the tree.
+    var hierInfo = (dbData.hierarchies_inlined && (dbData.hierarchies || []).some(function(h) { return h.nodes; }))
+      ? buildHierLevelMap()
+      : { levels: [], map: {} };
     var hierLevels = hierInfo.levels;
     var hierMap = hierInfo.map;
 
-    // Collect all balance periods from ALL items (not filtered)
+    // Balance period columns: only when balances are inlined. Default
+    // response doesn't carry balances; the operator opts in via the
+    // "Show monthly balances" toggle (which sets dbIncludeBalances and
+    // re-fetches the page with include_balances=true).
+    var hasBalances = (dbData.items || []).some(function(it) { return it.monthly_balances; });
     var periods = {};
     var currencyForPeriod = {};
-    allItems.forEach(function(it) {
-      (it.monthly_balances || []).forEach(function(b) {
-        var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
-        periods[key] = 1;
-        if (b.currency) currencyForPeriod[key] = b.currency;
+    if (hasBalances) {
+      allItems.forEach(function(it) {
+        (it.monthly_balances || []).forEach(function(b) {
+          var key = b.fiscal_year + '/' + String(b.period).padStart(2, '0');
+          periods[key] = 1;
+          if (b.currency) currencyForPeriod[key] = b.currency;
+        });
       });
-    });
+    }
     var pKeys = Object.keys(periods).sort();
 
     var cols = [
@@ -2378,67 +2418,35 @@ import Layout from '../../components/layout/Layout.astro';
       { key: 'responsible', label: 'Responsible' },
       { key: 'is_active', label: 'Active' }
     ];
-
-    // Add hierarchy level columns
-    var hierCols = [];
-    hierLevels.forEach(function(lvl, i) {
-      var colKey = 'hier_L' + (i + 1);
-      hierCols.push({ key: colKey, label: lvl });
+    var hierCols = hierLevels.map(function(lvl, i) {
+      return { key: 'hier_L' + (i + 1), label: lvl };
     });
-
     var allCols = cols.concat(hierCols);
 
-    // Collect unique values per column from ALL items for filter dropdowns
-    var colVals = {};
-    allCols.forEach(function(c) { colVals[c.key] = {}; });
-    allItems.forEach(function(it) {
-      cols.forEach(function(c) {
-        var v = c.key === 'is_active' ? String(it.is_active) : String(it[c.key] || '');
-        if (v) colVals[c.key][v] = 1;
-      });
-      var hm = hierMap[it.cctr] || {};
-      hierCols.forEach(function(c) {
-        var v = hm[c.key] || '';
-        if (v) colVals[c.key][v] = 1;
-      });
-    });
-
     var html = '<table class="w-full text-xs border-collapse"><thead>';
-    // Header row
     html += '<tr class="border-b bg-gray-50">';
     allCols.forEach(function(c) {
-      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
+      html += '<th class="py-2 px-2 text-left cursor-pointer select-none whitespace-nowrap" ' +
+        'onclick="sortDB(\'' + c.key + '\')">' + c.label + dbSortArrow(c.key) + '</th>';
     });
     pKeys.forEach(function(pk) {
       var curr = currencyForPeriod[pk];
       var label = curr ? pk + ' (' + curr + ')' : pk;
       html += '<th class="py-2 px-2 text-right whitespace-nowrap">' + esc(label) + '</th>';
     });
-    html += '</tr>';
-    // Filter row
-    html += '<tr class="bg-gray-100 border-b">';
-    allCols.forEach(function(c) {
-      var vals = Object.keys(colVals[c.key]).sort();
-      var cur = dbColFilters[c.key] || '';
-      html += '<td class="px-1 py-1"><select class="w-full text-[10px] border rounded px-1 py-0.5 bg-white" onchange="setDbFilter(\'' + c.key + '\',this.value)">';
-      html += '<option value="">All</option>';
-      if (c.key === 'is_active') {
-        html += '<option value="true"' + (cur === 'true' ? ' selected' : '') + '>Yes</option>';
-        html += '<option value="false"' + (cur === 'false' ? ' selected' : '') + '>No</option>';
-      } else {
-        vals.forEach(function(v) {
-          var lbl = v.length > 20 ? v.substring(0, 20) + '...' : v;
-          html += '<option value="' + escAttr(v) + '"' + (cur === v ? ' selected' : '') + '>' + esc(lbl) + '</option>';
-        });
-      }
-      html += '</select></td>';
-    });
-    pKeys.forEach(function() { html += '<td></td>'; });
-    html += '</tr>';
-    html += '</thead><tbody>';
+    html += '</tr></thead><tbody>';
+    // Note: per-column auto-filter dropdowns were removed in PR #87.
+    // Building one <select> per column with thousands of distinct
+    // values for thousands of rows was the dominant cost in
+    // renderDBTabular (DOM measured in 100k+ nodes for a real SAP
+    // dataset, locking up the browser for many seconds). Use the
+    // top-of-page search box for filtering — it goes through the
+    // server (LIKE on cctr / txtsh / txtmi / ccode / responsible)
+    // and is consistent across pages.
 
-    if (!items.length) {
-      html += '<tr><td colspan="' + (allCols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">No matching records.</td></tr>';
+    if (!sorted.length) {
+      html += '<tr><td colspan="' + (allCols.length + pKeys.length) + '" class="py-4 text-center text-gray-400">' +
+        'No rows match the search on this page.</td></tr>';
     }
 
     sorted.forEach(function(it) {
@@ -2462,7 +2470,9 @@ import Layout from '../../components/layout/Layout.astro';
       pKeys.forEach(function(pk) {
         var b = balMap[pk];
         if (b) {
-          var amt = b.amount >= 0 ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+          var amt = b.amount >= 0
+            ? b.amount.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})
+            : '-' + Math.abs(b.amount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
           var curr = b.currency ? ' <span class="text-gray-400 text-[9px]">' + esc(b.currency) + '</span>' : '';
           html += '<td class="py-1 px-2 text-right font-mono' + (b.amount < 0 ? ' text-red-600' : '') + '">' + amt + curr + '</td>';
         } else {
@@ -2471,8 +2481,45 @@ import Layout from '../../components/layout/Layout.astro';
       });
       html += '</tr>';
     });
-    el.innerHTML = html + '</tbody></table>';
+    html += '</tbody></table>';
+
+    // Pager (server-side pagination).
+    var total = (dbData && dbData.total) || 0;
+    var page = (dbData && dbData.page) || 1;
+    var size = (dbData && dbData.size) || dbSize;
+    var totalPages = Math.max(1, Math.ceil(total / size));
+    var start = total === 0 ? 0 : (page - 1) * size + 1;
+    var end = Math.min(page * size, total);
+    var pager = '<div class="flex items-center justify-between mt-3 text-xs text-gray-600">' +
+      '<div>Showing <strong>' + start + '–' + end + '</strong> of <strong>' + total + '</strong> rows' +
+      (hasBalances ? '' : ' &nbsp;·&nbsp; <button onclick="dbToggleBalances()" class="text-amplifi-600 hover:underline">+ Show monthly balances</button>') +
+      (dbData.hierarchies_inlined ? '' : ' &nbsp;·&nbsp; <button onclick="dbToggleHierarchies()" class="text-amplifi-600 hover:underline">+ Show hierarchy levels</button>') +
+      '</div>' +
+      '<div class="flex items-center gap-1">' +
+      (page > 1 ? '<button onclick="dbGoToPage(1)" class="px-2 py-1 hover:bg-gray-100 rounded">« First</button>' : '') +
+      (page > 1 ? '<button onclick="dbGoToPage(' + (page - 1) + ')" class="px-2 py-1 hover:bg-gray-100 rounded">‹ Prev</button>' : '') +
+      '<span class="px-2">Page ' + page + ' / ' + totalPages + '</span>' +
+      (page < totalPages ? '<button onclick="dbGoToPage(' + (page + 1) + ')" class="px-2 py-1 hover:bg-gray-100 rounded">Next ›</button>' : '') +
+      (page < totalPages ? '<button onclick="dbGoToPage(' + totalPages + ')" class="px-2 py-1 hover:bg-gray-100 rounded">Last »</button>' : '') +
+      '</div></div>';
+
+    el.innerHTML = html + pager;
   }
+
+  // Opt-in toggles for the heavy parts of the response. The first
+  // click makes a fetch with the relevant include_X=true; from then on
+  // all paginated fetches keep that flag on (per dbIncludeBalances /
+  // dbIncludeHierarchies state).
+  var dbIncludeBalances = false;
+  var dbIncludeHierarchies = false;
+  window.dbToggleBalances = function() {
+    dbIncludeBalances = true;
+    loadDataBrowser();
+  };
+  window.dbToggleHierarchies = function() {
+    dbIncludeHierarchies = true;
+    loadDataBrowser();
+  };
 
   var dbHierSelectedNode = null;
 
@@ -2717,11 +2764,24 @@ import Layout from '../../components/layout/Layout.astro';
     if (dbHierSelectedNode) renderHierDetail();
   }
 
-  // Wire search
+  // Wire search — fires a server-side fetch (paginated). Debounced so
+  // we don't spam the API on every keystroke. Resets to page 1 on
+  // every change since the previous page may not exist for the new
+  // result set.
   document.getElementById('db-search').addEventListener('input', function() {
-    clearTimeout(this._t);
-    this._t = setTimeout(function() { renderDB(); }, 300);
+    clearTimeout(dbSearchTimer);
+    dbSearchTimer = setTimeout(function() {
+      dbPage = 1;
+      loadDataBrowser();
+    }, 350);
   });
+
+  // Pager actions (called from the rendered pager HTML)
+  window.dbGoToPage = function(p) {
+    if (p < 1) p = 1;
+    dbPage = p;
+    loadDataBrowser();
+  };
 
   // Load on page init
   loadDataBrowser();
