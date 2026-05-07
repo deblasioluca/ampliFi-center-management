@@ -746,6 +746,98 @@ def list_balances(
     }
 
 
+@router.get("/legacy/balances/by-hierarchy")
+def balances_by_hierarchy(
+    hierarchy_id: int,
+    fiscal_year: int | None = None,
+    scope: str | None = None,
+    data_category: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Aggregated balances per cost center, grouped by hierarchy path
+    for the Balances → Hierarchical view (PR #89, A14).
+
+    The Balances tab in /data has tens of thousands of rows on real
+    data — too many to ever render row-by-row in a tree. Instead this
+    endpoint returns one row per cost center with the period totals
+    summed up, plus the hierarchy_path the frontend needs to nest the
+    rows correctly:
+
+      ``items: [{cctr, ccode, hierarchy_path, totals: {tc_amt,
+      posting_count, rows}}, ...]``
+
+    The ``totals`` reflect ALL accounts and periods within the optional
+    ``fiscal_year`` filter — operators in this view care about scale,
+    not the per-account breakdown (the tabular view is for that).
+
+    Implementation notes:
+    * One GROUP BY query against ``balance``, optionally constrained by
+      ``fiscal_year`` and the active scope. JOINs against
+      ``hierarchy_leaf`` to limit to CCs that exist in this hierarchy
+      so we don't return strangers.
+    * Path resolution reuses ``_resolve_hierarchy_paths``, the same BFS
+      helper used by proposals-v2 and runs/{id}/data-browser.
+    """
+    # 1) aggregate balance rows per CC, restricted to leaves of this hierarchy
+    bal_q = (
+        select(
+            Balance.cctr,
+            Balance.ccode,
+            func.coalesce(func.sum(Balance.tc_amt), 0).label("tc_amt"),
+            func.coalesce(func.sum(Balance.posting_count), 0).label("posting_count"),
+            func.count(Balance.id).label("rows"),
+        )
+        .join(HierarchyLeaf, HierarchyLeaf.value == Balance.cctr)
+        .where(HierarchyLeaf.hierarchy_id == hierarchy_id)
+        .group_by(Balance.cctr, Balance.ccode)
+        .order_by(Balance.cctr)
+    )
+    if scope:
+        bal_q = bal_q.where(Balance.scope == scope)
+    if data_category:
+        bal_q = bal_q.where(Balance.data_category == data_category)
+    if fiscal_year:
+        bal_q = bal_q.where(Balance.fiscal_year == fiscal_year)
+
+    rows = db.execute(bal_q).all()
+    cctrs = [r.cctr for r in rows]
+
+    # 2) Resolve hierarchy paths (one BFS pass for all CCs, not per-row)
+    paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, cctrs) if cctrs else ({}, 0)
+
+    # 3) Pull short text (txtsh) so the leaf table can show the CC name.
+    #    One IN-bounded query, no row-by-row lookup.
+    txtsh_map: dict[str, str] = {}
+    if cctrs:
+        cc_rows = db.execute(
+            select(LegacyCostCenter.cctr, LegacyCostCenter.txtsh).where(
+                LegacyCostCenter.cctr.in_(cctrs)
+            )
+        ).all()
+        txtsh_map = {c: (t or "") for c, t in cc_rows}
+
+    return {
+        "hierarchy_id": hierarchy_id,
+        "fiscal_year": fiscal_year,
+        "max_depth": max_depth,
+        "total_items": len(rows),
+        "items": [
+            {
+                "cctr": r.cctr,
+                "ccode": r.ccode,
+                "txtsh": txtsh_map.get(r.cctr, ""),
+                "hierarchy_path": paths.get(r.cctr, []),
+                "totals": {
+                    "tc_amt": float(r.tc_amt or 0),
+                    "posting_count": int(r.posting_count or 0),
+                    "rows": int(r.rows or 0),
+                },
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/legacy/hierarchies")
 def list_hierarchies(
     db: Session = Depends(get_db),
