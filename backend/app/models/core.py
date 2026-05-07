@@ -755,6 +755,11 @@ class Wave(TimestampMixin, Base):
     )  # draft|analysing|proposed|locked|in_review|signed_off|closed|cancelled
     is_full_scope: Mapped[bool] = mapped_column(Boolean, default=False)
     exclude_prior: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Archival flag. When True the wave is hidden from the regular wave
+    # list and only visible in the admin-only archive view. Set via
+    # POST /api/waves/{id}/archive on terminal waves; cleared by an
+    # explicit "unarchive" action (admin only).
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     config: Mapped[dict | None] = mapped_column(JSONB)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     signed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

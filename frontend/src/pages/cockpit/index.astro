@@ -274,11 +274,23 @@ import Layout from '../../components/layout/Layout.astro';
               '<div class="flex gap-1 mt-1">' + dots + '</div>';
             link.href = '/cockpit/wave?id=' + w.id;
             wrapper.appendChild(link);
-            // Delete button (not for in_review or signed_off)
-            if (w.status !== 'in_review' && w.status !== 'signed_off') {
+
+            // Action button on the right of each row.
+            // * Active waves (draft, analysing, proposed, locked, in_review):
+            //   Delete button — admin can abandon work-in-progress.
+            //   PR #84 lifted the previous block on in_review.
+            // * Terminal waves (signed_off, closed, cancelled):
+            //   Archive button — moves the wave out of the active list
+            //   into the admin archive view, where it can be deleted
+            //   in a separate step. This is the "two-step pattern"
+            //   that protects audit history of completed work.
+            var TERMINAL = ['signed_off', 'closed', 'cancelled'];
+            var isTerminal = TERMINAL.indexOf(w.status) >= 0;
+            if (!isTerminal) {
+              // Active wave → Delete trash icon
               var delBtn = document.createElement('button');
               delBtn.className = 'text-gray-300 hover:text-red-500 p-1 transition-colors flex-shrink-0';
-              delBtn.title = 'Delete wave';
+              delBtn.title = 'Delete wave (in_review and earlier statuses can be deleted directly)';
               delBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
               delBtn.setAttribute('data-wave-id', w.id);
               delBtn.setAttribute('data-wave-code', w.code);
@@ -299,6 +311,32 @@ import Layout from '../../components/layout/Layout.astro';
                   .catch(function(err) { alert('Error: ' + err.message); });
               });
               wrapper.appendChild(delBtn);
+            } else {
+              // Terminal wave → Archive box icon
+              var archBtn = document.createElement('button');
+              archBtn.className = 'text-gray-300 hover:text-amber-500 p-1 transition-colors flex-shrink-0';
+              archBtn.title = 'Archive wave — moves it to the admin archive view (out of the active list)';
+              // Box-with-arrow-down icon = archive
+              archBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>';
+              archBtn.setAttribute('data-wave-id', w.id);
+              archBtn.setAttribute('data-wave-code', w.code);
+              archBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var wid = this.getAttribute('data-wave-id');
+                var wcode = this.getAttribute('data-wave-code');
+                if (!confirm('Archive wave "' + wcode + '"? It will disappear from the active list and only be visible in the admin archive view (where it can be deleted permanently).')) return;
+                fetch('/api/waves/' + wid + '/archive', { method: 'POST', headers: headers })
+                  .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) {
+                      try { var e = JSON.parse(t); throw new Error(e.detail || 'Failed'); }
+                      catch(pe) { if (pe instanceof SyntaxError) throw new Error('Server error: ' + r.status); throw pe; }
+                    });
+                    loadWaves(); loadCoverage();
+                  })
+                  .catch(function(err) { alert('Error: ' + err.message); });
+              });
+              wrapper.appendChild(archBtn);
             }
             el.appendChild(wrapper);
           });
