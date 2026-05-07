@@ -9,12 +9,39 @@ import Layout from '../../components/layout/Layout.astro';
     <p class="text-sm text-gray-500 mt-1">Find groups of similar cost centers using semantic similarity</p>
   </div>
 
+  <!-- What does this page do? -->
+  <details class="bg-blue-50 border border-blue-200 rounded-lg mb-4">
+    <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-blue-900 select-none">
+      ℹ️ What does this page do?
+    </summary>
+    <div class="px-4 pb-3 pt-1 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+      <p>
+        Cluster Explorer helps you find <strong>near-duplicate cost centers</strong>
+        in your master data — different cost-center IDs that describe the same
+        thing in slightly different words (e.g. "Marketing EMEA" vs "EMEA
+        Marketing"). It uses sentence embeddings to compute semantic similarity
+        between the short and medium texts of every cost center within a CO Area
+        and returns pairs above the similarity threshold.
+      </p>
+      <p>
+        <strong>How to use:</strong> pick a CO Area (auto-selected if you only
+        have one), keep the threshold at <em>0.85</em> for a good precision /
+        recall balance (raise it for stricter matches, lower it to surface more
+        candidates), then click <em>Find Duplicates</em>. Use the resulting
+        pairs to inform your wave scoping or to feed the <em>MERGE_MAP</em>
+        outcome downstream.
+      </p>
+    </div>
+  </details>
+
   <!-- Controls -->
   <div class="card mb-6">
     <div class="flex flex-wrap gap-4 items-end">
       <div>
-        <label class="block text-xs text-gray-500 mb-1">CO Area</label>
-        <input id="clu-coarea" type="text" class="input text-sm w-28" placeholder="e.g. 1000" />
+        <label class="block text-xs text-gray-500 mb-1" for="clu-coarea">CO Area</label>
+        <select id="clu-coarea" class="input text-sm w-48">
+          <option value="">Loading…</option>
+        </select>
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Similarity Threshold</label>
@@ -45,8 +72,46 @@ import Layout from '../../components/layout/Layout.astro';
 
   function esc(v) { var d = document.createElement('div'); d.textContent = v || '--'; return d.innerHTML; }
 
+  // Populate the CO Area dropdown from the actual values in the DB so
+  // users don't have to remember exact codes. Auto-selects when there's
+  // only one — common case for single-coarea customers.
+  fetch('/api/stats/coareas', { headers: headers })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var sel = document.getElementById('clu-coarea');
+      var items = d.items || [];
+      sel.innerHTML = '';
+      if (items.length === 0) {
+        sel.innerHTML = '<option value="">(no CO areas found)</option>';
+        sel.disabled = true;
+        return;
+      }
+      // Add a placeholder option only if more than one — single-coarea
+      // case auto-selects that coarea so the user doesn't have to click.
+      if (items.length > 1) {
+        sel.innerHTML = '<option value="">— pick a CO area —</option>';
+      }
+      items.forEach(function(it) {
+        var opt = document.createElement('option');
+        opt.value = it.coarea;
+        opt.textContent = it.coarea + ' (' + it.cc_count.toLocaleString() + ' CCs)';
+        sel.appendChild(opt);
+      });
+      if (items.length === 1) {
+        sel.value = items[0].coarea;  // auto-select the only one
+      }
+    })
+    .catch(function() {
+      var sel = document.getElementById('clu-coarea');
+      sel.innerHTML = '<option value="">(failed to load CO areas)</option>';
+    });
+
   document.getElementById('btn-run-cluster').addEventListener('click', async function() {
-    var coarea = document.getElementById('clu-coarea').value.trim();
+    var coarea = document.getElementById('clu-coarea').value;
+    if (!coarea) {
+      alert('Please select a CO Area first.');
+      return;
+    }
     var threshold = parseFloat(document.getElementById('clu-threshold').value) || 0.85;
     var limit = parseInt(document.getElementById('clu-limit').value) || 100;
     var resultsEl = document.getElementById('clu-results');

@@ -8,6 +8,37 @@ import Layout from '../../components/layout/Layout.astro';
     <a href="javascript:history.back()" class="text-sm text-amplifi-600 hover:underline">&larr; Back</a>
   </div>
 
+  <!-- What does this page do? -->
+  <details class="bg-blue-50 border border-blue-200 rounded-lg mb-4">
+    <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-blue-900 select-none">
+      ℹ️ What does this page do?
+    </summary>
+    <div class="px-4 pb-3 pt-1 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+      <p>
+        Run Comparison shows you what changed between two analysis runs — useful
+        for verifying that a config tweak (e.g. raising the inactivity threshold)
+        produced the expected delta, or for answering "which centers flipped
+        outcome between yesterday's draft and today's run?".
+      </p>
+      <p>
+        <strong>How to read it:</strong> the top KPI cards show absolute counts
+        per outcome in Run A vs Run B with a delta. The two transition matrices
+        are pivot tables — for each cost center that exists in both runs, count
+        how many went from <em>row outcome</em> in Run A to <em>column outcome</em>
+        in Run B. Diagonal cells (same outcome) are tinted green; off-diagonal
+        (changed outcome) red. The Changed Centers table at the bottom lists
+        every center whose outcome or target object differs.
+      </p>
+      <p>
+        <strong>Caveats:</strong> matrices use the V1 outcome vocabulary
+        (KEEP/RETIRE/MERGE_MAP/REDESIGN). When comparing a V1 run to a V2 run
+        the V2 outcomes (MIGRATE_1_1 etc.) appear as their own rows. If a run
+        has zero proposals stored, its column will be all "N/A" — the page
+        flags this explicitly when it happens.
+      </p>
+    </div>
+  </details>
+
   <div class="card mb-6">
     <div class="grid grid-cols-3 gap-4 items-end">
       <div>
@@ -31,6 +62,9 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
     <button id="btn-compare" class="btn-amplifi text-sm mt-4">Compare Runs</button>
   </div>
+
+  <!-- Diagnostic banner (shown when something's odd with the runs being compared) -->
+  <div id="compare-diagnostic" class="hidden mb-4"></div>
 
   <!-- KPI Comparison -->
   <div id="kpi-comparison" class="hidden mb-6">
@@ -137,6 +171,38 @@ import Layout from '../../components/layout/Layout.astro';
 
       // Outcome matrix (data is under comp.diff)
       var diff = comp.diff || comp;
+
+      // Diagnostic banner: surface when one or both runs had no proposals
+      // (the "Run #15-style" inconsistent state), since otherwise the
+      // empty matrix looks like a frontend bug. Backend returns total_a
+      // and total_b alongside the matrix to drive this.
+      var diagEl = document.getElementById('compare-diagnostic');
+      if (diagEl) {
+        var totalA = diff.total_a;
+        var totalB = diff.total_b;
+        var msgs = [];
+        if (totalA === 0 && totalB === 0) {
+          msgs.push('Both runs have <strong>0 proposals stored</strong>. Comparison can\'t compute outcome transitions. ' +
+                    'Likely cause: both ran on an empty scope (e.g. a wave with 0 entities), ' +
+                    'or the inconsistent-state bug where KPIs save but proposals don\'t.');
+        } else if (totalA === 0) {
+          msgs.push('Run A (#' + runA + ') has <strong>0 proposals stored</strong> while Run B has ' + totalB + '. ' +
+                    'The matrix will show every Run B center under an "N/A" row. ' +
+                    'Re-run Run A or pick a different baseline.');
+        } else if (totalB === 0) {
+          msgs.push('Run B (#' + runB + ') has <strong>0 proposals stored</strong> while Run A has ' + totalA + '. ' +
+                    'The matrix will show every Run A center under an "N/A" column.');
+        }
+        if (msgs.length) {
+          diagEl.classList.remove('hidden');
+          diagEl.innerHTML = '<div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded">' +
+            '⚠️ ' + msgs.join('<br>') + '</div>';
+        } else {
+          diagEl.classList.add('hidden');
+          diagEl.innerHTML = '';
+        }
+      }
+
       if (diff.outcome_matrix) {
         document.getElementById('outcome-matrix-section').classList.remove('hidden');
         document.getElementById('outcome-matrix').innerHTML = renderMatrix(diff.outcome_matrix, 'Run A →', 'Run B →');

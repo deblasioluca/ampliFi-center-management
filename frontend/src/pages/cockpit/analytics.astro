@@ -58,6 +58,7 @@ import Layout from '../../components/layout/Layout.astro';
       </select>
     </div>
     <button id="btn-run-global" class="btn-amplifi text-xs py-1 px-3 whitespace-nowrap">Run Global Analysis</button>
+    <a id="btn-open-wave" class="btn-sm bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs hidden no-underline px-3 py-1 rounded" href="#" title="Wave-scoped analyses run on the wave's own Decision Tree tab">Open Wave Decision Tree →</a>
     <button id="btn-cancel-run" class="btn-sm bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs hidden" title="Cancel running analysis">Cancel</button>
     <button id="btn-delete-run" class="btn-sm bg-red-50 text-red-700 hover:bg-red-100 text-xs hidden" title="Delete selected run">Delete Run</button>
     <button id="btn-manage-configs" class="btn-sm bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs" title="Manage configurations">Configs</button>
@@ -553,7 +554,35 @@ import Layout from '../../components/layout/Layout.astro';
   });
 
   function handleWaveSelect(val) {
+    // Re-target the action button(s) based on the chosen scope.
+    // /api/runs/global ignores wave scope by design — running it while
+    // a wave is selected would silently do something the user didn't
+    // intend. So when a wave is picked we disable the Global button
+    // and surface a link to the wave's own Decision Tree (which is
+    // where wave-scoped V1/V2 analyses actually happen).
+    _updateRunButtonForScope(val);
     if (val === '__global__') { loadGlobalRuns(); } else { loadWaveRuns(val); }
+  }
+
+  function _updateRunButtonForScope(scopeVal) {
+    var btnGlobal = document.getElementById('btn-run-global');
+    var openWave = document.getElementById('btn-open-wave');
+    if (scopeVal === '__global__') {
+      btnGlobal.disabled = false;
+      btnGlobal.title = 'Run V1 analysis on the entire cost-center universe';
+      btnGlobal.classList.remove('opacity-50', 'cursor-not-allowed');
+      if (openWave) openWave.classList.add('hidden');
+    } else {
+      // Wave selected — Global button doesn't make sense here
+      btnGlobal.disabled = true;
+      btnGlobal.title = 'This dashboard runs only global analyses. ' +
+        'Use the wave\u2019s Decision Tree tab for wave-scoped analyses.';
+      btnGlobal.classList.add('opacity-50', 'cursor-not-allowed');
+      if (openWave) {
+        openWave.classList.remove('hidden');
+        openWave.href = '/cockpit/wave?id=' + encodeURIComponent(scopeVal);
+      }
+    }
   }
 
   function loadGlobalRuns(preferredRunId) {
