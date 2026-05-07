@@ -157,6 +157,7 @@ class WaveOut(BaseModel):
     status: str
     is_full_scope: bool
     exclude_prior: bool
+    is_archived: bool = False
     entity_count: int = 0
     config: dict | None = None
 
@@ -169,8 +170,30 @@ def list_waves(
     user: AppUser = Depends(get_current_user),
     pag: PaginationParams = Depends(pagination),
     status: str | None = None,
+    archived: str = "false",
 ) -> dict:
+    """List waves, optionally filtered by status and archive flag.
+
+    The ``archived`` parameter selects which slice of the universe the
+    caller wants to see:
+    * ``"false"`` (default): only non-archived waves. This is what the
+      cockpit's wave list and the analytics dashboard see — the
+      everyday active set.
+    * ``"true"``: only archived waves. Used by the admin archive page
+      so the operator can review what's been put away (and delete it
+      from there).
+    * ``"all"``: both archived and non-archived. Useful for system-
+      wide audits / debugging.
+
+    Anything other than these three values is treated as ``"false"``
+    so a typo doesn't accidentally surface archived rows.
+    """
     query = select(Wave).order_by(Wave.created_at.desc())
+    archived_mode = archived if archived in ("false", "true", "all") else "false"
+    if archived_mode == "false":
+        query = query.where(Wave.is_archived.is_(False))
+    elif archived_mode == "true":
+        query = query.where(Wave.is_archived.is_(True))
     if status:
         status_list = [s.strip() for s in status.split(",") if s.strip()]
         if len(status_list) == 1:
@@ -178,6 +201,10 @@ def list_waves(
         else:
             query = query.where(Wave.status.in_(status_list))
     total_q = select(func.count(Wave.id))
+    if archived_mode == "false":
+        total_q = total_q.where(Wave.is_archived.is_(False))
+    elif archived_mode == "true":
+        total_q = total_q.where(Wave.is_archived.is_(True))
     if status:
         status_list = [s.strip() for s in status.split(",") if s.strip()]
         if len(status_list) == 1:
@@ -200,6 +227,7 @@ def list_waves(
             status=w.status,
             is_full_scope=w.is_full_scope,
             exclude_prior=w.exclude_prior,
+            is_archived=w.is_archived,
             entity_count=ec,
             config=w.config,
         )
@@ -861,15 +889,34 @@ def delete_wave(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin")),
 ) -> dict:
-    """Delete a wave and all associated data (proposals, scopes, runs)."""
+    """Delete a wave and all associated data (proposals, scopes, runs).
+
+    Two paths to deletion:
+    * **Active waves** (status in {draft, analysing, proposed, locked,
+      in_review}): admin can delete to abandon work-in-progress. The
+      previous in_review block has been lifted — operators have asked
+      to abort waves stuck in review, and the audit log captures the
+      delete event so the action remains traceable.
+    * **Terminal waves** (status in {signed_off, closed, cancelled}):
+      cannot be deleted directly — the operator must first archive the
+      wave (POST /api/waves/{id}/archive). Archive-then-delete is the
+      two-step pattern that protects audit history: completed waves
+      stay visible in the admin archive view until someone explicitly
+      decides they're not needed anymore.
+    """
     wave = db.get(Wave, wave_id)
     if not wave:
         raise HTTPException(status_code=404, detail="Wave not found")
-    if wave.status in ("in_review", "signed_off"):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cannot delete wave in status {wave.status}",
+
+    # Terminal waves require archive-first as a deliberate friction
+    # against accidental deletion of completed work.
+    if wave.status in ("signed_off", "closed", "cancelled") and not wave.is_archived:
+        msg = (
+            f"Wave is in terminal status '{wave.status}'. "
+            "Archive it first via POST /api/waves/{id}/archive, "
+            "then remove it via the admin archive view."
         )
+        raise HTTPException(status_code=409, detail=msg)
 
     from app.domain.proposal.service import release_proposal_ids
 
@@ -892,10 +939,95 @@ def delete_wave(
         entity_id=wave_id,
         actor_id=user.id,
         actor_email=user.email or user.username,
-        after={"wave_code": wave_code},
+        after={"wave_code": wave_code, "was_archived": wave.is_archived},
     )
     db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/{wave_id}/archive")
+def archive_wave(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Archive a terminal wave so it disappears from the active list.
+
+    Only allowed on waves in terminal status (``signed_off``, ``closed``,
+    ``cancelled``). Archiving an active wave doesn't make sense — the
+    point of archive is "I'm done with this wave, declutter my view";
+    if the wave isn't done, the right action is to either continue it
+    or delete it outright.
+
+    Once archived the wave is hidden from ``GET /api/waves`` (and from
+    the cockpit's wave list, the analytics dashboard scope picker, etc.)
+    Re-surface it via the admin archive view, which queries
+    ``GET /api/waves?archived=true`` to show the archived slice.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.is_archived:
+        raise HTTPException(status_code=409, detail="Wave is already archived")
+    if wave.status not in ("signed_off", "closed", "cancelled"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot archive wave in status '{wave.status}'. "
+                "Only terminal waves (signed_off, closed, cancelled) can be archived. "
+                "If you want to abandon a non-terminal wave, delete it instead."
+            ),
+        )
+    wave.is_archived = True
+
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.archived",
+        entity_type="wave",
+        entity_id=wave_id,
+        actor_id=user.id,
+        actor_email=user.email or user.username,
+        after={"wave_code": wave.code, "status": wave.status},
+    )
+    db.commit()
+    return {"status": "archived", "wave_id": wave_id}
+
+
+@router.post("/{wave_id}/unarchive")
+def unarchive_wave(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Move a wave back from the archive into the active list.
+
+    Useful when a completed wave needs to be referenced or re-opened
+    for audit/reporting work after it was put away. Only changes the
+    archive flag; the wave's status stays whatever it was when it was
+    archived.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if not wave.is_archived:
+        raise HTTPException(status_code=409, detail="Wave is not archived")
+    wave.is_archived = False
+
+    from app.domain.audit import write_audit
+
+    write_audit(
+        db,
+        action="wave.unarchived",
+        entity_type="wave",
+        entity_id=wave_id,
+        actor_id=user.id,
+        actor_email=user.email or user.username,
+        after={"wave_code": wave.code, "status": wave.status},
+    )
+    db.commit()
+    return {"status": "unarchived", "wave_id": wave_id}
 
 
 class ReviewScopeCreate(BaseModel):

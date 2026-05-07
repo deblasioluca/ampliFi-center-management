@@ -1,0 +1,155 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Wave Archive" requireAuth={true} adminOnly={true}>
+  <div class="mb-4">
+    <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+    <h1 class="text-2xl font-bold mt-2">Wave Archive</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Waves that operators have archived — they're hidden from the active wave
+      list but the audit trail is preserved here for review and auditing.
+    </p>
+  </div>
+
+  <!-- Help banner -->
+  <details class="bg-blue-50 border border-blue-200 rounded-lg mb-4">
+    <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-blue-900 select-none">
+      ℹ️ How does archive work?
+    </summary>
+    <div class="px-4 pb-3 pt-1 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+      <p>
+        A wave can be archived only after it reaches a terminal status
+        (<em>signed_off</em>, <em>closed</em>, or <em>cancelled</em>). The
+        archive action is the operator saying <em>"I'm done with this wave —
+        get it out of my active list"</em>. From that moment on, the wave is
+        invisible everywhere except this admin page.
+      </p>
+      <p>
+        Two actions are available on each archived wave:
+      </p>
+      <ul class="list-disc ml-5 space-y-0.5">
+        <li>
+          <strong>Unarchive</strong> — moves it back to the active wave list.
+          The wave's status (signed_off / closed / cancelled) is preserved
+          unchanged. Useful if a finished wave needs to be re-opened for audit
+          or reporting work.
+        </li>
+        <li>
+          <strong>Delete</strong> — permanently removes the wave and all
+          associated proposals, runs, scopes, and review history. This is the
+          only place where deleting a finished wave is possible — the cockpit's
+          wave list intentionally doesn't expose this for terminal waves.
+        </li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-base font-semibold">Archived Waves</h2>
+      <span id="archive-count" class="text-xs text-gray-500"></span>
+    </div>
+    <div id="archive-list" class="text-sm">Loading…</div>
+  </div>
+</Layout>
+
+<script>
+  var token = localStorage.getItem('amplifi_token');
+  if (!token) { window.location.href = '/login'; }
+  var authHdr = { 'Authorization': 'Bearer ' + token };
+
+  function esc(v) { var d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; }
+
+  function loadArchivedWaves() {
+    var listEl = document.getElementById('archive-list');
+    var countEl = document.getElementById('archive-count');
+    listEl.innerHTML = '<span class="text-gray-400">Loading…</span>';
+    fetch('/api/waves?archived=true&size=200', { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = data.items || [];
+        countEl.textContent = items.length + ' archived';
+        if (!items.length) {
+          listEl.innerHTML = '<div class="text-gray-400 italic py-3">No archived waves. ' +
+            'Waves you archive from the Cockpit (after they reach a terminal status) ' +
+            'will appear here.</div>';
+          return;
+        }
+        var rows = items.map(function(w) {
+          // Status colour reflects the wave's lifecycle status, not the
+          // archive state — the archive flag is orthogonal so we keep
+          // the same green / amber / grey palette as the active list.
+          var statusColor =
+            w.status === 'signed_off' ? 'bg-green-100 text-green-700' :
+            w.status === 'closed' ? 'bg-gray-100 text-gray-700' :
+            w.status === 'cancelled' ? 'bg-amber-100 text-amber-700' :
+            'bg-gray-100 text-gray-500';
+          return '<div class="flex items-center justify-between border-b py-2.5 px-2 hover:bg-gray-50">' +
+            '<div class="flex-1">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="font-medium">' + esc(w.code) + '</span>' +
+                '<span class="px-1.5 py-0.5 rounded text-xs ' + statusColor + '">' + esc(w.status.replace('_', ' ')) + '</span>' +
+              '</div>' +
+              '<div class="text-xs text-gray-500 mt-0.5">' + esc(w.name) +
+                (w.description ? ' — ' + esc(w.description) : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-1 flex-shrink-0">' +
+              '<button data-action="unarchive" data-id="' + w.id + '" data-code="' + esc(w.code) + '" ' +
+                'class="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-blue-200" ' +
+                'title="Move back to active wave list">↩ Unarchive</button>' +
+              '<button data-action="delete" data-id="' + w.id + '" data-code="' + esc(w.code) + '" ' +
+                'class="text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded border border-red-200" ' +
+                'title="Permanently delete the wave + all proposals/runs/scopes">🗑 Delete</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+        listEl.innerHTML = rows;
+
+        // Wire up the action buttons via delegation. Same pattern we
+        // landed on for the wave-page Delete button in PR #81 — using
+        // data-* attributes instead of inline onclick keeps escaping
+        // safe regardless of what's in the wave name/code.
+        listEl.querySelectorAll('[data-action="unarchive"]').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var id = btn.getAttribute('data-id');
+            var code = btn.getAttribute('data-code');
+            if (!confirm('Move "' + code + '" back to the active wave list? Its status (' +
+                'signed_off / closed / cancelled) stays the same.')) return;
+            fetch('/api/waves/' + id + '/unarchive', { method: 'POST', headers: authHdr })
+              .then(function(r) {
+                if (!r.ok) return r.text().then(function(t) {
+                  try { var e = JSON.parse(t); throw new Error(e.detail || 'Failed'); }
+                  catch(pe) { if (pe instanceof SyntaxError) throw new Error('Server error: ' + r.status); throw pe; }
+                });
+                loadArchivedWaves();
+              })
+              .catch(function(err) { alert('Error: ' + err.message); });
+          });
+        });
+        listEl.querySelectorAll('[data-action="delete"]').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var id = btn.getAttribute('data-id');
+            var code = btn.getAttribute('data-code');
+            if (!confirm('Permanently delete "' + code + '" and all associated ' +
+                'proposals, runs, scopes, and review history?\n\nThis cannot be undone.')) return;
+            fetch('/api/waves/' + id, { method: 'DELETE', headers: authHdr })
+              .then(function(r) {
+                if (!r.ok) return r.text().then(function(t) {
+                  try { var e = JSON.parse(t); throw new Error(e.detail || 'Failed'); }
+                  catch(pe) { if (pe instanceof SyntaxError) throw new Error('Server error: ' + r.status); throw pe; }
+                });
+                loadArchivedWaves();
+              })
+              .catch(function(err) { alert('Error: ' + err.message); });
+          });
+        });
+      })
+      .catch(function() {
+        listEl.innerHTML = '<span class="text-red-500">Unable to load archived waves.</span>';
+      });
+  }
+
+  loadArchivedWaves();
+</script>
