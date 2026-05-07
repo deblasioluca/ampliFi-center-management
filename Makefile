@@ -9,7 +9,7 @@
 #   (Same pattern as sap-ai-consultant Makefile.)
 # ============================================================
 
-.PHONY: help start stop restart status setup update load-sample delete-sample \
+.PHONY: help start stop restart status setup update verify load-sample delete-sample \
         seed logs git-setup
 
 SHELL := /bin/bash
@@ -166,37 +166,128 @@ print('[ok] Database tables created')" && \
 	@echo "  Frontend: http://0.0.0.0:$(FRONTEND_PORT)"
 	@echo "  Tip: run 'make git-setup' to store GitHub credentials for git pull."
 
-update: ## Pull latest code, rebuild frontend, reinstall backend, restart
-	@echo "=== ampliFi Update ==="
-	@git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true
-	@git config http.sslVerify false 2>/dev/null || true
-	@echo "==> Pulling latest code..."
-	git pull
-	@echo "==> Building frontend..."
-	@if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
-		export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
-		cd $(FRONTEND_DIR) && npm install 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && \
-		echo "[ok] Frontend rebuilt"; \
+update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEAN=1 to wipe dist/]
+	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
+	: > "$$LOG"; \
+	echo "=== ampliFi Update ===" | tee -a "$$LOG"; \
+	echo "Started:  $$(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$$LOG"; \
+	echo "Log file: $$LOG" | tee -a "$$LOG"; \
+	echo ""; \
+	set -eo pipefail; \
+	OLD_SHA=$$(git rev-parse --short HEAD 2>/dev/null || echo "?"); \
+	if [ "$(CLEAN)" = "1" ]; then \
+		echo "==> Clean mode: removing build artifacts..." | tee -a "$$LOG"; \
+		rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/.astro 2>/dev/null || true; \
+		find $(BACKEND_DIR) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true; \
+		echo "[ok] Cleaned dist/, .astro/, __pycache__/" | tee -a "$$LOG"; \
+	fi; \
+	git config --global --add safe.directory "$$(pwd)" 2>/dev/null || true; \
+	git config http.sslVerify false 2>/dev/null || true; \
+	echo "==> Pulling latest code..." | tee -a "$$LOG"; \
+	git pull 2>&1 | tee -a "$$LOG"; \
+	NEW_SHA=$$(git rev-parse --short HEAD); \
+	if [ "$$OLD_SHA" = "$$NEW_SHA" ]; then \
+		echo "[ok] Already at $$NEW_SHA — no new commits" | tee -a "$$LOG"; \
 	else \
-		echo "[skip] No frontend directory"; \
+		echo "[ok] $$OLD_SHA → $$NEW_SHA" | tee -a "$$LOG"; \
+	fi; \
+	echo "==> Building frontend..." | tee -a "$$LOG"; \
+	if [ -d $(FRONTEND_DIR) ] && [ -f $(FRONTEND_DIR)/package.json ]; then \
+		export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+		cd $(FRONTEND_DIR) && \
+			npm install 2>&1 | tee -a "$$LOG" | tail -3 && \
+			npm run build 2>&1 | tee -a "$$LOG" | tail -3; \
+		echo "[ok] Frontend rebuilt" | tee -a "$$LOG"; \
+	else \
+		echo "[skip] No frontend directory" | tee -a "$$LOG"; \
+	fi; \
+	unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true; \
+	echo "==> Installing Python dependencies..." | tee -a "$$LOG"; \
+	export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
+	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
+		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tee -a "$$LOG" | tail -3; \
+	unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true; \
+	echo "[ok] Backend dependencies updated" | tee -a "$$LOG"; \
+	echo "==> Applying database migrations..." | tee -a "$$LOG"; \
+	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
+		python -m alembic upgrade head 2>&1 | tee -a "$$LOG" | tail -5; \
+	echo "[ok] Database migrations applied" | tee -a "$$LOG"; \
+	echo "==> Seeding..." | tee -a "$$LOG"; \
+	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
+		python -m app.cli seed 2>&1 | tee -a "$$LOG" | tail -5; \
+	echo "[ok] Admin user + sample data seeded" | tee -a "$$LOG"
+	@$(MAKE) -s restart 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log
+	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
+	echo "" | tee -a "$$LOG"; \
+	echo "==> Verifying deployment..." | tee -a "$$LOG"; \
+	NEW_SHA=$$(git rev-parse --short HEAD); \
+	HEALTHY=0; \
+	for i in 1 2 3 4 5; do \
+		if curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
+			HEALTHY=1; break; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo ""; \
+	echo "=== Update complete ===" | tee -a "$$LOG"; \
+	echo "Code:     $$NEW_SHA ($(shell git log -1 --format=%s HEAD 2>/dev/null | head -c 60))" | tee -a "$$LOG"; \
+	if [ -d $(FRONTEND_DIR)/dist ]; then \
+		FILES=$$(find $(FRONTEND_DIR)/dist -type f 2>/dev/null | wc -l); \
+		SIZE=$$(du -sh $(FRONTEND_DIR)/dist 2>/dev/null | cut -f1); \
+		echo "Frontend: $$FILES files, $$SIZE in $(FRONTEND_DIR)/dist" | tee -a "$$LOG"; \
+	fi; \
+	if [ $$HEALTHY = 1 ]; then \
+		echo "Backend:  ✓ healthy on port $(BACKEND_PORT)" | tee -a "$$LOG"; \
+	else \
+		echo "Backend:  ✗ NOT responding to /api/healthz on port $(BACKEND_PORT)" | tee -a "$$LOG"; \
+		echo "          Check: tail -50 $(ROOT_DIR)/amplifi-backend.log" | tee -a "$$LOG"; \
+		exit 1; \
+	fi; \
+	echo "Finished: $$(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$$LOG"; \
+	echo "Full log: $$LOG" | tee -a "$$LOG"
+
+verify: ## Sanity-check that running services match the latest committed code
+	@echo "=== ampliFi Verify ==="
+	@echo ""
+	@HEAD_SHA=$$(git rev-parse --short HEAD 2>/dev/null || echo "?"); \
+	echo "Git HEAD:   $$HEAD_SHA"
+	@echo ""
+	@echo "==> Frontend"
+	@if [ -d $(FRONTEND_DIR)/dist ]; then \
+		FILES=$$(find $(FRONTEND_DIR)/dist -type f | wc -l); \
+		BUILT=$$(stat -c '%Y' $(FRONTEND_DIR)/dist 2>/dev/null || stat -f '%m' $(FRONTEND_DIR)/dist 2>/dev/null); \
+		HEAD_TS=$$(git log -1 --format=%ct HEAD 2>/dev/null || echo 0); \
+		BUILT_HUMAN=$$(date -d @$$BUILT '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r $$BUILT '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?"); \
+		HEAD_HUMAN=$$(date -d @$$HEAD_TS '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r $$HEAD_TS '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?"); \
+		echo "  dist/ exists ($$FILES files)"; \
+		echo "  Built at:   $$BUILT_HUMAN"; \
+		echo "  HEAD at:    $$HEAD_HUMAN"; \
+		if [ $$BUILT -lt $$HEAD_TS ]; then \
+			echo "  ✗ STALE: dist/ is older than HEAD — run 'make update' to rebuild"; \
+		else \
+			echo "  ✓ dist/ is newer than HEAD"; \
+		fi; \
+	else \
+		echo "  ✗ $(FRONTEND_DIR)/dist does not exist — run 'make update'"; \
 	fi
-	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
-	@echo "==> Installing Python dependencies..."
-	@export $$(grep -E '^(HTTPS?_PROXY|NO_PROXY)=' $(ROOT_DIR)/.env 2>/dev/null | xargs) 2>/dev/null; \
-	 cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
-	 pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tail -3
-	@unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true
-	@echo "[ok] Backend dependencies updated"
-	@cd $(BACKEND_DIR) && \
-		source $(VENV)/bin/activate && \
-		python -m alembic upgrade head 2>&1 | tail -5 && \
-		echo "[ok] Database migrations applied"
-	@cd $(BACKEND_DIR) && \
-		source $(VENV)/bin/activate && \
-		python -m app.cli seed 2>&1 | tail -5 && \
-		echo "[ok] Admin user + sample data seeded"
-	@$(MAKE) restart
-	@echo "=== Update complete ==="
+	@echo ""
+	@echo "==> Backend"
+	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
+		PID=$$(cat $(BACKEND_PID)); \
+		PROC_START=$$(ps -p $$PID -o lstart= 2>/dev/null | xargs); \
+		echo "  Running:    PID $$PID"; \
+		echo "  Started at: $$PROC_START"; \
+		HEAD_HUMAN=$$(git log -1 --format='%cd' --date=format:'%Y-%m-%d %H:%M:%S' HEAD 2>/dev/null || echo "?"); \
+		echo "  HEAD time:  $$HEAD_HUMAN"; \
+		if curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
+			echo "  ✓ /api/healthz responds OK"; \
+		else \
+			echo "  ✗ /api/healthz NOT responding"; \
+		fi; \
+	else \
+		echo "  ✗ Backend not running — run 'make start' or 'make update'"; \
+	fi
+	@echo ""
 
 # ---------------------------------------------------------------------------
 # Data management

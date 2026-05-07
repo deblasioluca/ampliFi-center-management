@@ -57,6 +57,7 @@ mlartifacts/
 
 # Runtime
 .amplifi*.pid
+.amplifi-update.log
 amplifi-backend.log
 amplifi-frontend.log
 .venv-test/
