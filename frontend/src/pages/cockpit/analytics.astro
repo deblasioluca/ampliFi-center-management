@@ -591,6 +591,11 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('sel-engine-filter').addEventListener('change', function() {
     var scope = document.getElementById('sel-wave').value;
     if (scope) handleWaveSelect(scope);
+    // PR #90 — also re-filter the Config dropdown, so picking V2
+    // hides V1 configs and vice versa. Without this, the operator's
+    // mental model ("Engine + Config picks the new run") breaks
+    // because the Config dropdown shows everything regardless.
+    loadConfigs();
   });
 
   function handleWaveSelect(val) {
@@ -763,16 +768,20 @@ import Layout from '../../components/layout/Layout.astro';
     // Data Browser
     loadDataBrowser(runId);
 
-    // Proposals for all charts
-    fetch('/api/runs/' + runId + '/proposals?size=5000', { headers: authHdr })
+    // PR #90 — charts now use the new server-side /aggregates endpoint
+    // instead of fetching up to 5000 proposals and aggregating client-
+    // side. Operator report: "Outcome distribution only shows 5k
+    // centers" — the donut showed 5,000 KEEP while KPI strip correctly
+    // showed 18,490 because the proposals fetch was capped. Aggregates
+    // are computed via SQL GROUP BY so the response is small and
+    // accurate at any run size.
+    fetch('/api/runs/' + runId + '/aggregates', { headers: authHdr })
       .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var items = d.items || [];
-        if (!items.length) {
-          // Diagnostic: if the run has KPIs showing centers analysed but
-          // no proposals come back, that's an inconsistent state — the
-          // run probably failed to commit proposals. Surface it clearly
-          // so the user doesn't think the dashboard is broken.
+      .then(function(agg) {
+        var total = agg.total_proposals || 0;
+        if (total === 0) {
+          // Same diagnostic as before — KPI shows N centers but
+          // aggregates is empty → run probably failed to commit.
           fetch('/api/runs/' + runId, { headers: authHdr })
             .then(function(r) { return r.json(); })
             .then(function(run) {
@@ -807,64 +816,56 @@ import Layout from '../../components/layout/Layout.astro';
         }
 
         // -- Outcome Distribution (CSS Donut + Legend) --
-        var outcomeCounts = {};
-        items.forEach(function(p) {
-          var o = p.cleansing_outcome || 'OTHER';
-          outcomeCounts[o] = (outcomeCounts[o] || 0) + 1;
-        });
-        drawDonutCSS('chart-outcome-donut', outcomeCounts, COLORS);
+        drawDonutCSS('chart-outcome-donut', agg.outcome_counts || {}, COLORS);
 
         // -- Target Bar (HTML bars) --
-        var targetByOutcome = {};
-        items.forEach(function(p) {
-          var o = p.cleansing_outcome || 'OTHER';
-          var t = p.target_object || 'NONE';
-          if (!targetByOutcome[o]) targetByOutcome[o] = {};
-          targetByOutcome[o][t] = (targetByOutcome[o][t] || 0) + 1;
-        });
-        drawTargetBars('chart-target-bar', targetByOutcome, TARGET_COLORS);
+        drawTargetBars('chart-target-bar', agg.target_per_outcome || {}, TARGET_COLORS);
 
         // -- Entity Heatmap --
+        // Server returns an array of {ccode, name, outcomes, total}
+        // sorted by total desc. Convert to the {ccode → outcomes}
+        // shape the existing renderer expects, but include name in
+        // the label.
         var entityOutcome = {};
-        items.forEach(function(p) {
-          var e = p.ccode || 'Unknown';
-          var o = p.cleansing_outcome || 'OTHER';
-          if (!entityOutcome[e]) entityOutcome[e] = {};
-          entityOutcome[e][o] = (entityOutcome[e][o] || 0) + 1;
+        (agg.outcome_by_entity || []).forEach(function(e) {
+          var label = e.ccode + (e.name ? ' ' + e.name : '');
+          entityOutcome[label] = e.outcomes || {};
         });
         drawHeatmap('chart-entity-heatmap', entityOutcome, ['KEEP', 'RETIRE', 'MERGE_MAP', 'REDESIGN']);
 
         // -- Sankey (flow bars) --
-        var flows = {};
-        items.forEach(function(p) {
-          var src = p.cleansing_outcome || 'OTHER';
-          var tgt = p.target_object || 'NONE';
-          var key = src + ' → ' + tgt;
-          flows[key] = (flows[key] || 0) + 1;
-        });
-        drawSankey('chart-sankey', flows);
+        drawSankey('chart-sankey', agg.outcome_target_flow || {});
 
         // -- Balance vs Activity --
-        drawBalanceActivity('chart-balance-activity', items);
+        // Server returns per-outcome avg_postings + avg_tc_amt +
+        // n_centers. Pass through to the renderer in the shape it
+        // expects — synthesised "items" with one entry per outcome
+        // group so existing draw code doesn't need to change.
+        var balActivityRows = [];
+        Object.keys(agg.balance_activity || {}).forEach(function(o) {
+          var stats = agg.balance_activity[o];
+          balActivityRows.push({
+            cleansing_outcome: o,
+            avg_postings: stats.avg_postings,
+            avg_tc_amt: stats.avg_tc_amt,
+            n_centers: stats.n_centers,
+          });
+        });
+        drawBalanceActivityFromAggregates('chart-balance-activity', balActivityRows);
 
         // -- ML Confidence Distribution --
-        var confs = items.filter(function(p) { return p.confidence; }).map(function(p) { return parseFloat(p.confidence); });
-        if (confs.length === 0 && items.length > 0) {
-          // We have proposals but none of them have ML confidence. Most
-          // likely the pipeline didn't include the ml.classify_outcome
-          // routine, or the ML model failed to load and the engine fell
-          // back to rule-only. Either way, point the user at the cause.
+        if ((agg.confidence_count || 0) === 0 && total > 0) {
           document.getElementById('chart-ml-hist').innerHTML =
-            '<span class="text-sm text-amber-700">No ML confidence values on this run\'s ' + items.length +
+            '<span class="text-sm text-amber-700">No ML confidence values on this run\'s ' + total +
             ' proposals. Likely cause: the analysis config doesn\'t include the <code>ml.classify_outcome</code> ' +
             'routine, or the ML model failed to load. Check the run\'s pipeline config.</span>';
         } else {
-          drawConfidenceHist('chart-ml-hist', confs);
+          drawConfidenceHistFromBins('chart-ml-hist', agg.confidence_histogram || []);
         }
       })
       .catch(function(err) {
-        console.error('Proposals fetch error:', err);
-        document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-red-500">Error loading proposals: ' + err.message + '</span>';
+        console.error('Aggregates fetch error:', err);
+        document.getElementById('chart-outcome-donut').innerHTML = '<span class="text-sm text-red-500">Error loading aggregates: ' + err.message + '</span>';
       });
   }
 
@@ -1003,6 +1004,58 @@ import Layout from '../../components/layout/Layout.astro';
         '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">avg ' + avg + ' postings</span></div></div>';
     });
     html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // PR #90 — variant of drawBalanceActivity that takes the
+  // pre-aggregated rows from /aggregates instead of raw proposals.
+  // Each row: {cleansing_outcome, avg_postings, avg_tc_amt, n_centers}.
+  function drawBalanceActivityFromAggregates(divId, rows) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<span class="text-sm text-gray-400">No data</span>'; return; }
+    var maxPostings = 0;
+    rows.forEach(function(r) {
+      if (r.avg_postings > maxPostings) maxPostings = r.avg_postings;
+    });
+    var html = '<div class="space-y-2">';
+    rows.forEach(function(r) {
+      var avg = Math.round(r.avg_postings);
+      var pct = maxPostings ? Math.round((r.avg_postings / maxPostings) * 100) : 0;
+      html += '<div class="flex items-center gap-2">' +
+        '<span class="w-24 text-xs font-medium text-right" style="color:' + (COLORS[r.cleansing_outcome] || '#666') + '">' + r.cleansing_outcome + ' (' + r.n_centers + ')</span>' +
+        '<div class="flex-1 bg-gray-100 rounded h-5 relative">' +
+        '<div class="h-full rounded" style="width:' + pct + '%;background:' + (COLORS[r.cleansing_outcome] || '#999') + ';opacity:0.6"></div>' +
+        '<span class="absolute inset-0 flex items-center pl-2 text-[10px] font-mono">avg ' + avg + ' postings</span></div></div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // PR #90 — variant of drawConfidenceHist that takes the 10-bin
+  // histogram array from /aggregates: [{bin, count, label}, ...].
+  function drawConfidenceHistFromBins(divId, bins) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    if (!bins.length) { el.innerHTML = '<span class="text-sm text-gray-400">No ML confidence data</span>'; return; }
+    var maxCount = 0;
+    bins.forEach(function(b) { if (b.count > maxCount) maxCount = b.count; });
+    if (maxCount === 0) { el.innerHTML = '<span class="text-sm text-gray-400">No ML confidence data</span>'; return; }
+    // Use the same SVG layout as drawConfidenceHist for visual parity
+    var w = 320, h = 120, barW = w / 10;
+    var html = '<svg viewBox="0 0 ' + w + ' ' + (h + 30) + '" class="w-full h-32" preserveAspectRatio="none">';
+    bins.forEach(function(b, i) {
+      var bh = maxCount ? (b.count / maxCount) * h : 0;
+      var x = i * barW;
+      var y = h - bh;
+      html += '<rect x="' + (x + 1) + '" y="' + y + '" width="' + (barW - 2) + '" height="' + bh + '" fill="#8b5cf6" opacity="0.7"/>';
+      if (b.count > 0) {
+        html += '<text x="' + (x + barW / 2) + '" y="' + (y - 2) + '" text-anchor="middle" font-size="9" fill="#666">' + b.count + '</text>';
+      }
+      html += '<text x="' + (x + barW / 2) + '" y="' + (h + 12) + '" text-anchor="middle" font-size="9" fill="#999">' + b.label + '</text>';
+    });
+    html += '<text x="' + (w / 2) + '" y="' + (h + 26) + '" text-anchor="middle" font-size="9" fill="#666">Confidence</text>';
+    html += '</svg>';
     el.innerHTML = html;
   }
 
@@ -1218,16 +1271,36 @@ import Layout from '../../components/layout/Layout.astro';
   var jsonHdr = Object.assign({ 'Content-Type': 'application/json' }, authHdr);
 
   function loadConfigs() {
-    fetch('/api/configs', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(configs) {
+    // PR #90 — pass the currently-selected engine so the dropdown only
+    // shows configs that actually run on that engine. Without the
+    // filter, operators on Engine=V2 saw V1 configs (and vice versa)
+    // in the dropdown and got confused — picking a config and clicking
+    // Run Global Analysis just runs whatever the engine setting says,
+    // so the mismatched options were misleading.
+    var engineSel = document.getElementById('sel-engine-filter');
+    var engineVal = engineSel ? engineSel.value : '';
+    var url = '/api/configs';
+    if (engineVal) url += '?engine=' + encodeURIComponent(engineVal);
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(configs) {
       // Populate dropdown
       var sel = document.getElementById('sel-config');
+      var prev = sel.value;
       sel.innerHTML = '<option value="">Default Config</option>';
       configs.forEach(function(c) {
         var opt = document.createElement('option');
         opt.value = c.id;
-        opt.textContent = c.name + ' (v' + c.version + ')';
+        // Suffix is now ENGINE not config-revision-version. The
+        // (v1)/(v2) suffix on the dropdown matches the engine the
+        // config will actually run on, which is what operators expect.
+        var engine = c.engine_version || 'v1';
+        opt.textContent = c.name + ' (' + engine + ')';
         sel.appendChild(opt);
       });
+      // Restore prior selection if it's still in the list (engine
+      // change may have removed it — fall back to default in that case)
+      if (prev && [].slice.call(sel.options).some(function(o) { return o.value === prev; })) {
+        sel.value = prev;
+      }
       // Populate config list in panel
       var listEl = document.getElementById('config-list');
       if (!configs.length) {
@@ -1448,6 +1521,31 @@ import Layout from '../../components/layout/Layout.astro';
   // Cache of available hierarchies (id, label, setclass) so the picker
   // can render without re-fetching every time the user opens the
   // dropdown. Populated alongside browserData.
+  // PR #89 — per-column filter state for the tabular view (A6). Keys
+  // mirror the column `key` field; values are the substring to match.
+  var browserColFilters = {};
+
+  window.onColumnFilterInput = function(col, value) {
+    browserColFilters[col] = value || '';
+    // Debounce the re-render so typing fast doesn't hammer the
+    // filter+sort pass. After render the table HTML is replaced
+    // wholesale, which would normally drop focus from the input. We
+    // tag the active filter input via data-col so we can re-find it
+    // post-render and put the cursor back at the end of the value.
+    clearTimeout(window._colFilterT);
+    window._colFilterT = setTimeout(function() {
+      renderBrowser();
+      var fresh = document.querySelector('[data-col-filter="' + col + '"]');
+      if (fresh) {
+        fresh.focus();
+        try {
+          var v = fresh.value;
+          fresh.setSelectionRange(v.length, v.length);
+        } catch (e) { /* not a text input variant — ignore */ }
+      }
+    }, 200);
+  };
+
   var browserHierarchyOptions = [];
   var OUTCOME_BADGES = {
     KEEP: 'bg-green-100 text-green-800',
@@ -1577,7 +1675,7 @@ import Layout from '../../components/layout/Layout.astro';
     var search = (document.getElementById('browser-search').value || '').toLowerCase();
     var items = browserData.items || [];
 
-    // Filter
+    // Top-of-page search (existing) — broad, hits multiple fields.
     if (search) {
       items = items.filter(function(it) {
         return (it.cctr || '').toLowerCase().indexOf(search) >= 0 ||
@@ -1587,6 +1685,31 @@ import Layout from '../../components/layout/Layout.astro';
           (it.coarea || '').toLowerCase().indexOf(search) >= 0 ||
           (it.responsible || '').toLowerCase().indexOf(search) >= 0 ||
           (it.merge_into_cctr || '').toLowerCase().indexOf(search) >= 0;
+      });
+    }
+
+    // PR #89 — per-column filters (A6). Each tabular column has a
+    // small text input in the sub-header row; typing applies a
+    // case-insensitive substring match on that specific field. Filters
+    // combine via AND so operators can narrow down by, e.g., entity +
+    // outcome at the same time. Done client-side because the analytics
+    // data-browser endpoint already loads the entire run's proposals
+    // (no pagination — KPI views need the full set anyway). This is
+    // NOT a regression of PR #87's perf fix: that PR removed
+    // auto-populated dropdowns whose <option> count scaled with row
+    // count; per-column text inputs are O(1) DOM and the filter pass
+    // is O(rows) — flat in the cost-center count.
+    var colFilters = browserColFilters || {};
+    var hasColFilter = Object.keys(colFilters).some(function(k) { return colFilters[k]; });
+    if (hasColFilter) {
+      items = items.filter(function(it) {
+        for (var k in colFilters) {
+          var needle = (colFilters[k] || '').toLowerCase();
+          if (!needle) continue;
+          var hay = (it[k] == null ? '' : String(it[k])).toLowerCase();
+          if (hay.indexOf(needle) < 0) return false;
+        }
+        return true;
       });
     }
 
@@ -1683,6 +1806,33 @@ import Layout from '../../components/layout/Layout.astro';
     periods.forEach(function(p) {
       html += '<th class="py-2 px-1 text-right whitespace-nowrap text-[10px] font-normal text-gray-500">' + esc(p) + '</th>';
     });
+    html += '</tr>';
+
+    // PR #89 — per-column filter row (A6). Sub-header below the
+    // column titles with a tiny <input> for each filterable column.
+    // Uses inline onclick to avoid having to re-bind handlers after
+    // every renderBrowser() pass (the table HTML is replaced wholesale).
+    // We use onclick stopPropagation on the input so clicking it
+    // doesn't trigger the parent <th>'s sortBrowser handler.
+    html += '<tr class="border-b bg-white">';
+    cols.forEach(function(c) {
+      var current = browserColFilters[c.key] || '';
+      html += '<th class="py-1 px-2"><input type="text" placeholder="filter…" ' +
+        'value="' + escAttr(current) + '" ' +
+        'data-col-filter="' + c.key + '" ' +
+        'onclick="event.stopPropagation()" ' +
+        'oninput="onColumnFilterInput(\'' + c.key + '\', this.value)" ' +
+        'class="w-full text-[10px] font-normal px-1 py-0.5 border border-gray-200 rounded bg-white" /></th>';
+    });
+    // L0..LX columns aren't filterable for now (the values come from
+    // the resolved path, no clean field name to key on); render empty
+    // header cells to keep the column alignment.
+    for (var lj = 0; lj < maxDepth; lj++) {
+      html += '<th class="py-1 px-2"></th>';
+    }
+    // Empty cells for the Why? column and balance period columns.
+    html += '<th class="py-1 px-2"></th>';
+    periods.forEach(function() { html += '<th class="py-1 px-1"></th>'; });
     html += '</tr></thead><tbody>';
 
     sorted.forEach(function(it) {
@@ -1740,127 +1890,217 @@ import Layout from '../../components/layout/Layout.astro';
     el.innerHTML = html;
   }
 
+  // PR #89 — rebuilt hierarchical view (A7).
+  //
+  // Operator complaint: 'auf center ebene fehlen die details, die wir
+  // in der tabelarischen darstellung sehen. die subnotes sollte
+  // eingerückt dargestellt werden (wie in Data Management → entities
+  // → hierarchical).' The previous implementation rendered a flat
+  // collapsible tree where leaves showed only cctr + outcome badge —
+  // operators couldn't see CO Area, entity, responsible, target,
+  // confidence at a glance. And the indentation was just whitespace,
+  // so it didn't read as a tree.
+  //
+  // The /data → Entities → Hierarchical view already had the right
+  // pattern: ml-N classes for indentation, caret toggles, leaf-level
+  // tables with full row details. We mirror that here. The hierarchy
+  // picker is the same one used by the tabular L0..LX feature
+  // (browserHierarchyOptions, browserPathHierarchyId), so when the
+  // operator switches between Tabular and Hierarchical the chosen
+  // hierarchy persists — it's the same conceptual selection.
   function renderHierarchical(el, items) {
-    var hiers = browserData.hierarchies || [];
-    if (!hiers.length) {
-      el.innerHTML = '<span class="text-gray-400">No hierarchies loaded. Load hierarchy data first.</span>';
+    if (!items.length) {
+      el.innerHTML = '<span class="text-gray-400">No data to display</span>';
       return;
     }
 
-    // Fetch hierarchy labels
-    var html = '<div class="flex items-center gap-3 mb-3">';
-    html += '<select id="browser-hier-select" class="input text-sm w-64" onchange="renderHierTree()">';
-    hiers.forEach(function(h, i) {
-      var label = h.label || (h.setclass === '0101' ? 'CC' : h.setclass === '0104' ? 'PC' : 'Entity') + ': ' + h.setname;
-      html += '<option value="' + i + '">' + esc(label) + '</option>';
-    });
-    html += '</select>';
-    html += '<button class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="expandAllBrowser(true)">Expand All</button>';
-    html += '<button class="btn-sm bg-gray-200 text-gray-700 text-xs" onclick="expandAllBrowser(false)">Collapse All</button>';
-    html += '</div>';
-    html += '<div id="browser-hier-tree" class="font-mono text-xs"></div>';
-    el.innerHTML = html;
-    window.renderHierTree();
-  }
+    // Picker — operators expect to switch between CC / PC / Entity
+    // hierarchies the same way they do in tabular. browserPathHierarchyId
+    // is shared state with the tabular view's picker.
+    var pickerHtml = '<div class="flex items-center gap-2 mb-3 text-xs">' +
+      '<label class="text-gray-500 whitespace-nowrap">Hierarchy:</label>' +
+      '<select id="browser-hier-tree-select" class="input text-xs py-1 w-72" onchange="onBrowserPathHierChange()">' +
+        '<option value=""' + (browserPathHierarchyId == null ? ' selected' : '') + '>(pick a hierarchy to render the tree)</option>' +
+        browserHierarchyOptions.map(function(h) {
+          return '<option value="' + h.id + '"' + (browserPathHierarchyId == h.id ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+        }).join('') +
+      '</select>' +
+      '<button class="btn-sm bg-gray-200 text-gray-700 text-xs px-2 py-0.5" onclick="expandAllBrowser(true)">Expand All</button>' +
+      '<button class="btn-sm bg-gray-200 text-gray-700 text-xs px-2 py-0.5" onclick="expandAllBrowser(false)">Collapse All</button>' +
+    '</div>';
 
-  window.renderHierTree = function() {
-    var sel = document.getElementById('browser-hier-select');
-    if (!sel) return;
-    var idx = parseInt(sel.value);
-    var hier = browserData.hierarchies[idx];
-    if (!hier) return;
-    var treeEl = document.getElementById('browser-hier-tree');
+    if (browserPathHierarchyId == null) {
+      el.innerHTML = pickerHtml +
+        '<div class="text-gray-400 text-xs italic">Select a hierarchy above to render the indented tree.</div>';
+      return;
+    }
 
-    // Build lookup: node children and leaf values
-    var childNodes = {};
-    (hier.nodes || []).forEach(function(n) {
-      if (!childNodes[n.parent]) childNodes[n.parent] = [];
-      childNodes[n.parent].push(n.child);
-    });
-    var leafValues = {};
-    (hier.leaves || []).forEach(function(lf) {
-      if (!leafValues[lf.setname]) leafValues[lf.setname] = [];
-      leafValues[lf.setname].push(lf.value);
-    });
-
-    // Build item lookup by cctr
-    var itemByCctr = {};
-    (browserData.items || []).forEach(function(it) {
-      if (it.cctr) itemByCctr[it.cctr] = it;
-    });
-
-    function renderNode(name, depth) {
-      var indent = '  '.repeat(depth);
-      var html = '<div class="hier-node" data-depth="' + depth + '">';
-      var children = childNodes[name] || [];
-      var leaves = leafValues[name] || [];
-      var hasKids = children.length > 0 || leaves.length > 0;
-
-      html += '<div class="py-0.5 cursor-pointer hover:bg-blue-50 rounded px-1" onclick="toggleHierNode(this)">' +
-        indent + (hasKids ? '<span class="hier-toggle">▼ </span>' : '  ') +
-        '<span class="font-semibold text-blue-700">' + esc(name) + '</span></div>';
-
-      if (hasKids) {
-        html += '<div class="hier-children">';
-        children.forEach(function(child) { html += renderNode(child, depth + 1); });
-        leaves.forEach(function(val) {
-          var it = itemByCctr[val];
-          var outcomeHtml = '';
-          if (it) {
-            var cls = OUTCOME_BADGES[it.cleansing_outcome] || 'bg-gray-100';
-            outcomeHtml = ' <span class="px-1 py-0.5 rounded text-[9px] ' + cls + '">' + esc(it.cleansing_outcome) + '</span>';
-            if (it.merge_into_cctr) outcomeHtml += ' → <span class="font-semibold text-purple-700">' + esc(it.merge_into_cctr) + '</span>';
-          }
-          html += '<div class="py-0.5 px-1 hover:bg-gray-50">' + indent + '  ' +
-            '<span class="text-gray-600">' + esc(val) + '</span>' +
-            (it && it.txtsh ? ' <span class="text-gray-400">' + esc(it.txtsh) + '</span>' : '') +
-            outcomeHtml + '</div>';
-        });
-        html += '</div>';
+    // Build a recursive tree from each item's hierarchy_path. Items
+    // with no path go into an "(unassigned)" bucket so they're still
+    // visible (otherwise operators would think the data is missing).
+    function emptyNode() { return { children: {}, leaves: [], order: [] }; }
+    var root = emptyNode();
+    items.forEach(function(it) {
+      var path = it.hierarchy_path || [];
+      if (!path.length) {
+        if (!root.children['(unassigned)']) {
+          root.children['(unassigned)'] = emptyNode();
+          root.order.push('(unassigned)');
+        }
+        root.children['(unassigned)'].leaves.push(it);
+        return;
       }
-      html += '</div>';
+      // Walk the path; the LAST element is the leaf setname (the cctr
+      // in the hierarchy_leaf table). We treat path[0..n-2] as ancestor
+      // node setnames and put the item at path[n-1]. This keeps the
+      // tree structure aligned with the hierarchy itself rather than
+      // with the cctr value.
+      var node = root;
+      for (var i = 0; i < path.length - 1; i++) {
+        var key = path[i];
+        if (!node.children[key]) {
+          node.children[key] = emptyNode();
+          node.order.push(key);
+        }
+        node = node.children[key];
+      }
+      node.leaves.push(it);
+    });
+
+    function countLeaves(node) {
+      var n = node.leaves.length;
+      node.order.forEach(function(k) { n += countLeaves(node.children[k]); });
+      return n;
+    }
+
+    var nodeIdSeq = 0;
+    function nextId() { return 'hier-tree-n' + (++nodeIdSeq); }
+
+    function renderTreeNode(node, depth) {
+      var html = '';
+      // Render children groups first
+      node.order.sort();
+      node.order.forEach(function(key) {
+        var child = node.children[key];
+        var nid = nextId();
+        var childCount = countLeaves(child);
+        // Cap indent at ml-12 so the tree stays readable at deep levels.
+        var indentClass = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
+        // Top 2 levels open by default; deeper levels collapsed.
+        var openByDefault = depth < 2;
+        var caret = openByDefault ? '▼' : '▶';
+        var hideClass = openByDefault ? '' : ' hidden';
+        html += '<div class="' + indentClass + ' my-0.5">' +
+          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded" ' +
+                 'onclick="(function(b){var t=document.getElementById(\'' + nid + '\');if(!t)return;var open=t.classList.toggle(\'hidden\');b.querySelector(\'.hier-caret\').textContent=open?\'\\u25B6\':\'\\u25BC\';})(this)">' +
+            '<span class="hier-caret text-gray-400">' + caret + '</span>' +
+            '<span class="font-mono font-semibold text-blue-700">' + esc(key) + '</span>' +
+            '<span class="ml-auto text-[10px] text-gray-400">' + childCount + ' center' + (childCount === 1 ? '' : 's') + '</span>' +
+          '</button>' +
+          '<div id="' + nid + '" class="hier-children' + hideClass + '">' +
+            renderTreeNode(child, depth + 1) +
+          '</div>' +
+        '</div>';
+      });
+      // Render direct leaves (CCs that sit at this node) as a compact table.
+      // This is the bit the previous implementation was missing — the
+      // tabular-style detail row at the leaf level.
+      if (node.leaves.length) {
+        var indentClass2 = depth === 0 ? '' : 'ml-' + Math.min(depth * 4 + 2, 14);
+        html += '<div class="' + indentClass2 + ' my-1">' + renderLeafTable(node.leaves) + '</div>';
+      }
       return html;
     }
 
-    // Find root(s)
-    var allChildren = new Set();
-    (hier.nodes || []).forEach(function(n) { allChildren.add(n.child); });
-    var roots = [];
-    (hier.nodes || []).forEach(function(n) {
-      if (!allChildren.has(n.parent) && roots.indexOf(n.parent) < 0) roots.push(n.parent);
-    });
-    if (!roots.length) roots = [hier.setname];
-
-    var treeHtml = '';
-    roots.forEach(function(r) { treeHtml += renderNode(r, 0); });
-    treeEl.innerHTML = treeHtml || '<span class="text-gray-400">No tree structure available</span>';
-  };
-
-  window.toggleHierNode = function(el) {
-    var children = el.nextElementSibling;
-    if (!children || !children.classList.contains('hier-children')) return;
-    var toggle = el.querySelector('.hier-toggle');
-    if (children.style.display === 'none') {
-      children.style.display = '';
-      if (toggle) toggle.textContent = '▼ ';
-    } else {
-      children.style.display = 'none';
-      if (toggle) toggle.textContent = '▶ ';
+    function renderLeafTable(leaves) {
+      // Compact table mirroring the columns the operator sees in the
+      // tabular view, so the hierarchical view is the SAME data,
+      // re-grouped — not a different view with less info.
+      var rows = leaves.map(function(it) {
+        var cls = OUTCOME_BADGES[it.cleansing_outcome] || 'bg-gray-100 text-gray-700';
+        var target = it.merge_into_cctr
+          ? '<span class="font-mono text-purple-700">' + esc(it.merge_into_cctr) + '</span>'
+          : '<span class="text-gray-300">—</span>';
+        var conf = it.confidence ? Number(it.confidence).toFixed(2) : '';
+        return '<tr class="border-b last:border-0 hover:bg-gray-50">' +
+          '<td class="py-1 px-2 font-mono text-[11px] font-medium">' + esc(it.cctr) + '</td>' +
+          '<td class="py-1 px-2 text-[11px] truncate max-w-[200px]" title="' + escAttr(it.txtmi || it.txtsh || '') + '">' + esc(it.txtsh) + '</td>' +
+          '<td class="py-1 px-2 font-mono text-[11px]">' + esc(it.ccode) + '</td>' +
+          '<td class="py-1 px-2 font-mono text-[11px]">' + esc(it.coarea) + '</td>' +
+          '<td class="py-1 px-2 font-mono text-[11px]">' + esc(it.pctr) + '</td>' +
+          '<td class="py-1 px-2 text-[11px]">' + esc(it.responsible) + '</td>' +
+          '<td class="py-1 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' + cls + '">' + esc(it.cleansing_outcome) + '</span></td>' +
+          '<td class="py-1 px-2 text-[11px]">' + target + '</td>' +
+          '<td class="py-1 px-2 text-right text-[11px]">' + conf + '</td>' +
+          '<td class="py-1 px-2 text-center"><button class="text-blue-600 hover:text-blue-800 underline text-[10px]" onclick="showWhyPanel(' + it.id + ')">Why?</button></td>' +
+          '</tr>';
+      }).join('');
+      return '<table class="w-full text-xs border border-gray-200 rounded">' +
+        '<thead><tr class="bg-gray-50 border-b text-[10px] text-gray-500">' +
+          '<th class="py-1 px-2 text-left">CC</th>' +
+          '<th class="py-1 px-2 text-left">Short Text</th>' +
+          '<th class="py-1 px-2 text-left">Entity</th>' +
+          '<th class="py-1 px-2 text-left">CO Area</th>' +
+          '<th class="py-1 px-2 text-left">PC</th>' +
+          '<th class="py-1 px-2 text-left">Responsible</th>' +
+          '<th class="py-1 px-2 text-left">Outcome</th>' +
+          '<th class="py-1 px-2 text-left">Target</th>' +
+          '<th class="py-1 px-2 text-right">Conf.</th>' +
+          '<th class="py-1 px-2"></th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
     }
-  };
+
+    el.innerHTML = pickerHtml + renderTreeNode(root, 0);
+  }
 
   window.expandAllBrowser = function(expand) {
     document.querySelectorAll('.hier-children').forEach(function(el) {
-      el.style.display = expand ? '' : 'none';
+      if (expand) el.classList.remove('hidden');
+      else el.classList.add('hidden');
     });
-    document.querySelectorAll('.hier-toggle').forEach(function(el) {
-      el.textContent = expand ? '▼ ' : '▶ ';
+    document.querySelectorAll('.hier-caret').forEach(function(el) {
+      el.textContent = expand ? '\u25BC' : '\u25B6';
     });
+  };
+
+  // PR #89 — CC→PC Mapping view (A8).
+  //
+  // Operator request: 'cc->pc sollte auch in hiearchichal form einsehbar
+  // sein.' The flat side-by-side "Current 1:1" / "Proposed n:1" view
+  // remains for at-a-glance comparison, but we now layer a hierarchical
+  // mode on top using the same hierarchy picker as the other tabs. The
+  // tree groups CCs by the chosen hierarchy and shows the CC→PC mapping
+  // (current and proposed) at each leaf.
+  //
+  // The toggle between flat and hierarchical mapping modes is a small
+  // segmented control above the content — same visual language as the
+  // top-level Tabular/Hierarchical toggle, which keeps the page coherent.
+  var _mappingMode = 'flat'; // 'flat' or 'hierarchical'
+  window.switchMappingMode = function(mode) {
+    _mappingMode = mode;
+    renderBrowser();
   };
 
   function renderMapping(el, items) {
     if (!items.length) { el.innerHTML = '<span class="text-gray-400">No data to display</span>'; return; }
 
+    var modeBar = '<div class="flex items-center gap-2 mb-3 text-xs">' +
+      '<label class="text-gray-500 whitespace-nowrap">Mapping view:</label>' +
+      '<div class="inline-flex rounded-md border border-gray-300 overflow-hidden">' +
+        '<button class="px-3 py-1 ' + (_mappingMode === 'flat' ? 'bg-blue-600 text-white font-semibold' : 'bg-white text-gray-700 hover:bg-gray-50') + '" onclick="switchMappingMode(\'flat\')">Flat (current vs proposed)</button>' +
+        '<button class="px-3 py-1 border-l border-gray-300 ' + (_mappingMode === 'hierarchical' ? 'bg-blue-600 text-white font-semibold' : 'bg-white text-gray-700 hover:bg-gray-50') + '" onclick="switchMappingMode(\'hierarchical\')">Hierarchical</button>' +
+      '</div>' +
+    '</div>';
+
+    if (_mappingMode === 'hierarchical') {
+      el.innerHTML = modeBar + renderMappingHierarchical(items);
+      return;
+    }
+
+    el.innerHTML = modeBar + renderMappingFlat(items);
+  }
+
+  function renderMappingFlat(items) {
     // Group by current PC (1:1 legacy mapping)
     var currentMap = {};
     items.forEach(function(it) {
@@ -1927,8 +2167,122 @@ import Layout from '../../components/layout/Layout.astro';
     html += '<div class="mt-3 text-xs text-gray-500">' +
       'Current: ' + sortedPCs.length + ' profit centers · Proposed: ' + sortedTargets.length + ' targets · ' +
       'Consolidation ratio: ' + items.length + ':' + sortedTargets.length + '</div>';
-    el.innerHTML = html;
+    return html;
   }
+
+  function renderMappingHierarchical(items) {
+    // Same picker UX as the hierarchical view — pick a hierarchy from
+    // the dropdown, get an indented tree where leaves show the CC→PC
+    // mapping (both current and proposed).
+    var pickerHtml = '<div class="flex items-center gap-2 mb-3 text-xs">' +
+      '<label class="text-gray-500 whitespace-nowrap">Hierarchy:</label>' +
+      '<select id="mapping-hier-select" class="input text-xs py-1 w-72" onchange="onBrowserPathHierChange()">' +
+        '<option value=""' + (browserPathHierarchyId == null ? ' selected' : '') + '>(pick a hierarchy)</option>' +
+        browserHierarchyOptions.map(function(h) {
+          return '<option value="' + h.id + '"' + (browserPathHierarchyId == h.id ? ' selected' : '') + '>' + esc(h.label) + '</option>';
+        }).join('') +
+      '</select>' +
+    '</div>';
+
+    if (browserPathHierarchyId == null) {
+      return pickerHtml + '<div class="text-gray-400 text-xs italic">Select a hierarchy to group the CC→PC mappings.</div>';
+    }
+
+    // Build the tree (same structure as renderHierarchical, different
+    // leaf renderer — we want CC→PC not CC→outcome).
+    function emptyNode() { return { children: {}, leaves: [], order: [] }; }
+    var root = emptyNode();
+    items.forEach(function(it) {
+      var path = it.hierarchy_path || [];
+      if (!path.length) {
+        if (!root.children['(unassigned)']) {
+          root.children['(unassigned)'] = emptyNode();
+          root.order.push('(unassigned)');
+        }
+        root.children['(unassigned)'].leaves.push(it);
+        return;
+      }
+      var node = root;
+      for (var i = 0; i < path.length - 1; i++) {
+        var key = path[i];
+        if (!node.children[key]) {
+          node.children[key] = emptyNode();
+          node.order.push(key);
+        }
+        node = node.children[key];
+      }
+      node.leaves.push(it);
+    });
+
+    function countLeaves(node) {
+      var n = node.leaves.length;
+      node.order.forEach(function(k) { n += countLeaves(node.children[k]); });
+      return n;
+    }
+
+    var idSeq = 0;
+    function nid() { return 'map-tree-n' + (++idSeq); }
+
+    function renderNode(node, depth) {
+      var html = '';
+      node.order.sort();
+      node.order.forEach(function(k) {
+        var child = node.children[k];
+        var id = nid();
+        var n = countLeaves(child);
+        var indent = depth === 0 ? '' : 'ml-' + Math.min(depth * 4, 12);
+        var openByDefault = depth < 2;
+        var caret = openByDefault ? '\u25BC' : '\u25B6';
+        var hide = openByDefault ? '' : ' hidden';
+        html += '<div class="' + indent + ' my-0.5">' +
+          '<button type="button" class="w-full text-left flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded" ' +
+                 'onclick="(function(b){var t=document.getElementById(\'' + id + '\');if(!t)return;var o=t.classList.toggle(\'hidden\');b.querySelector(\'.hier-caret\').textContent=o?\'\\u25B6\':\'\\u25BC\';})(this)">' +
+            '<span class="hier-caret text-gray-400">' + caret + '</span>' +
+            '<span class="font-mono font-semibold text-blue-700">' + esc(k) + '</span>' +
+            '<span class="ml-auto text-[10px] text-gray-400">' + n + ' mapping' + (n === 1 ? '' : 's') + '</span>' +
+          '</button>' +
+          '<div id="' + id + '" class="hier-children' + hide + '">' + renderNode(child, depth + 1) + '</div>' +
+        '</div>';
+      });
+      if (node.leaves.length) {
+        var indent2 = depth === 0 ? '' : 'ml-' + Math.min(depth * 4 + 2, 14);
+        html += '<div class="' + indent2 + ' my-1">' + mappingLeafTable(node.leaves) + '</div>';
+      }
+      return html;
+    }
+
+    function mappingLeafTable(leaves) {
+      var rows = leaves.map(function(it) {
+        var cls = OUTCOME_BADGES[it.cleansing_outcome] || 'bg-gray-100 text-gray-700';
+        var currentPC = it.pctr ? esc(it.pctr) : '<span class="text-gray-300">—</span>';
+        var proposedTarget = it.merge_into_cctr
+          ? '<span class="font-mono font-medium text-purple-700">' + esc(it.merge_into_cctr) + '</span>'
+          : (it.cleansing_outcome === 'KEEP'
+              ? '<span class="text-green-700 text-[10px]">(self · KEEP)</span>'
+              : '<span class="text-gray-300">—</span>');
+        return '<tr class="border-b last:border-0 hover:bg-gray-50">' +
+          '<td class="py-1 px-2 font-mono text-[11px] font-medium">' + esc(it.cctr) + '</td>' +
+          '<td class="py-1 px-2 text-[11px] truncate max-w-[200px]" title="' + escAttr(it.txtmi || it.txtsh || '') + '">' + esc(it.txtsh) + '</td>' +
+          '<td class="py-1 px-2 font-mono text-[11px] text-purple-700">' + currentPC + '</td>' +
+          '<td class="py-1 px-2 text-center text-gray-400 text-[10px]">→</td>' +
+          '<td class="py-1 px-2 text-[11px]">' + proposedTarget + '</td>' +
+          '<td class="py-1 px-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium ' + cls + '">' + esc(it.cleansing_outcome) + '</span></td>' +
+          '</tr>';
+      }).join('');
+      return '<table class="w-full text-xs border border-gray-200 rounded">' +
+        '<thead><tr class="bg-gray-50 border-b text-[10px] text-gray-500">' +
+          '<th class="py-1 px-2 text-left">CC</th>' +
+          '<th class="py-1 px-2 text-left">Short Text</th>' +
+          '<th class="py-1 px-2 text-left">Current PC</th>' +
+          '<th class="py-1 px-2"></th>' +
+          '<th class="py-1 px-2 text-left">Proposed Target CC</th>' +
+          '<th class="py-1 px-2 text-left">Outcome</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    return pickerHtml + renderNode(root, 0);
+  }
+
 
   // Wire search filter
   document.getElementById('browser-search').addEventListener('input', function() {

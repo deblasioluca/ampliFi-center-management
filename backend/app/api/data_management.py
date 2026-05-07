@@ -255,6 +255,183 @@ def delete_all_center_mappings(
     return DeleteResult(table="center_mapping", deleted=result.rowcount)
 
 
+class AutoDeriveResult(BaseModel):
+    """Outcome of an auto-derive run.
+
+    ``created`` and ``updated`` are exclusive — a row that already
+    matched (legacy_center, target_center) is updated in place rather
+    than duplicated, so re-running the auto-derive is safe (idempotent
+    on the unique-constraint columns).
+    """
+
+    created: int
+    updated: int
+    skipped: int
+    runs_consulted: int
+    source_runs: list[int]
+
+
+@router.post("/center-mappings/auto-derive")
+def auto_derive_center_mappings(
+    run_id: int | None = None,
+    overwrite: bool = False,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "analyst")),
+) -> AutoDeriveResult:
+    """Populate ``center_mapping`` from completed analysis runs (PR #89, A13).
+
+    Operator question: 'mapping is leer, wie kann diese befüllen?' The
+    canonical answer is "upload a CSV via the Upload page" — but in a
+    sizable share of operator workflows the merge decisions already
+    exist on the proposals table (output of a global or wave analysis
+    run) and the operator has no separate mapping CSV to upload. This
+    endpoint closes that gap.
+
+    Every ``CenterProposal`` row with ``cleansing_outcome == 'MERGE_MAP'``
+    and a non-null ``merge_into_cctr`` becomes a CenterMapping row:
+
+    * ``object_type``        = ``"cost_center"``
+    * ``legacy_center``      = legacy CC's ``cctr``
+    * ``legacy_name``        = legacy CC's ``txtsh``
+    * ``target_center``      = ``merge_into_cctr`` (from the proposal)
+    * ``target_name``        = best-effort lookup from
+      ``LegacyCostCenter`` (the merge target is itself a known CC in
+      99% of real cases) or ``None`` if it's not in the table
+    * ``mapping_type``       = ``"merge"``
+    * ``notes``              = ``"Auto-derived from run #N"``
+
+    Behaviour:
+    * ``run_id`` optional. If provided, derive only from that run; if
+      omitted, derive from ALL completed runs (most recent overrides
+      older when the same legacy → target pair appears twice).
+    * ``overwrite`` defaults to False. Existing rows on the unique
+      constraint (scope/object_type/legacy_coarea/legacy_center/
+      target_coarea/target_center) are skipped unless ``overwrite=True``,
+      in which case ``legacy_name``, ``target_name``, ``mapping_type``,
+      and ``notes`` are refreshed. We never delete pre-existing manual
+      mappings — operators put work into those.
+
+    The endpoint is idempotent and safe to re-run.
+    """
+    from app.models.core import AnalysisRun, CenterProposal
+
+    # Resolve which runs to consult. Defaulting to all "completed" runs
+    # (the success path) avoids picking up half-finished work.
+    runs_q = select(AnalysisRun).where(AnalysisRun.status == "completed")
+    if run_id is not None:
+        runs_q = runs_q.where(AnalysisRun.id == run_id)
+    runs = db.execute(runs_q).scalars().all()
+    if not runs:
+        # If a specific run_id was given but it's not completed, that's
+        # a 4xx not a 5xx — give the operator a clear message.
+        if run_id is not None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No completed run with id={run_id}",
+            )
+        return AutoDeriveResult(created=0, updated=0, skipped=0, runs_consulted=0, source_runs=[])
+
+    run_ids = [r.id for r in runs]
+
+    # Collect all MERGE_MAP proposals from those runs in a single
+    # query, joined to the legacy CC table for the names we need on
+    # the mapping rows.
+    rows = db.execute(
+        select(
+            CenterProposal.legacy_cc_id,
+            CenterProposal.merge_into_cctr,
+            LegacyCostCenter.cctr,
+            LegacyCostCenter.coarea,
+            LegacyCostCenter.txtsh,
+        )
+        .join(LegacyCostCenter, LegacyCostCenter.id == CenterProposal.legacy_cc_id)
+        .where(
+            CenterProposal.run_id.in_(run_ids),
+            CenterProposal.cleansing_outcome == "MERGE_MAP",
+            CenterProposal.merge_into_cctr.isnot(None),
+        )
+    ).all()
+
+    # Pre-fetch target names (the merge_into_cctr should match a known
+    # legacy CC in the same coarea — usually the surviving "winner" of
+    # a merge). One IN-bounded query rather than N row-by-row lookups.
+    # We use tuple unpacking on the row rather than attribute access so
+    # the endpoint stays test-friendly (mocked rows are plain tuples).
+    target_cctrs = list({m for _l, m, _c, _co, _t in rows if m})
+    target_name_map: dict[tuple[str, str], str] = {}
+    if target_cctrs:
+        tn_rows = db.execute(
+            select(LegacyCostCenter.coarea, LegacyCostCenter.cctr, LegacyCostCenter.txtsh).where(
+                LegacyCostCenter.cctr.in_(target_cctrs)
+            )
+        ).all()
+        for coarea, cctr, txtsh in tn_rows:
+            target_name_map[(coarea, cctr)] = txtsh or ""
+
+    created = 0
+    updated = 0
+    skipped = 0
+
+    for _legacy_cc_id, target_cctr, legacy_cctr, coarea, legacy_txtsh in rows:
+        if not target_cctr or not legacy_cctr:
+            skipped += 1
+            continue
+
+        # Look for an existing mapping on the unique-constraint key.
+        existing = db.execute(
+            select(CenterMapping).where(
+                CenterMapping.scope == SCOPE_CLEANUP,
+                CenterMapping.object_type == "cost_center",
+                CenterMapping.legacy_coarea == coarea,
+                CenterMapping.legacy_center == legacy_cctr,
+                CenterMapping.target_coarea == coarea,
+                CenterMapping.target_center == target_cctr,
+            )
+        ).scalar_one_or_none()
+
+        target_name = target_name_map.get((coarea, target_cctr))
+        notes = (
+            f"Auto-derived from analysis run #{run_id}"
+            if run_id
+            else "Auto-derived from analysis runs"
+        )
+
+        if existing is not None:
+            if not overwrite:
+                skipped += 1
+                continue
+            existing.legacy_name = legacy_txtsh
+            existing.target_name = target_name
+            existing.mapping_type = "merge"
+            existing.notes = notes
+            updated += 1
+        else:
+            db.add(
+                CenterMapping(
+                    scope=SCOPE_CLEANUP,
+                    object_type="cost_center",
+                    legacy_coarea=coarea,
+                    legacy_center=legacy_cctr,
+                    legacy_name=legacy_txtsh,
+                    target_coarea=coarea,
+                    target_center=target_cctr,
+                    target_name=target_name,
+                    mapping_type="merge",
+                    notes=notes,
+                )
+            )
+            created += 1
+
+    db.commit()
+    return AutoDeriveResult(
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        runs_consulted=len(runs),
+        source_runs=run_ids,
+    )
+
+
 # ── Balances ────────────────────────────────────────────────────────────
 
 

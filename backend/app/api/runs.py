@@ -728,6 +728,183 @@ def data_browser(
     }
 
 
+@router.get("/{run_id}/aggregates")
+def run_aggregates(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "analyst", "data_manager")),
+) -> dict:
+    """Server-side aggregations for the analytics dashboard charts.
+
+    Operator report: 'Outcome distribution only shows 5k centers' — the
+    dashboard was computing every chart client-side from
+    ``/runs/{id}/proposals?size=5000``, which truncated above 5000
+    proposals. With 18,490 cost centers in the user's run, the charts
+    were drawn from a sample, not the full population, and the donut
+    showed ``5,000 KEEP`` while the KPI strip correctly showed 18,490.
+
+    This endpoint returns the same aggregations the charts need, but
+    computed via SQL ``GROUP BY`` over the full proposals set, so the
+    response stays small and accurate regardless of run size:
+
+    * ``outcome_counts``     — donut + KPI strip
+    * ``target_per_outcome`` — stacked target bars
+    * ``outcome_target_flow``— sankey diagram
+    * ``outcome_by_entity``  — heatmap; entity-level rollup with name
+    * ``confidence_histogram``— ML confidence histogram, fixed 10 bins
+      from 0.0 to 1.0
+    * ``balance_activity``   — for the bal-vs-activity strip: per-
+      outcome avg posting count and avg tc_amt, joined to balance
+    * ``confidence_count``   — number of proposals with a non-null
+      confidence (lets the frontend distinguish 'no ML' from 'low ML')
+    * ``total_proposals``    — sum across all outcomes; the frontend
+      uses this to detect the "kpis say N but proposals returned 0"
+      inconsistency (which used to be a separate diagnostic fetch)
+
+    All queries run on the proposals table (cheap; indexed on run_id),
+    plus one balance JOIN. No row-by-row work in Python.
+    """
+    from app.models.core import LegacyCostCenter
+
+    # Run must exist
+    run = db.get(AnalysisRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # 1) outcome_counts (single GROUP BY)
+    outcome_rows = db.execute(
+        select(CenterProposal.cleansing_outcome, func.count(CenterProposal.id))
+        .where(CenterProposal.run_id == run_id)
+        .group_by(CenterProposal.cleansing_outcome)
+    ).all()
+    outcome_counts: dict[str, int] = {(o or "OTHER"): int(n) for o, n in outcome_rows}
+    total_proposals = sum(outcome_counts.values())
+
+    # 2) target_per_outcome (cleansing_outcome × target_object)
+    tgt_rows = db.execute(
+        select(
+            CenterProposal.cleansing_outcome,
+            CenterProposal.target_object,
+            func.count(CenterProposal.id),
+        )
+        .where(CenterProposal.run_id == run_id)
+        .group_by(CenterProposal.cleansing_outcome, CenterProposal.target_object)
+    ).all()
+    target_per_outcome: dict[str, dict[str, int]] = {}
+    outcome_target_flow: dict[str, int] = {}
+    for outcome, target, n in tgt_rows:
+        o = outcome or "OTHER"
+        t = target or "NONE"
+        target_per_outcome.setdefault(o, {})[t] = int(n)
+        outcome_target_flow[f"{o} → {t}"] = int(n)
+
+    # 3) outcome_by_entity — JOIN proposals to legacy_cc to get ccode.
+    entity_rows = db.execute(
+        select(
+            LegacyCostCenter.ccode,
+            CenterProposal.cleansing_outcome,
+            func.count(CenterProposal.id),
+        )
+        .join(LegacyCostCenter, LegacyCostCenter.id == CenterProposal.legacy_cc_id)
+        .where(CenterProposal.run_id == run_id)
+        .group_by(LegacyCostCenter.ccode, CenterProposal.cleansing_outcome)
+    ).all()
+    by_entity_raw: dict[str, dict[str, int]] = {}
+    for ccode, outcome, n in entity_rows:
+        ec = ccode or "Unknown"
+        by_entity_raw.setdefault(ec, {})[(outcome or "OTHER")] = int(n)
+
+    # Optional: enrich entity rows with a display name from the entity
+    # table. Best-effort — no name → ccode shown alone in the heatmap.
+    from app.models.core import Entity
+
+    if by_entity_raw:
+        entity_names = db.execute(
+            select(Entity.ccode, Entity.name).where(Entity.ccode.in_(list(by_entity_raw.keys())))
+        ).all()
+        name_map = dict(entity_names)
+    else:
+        name_map = {}
+
+    outcome_by_entity = [
+        {
+            "ccode": ccode,
+            "name": name_map.get(ccode, ""),
+            "outcomes": counts,
+            "total": sum(counts.values()),
+        }
+        for ccode, counts in sorted(by_entity_raw.items(), key=lambda kv: -sum(kv[1].values()))
+    ]
+
+    # 4) confidence_histogram — 10 bins from 0.0 to 1.0. Bucketing
+    # via FLOOR(confidence * 10) capped at 9 so 1.0 lands in the last
+    # bin. We use sqlalchemy ``case`` + ``cast`` so the SQL works on
+    # both Postgres (production) and SQLite (test env) — neither needs
+    # FLOOR; CAST(... AS INTEGER) truncates positive floats the same
+    # way on both. The ``case`` clamps the upper edge.
+    from sqlalchemy import Integer, case, cast
+
+    bin_col = case(
+        (CenterProposal.confidence >= 1.0, 9),
+        else_=cast(CenterProposal.confidence * 10, Integer),
+    ).label("bin")
+    conf_rows = db.execute(
+        select(bin_col, func.count(CenterProposal.id))
+        .where(
+            CenterProposal.run_id == run_id,
+            CenterProposal.confidence.isnot(None),
+        )
+        .group_by(bin_col)
+    ).all()
+    histogram = [{"bin": i, "count": 0, "label": f"{i / 10:.1f}"} for i in range(10)]
+    confidence_count = 0
+    for b, n in conf_rows:
+        if b is None:
+            continue
+        idx = max(0, min(9, int(b)))
+        histogram[idx]["count"] += int(n)
+        confidence_count += int(n)
+
+    # 5) balance_activity — for the strip chart at the bottom of
+    # Visuals tab. Per-outcome avg posting_count + avg tc_amt across
+    # the run's proposals. JOINs proposals → legacy_cc (for cctr) →
+    # balance.
+    from app.models.core import Balance
+
+    bal_rows = db.execute(
+        select(
+            CenterProposal.cleansing_outcome,
+            func.coalesce(func.avg(Balance.posting_count), 0).label("avg_postings"),
+            func.coalesce(func.avg(Balance.tc_amt), 0).label("avg_tc_amt"),
+            func.count(func.distinct(LegacyCostCenter.id)).label("n_centers"),
+        )
+        .join(LegacyCostCenter, LegacyCostCenter.id == CenterProposal.legacy_cc_id)
+        .join(Balance, Balance.cctr == LegacyCostCenter.cctr, isouter=True)
+        .where(CenterProposal.run_id == run_id)
+        .group_by(CenterProposal.cleansing_outcome)
+    ).all()
+    balance_activity: dict[str, dict] = {}
+    for outcome, avg_postings, avg_tc_amt, n_centers in bal_rows:
+        o = outcome or "OTHER"
+        balance_activity[o] = {
+            "avg_postings": float(avg_postings or 0),
+            "avg_tc_amt": float(avg_tc_amt or 0),
+            "n_centers": int(n_centers or 0),
+        }
+
+    return {
+        "run_id": run_id,
+        "total_proposals": total_proposals,
+        "outcome_counts": outcome_counts,
+        "target_per_outcome": target_per_outcome,
+        "outcome_target_flow": outcome_target_flow,
+        "outcome_by_entity": outcome_by_entity,
+        "confidence_histogram": histogram,
+        "confidence_count": confidence_count,
+        "balance_activity": balance_activity,
+    }
+
+
 @router.post("/{run_id}/proposals/{proposal_id}/override")
 def override_proposal(
     run_id: int,

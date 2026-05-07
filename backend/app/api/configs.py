@@ -29,17 +29,65 @@ class ConfigOut(BaseModel):
     description: str | None
     status: str
     config: dict
+    # PR #90 — engine_version is derived from the routine prefixes
+    # in the config blob (V2 uses ``v2.*`` codes, V1 uses ``rule.*``
+    # / ``ml.*`` / ``llm.*``). Lets the dashboard's Config dropdown
+    # filter by selected engine instead of showing every config
+    # regardless of which engine is selected.
+    engine_version: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+def _detect_engine_from_config(cfg_blob: dict | None) -> str:
+    """Infer engine version from a config's routine prefixes.
+
+    The DB schema doesn't carry an ``engine_version`` column on
+    ``analysis_config`` — V1 vs V2 is a property of which routines run.
+    V2 ships ``v2.retire_flag``, ``v2.balance_migrate``, ``v2.pc_approach``,
+    etc. V1 uses ``rule.*`` / ``ml.*`` / ``llm.*``. Any pipeline with
+    a ``v2.*`` routine is treated as V2; otherwise V1.
+
+    Returns ``"v1"`` or ``"v2"``. Empty / unparseable configs fall back
+    to ``"v1"`` (the historic default).
+    """
+    if not cfg_blob:
+        return "v1"
+    pipeline = cfg_blob.get("pipeline") or cfg_blob.get("routines") or []
+    for entry in pipeline:
+        code = entry.get("routine") if isinstance(entry, dict) else entry
+        if isinstance(code, str) and code.startswith("v2."):
+            return "v2"
+    return "v1"
 
 
 @router.get("")
 def list_configs(
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_current_user),
+    engine: str | None = None,
 ) -> list[ConfigOut]:
+    """List configs.
+
+    PR #90 — accepts an optional ``engine=v1|v2`` filter so the analytics
+    dashboard's Config dropdown can match the operator's currently
+    selected engine. The filter is applied client-side equivalently
+    via ``_detect_engine_from_config`` because there's no engine
+    column on the row to filter at the SQL level.
+
+    Each row also carries ``engine_version`` so the frontend can show
+    a clear suffix and so other call-sites can branch on it without
+    re-running the detection logic.
+    """
     configs = db.execute(select(AnalysisConfig).order_by(AnalysisConfig.code)).scalars().all()
-    return [ConfigOut.model_validate(c) for c in configs]
+    out: list[ConfigOut] = []
+    for c in configs:
+        item = ConfigOut.model_validate(c)
+        item.engine_version = _detect_engine_from_config(c.config)
+        if engine and item.engine_version != engine:
+            continue
+        out.append(item)
+    return out
 
 
 @router.post("")
