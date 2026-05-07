@@ -314,30 +314,68 @@ import Layout from '../../components/layout/Layout.astro';
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var el = document.getElementById('coverage-content');
-          var ePct = d.entity_pct || 0;
-          var cPct = d.cc_pct || 0;
-          var html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">';
-          // Entity coverage bar
-          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Entities</span><span class="text-gray-500">' + d.covered_entities + ' / ' + d.total_entities + ' (' + ePct + '%)</span></div>';
-          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (ePct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(ePct, 100) + '%"></div></div></div>';
-          // CC coverage bar
-          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Cost Centers (analysed)</span><span class="text-gray-500">' + d.covered_cc + ' / ' + d.total_cc + ' (' + cPct + '%)</span></div>';
-          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (cPct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(cPct, 100) + '%"></div></div></div>';
+          // The endpoint splits into `scoped` (real wave work) and
+          // `global` (full-scope reference waves + wave_id IS NULL runs).
+          // The main progress bars below show *scoped* progress so the
+          // global wave doesn't inflate the picture to 100%.
+          var s = d.scoped || {};
+          var g = d.global || {};
+          var html = '';
+
+          // ── Wave Progress (scoped only) ──────────────────────────
+          html += '<div class="mb-4">';
+          html += '<div class="text-xs font-semibold text-gray-700 mb-2">Wave Progress <span class="text-gray-400 font-normal">— ' + (s.wave_count || 0) + ' scoped wave' + (s.wave_count === 1 ? '' : 's') + ', excludes global analysis</span></div>';
+          html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+          var sePct = s.entity_pct || 0;
+          var scPct = s.cc_pct || 0;
+          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Entities in scoped waves</span><span class="text-gray-500">' + (s.covered_entities || 0) + ' / ' + d.total_entities + ' (' + sePct + '%)</span></div>';
+          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (sePct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(sePct, 100) + '%"></div></div></div>';
+          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Cost Centers analysed in scoped runs</span><span class="text-gray-500">' + (s.covered_cc || 0) + ' / ' + d.total_cc + ' (' + scPct + '%)</span></div>';
+          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (scPct >= 100 ? 'bg-green-500' : 'bg-blue-500') + '" style="width:' + Math.min(scPct, 100) + '%"></div></div></div>';
           html += '</div>';
-          // Per-wave breakdown table
-          if (d.waves && d.waves.length) {
-            html += '<table class="w-full text-xs"><thead><tr class="border-b text-gray-500"><th class="py-1 text-left">Wave</th><th class="py-1 text-center">Status</th><th class="py-1 text-center">Entities</th><th class="py-1 text-center">CCs Analysed</th><th class="py-1 text-center">Scope</th></tr></thead><tbody>';
-            d.waves.forEach(function(w) {
+          // Scoped wave breakdown
+          if (d.scoped_waves && d.scoped_waves.length) {
+            html += '<table class="w-full text-xs mt-3"><thead><tr class="border-b text-gray-500"><th class="py-1 text-left">Wave</th><th class="py-1 text-center">Status</th><th class="py-1 text-center">Entities</th><th class="py-1 text-center">CCs Analysed</th></tr></thead><tbody>';
+            d.scoped_waves.forEach(function(w) {
+              html += '<tr class="border-b hover:bg-gray-50">';
+              html += '<td class="py-1 font-medium"><a href="/cockpit/wave?id=' + w.id + '" class="text-blue-600 hover:underline">' + escapeHtml(w.code) + '</a></td>';
+              html += '<td class="py-1 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] bg-gray-100">' + escapeHtml(w.status) + '</span></td>';
+              html += '<td class="py-1 text-center">' + w.entities_covered + '</td>';
+              html += '<td class="py-1 text-center">' + w.cc_covered + '</td>';
+              html += '</tr>';
+            });
+            html += '</tbody></table>';
+          } else {
+            html += '<p class="text-xs text-gray-400 italic mt-3">No scoped waves yet. Click "+ New" in the Waves panel below to start one.</p>';
+          }
+          html += '</div>';
+
+          // ── Global Analysis (separate) ────────────────────────────
+          html += '<div class="border-t pt-3 mt-2">';
+          html += '<div class="text-xs font-semibold text-gray-700 mb-2">Global Analysis <span class="text-gray-400 font-normal">— full-scope reference; not part of wave progress</span></div>';
+          var gcPct = g.cc_pct || 0;
+          html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+          html += '<div><div class="flex justify-between text-xs mb-1"><span class="font-medium text-gray-600">Cost Centers analysed globally</span><span class="text-gray-500">' + (g.covered_cc || 0) + ' / ' + d.total_cc + ' (' + gcPct + '%)</span></div>';
+          html += '<div class="w-full bg-gray-200 rounded h-4"><div class="h-full rounded ' + (gcPct >= 100 ? 'bg-green-500' : 'bg-purple-400') + '" style="width:' + Math.min(gcPct, 100) + '%"></div></div></div>';
+          html += '<div class="text-xs text-gray-500 self-center"><span class="font-medium">Global runs:</span> ' + (g.wave_count || 0) + ' wave-row' + (g.wave_count === 1 ? '' : 's') + (g.unassigned_run_cc > 0 ? ' + ' + g.unassigned_run_cc + ' CCs from wave-less runs' : '') + '</div>';
+          html += '</div>';
+          // Global wave breakdown
+          if (d.global_waves && d.global_waves.length) {
+            html += '<table class="w-full text-xs mt-3"><thead><tr class="border-b text-gray-500"><th class="py-1 text-left">Wave / Source</th><th class="py-1 text-center">Status</th><th class="py-1 text-center">Entities</th><th class="py-1 text-center">CCs Analysed</th></tr></thead><tbody>';
+            d.global_waves.forEach(function(w) {
               html += '<tr class="border-b hover:bg-gray-50">';
               html += '<td class="py-1 font-medium">' + (w.id ? '<a href="/cockpit/wave?id=' + w.id + '" class="text-blue-600 hover:underline">' + escapeHtml(w.code) + '</a>' : '<span class="text-gray-400 italic">' + escapeHtml(w.code) + '</span>') + '</td>';
               html += '<td class="py-1 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] bg-gray-100">' + escapeHtml(w.status) + '</span></td>';
               html += '<td class="py-1 text-center">' + w.entities_covered + '</td>';
               html += '<td class="py-1 text-center">' + w.cc_covered + '</td>';
-              html += '<td class="py-1 text-center">' + (w.is_full_scope ? '<span class="text-green-600">Full</span>' : 'Scoped') + '</td>';
               html += '</tr>';
             });
             html += '</tbody></table>';
+          } else {
+            html += '<p class="text-xs text-gray-400 italic mt-3">No global analysis runs yet.</p>';
           }
+          html += '</div>';
+
           el.innerHTML = html;
         })
         .catch(function() {
