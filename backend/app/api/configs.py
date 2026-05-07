@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_role
 from app.infra.db.session import get_db
-from app.models.core import AnalysisConfig, AppUser, GLAccountClassRange
+from app.models.core import AnalysisConfig, AnalysisRun, AppUser, GLAccountClassRange
 
 router = APIRouter()
 
@@ -271,6 +271,84 @@ def amend_config(
     db.commit()
     db.refresh(cfg)
     return ConfigOut.model_validate(cfg)
+
+
+@router.delete("/{code}")
+def delete_config(
+    code: str,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Delete every version of a Decision Tree variant identified by ``code``.
+
+    Default behaviour is conservative: if ANY ``analysis_run`` row
+    references any version of this config, the call returns 409 with
+    a count of referencing runs. This protects audit history — by
+    default you cannot delete the config that produced an existing run
+    because doing so would orphan the run row (the FK is RESTRICT and
+    NOT NULL).
+
+    Pass ``?force=true`` to override. With force=true the endpoint
+    deletes the referencing analysis_run rows first (which cascades to
+    their proposals, routine outputs, and related child rows via the
+    FK cascades on those tables), then deletes the config rows. This
+    is the equivalent of "I know I'm destroying audit history, do it
+    anyway" — admin-only.
+
+    Built-in code-defined configs (``cema_migration_v1``,
+    ``cema_migration_v2``) can be deleted: the create-on-demand path
+    in the V1 / V2 endpoints will recreate a default version next time
+    one is needed. So a delete here doesn't permanently break anything.
+
+    Returns a small summary so the UI can show what was actually
+    affected: which versions were removed, how many runs got cascaded
+    out (when force=true).
+    """
+    versions = db.execute(select(AnalysisConfig).where(AnalysisConfig.code == code)).scalars().all()
+    if not versions:
+        raise HTTPException(status_code=404, detail=f"No config with code '{code}'")
+
+    version_ids = [v.id for v in versions]
+
+    # Count referencing runs across ALL versions of this code so the
+    # 409 message and the force-delete summary are accurate.
+    ref_count = (
+        db.execute(
+            select(func.count(AnalysisRun.id)).where(AnalysisRun.config_id.in_(version_ids))
+        ).scalar()
+        or 0
+    )
+
+    if ref_count and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    f"Config '{code}' is referenced by {ref_count} analysis run(s). "
+                    "Pass ?force=true to delete the config AND those runs (and their "
+                    "child rows via cascade)."
+                ),
+                "code": code,
+                "version_count": len(versions),
+                "referencing_runs": int(ref_count),
+            },
+        )
+
+    # Force path: delete the runs first so the FK constraint passes.
+    # CenterProposal, RoutineOutput, etc. cascade off analysis_run.id.
+    if ref_count:
+        db.execute(delete(AnalysisRun).where(AnalysisRun.config_id.in_(version_ids)))
+
+    db.execute(delete(AnalysisConfig).where(AnalysisConfig.id.in_(version_ids)))
+    db.commit()
+
+    return {
+        "deleted": True,
+        "code": code,
+        "versions_deleted": len(versions),
+        "runs_deleted": int(ref_count) if force else 0,
+    }
 
 
 # --- DSL Rule Engine (§04.5) ---
