@@ -186,26 +186,23 @@ def test_include_hierarchies_true_inlines_nodes_and_leaves() -> None:
     assert h["leaves"] == [{"setname": "EUROPE", "value": "CC100", "seq": 0}]
 
 
-def test_pagination_size_capped_at_500() -> None:
-    """The size parameter is bounded at 500. This is the max single
-    page size we're willing to ship — beyond that we lose the
-    'fast initial render' property, and a malicious or careless
-    caller passing size=10000 could starve the server. FastAPI's
-    ``Query(le=500)`` rejects out-of-range values with a 422."""
+def test_pagination_size_capped_at_200000() -> None:
+    """The size parameter is bounded at 200_000. PR #91 raised the
+    cap from 500 to 200_000 so the hierarchical view can fetch every
+    CC in one request — without that, switching to hierarchy mode
+    caused HTTP 422 because the leaf-count + click-to-detail logic
+    needs the complete set, not just one page.
 
-    # FastAPI validates Query bounds before the function body runs;
-    # in unit tests we hit that by importing the validator directly.
-    # Easiest assertion: confirm our default and that the function
-    # signature carries the ge=1, le=500 bounds — a regression here
-    # would silently widen the cap.
+    The new ceiling still rules out absurd values (caller passing
+    size=10**9 starves the server) but covers the real-world scale
+    we see (130k CCs at the test customer).
+    """
+
     import inspect
 
     sig = inspect.signature(data_browser)
     size_default = sig.parameters["size"].default
     assert size_default.default == 200
-    # FastAPI's Query exposes le either as a direct attribute or via
-    # the .metadata list (depends on FastAPI version). Try both so the
-    # test isn't pinned to one release line.
     bound_max = getattr(size_default, "le", None)
     if bound_max is None:
         metadata = getattr(size_default, "metadata", None) or []
@@ -213,7 +210,7 @@ def test_pagination_size_capped_at_500() -> None:
             if hasattr(m, "le"):
                 bound_max = m.le
                 break
-    assert bound_max == 500
+    assert bound_max == 200_000
 
 
 def test_search_param_does_not_break_zero_results() -> None:

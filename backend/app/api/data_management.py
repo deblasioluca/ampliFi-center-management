@@ -703,7 +703,14 @@ def data_browser(
     scope: str = Query(default=SCOPE_CLEANUP),
     data_category: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    size: int = Query(default=200, ge=1, le=500),
+    # Cap was 500 (PR #87, perf-driven). PR #91 raises to 200_000 so
+    # the hierarchical view can load every CC in one fetch — without
+    # this the operator gets HTTP 422 when switching to the
+    # hierarchical view because the leaf-count + click-to-detail logic
+    # needs the complete set, not just the current page. Tabular still
+    # uses small pages by default; only hierarchy mode opts up to the
+    # higher limit.
+    size: int = Query(default=200, ge=1, le=200_000),
     search: str | None = Query(default=None),
     include_balances: bool = Query(default=False),
     include_hierarchies: bool = Query(default=False),
