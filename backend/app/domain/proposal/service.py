@@ -680,9 +680,11 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
     legacy_cc_ids = {p.legacy_cc_id for p in proposals if p.legacy_cc_id}
     legacy_cc_map: dict[int, LegacyCostCenter] = {}
     if legacy_cc_ids:
-        rows = db.execute(
-            select(LegacyCostCenter).where(LegacyCostCenter.id.in_(legacy_cc_ids))
-        ).scalars().all()
+        rows = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(legacy_cc_ids)))
+            .scalars()
+            .all()
+        )
         legacy_cc_map = {cc.id: cc for cc in rows}
 
     # Pre-load legacy PCs keyed by (coarea, pctr) for fast lookup
@@ -805,31 +807,35 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
             leg = legacy_cc_map.get(p.legacy_cc_id)
             if not leg:
                 continue
-            pending_mappings.append(CenterMapping(
-                object_type="cost_center",
-                legacy_coarea=leg.coarea,
-                legacy_center=leg.cctr,
-                legacy_name=leg.txtsh,
-                target_coarea=coarea,
-                target_center=new_cctr,
-                target_name=primary_legacy.txtsh,
-                mapping_type="merge",
-                notes=f"wave:{wave_id} outcome:MERGE_MAP",
-            ))
-            created_mappings += 1
-
-            if new_pctr and leg.pctr:
-                pending_mappings.append(CenterMapping(
-                    object_type="profit_center",
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="cost_center",
                     legacy_coarea=leg.coarea,
-                    legacy_center=leg.pctr,
+                    legacy_center=leg.cctr,
                     legacy_name=leg.txtsh,
                     target_coarea=coarea,
-                    target_center=new_pctr,
+                    target_center=new_cctr,
                     target_name=primary_legacy.txtsh,
                     mapping_type="merge",
                     notes=f"wave:{wave_id} outcome:MERGE_MAP",
-                ))
+                )
+            )
+            created_mappings += 1
+
+            if new_pctr and leg.pctr:
+                pending_mappings.append(
+                    CenterMapping(
+                        object_type="profit_center",
+                        legacy_coarea=leg.coarea,
+                        legacy_center=leg.pctr,
+                        legacy_name=leg.txtsh,
+                        target_coarea=coarea,
+                        target_center=new_pctr,
+                        target_name=primary_legacy.txtsh,
+                        mapping_type="merge",
+                        notes=f"wave:{wave_id} outcome:MERGE_MAP",
+                    )
+                )
                 created_mappings += 1
 
     # --- Process KEEP and REDESIGN proposals (1:1 mapping) ---
@@ -846,17 +852,19 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         coarea = legacy.coarea
 
         if outcome == "RETIRE":
-            pending_mappings.append(CenterMapping(
-                object_type="cost_center",
-                legacy_coarea=coarea,
-                legacy_center=legacy.cctr,
-                legacy_name=legacy.txtsh,
-                target_coarea=coarea,
-                target_center="RETIRED",
-                target_name="",
-                mapping_type="retire",
-                notes=f"wave:{wave_id} outcome:RETIRE",
-            ))
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="cost_center",
+                    legacy_coarea=coarea,
+                    legacy_center=legacy.cctr,
+                    legacy_name=legacy.txtsh,
+                    target_coarea=coarea,
+                    target_center="RETIRED",
+                    target_name="",
+                    mapping_type="retire",
+                    notes=f"wave:{wave_id} outcome:RETIRE",
+                )
+            )
             created_mappings += 1
             continue
 
@@ -872,17 +880,19 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         pending_targets.append(tcc)
         created_cc += 1
 
-        pending_mappings.append(CenterMapping(
-            object_type="cost_center",
-            legacy_coarea=coarea,
-            legacy_center=legacy.cctr,
-            legacy_name=legacy.txtsh,
-            target_coarea=coarea,
-            target_center=new_cctr,
-            target_name=legacy.txtsh,
-            mapping_type="1:1" if outcome == "KEEP" else "redesign",
-            notes=f"wave:{wave_id} outcome:{outcome}",
-        ))
+        pending_mappings.append(
+            CenterMapping(
+                object_type="cost_center",
+                legacy_coarea=coarea,
+                legacy_center=legacy.cctr,
+                legacy_name=legacy.txtsh,
+                target_coarea=coarea,
+                target_center=new_cctr,
+                target_name=legacy.txtsh,
+                mapping_type="1:1" if outcome == "KEEP" else "redesign",
+                notes=f"wave:{wave_id} outcome:{outcome}",
+            )
+        )
         created_mappings += 1
 
         if target_type in ("PC", "PC_ONLY", "CC_AND_PC"):
@@ -908,17 +918,19 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
             created_pc += 1
             cc_pc_links.append((tcc, new_pctr))
 
-            pending_mappings.append(CenterMapping(
-                object_type="profit_center",
-                legacy_coarea=coarea,
-                legacy_center=legacy.pctr or legacy.cctr,
-                legacy_name=legacy.txtsh,
-                target_coarea=coarea,
-                target_center=new_pctr,
-                target_name=legacy.txtsh,
-                mapping_type="1:1" if outcome == "KEEP" else "redesign",
-                notes=f"wave:{wave_id} outcome:{outcome}",
-            ))
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="profit_center",
+                    legacy_coarea=coarea,
+                    legacy_center=legacy.pctr or legacy.cctr,
+                    legacy_name=legacy.txtsh,
+                    target_coarea=coarea,
+                    target_center=new_pctr,
+                    target_name=legacy.txtsh,
+                    mapping_type="1:1" if outcome == "KEEP" else "redesign",
+                    notes=f"wave:{wave_id} outcome:{outcome}",
+                )
+            )
             created_mappings += 1
 
     # --- Bulk insert: one flush for targets, one for mappings ---
