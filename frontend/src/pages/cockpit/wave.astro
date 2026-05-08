@@ -389,6 +389,7 @@ import Layout from '../../components/layout/Layout.astro';
             <input type="text" id="sf-reviewer-search" class="input text-sm w-full" placeholder="Search user by name or email..." autocomplete="off" />
             <input type="hidden" id="sf-reviewer-name" />
             <input type="hidden" id="sf-reviewer-email" />
+            <input type="hidden" id="sf-reviewer-uid" />
             <div id="sf-reviewer-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
           </div>
           <p class="text-[11px] text-gray-400 mt-1">Optional — you can also assign a reviewer later.</p>
@@ -412,6 +413,7 @@ import Layout from '../../components/layout/Layout.astro';
           <input type="text" id="ar-search" class="input text-sm w-full" placeholder="Search user by name or email..." autocomplete="off" />
           <input type="hidden" id="ar-name" />
           <input type="hidden" id="ar-email" />
+          <input type="hidden" id="ar-uid" />
           <div id="ar-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
@@ -1112,7 +1114,7 @@ import Layout from '../../components/layout/Layout.astro';
           var html = '';
           items.forEach(function(u) {
             html += '<div class="ar-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
-              'data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
+              'data-uid="' + u.id + '" data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
               '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
               (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
               ' <span class="text-gray-300 text-[10px]">' + esc((u.roles || [u.role]).join(', ')) + '</span></div>';
@@ -1123,6 +1125,7 @@ import Layout from '../../components/layout/Layout.astro';
             el.addEventListener('click', function() {
               document.getElementById('ar-name').value = this.getAttribute('data-name');
               document.getElementById('ar-email').value = this.getAttribute('data-email');
+              document.getElementById('ar-uid').value = this.getAttribute('data-uid');
               document.getElementById('ar-search').value = this.getAttribute('data-name') + (this.getAttribute('data-email') ? ' (' + this.getAttribute('data-email') + ')' : '');
               resultsEl.classList.add('hidden');
             });
@@ -1172,6 +1175,7 @@ import Layout from '../../components/layout/Layout.astro';
     clearTimeout(_sfRevTimer);
     document.getElementById('sf-reviewer-name').value = '';
     document.getElementById('sf-reviewer-email').value = '';
+    document.getElementById('sf-reviewer-uid').value = '';
     if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
     _sfRevTimer = setTimeout(function() {
       fetch('/api/admin/users?page=1&size=500', { headers: authHdr })
@@ -1185,7 +1189,7 @@ import Layout from '../../components/layout/Layout.astro';
           var html = '';
           items.forEach(function(u) {
             html += '<div class="sf-rev-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
-              'data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
+              'data-uid="' + u.id + '" data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
               '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
               (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
               ' <span class="text-gray-300 text-[10px]">' + esc(u.role) + '</span></div>';
@@ -1196,6 +1200,7 @@ import Layout from '../../components/layout/Layout.astro';
             el.addEventListener('click', function() {
               document.getElementById('sf-reviewer-name').value = this.getAttribute('data-name');
               document.getElementById('sf-reviewer-email').value = this.getAttribute('data-email');
+              document.getElementById('sf-reviewer-uid').value = this.getAttribute('data-uid');
               document.getElementById('sf-reviewer-search').value = this.getAttribute('data-name') + (this.getAttribute('data-email') ? ' (' + this.getAttribute('data-email') + ')' : '');
               resultsEl.classList.add('hidden');
             });
@@ -1267,8 +1272,10 @@ import Layout from '../../components/layout/Layout.astro';
       // Include reviewer if selected
       var revName = document.getElementById('sf-reviewer-name').value;
       var revEmail = document.getElementById('sf-reviewer-email').value;
+      var revUid = document.getElementById('sf-reviewer-uid').value;
       if (revName) body.reviewer_name = revName;
       if (revEmail) body.reviewer_email = revEmail;
+      if (revUid) body.reviewer_user_id = parseInt(revUid, 10);
 
       if (type === 'hierarchy_node') {
         var hierId = document.getElementById('sf-hier-id').value;
@@ -1292,6 +1299,7 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('sf-reviewer-search').value = '';
       document.getElementById('sf-reviewer-name').value = '';
       document.getElementById('sf-reviewer-email').value = '';
+      document.getElementById('sf-reviewer-uid').value = '';
       loadScopes(); loadWave();
     } finally {
       _scopeCreating = false;
@@ -1308,11 +1316,13 @@ import Layout from '../../components/layout/Layout.astro';
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
+      var arUid = document.getElementById('ar-uid').value;
       var res = await fetch('/api/waves/scopes/' + _assignScopeId + '/reviewer', {
         method: 'PATCH', headers: jsonHdr,
         body: JSON.stringify({
           reviewer_name: document.getElementById('ar-name').value || null,
           reviewer_email: document.getElementById('ar-email').value || null,
+          reviewer_user_id: arUid ? parseInt(arUid, 10) : null,
         })
       });
       if (!res.ok) { var d = await res.json().catch(function() { return {}; }); uiAlert({ message: d.detail || 'Failed to assign reviewer', kind: 'danger' }); return; }
@@ -1320,6 +1330,7 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('ar-search').value = '';
       document.getElementById('ar-name').value = '';
       document.getElementById('ar-email').value = '';
+      document.getElementById('ar-uid').value = '';
       loadScopes();
     } finally {
       btn.disabled = false;

@@ -8,6 +8,12 @@ import Layout from '../components/layout/Layout.astro';
     <p class="text-sm text-gray-500 mt-1">Review your assigned cost centers, request changes, and approve proposals</p>
   </div>
 
+  <!-- Assigned review scopes (auto-loaded for logged-in user) -->
+  <div id="assigned-scopes" class="hidden mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-3">Your Assigned Review Scopes</h2>
+    <div id="assigned-scopes-list" class="space-y-3"></div>
+  </div>
+
   <!-- Info banner when no review token -->
   <div id="no-review" class="card mb-6">
     <div class="flex items-start gap-4">
@@ -315,6 +321,56 @@ import Layout from '../components/layout/Layout.astro';
     });
     document.getElementById('review-filter-status').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
     document.getElementById('review-filter-action').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
+
+    // Auto-load assigned review scopes for the logged-in user
+    (async function() {
+      try {
+        var res = await fetch('/api/waves/review-scopes', { headers: authHeaders() });
+        if (!res.ok) return;
+        var scopes = await res.json();
+        if (!scopes || !scopes.length) return;
+
+        var container = document.getElementById('assigned-scopes');
+        var list = document.getElementById('assigned-scopes-list');
+        container.classList.remove('hidden');
+
+        var html = '';
+        scopes.forEach(function(s) {
+          var statusColor = s.status === 'completed' ? 'bg-green-100 text-green-700' :
+                            s.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700';
+          var pct = s.total_items ? Math.round((s.decided_items || 0) / s.total_items * 100) : 0;
+          html += '<div class="card hover:shadow-md transition-shadow cursor-pointer border-l-4 border-amplifi-500" data-scope-token="' + escapeHtml(s.token || '') + '">' +
+            '<div class="flex items-center justify-between mb-2">' +
+            '<h3 class="font-semibold text-gray-900">' + escapeHtml(s.name || 'Review Scope') + '</h3>' +
+            '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + statusColor + '">' + escapeHtml(s.status || 'pending') + '</span>' +
+            '</div>' +
+            '<div class="flex items-center gap-4 text-xs text-gray-500">' +
+            '<span>Wave: ' + escapeHtml(s.wave_name || '-') + '</span>' +
+            '<span>Type: ' + escapeHtml(s.scope_type || '-') + '</span>' +
+            '<span>' + (s.decided_items || 0) + ' / ' + (s.total_items || 0) + ' decided (' + pct + '%)</span>' +
+            '</div>' +
+            '<div class="mt-2 h-1.5 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full" style="width:' + pct + '%"></div></div>' +
+            '</div>';
+        });
+        list.innerHTML = html;
+
+        // Click handler: load scope by token
+        list.querySelectorAll('[data-scope-token]').forEach(function(card) {
+          card.addEventListener('click', function() {
+            var token = this.getAttribute('data-scope-token');
+            if (token) {
+              loadScope(token);
+            }
+          });
+        });
+
+        // If only one scope and no token loaded yet, auto-load it
+        if (scopes.length === 1 && !currentToken && scopes[0].token) {
+          loadScope(scopes[0].token);
+        }
+      } catch(e) { /* ignore */ }
+    })();
 
     // Auto-load if token saved
     if (currentToken) {
