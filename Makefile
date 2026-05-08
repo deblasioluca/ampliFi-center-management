@@ -106,6 +106,7 @@ status: ## Show whether backend + frontend are running
 	@echo "=== ampliFi Status ==="
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
 		echo "Backend:  running (PID $$(cat $(BACKEND_PID)), port $(BACKEND_PORT))"; \
+		curl -sk https://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || \
 		curl -s http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || true; \
 		echo ""; \
 	else \
@@ -222,11 +223,12 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	echo "==> Verifying deployment..." | tee -a "$$LOG"; \
 	NEW_SHA=$$(git rev-parse --short HEAD); \
 	HEALTHY=0; \
-	for i in 1 2 3 4 5; do \
-		if curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -fskS -o /dev/null https://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || \
+		   curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
 			HEALTHY=1; break; \
 		fi; \
-		sleep 1; \
+		sleep 2; \
 	done; \
 	echo ""; \
 	echo "=== Update complete ===" | tee -a "$$LOG"; \
@@ -279,7 +281,8 @@ verify: ## Sanity-check that running services match the latest committed code
 		echo "  Started at: $$PROC_START"; \
 		HEAD_HUMAN=$$(git log -1 --format='%cd' --date=format:'%Y-%m-%d %H:%M:%S' HEAD 2>/dev/null || echo "?"); \
 		echo "  HEAD time:  $$HEAD_HUMAN"; \
-		if curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
+		if curl -fskS -o /dev/null https://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || \
+		   curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
 			echo "  ✓ /api/healthz responds OK"; \
 		else \
 			echo "  ✗ /api/healthz NOT responding"; \
