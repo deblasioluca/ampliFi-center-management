@@ -24,6 +24,9 @@ import Layout from '../../components/layout/Layout.astro';
       <option value="legacy">Legacy</option>
       <option value="target">Target</option>
     </select>
+    <button id="transfer-to-explorer-btn" class="ml-auto btn-secondary text-xs border-blue-300 text-blue-700 hover:bg-blue-50" title="Copy cleanup data to the standalone Data Explorer">
+      &#8594; Publish to Explorer
+    </button>
   </div>
 
   <!-- Data Counts -->
@@ -324,6 +327,25 @@ import Layout from '../../components/layout/Layout.astro';
   }
   scopeSel.addEventListener('change', function() { refreshAllData(); });
   catSel.addEventListener('change', function() { refreshAllData(); });
+
+  // Transfer to Explorer
+  document.getElementById('transfer-to-explorer-btn').addEventListener('click', async function() {
+    if (!confirm('This will replace all Explorer data with the current Cleanup data.\n\nObject types: Cost Centers, Profit Centers, Entities, Employees, Balances.\n\nContinue?')) return;
+    this.disabled = true;
+    this.textContent = 'Transferring...';
+    try {
+      var res = await fetch('/api/explore/transfer-to-explorer', { method: 'POST', headers: jsonHdr });
+      if (!res.ok) { var err = await res.json().catch(function(){return {};}); throw new Error(err.detail || 'Transfer failed'); }
+      var data = await res.json();
+      var summary = Object.entries(data.results || {}).map(function(e) { return e[0] + ': ' + e[1].inserted + ' rows'; }).join(', ');
+      alert('Transfer complete!\n\n' + summary);
+    } catch(e) {
+      alert('Error: ' + e.message);
+    } finally {
+      this.disabled = false;
+      this.textContent = '\u2192 Publish to Explorer';
+    }
+  });
 
   // Load data counts with scope filtering
   function loadCounts() {

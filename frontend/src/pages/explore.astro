@@ -11,556 +11,202 @@ import '../styles/global.css';
   <title>Data Explorer | ampliFi</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 </head>
-<body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden font-[Inter,system-ui,sans-serif]">
 
   <!-- Slim standalone header -->
-  <header class="bg-navy-900 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
+  <header class="bg-[#1a1a2e] text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-2">
       <img src="/ubs-logo.svg" alt="UBS" class="h-5" />
       <span class="font-semibold text-sm"><span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span> Data Explorer</span>
     </div>
-    <span id="explore-status" class="text-xs text-gray-400">Loading...</span>
+    <span id="explore-status" class="text-xs text-gray-400">Ready</span>
   </header>
 
   <!-- Main tabs: Legacy | ampliFi -->
   <div class="flex gap-1 border-b bg-white px-4 flex-shrink-0">
-    <button id="main-tab-legacy" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" onclick="switchMainTab('legacy')">Legacy</button>
-    <button id="main-tab-amplifi" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" onclick="switchMainTab('amplifi')">ampliFi</button>
+    <button id="main-tab-legacy" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" data-main-tab="legacy">Legacy</button>
+    <button id="main-tab-amplifi" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-main-tab="amplifi">ampliFi</button>
   </div>
 
   <!-- ===== LEGACY PANEL ===== -->
-  <div id="panel-legacy" class="flex-1 flex flex-col min-h-0 px-4 pt-1">
+  <div id="panel-legacy" class="flex-1 flex flex-col min-h-0 px-4 pt-2">
     <!-- Object sub-tabs -->
-    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="legacy-tabs"></div>
-
-    <!-- Toolbar -->
-    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
-      <div class="flex items-center gap-2">
-        <select id="view-mode" class="border rounded px-2 py-1 text-xs" onchange="onViewModeChange()">
-          <option value="flat">Flat</option>
-        </select>
-        <input id="explore-search" type="text" placeholder="Search..." class="border rounded px-2 py-1 text-xs w-48" oninput="applySearch()" />
-      </div>
-      <div class="flex items-center gap-2">
-        <span id="explore-count" class="text-xs text-gray-500"></span>
-        <button onclick="exportCSV()" class="btn-secondary text-xs">CSV</button>
-        <button onclick="exportExcel()" class="btn-secondary text-xs">Excel</button>
-      </div>
+    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="legacy-tabs">
+      <button class="explore-tab explore-tab-active" data-explore-tab="cost-centers">Cost Centers</button>
+      <button class="explore-tab" data-explore-tab="profit-centers">Profit Centers</button>
+      <button class="explore-tab" data-explore-tab="entities">Entities</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-ska1">GL Accts (CoA)</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-skb1">GL Accts (CoCd)</button>
+      <button class="explore-tab" data-explore-tab="hierarchies">Hierarchies</button>
+      <button class="explore-tab" data-explore-tab="employees">Employees</button>
     </div>
 
-    <!-- Content (scrollable) -->
-    <div class="flex flex-1 min-h-0 mt-1 gap-0">
-      <div id="legacy-content" class="overflow-x-auto overflow-y-auto bg-white border rounded-l-lg flex-1 min-h-0">
-        <span class="p-4 text-sm text-gray-400 block">Loading data...</span>
-      </div>
-      <!-- Detail panel (hidden by default) -->
-      <div id="detail-panel" class="hidden w-80 bg-white border-t border-r border-b rounded-r-lg overflow-y-auto p-3 flex-shrink-0">
-        <div class="flex justify-between items-center mb-2">
-          <h3 class="text-sm font-semibold text-gray-800">Detail View</h3>
-          <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
-        </div>
-        <div id="detail-content" class="text-xs space-y-1"></div>
-      </div>
+    <!-- DOD container -->
+    <div id="explore-dod-container" class="flex-1 min-h-0 bg-white border-x border-b rounded-b-lg overflow-hidden">
+      <div id="explore-dod" class="text-xs h-full"></div>
     </div>
   </div>
 
   <!-- ===== AMPLIFI PANEL ===== -->
-  <div id="panel-amplifi" class="hidden flex-1 flex flex-col min-h-0 px-4 pt-1">
-    <!-- Object sub-tabs -->
-    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="amplifi-tabs"></div>
-
-    <!-- Content area -->
-    <div class="bg-white border-x border-b rounded-b-lg px-3 py-1.5 flex-shrink-0">
-      <label for="amplifi-run-select" class="text-xs text-gray-500 mr-2">Analysis Run:</label>
-      <select id="amplifi-run-select" class="border rounded px-2 py-1 text-xs" onchange="loadMapping()"></select>
+  <div id="panel-amplifi" class="hidden flex-1 flex flex-col min-h-0 px-4 pt-2">
+    <!-- Run selector -->
+    <div class="bg-white border rounded-t-lg px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
+      <label class="text-xs text-gray-500">Analysis Run:</label>
+      <select id="amplifi-run-select" class="border rounded px-2 py-1 text-xs"></select>
     </div>
-    <div id="amplifi-content" class="overflow-auto bg-white border rounded-lg flex-1 min-h-0 mt-1">
-      <span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>
+    <!-- DOD container for mapping -->
+    <div id="amplifi-dod-container" class="flex-1 min-h-0 bg-white border-x border-b rounded-b-lg overflow-hidden">
+      <div id="amplifi-dod" class="text-xs h-full"></div>
     </div>
   </div>
 
 <style is:global>
-  body { font-family: 'Inter', system-ui, sans-serif; }
-  .bg-navy-900 { background-color: #1a1a2e; }
-  .btn-sm { padding: 2px 10px; border-radius: 4px; cursor: pointer; transition: all 0.15s; }
-  .btn-secondary { padding: 2px 10px; border-radius: 4px; border: 1px solid #d1d5db; cursor: pointer; background: #f9fafb; }
-  .btn-secondary:hover { background: #e5e7eb; }
-
-  table.explore-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
-  table.explore-tbl th {
-    position: sticky; top: 0; z-index: 2; background: #f3f4f6; text-align: left;
-    padding: 4px 8px; font-weight: 600; color: #374151; border-bottom: 1px solid #d1d5db;
-    cursor: pointer; user-select: none; white-space: nowrap;
+  .explore-tab {
+    padding: 4px 12px; font-size: 12px; font-weight: 500;
+    color: #6b7280; white-space: nowrap; border-bottom: 2px solid transparent;
+    cursor: pointer; transition: all 0.15s;
   }
-  table.explore-tbl th:hover { background: #e5e7eb; }
-  table.explore-tbl th .sort-icon { font-size: 8px; margin-left: 2px; color: #6b7280; }
-  table.explore-tbl td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; white-space: nowrap; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
-  table.explore-tbl tr:hover td { background: #f0f9ff; }
-  table.explore-tbl tr.selected td { background: #dbeafe; }
-  table.explore-tbl th .col-filter { display: block; font-weight: 400; margin-top: 2px; }
-  table.explore-tbl th .col-filter input {
-    width: 100%; padding: 1px 4px; font-size: 10px; border: 1px solid #d1d5db; border-radius: 3px;
-  }
-
-  /* GL account grouping */
-  .group-header { background: #eff6ff; font-weight: 600; color: #1e40af; }
-  .group-header td { padding: 6px 8px !important; }
-
-  /* Detail panel */
-  #detail-panel .detail-row { display: flex; gap: 4px; padding: 3px 0; border-bottom: 1px solid #f3f4f6; }
-  #detail-panel .detail-label { color: #6b7280; font-weight: 500; min-width: 100px; flex-shrink: 0; }
-  #detail-panel .detail-value { color: #111827; word-break: break-all; }
+  .explore-tab:hover { color: #374151; }
+  .explore-tab-active { color: #1d4ed8; border-bottom-color: #2563eb; font-weight: 600; }
 </style>
 
+<script is:inline src="/data-object-display.js"></script>
 <script is:inline>
-const API = window.location.origin + '/api/explore';
+(function() {
+  // ── Config ────────────────────────────────────────────────────────────
+  var TABS = {
+    'cost-centers':     { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
+    'profit-centers':   { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
+    'entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'] },
+    'gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true },
+    'gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true },
+    'hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [] },
+    'employees':        { label: 'Employees',       endpoint: '/api/explore/legacy/employees',        identity: 'pernr', hierTypes: [] }
+  };
 
-// State
-let currentMainTab = 'legacy';
-let currentObjectType = '';
-let currentData = [];
-let currentColumns = [];
-let currentColumnLabels = {};
-let currentSort = { col: '', dir: 'asc' };
-let columnFilters = {};
-let selectedRowId = null;
-let currentPage = 1;
-let pageSize = 2000;
-let totalRows = 0;
+  var currentTab = 'cost-centers';
+  var dodInstance = null;
 
-// ── Object type configuration ──
-const OBJECT_TYPES = {
-  'cost-centers':     { label: 'Cost Centers',    area: 'legacy', viewModes: ['flat', 'flat_hierarchy', 'hierarchical'] },
-  'profit-centers':   { label: 'Profit Centers',  area: 'legacy', viewModes: ['flat', 'flat_hierarchy', 'hierarchical'] },
-  'entities':         { label: 'Entities',         area: 'legacy', viewModes: ['flat'] },
-  'gl-accounts-ska1': { label: 'GL Accts (CoA)',   area: 'legacy', viewModes: ['flat', 'group_1digit', 'group_5digits'] },
-  'gl-accounts-skb1': { label: 'GL Accts (CoCd)',  area: 'legacy', viewModes: ['flat', 'group_1digit', 'group_5digits'] },
-  'hierarchies':      { label: 'Hierarchies',     area: 'legacy', viewModes: ['flat', 'hierarchical'] },
-  'employees':        { label: 'Employees',        area: 'legacy', viewModes: ['flat'] },
-};
-
-const VIEW_MODE_LABELS = {
-  'flat': 'Flat',
-  'flat_hierarchy': 'Flat (with hierarchy levels)',
-  'hierarchical': 'Hierarchical',
-  'group_1digit': 'Grouped (1st digit)',
-  'group_5digits': 'Grouped (first 5 digits)',
-};
-
-// ── Init ──
-async function init() {
-  buildLegacyTabs();
-  await loadAmplifiRuns();
-  // Auto-select first tab
-  const first = Object.keys(OBJECT_TYPES)[0];
-  if (first) selectObjectTab(first);
-}
-
-function buildLegacyTabs() {
-  const container = document.getElementById('legacy-tabs');
-  container.innerHTML = '';
-  for (const [key, cfg] of Object.entries(OBJECT_TYPES)) {
-    if (cfg.area !== 'legacy') continue;
-    const btn = document.createElement('button');
-    btn.className = 'px-3 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent whitespace-nowrap';
-    btn.textContent = cfg.label;
-    btn.dataset.tab = key;
-    btn.onclick = () => selectObjectTab(key);
-    container.appendChild(btn);
-  }
-}
-
-function selectObjectTab(objectType) {
-  currentObjectType = objectType;
-  currentPage = 1;
-  columnFilters = {};
-  selectedRowId = null;
-  closeDetail();
-
-  // Highlight tab
-  document.querySelectorAll('#legacy-tabs button').forEach(b => {
-    const active = b.dataset.tab === objectType;
-    b.classList.toggle('border-blue-600', active);
-    b.classList.toggle('text-blue-700', active);
-    b.classList.toggle('border-transparent', !active);
-    b.classList.toggle('text-gray-500', !active);
-  });
-
-  // Update view mode dropdown
-  const cfg = OBJECT_TYPES[objectType];
-  const sel = document.getElementById('view-mode');
-  sel.innerHTML = '';
-  for (const mode of (cfg?.viewModes || ['flat'])) {
-    const opt = document.createElement('option');
-    opt.value = mode;
-    opt.textContent = VIEW_MODE_LABELS[mode] || mode;
-    sel.appendChild(opt);
-  }
-
-  loadObjectData();
-}
-
-// ── Data loading ──
-async function loadObjectData() {
-  const el = document.getElementById('legacy-content');
-  el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
-
-  const search = document.getElementById('explore-search')?.value || '';
-  const params = new URLSearchParams({
-    page: currentPage.toString(),
-    size: pageSize.toString(),
-  });
-  if (search) params.set('search', search);
-  if (currentSort.col) {
-    params.set('sort', currentSort.col);
-    params.set('sort_dir', currentSort.dir);
-  }
-
-  try {
-    const resp = await fetch(`${API}/legacy/${currentObjectType}?${params}`);
-    const data = await resp.json();
-
-    if (data.error) {
-      el.innerHTML = `<span class="p-4 text-sm text-red-500 block">${data.error}</span>`;
-      return;
-    }
-
-    // Hierarchies have special format
-    if (currentObjectType === 'hierarchies') {
-      currentData = data.hierarchies || [];
-      currentColumns = data.columns || ['setname', 'setclass', 'type_label', 'label', 'coarea'];
-      totalRows = data.total || 0;
-    } else {
-      currentData = data.items || [];
-      currentColumns = data.columns || [];
-      totalRows = data.total || 0;
-    }
-    currentColumnLabels = data.column_labels || {};
-
-    document.getElementById('explore-count').textContent = `${totalRows.toLocaleString()} rows`;
-    document.getElementById('explore-status').textContent = `${OBJECT_TYPES[currentObjectType]?.label || currentObjectType}`;
-
-    renderTable();
-  } catch (err) {
-    el.innerHTML = `<span class="p-4 text-sm text-red-500 block">Error: ${err.message}</span>`;
-  }
-}
-
-// ── Column label helper ──
-function colLabel(col) {
-  return currentColumnLabels[col] || col;
-}
-
-// ── Table rendering ──
-function renderTable() {
-  const el = document.getElementById('legacy-content');
-  const viewMode = document.getElementById('view-mode')?.value || 'flat';
-
-  // Apply column filters locally
-  let filtered = currentData;
-  for (const [col, val] of Object.entries(columnFilters)) {
-    if (val) {
-      const lower = val.toLowerCase();
-      filtered = filtered.filter(row => {
-        const cell = String(row[col] || '').toLowerCase();
-        return cell.includes(lower);
+  // ── Main tab switching ────────────────────────────────────────────────
+  document.querySelectorAll('[data-main-tab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = this.dataset.mainTab;
+      document.getElementById('panel-legacy').classList.toggle('hidden', tab !== 'legacy');
+      document.getElementById('panel-amplifi').classList.toggle('hidden', tab !== 'amplifi');
+      document.querySelectorAll('[data-main-tab]').forEach(function(b) {
+        var active = b.dataset.mainTab === tab;
+        b.classList.toggle('border-blue-600', active);
+        b.classList.toggle('text-blue-700', active);
+        b.classList.toggle('border-transparent', !active);
+        b.classList.toggle('text-gray-500', !active);
       });
-    }
+      if (tab === 'amplifi') loadAmplifiRuns();
+    });
+  });
+
+  // ── Legacy sub-tab switching ──────────────────────────────────────────
+  document.querySelectorAll('[data-explore-tab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = this.dataset.exploreTab;
+      selectLegacyTab(tab);
+    });
+  });
+
+  function selectLegacyTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('[data-explore-tab]').forEach(function(b) {
+      b.classList.toggle('explore-tab-active', b.dataset.exploreTab === tab);
+    });
+    document.getElementById('explore-status').textContent = TABS[tab].label;
+    initDOD(tab);
   }
 
-  // GL grouping modes
-  if ((viewMode === 'group_1digit' || viewMode === 'group_5digits') && currentObjectType.startsWith('gl-accounts')) {
-    renderGroupedTable(el, filtered, viewMode);
-    return;
+  // ── Initialize DOD instance for a tab ─────────────────────────────────
+  function initDOD(tab) {
+    var cfg = TABS[tab];
+    if (!cfg) return;
+
+    dodInstance = new window.DataObjectDisplay({
+      containerId: 'explore-dod',
+      objectType: tab,
+      dataEndpoint: cfg.endpoint,
+      hierarchyEndpoint: '/api/legacy/hierarchies',
+      identityField: cfg.identity,
+      showViewToggle: cfg.hierTypes.length > 0,
+      showHierarchyPicker: cfg.hierTypes.length > 0,
+      hierarchyTypes: cfg.hierTypes,
+      glHierarchyMode: cfg.glMode || false,
+      showSearch: true,
+      showCSV: true,
+      showPagination: true,
+      pageSize: 200,
+      hierPageSize: 2000,
+      authHeaders: {},
+      excludeColumns: ['id', 'scope', 'data_category', 'mandt']
+    });
+
+    dodInstance.loadDisplayConfig(function() {
+      dodInstance.loadHierarchyOptions(function() {
+        dodInstance.loadData(function() {
+          dodInstance.render();
+        });
+      });
+    });
   }
 
-  if (viewMode === 'hierarchical' && currentObjectType === 'hierarchies') {
-    renderHierarchicalView(el, filtered);
-    return;
+  // ── ampliFi panel ─────────────────────────────────────────────────────
+  var amplifiDod = null;
+
+  async function loadAmplifiRuns() {
+    try {
+      var resp = await fetch('/api/explore/amplifi/runs');
+      var data = await resp.json();
+      var sel = document.getElementById('amplifi-run-select');
+      sel.innerHTML = '<option value="">Select run...</option>';
+      (data.runs || []).forEach(function(r) {
+        var opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = (r.label || 'Run ' + r.id) + ' (' + (r.finished_at || 'N/A') + ')';
+        sel.appendChild(opt);
+      });
+    } catch(e) {}
   }
 
-  // Standard flat table
-  let html = '<table class="explore-tbl"><thead><tr>';
-  for (const col of currentColumns) {
-    const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
-    const filterVal = columnFilters[col] || '';
-    html += `<th onclick="sortByColumn('${col}')" title="${col}">
-      ${colLabel(col)}<span class="sort-icon">${sortIcon}</span>
-      <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
-    </th>`;
-  }
-  html += '</tr></thead><tbody>';
-
-  for (const row of filtered) {
-    const cls = row.id === selectedRowId ? 'selected' : '';
-    html += `<tr class="${cls}" onclick="showDetail(${row.id})" style="cursor:pointer">`;
-    for (const col of currentColumns) {
-      const val = row[col];
-      html += `<td title="${escHtml(String(val ?? ''))}">${escHtml(String(val ?? ''))}</td>`;
-    }
-    html += '</tr>';
-  }
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-function renderGroupedTable(el, data, mode) {
-  // Group by account prefix
-  const groups = {};
-  const acctField = currentObjectType === 'gl-accounts-ska1' ? 'saknr' : 'saknr';
-  for (const row of data) {
-    const acct = String(row[acctField] || '');
-    const key = mode === 'group_1digit' ? (acct[0] || '?') : (acct.substring(0, 5) || '?????');
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(row);
-  }
-
-  let html = '<table class="explore-tbl"><thead><tr>';
-  for (const col of currentColumns) {
-    const sortIcon = currentSort.col === col ? (currentSort.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
-    const filterVal = columnFilters[col] || '';
-    html += `<th onclick="sortByColumn('${col}')" title="${col}">
-      ${colLabel(col)}<span class="sort-icon">${sortIcon}</span>
-      <span class="col-filter"><input type="text" placeholder="Filter..." value="${filterVal}" onclick="event.stopPropagation()" oninput="setColumnFilter('${col}', this.value)" /></span>
-    </th>`;
-  }
-  html += '</tr></thead><tbody>';
-
-  const sortedKeys = Object.keys(groups).sort();
-  for (const key of sortedKeys) {
-    const label = mode === 'group_1digit'
-      ? `Account Group ${key}xxx (${groups[key].length} accounts)`
-      : `Account Range ${key}xxxxx (${groups[key].length} accounts)`;
-    html += `<tr class="group-header"><td colspan="${currentColumns.length}">${escHtml(label)}</td></tr>`;
-    for (const row of groups[key]) {
-      const cls = row.id === selectedRowId ? 'selected' : '';
-      html += `<tr class="${cls}" onclick="showDetail(${row.id})" style="cursor:pointer">`;
-      for (const col of currentColumns) {
-        html += `<td>${escHtml(String(row[col] ?? ''))}</td>`;
-      }
-      html += '</tr>';
-    }
-  }
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-function renderHierarchicalView(el, hierarchies) {
-  if (!hierarchies || hierarchies.length === 0) {
-    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">No hierarchies loaded.</span>';
-    return;
-  }
-  let html = '';
-  for (const h of hierarchies) {
-    html += `<div class="p-3 border-b">
-      <div class="font-semibold text-sm text-blue-800 mb-1">${escHtml(h.label || h.setname)}</div>
-      <div class="text-xs text-gray-500 mb-2">Type: ${escHtml(h.type_label)} | Area: ${escHtml(h.coarea || '-')}</div>`;
-
-    // Build tree from nodes and leaves
-    const tree = buildTree(h.nodes || [], h.leaves || [], h.setname);
-    html += renderTreeNode(tree, 0);
-    html += '</div>';
-  }
-  el.innerHTML = html || '<span class="p-4 text-sm text-gray-400">No hierarchies.</span>';
-}
-
-function buildTree(nodes, leaves, rootName) {
-  const children = {};
-  for (const n of nodes) {
-    if (!children[n.parent]) children[n.parent] = [];
-    children[n.parent].push({ name: n.child, type: 'node' });
-  }
-  for (const l of leaves) {
-    if (!children[l.setname]) children[l.setname] = [];
-    children[l.setname].push({ name: l.value, type: 'leaf' });
-  }
-  return { name: rootName, type: 'node', children };
-}
-
-function renderTreeNode(tree, depth) {
-  const kids = tree.children?.[tree.name] || [];
-  if (kids.length === 0 && depth > 0) return '';
-
-  let html = '';
-  for (const kid of kids) {
-    const indent = 16 * (depth + 1);
-    const icon = kid.type === 'node' ? '&#128193;' : '&#128196;';
-    html += `<div style="padding-left:${indent}px" class="py-0.5 text-xs ${kid.type === 'node' ? 'font-medium' : 'text-gray-600'}">${icon} ${escHtml(kid.name)}</div>`;
-    if (kid.type === 'node' && tree.children) {
-      html += renderTreeNode({ name: kid.name, children: tree.children }, depth + 1);
-    }
-  }
-  return html;
-}
-
-// ── Column sorting ──
-function sortByColumn(col) {
-  if (currentSort.col === col) {
-    currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
-  } else {
-    currentSort.col = col;
-    currentSort.dir = 'asc';
-  }
-  // Re-fetch with sort
-  loadObjectData();
-}
-
-function setColumnFilter(col, val) {
-  columnFilters[col] = val;
-  renderTable();
-}
-
-function onViewModeChange() {
-  renderTable();
-}
-
-function applySearch() {
-  currentPage = 1;
-  loadObjectData();
-}
-
-// ── Detail view ──
-async function showDetail(itemId) {
-  selectedRowId = itemId;
-  renderTable(); // Re-render to highlight selected row
-
-  const panel = document.getElementById('detail-panel');
-  const content = document.getElementById('detail-content');
-  panel.classList.remove('hidden');
-  content.innerHTML = '<span class="text-gray-400">Loading...</span>';
-
-  try {
-    const resp = await fetch(`${API}/legacy/${currentObjectType}/${itemId}`);
-    const data = await resp.json();
-    if (data.error) {
-      content.innerHTML = `<span class="text-red-500">${data.error}</span>`;
+  document.getElementById('amplifi-run-select').addEventListener('change', function() {
+    var runId = this.value;
+    if (!runId) {
+      document.getElementById('amplifi-dod').innerHTML = '<span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>';
       return;
     }
-    const item = data.item || {};
-    const detailLabels = data.column_labels || {};
-    let html = '';
-    for (const [key, val] of Object.entries(item)) {
-      if (key === 'id') continue;
-      const displayKey = detailLabels[key] || currentColumnLabels[key] || key;
-      html += `<div class="detail-row">
-        <span class="detail-label" title="${escHtml(key)}">${escHtml(displayKey)}</span>
-        <span class="detail-value">${escHtml(String(val ?? '-'))}</span>
-      </div>`;
-    }
-    content.innerHTML = html || '<span class="text-gray-400">No data</span>';
-  } catch (err) {
-    content.innerHTML = `<span class="text-red-500">Error: ${err.message}</span>`;
-  }
-}
+    amplifiDod = new window.DataObjectDisplay({
+      containerId: 'amplifi-dod',
+      objectType: 'amplifi-mapping',
+      dataEndpoint: '/api/explore/amplifi/mapping',
+      identityField: 'legacy_cctr',
+      showViewToggle: false,
+      showHierarchyPicker: false,
+      showSearch: true,
+      showCSV: true,
+      showPagination: true,
+      pageSize: 200,
+      extraQueryParams: { run_id: runId },
+      authHeaders: {},
+      columns: [
+        { key: 'legacy_cctr', label: 'Legacy CC' },
+        { key: 'legacy_txtsh', label: 'Description' },
+        { key: 'legacy_ccode', label: 'Company' },
+        { key: 'outcome', label: 'Outcome' },
+        { key: 'target_object', label: 'Target' },
+        { key: 'merge_into_cctr', label: 'Merge Into' },
+        { key: 'confidence', label: 'Confidence' }
+      ]
+    });
+    amplifiDod.loadData(function() { amplifiDod.render(); });
+  });
 
-function closeDetail() {
-  document.getElementById('detail-panel').classList.add('hidden');
-  selectedRowId = null;
-  renderTable();
-}
-
-// ── Export ──
-function exportCSV() {
-  window.location.href = `${API}/export/${currentObjectType}?format=csv`;
-}
-
-function exportExcel() {
-  window.location.href = `${API}/export/${currentObjectType}?format=excel`;
-}
-
-// ── Main tab switching ──
-function switchMainTab(tab) {
-  currentMainTab = tab;
-  document.getElementById('panel-legacy').classList.toggle('hidden', tab !== 'legacy');
-  document.getElementById('panel-amplifi').classList.toggle('hidden', tab !== 'amplifi');
-
-  document.getElementById('main-tab-legacy').classList.toggle('border-blue-600', tab === 'legacy');
-  document.getElementById('main-tab-legacy').classList.toggle('text-blue-700', tab === 'legacy');
-  document.getElementById('main-tab-legacy').classList.toggle('border-transparent', tab !== 'legacy');
-  document.getElementById('main-tab-legacy').classList.toggle('text-gray-500', tab !== 'legacy');
-
-  document.getElementById('main-tab-amplifi').classList.toggle('border-blue-600', tab === 'amplifi');
-  document.getElementById('main-tab-amplifi').classList.toggle('text-blue-700', tab === 'amplifi');
-  document.getElementById('main-tab-amplifi').classList.toggle('border-transparent', tab !== 'amplifi');
-  document.getElementById('main-tab-amplifi').classList.toggle('text-gray-500', tab !== 'amplifi');
-}
-
-// ── ampliFi tab ──
-async function loadAmplifiRuns() {
-  try {
-    const resp = await fetch(`${API}/amplifi/runs`);
-    const data = await resp.json();
-    const sel = document.getElementById('amplifi-run-select');
-    sel.innerHTML = '<option value="">Select run...</option>';
-    for (const r of (data.runs || [])) {
-      sel.innerHTML += `<option value="${r.id}">${escHtml(r.label)} (${r.finished_at || 'N/A'})</option>`;
-    }
-  } catch (err) {
-    console.error('Failed to load runs:', err);
-  }
-}
-
-async function loadMapping() {
-  const runId = document.getElementById('amplifi-run-select').value;
-  const el = document.getElementById('amplifi-content');
-  if (!runId) {
-    el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>';
-    return;
-  }
-  el.innerHTML = '<span class="p-4 text-sm text-gray-400 block">Loading...</span>';
-  try {
-    const resp = await fetch(`${API}/amplifi/mapping?run_id=${runId}`);
-    const data = await resp.json();
-    let html = `<div class="p-3 text-xs text-gray-500">Run: ${escHtml(data.run_label || '')} | ${data.total || 0} proposals</div>`;
-    if (data.summary) {
-      html += '<div class="px-3 flex gap-2 mb-2">';
-      for (const [outcome, count] of Object.entries(data.summary)) {
-        const color = outcome === 'KEEP' ? 'green' : outcome === 'CLOSE' ? 'red' : outcome === 'MERGE' ? 'yellow' : 'gray';
-        html += `<span class="px-2 py-0.5 rounded text-xs font-medium bg-${color}-100 text-${color}-800">${outcome}: ${count}</span>`;
-      }
-      html += '</div>';
-    }
-    html += '<table class="explore-tbl"><thead><tr>';
-    html += '<th>Legacy CC</th><th>Description</th><th>Company</th><th>Outcome</th><th>Target</th><th>Merge Into</th><th>Confidence</th>';
-    html += '</tr></thead><tbody>';
-    for (const item of (data.items || [])) {
-      html += `<tr>
-        <td>${escHtml(item.legacy_cctr || '')}</td>
-        <td>${escHtml(item.legacy_txtsh || '')}</td>
-        <td>${escHtml(item.legacy_ccode || '')}</td>
-        <td><span class="font-medium">${escHtml(item.outcome || '')}</span></td>
-        <td>${escHtml(item.target_object || '')}</td>
-        <td>${escHtml(item.merge_into_cctr || '')}</td>
-        <td>${escHtml(item.confidence || '')}</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch (err) {
-    el.innerHTML = `<span class="p-4 text-sm text-red-500 block">Error: ${err.message}</span>`;
-  }
-}
-
-// ── Helpers ──
-function escHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// ── Boot ──
-document.addEventListener('DOMContentLoaded', init);
-
-// Expose to global scope for inline event handlers
-window.switchMainTab = switchMainTab;
-window.selectObjectTab = selectObjectTab;
-window.sortByColumn = sortByColumn;
-window.setColumnFilter = setColumnFilter;
-window.onViewModeChange = onViewModeChange;
-window.applySearch = applySearch;
-window.showDetail = showDetail;
-window.closeDetail = closeDetail;
-window.exportCSV = exportCSV;
-window.exportExcel = exportExcel;
-window.loadMapping = loadMapping;
+  // ── Boot ──────────────────────────────────────────────────────────────
+  selectLegacyTab('cost-centers');
+})();
 </script>
 
 </body>

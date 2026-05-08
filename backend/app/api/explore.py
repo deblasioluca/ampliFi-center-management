@@ -775,6 +775,9 @@ def export_object(
 def explore_mapping(
     db: Session = Depends(get_db),
     run_id: int | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(500, ge=1, le=10000),
+    search: str | None = None,
 ) -> dict:
     """Latest analysis results: legacy CC → proposed target mapping."""
     if run_id is not None:
@@ -829,13 +832,32 @@ def explore_mapping(
             }
         )
 
+    # Apply search filter
+    if search:
+        pat = search.lower()
+        items = [
+            i
+            for i in items
+            if pat in (i.get("legacy_cctr") or "").lower()
+            or pat in (i.get("legacy_txtsh") or "").lower()
+            or pat in (i.get("legacy_ccode") or "").lower()
+            or pat in (i.get("outcome") or "").lower()
+        ]
+
+    total = len(items)
+    # Paginate
+    start = (page - 1) * size
+    paged_items = items[start : start + size]
+
     return {
         "run_id": run.id,
         "run_label": f"Run #{run.id}" + (f" (Wave {run.wave_id})" if run.wave_id else " (Global)"),
         "run_status": run.status,
-        "total": len(items),
+        "total": total,
+        "page": page,
+        "size": size,
         "summary": summary,
-        "items": items,
+        "items": paged_items,
     }
 
 
@@ -1099,3 +1121,68 @@ def compare_objects(
             "engines_used": sorted({p["engine_label"] for p in proposals}),
         },
     }
+
+
+# ── Transfer: Cleanup → Explorer ─────────────────────────────────────────
+
+
+@router.post("/transfer-to-explorer")
+def transfer_to_explorer(
+    db: Session = Depends(get_db),
+    object_types: list[str] | None = Query(None),
+    current_user: AppUser | None = Depends(get_current_user_optional),
+) -> dict:
+    """Copy data from cleanup scope into explorer scope.
+
+    If ``object_types`` is provided, only those types are transferred.
+    Otherwise all supported types are transferred.
+
+    Existing explorer-scope data for each type is deleted first (full replace).
+    """
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if current_user.role not in ("admin", "data_manager"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    supported = ["cost-centers", "profit-centers", "entities", "employees", "balances"]
+    types_to_transfer = object_types or supported
+    types_to_transfer = [t for t in types_to_transfer if t in supported]
+
+    from app.models.core import SCOPE_CLEANUP, SCOPE_EXPLORER, Balance
+
+    model_map: dict[str, Any] = {
+        "cost-centers": LegacyCostCenter,
+        "profit-centers": LegacyProfitCenter,
+        "entities": Entity,
+        "employees": Employee,
+        "balances": Balance,
+    }
+
+    results: dict[str, dict] = {}
+    for obj_type in types_to_transfer:
+        model = model_map.get(obj_type)
+        if not model or not hasattr(model, "scope"):
+            results[obj_type] = {"status": "skipped", "reason": "no scope field"}
+            continue
+
+        # Delete existing explorer data
+        deleted = db.execute(model.__table__.delete().where(model.scope == SCOPE_EXPLORER)).rowcount
+
+        # Copy cleanup data with explorer scope
+        cleanup_rows = db.execute(select(model).where(model.scope == SCOPE_CLEANUP)).scalars().all()
+
+        inserted = 0
+        for row in cleanup_rows:
+            # Clone row data
+            row_data = {
+                c.key: getattr(row, c.key) for c in inspect(model).column_attrs if c.key != "id"
+            }
+            row_data["scope"] = SCOPE_EXPLORER
+            new_obj = model(**row_data)
+            db.add(new_obj)
+            inserted += 1
+
+        results[obj_type] = {"deleted": deleted, "inserted": inserted}
+
+    db.commit()
+    return {"status": "ok", "results": results}
