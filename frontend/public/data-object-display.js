@@ -194,31 +194,28 @@
       });
   };
 
-  // ── Build hierarchy picker HTML ─────────────────────────────────────
+  // ── Build hierarchy picker HTML (inline select, no wrapper div) ─────
 
   DataObjectDisplay.prototype.buildHierarchyPickerHtml = function () {
     var items = this._hierOptions;
     if (!items.length && !this.glHierarchyMode) return '';
 
-    var html = '<div class="flex items-center gap-2 mb-2">';
-    html += '<label class="text-xs text-gray-500 whitespace-nowrap">Hierarchy:</label>';
-    html += '<select class="input text-xs w-72" data-dod-role="hier-picker">';
-    html += '<option value="">(none — no L columns)</option>';
+    var html = '<select class="input text-xs flex-shrink-0" style="max-width:280px" data-dod-role="hier-picker">';
+    html += '<option value="">(none — no hierarchy)</option>';
 
     if (this.glHierarchyMode) {
-      // GL account artificial hierarchies
-      html += '<option value="__gl_type_a">GL Type A — first character</option>';
-      html += '<option value="__gl_type_b">GL Type B — first 5 characters</option>';
-      html += '</select></div>';
+      html += '<option value="__gl_type_a">GL Type A — 1st character</option>';
+      html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
+      html += '</select>';
       return html;
     }
 
     // Group by normalised setclass
     var groups = { '0101': [], '0106': [], '0104': [], other: [] };
     var groupLabels = {
-      '0101': 'Cost Center hierarchies (CC)',
+      '0101': 'CC hierarchies',
       '0106': 'Entity hierarchies',
-      '0104': 'Profit Center hierarchies (PC)',
+      '0104': 'PC hierarchies',
       other: 'Other',
     };
 
@@ -235,21 +232,18 @@
       if (!list.length) return;
       html += '<optgroup label="' + escAttr(groupLabels[key]) + '">';
       list.forEach(function (h) {
-        html += '<option value="' + h.id + '">' +
-          esc(h.setname || h.label || '') +
-          (h.description ? ' — ' + esc(h.description) : '') +
-          '</option>';
+        var label = esc(h.setname || h.label || '');
+        if (h.description) label += ' — ' + esc(h.description);
+        html += '<option value="' + h.id + '">' + label + '</option>';
       });
       html += '</optgroup>';
     });
 
-    html += '</select></div>';
+    html += '</select>';
 
     // Auto-select if only one hierarchy
     if (!filterTypes) {
-      // Count total available
-      var total = items.length;
-      if (total === 1) {
+      if (items.length === 1) {
         this._hierPickerId = items[0].id;
       }
     } else {
@@ -279,39 +273,37 @@
   // ── Toolbar HTML ────────────────────────────────────────────────────
 
   DataObjectDisplay.prototype.buildToolbarHtml = function () {
+    var self = this;
     var html = '';
-    // Title row with action buttons
-    if (this.title || this.toolbarButtons.length) {
-      html += '<div class="flex items-center justify-between mb-2 gap-3 flex-wrap">';
-      if (this.title) {
-        html += '<h3 class="text-base font-semibold flex-shrink-0">' + esc(this.title);
-        if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
-        html += '</h3>';
-      }
-      if (this.toolbarButtons.length) {
-        html += '<div class="flex items-center gap-2 flex-wrap ml-auto">';
-        this.toolbarButtons.forEach(function (btn, i) {
-          html += '<button data-dod-role="toolbar-btn-' + i + '" class="' +
-            escAttr(btn.className || 'btn-secondary text-xs') + '"' +
-            (btn.title ? ' title="' + escAttr(btn.title) + '"' : '') + '>' +
-            esc(btn.label) + '</button>';
-        });
-        html += '</div>';
-      }
-      html += '</div>';
+    // Title row (heading only)
+    if (this.title) {
+      html += '<h3 class="text-base font-semibold mb-2">' + esc(this.title);
+      if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
+      html += '</h3>';
     }
-    // Controls row
+    // Single condensed controls row
     html += '<div class="flex items-center gap-2 mb-2 flex-wrap">';
     if (this.showViewToggle) {
       html += this.buildViewToggleHtml();
     }
     if (this.showSearch) {
-      html += '<input type="text" data-dod-role="search" placeholder="Search..." class="input text-sm w-48 flex-shrink-0" value="' + escAttr(this._search) + '" />';
+      html += '<input type="text" data-dod-role="search" placeholder="Search..." class="input text-xs py-1 flex-1" style="min-width:120px;max-width:220px" value="' + escAttr(this._search) + '" />';
+    }
+    if (this.showCSV) {
+      html += '<button data-dod-role="csv" class="btn-secondary text-xs py-1 flex-shrink-0" title="Download as CSV">CSV</button>';
+    }
+    if (this._view === 'hierarchy') {
+      html += '<button data-dod-role="expand-all" class="btn-secondary text-xs py-1 flex-shrink-0">Expand All</button>';
+      html += '<button data-dod-role="collapse-all" class="btn-secondary text-xs py-1 flex-shrink-0">Collapse All</button>';
+    }
+    // Hierarchy picker inline
+    if (this.showHierarchyPicker && (this._hierOptions.length || this.glHierarchyMode)) {
+      html += this.buildHierarchyPickerHtml();
     }
     // Extra filter widgets
     this.extraFilters.forEach(function (f) {
       if (f.type === 'select') {
-        html += '<select data-dod-role="extra-filter" data-dod-filter-id="' + escAttr(f.id) + '" class="input text-sm ' + (f.className || 'w-32') + '">';
+        html += '<select data-dod-role="extra-filter" data-dod-filter-id="' + escAttr(f.id) + '" class="input text-xs py-1 ' + (f.className || 'w-32') + '">';
         (f.options || []).forEach(function (opt) {
           var val = typeof opt === 'string' ? opt : opt.value;
           var label = typeof opt === 'string' ? opt : opt.label;
@@ -321,27 +313,26 @@
       } else {
         html += '<input type="' + (f.type || 'text') + '" data-dod-role="extra-filter" data-dod-filter-id="' + escAttr(f.id) + '"' +
           ' placeholder="' + escAttr(f.placeholder || '') + '"' +
-          ' class="input text-sm ' + (f.className || 'w-32') + '" />';
+          ' class="input text-xs py-1 ' + (f.className || 'w-32') + '" />';
       }
     });
-    if (this.showCSV) {
-      html += '<button data-dod-role="csv" class="btn-secondary text-xs flex-shrink-0" title="Download as CSV">CSV</button>';
-    }
-    if (this._view === 'hierarchy') {
-      html += '<button data-dod-role="expand-all" class="btn-secondary text-xs flex-shrink-0">Expand All</button>';
-      html += '<button data-dod-role="collapse-all" class="btn-secondary text-xs flex-shrink-0">Collapse All</button>';
-    }
-    // Show active filter count
+    // Active filter count
     var activeFilters = Object.keys(this._columnFilters).length;
     if (activeFilters > 0) {
-      html += '<span class="text-xs text-blue-600 font-medium">' + activeFilters + ' filter(s) active</span>';
-      html += '<button data-dod-role="clear-all-filters" class="text-xs text-red-500 hover:text-red-700 underline">Clear All</button>';
+      html += '<span class="text-xs text-blue-600 font-medium flex-shrink-0">' + activeFilters + ' filter(s)</span>';
+      html += '<button data-dod-role="clear-all-filters" class="text-xs text-red-500 hover:text-red-700 underline flex-shrink-0">Clear</button>';
+    }
+    // Toolbar buttons (Delete All, etc.) — right-aligned
+    if (this.toolbarButtons.length) {
+      html += '<span class="ml-auto"></span>';
+      this.toolbarButtons.forEach(function (btn, i) {
+        html += '<button data-dod-role="toolbar-btn-' + i + '" class="' +
+          escAttr(btn.className || 'btn-secondary text-xs') + ' flex-shrink-0"' +
+          (btn.title ? ' title="' + escAttr(btn.title) + '"' : '') + '>' +
+          esc(btn.label) + '</button>';
+      });
     }
     html += '</div>';
-
-    if (this.showHierarchyPicker && (this._hierOptions.length || this.glHierarchyMode)) {
-      html += this.buildHierarchyPickerHtml();
-    }
 
     return html;
   };

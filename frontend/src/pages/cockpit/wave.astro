@@ -1062,6 +1062,10 @@ import Layout from '../../components/layout/Layout.astro';
   var _assignScopeId = null;
   window.openAssignReviewer = function(scopeId) {
     _assignScopeId = scopeId;
+    document.getElementById('ar-search').value = '';
+    document.getElementById('ar-name').value = '';
+    document.getElementById('ar-email').value = '';
+    document.getElementById('ar-results').classList.add('hidden');
     document.getElementById('assign-reviewer-overlay').classList.remove('hidden');
   };
 
@@ -1313,6 +1317,9 @@ import Layout from '../../components/layout/Layout.astro';
       });
       if (!res.ok) { var d = await res.json().catch(function() { return {}; }); uiAlert({ message: d.detail || 'Failed to assign reviewer', kind: 'danger' }); return; }
       document.getElementById('assign-reviewer-overlay').classList.add('hidden');
+      document.getElementById('ar-search').value = '';
+      document.getElementById('ar-name').value = '';
+      document.getElementById('ar-email').value = '';
       loadScopes();
     } finally {
       btn.disabled = false;
