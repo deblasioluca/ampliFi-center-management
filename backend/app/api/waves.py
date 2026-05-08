@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import PaginationParams, get_current_user, pagination, require_role
@@ -439,15 +439,15 @@ def my_review_scopes(
     user: AppUser = Depends(require_role("admin", "data_manager", "reviewer")),
 ) -> list[dict]:
     """List review scopes assigned to the current user."""
+    conditions = [ReviewScope.reviewer_user_id == user.id]
+    if user.email:
+        conditions.append(ReviewScope.reviewer_email == user.email)
+    if user.display_name:
+        conditions.append(ReviewScope.reviewer_name == user.display_name)
+    if user.username:
+        conditions.append(ReviewScope.reviewer_name == user.username)
     scopes = (
-        db.execute(
-            select(ReviewScope)
-            .where(
-                (ReviewScope.reviewer_user_id == user.id)
-                | (ReviewScope.reviewer_email == user.email)
-            )
-            .order_by(ReviewScope.id.desc())
-        )
+        db.execute(select(ReviewScope).where(or_(*conditions)).order_by(ReviewScope.id.desc()))
         .scalars()
         .all()
     )
@@ -1208,6 +1208,7 @@ class ReviewScopeCreate(BaseModel):
     scope_filter: dict = {}
     reviewer_name: str | None = None
     reviewer_email: str | None = None
+    reviewer_user_id: int | None = None
 
 
 @router.post("/{wave_id}/scopes")
@@ -1229,9 +1230,9 @@ def create_review_scope(
     token = secrets.token_urlsafe(32)
     expires = datetime.now(UTC) + timedelta(days=30)
 
-    # Resolve reviewer_user_id from email if possible
-    reviewer_user_id = None
-    if body.reviewer_email:
+    # Resolve reviewer_user_id: prefer explicit ID, then lookup by email
+    reviewer_user_id = body.reviewer_user_id
+    if not reviewer_user_id and body.reviewer_email:
         reviewer_user = (
             db.execute(select(AppUser).where(AppUser.email == body.reviewer_email))
             .scalars()
@@ -1430,6 +1431,7 @@ def delete_review_scope(
 class AssignReviewerBody(BaseModel):
     reviewer_name: str | None = None
     reviewer_email: str | None = None
+    reviewer_user_id: int | None = None
 
 
 @router.patch("/scopes/{scope_id}/reviewer")
@@ -1450,8 +1452,10 @@ def assign_reviewer_to_scope(
         )
     scope.reviewer_name = body.reviewer_name
     scope.reviewer_email = body.reviewer_email
-    # Resolve user ID from email
-    if body.reviewer_email:
+    # Prefer explicit user ID, then resolve from email
+    if body.reviewer_user_id:
+        scope.reviewer_user_id = body.reviewer_user_id
+    elif body.reviewer_email:
         reviewer_user = (
             db.execute(select(AppUser).where(AppUser.email == body.reviewer_email))
             .scalars()
@@ -1459,6 +1463,8 @@ def assign_reviewer_to_scope(
         )
         if reviewer_user:
             scope.reviewer_user_id = reviewer_user.id
+        else:
+            scope.reviewer_user_id = None
     else:
         scope.reviewer_user_id = None
     db.commit()
@@ -1467,6 +1473,7 @@ def assign_reviewer_to_scope(
         "id": scope.id,
         "reviewer_name": scope.reviewer_name,
         "reviewer_email": scope.reviewer_email,
+        "reviewer_user_id": scope.reviewer_user_id,
     }
 
 

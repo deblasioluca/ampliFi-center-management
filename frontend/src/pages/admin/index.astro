@@ -146,32 +146,51 @@ import Layout from '../../components/layout/Layout.astro';
 
       <!-- LLM Settings Tab -->
       <div id="panel-llm" class="card hidden">
-        <h2 class="text-lg font-semibold mb-4">LLM Settings</h2>
-        <p class="text-xs text-gray-500 mb-4">Configure the Language Model provider for AI-assisted analysis and classification.</p>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-            <select id="llm-provider" class="input">
-              <option value="openai">OpenAI</option>
-              <option value="azure_openai">Azure OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="none">None (disabled)</option>
-            </select>
+        <h2 class="text-lg font-semibold mb-4">LLM Providers</h2>
+        <p class="text-xs text-gray-500 mb-4">Configure Language Model providers for AI-assisted analysis. You can add multiple providers and select the active one.</p>
+
+        <!-- Provider list -->
+        <div id="llm-providers-list" class="mb-4">
+          <p class="text-gray-400 text-sm">Loading...</p>
+        </div>
+
+        <!-- Add / Edit form -->
+        <div id="llm-form" class="border rounded-lg p-4 bg-gray-50">
+          <h3 id="llm-form-title" class="text-sm font-semibold mb-3">Add New Provider</h3>
+          <input type="hidden" id="llm-edit-id" value="" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Display Name</label>
+              <input type="text" id="llm-name" class="input text-sm" placeholder="My OpenAI" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Provider Type</label>
+              <select id="llm-provider-type" class="input text-sm">
+                <option value="openai">OpenAI</option>
+                <option value="azure_openai">Azure OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="btp">SAP BTP GenAI Hub</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">API Key</label>
+              <input type="password" id="llm-api-key" class="input text-sm" placeholder="sk-..." />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Model</label>
+              <input type="text" id="llm-model" class="input text-sm" placeholder="gpt-4o / claude-sonnet-4-20250514" />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-gray-700 mb-1">Endpoint <span class="text-gray-400">(optional, required for Azure)</span></label>
+              <input type="text" id="llm-endpoint" class="input text-sm" placeholder="https://your-resource.openai.azure.com/" />
+            </div>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-            <input type="password" id="llm-api-key" class="input" placeholder="sk-..." />
+          <div class="flex gap-2 mt-3">
+            <button id="llm-save-btn" class="btn-amplifi text-xs">Add Provider</button>
+            <button id="llm-test-btn" class="btn-secondary text-xs">Test Connection</button>
+            <button id="llm-cancel-btn" class="btn-secondary text-xs hidden">Cancel Edit</button>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
-            <input type="text" id="llm-model" class="input" placeholder="gpt-4o" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Endpoint (Azure only)</label>
-            <input type="text" id="llm-endpoint" class="input" placeholder="https://your-resource.openai.azure.com/" />
-          </div>
-          <button id="save-llm-btn" class="btn-amplifi">Save LLM Config</button>
-          <div id="llm-result" class="text-sm hidden"></div>
+          <div id="llm-result" class="text-sm mt-2 hidden"></div>
         </div>
       </div>
 
@@ -278,6 +297,7 @@ import Layout from '../../components/layout/Layout.astro';
       div.textContent = text || '';
       return div.innerHTML;
     }
+    var esc = escapeHtml;
     function escapeAttr(text) { return escapeHtml(text).replace(/"/g, '&quot;'); }
 
     // Sidebar tab switching
@@ -341,18 +361,20 @@ import Layout from '../../components/layout/Layout.astro';
           html += '<table class="w-full text-xs"><thead><tr class="border-b">' +
             '<th class="text-left py-2 px-2">Username</th><th class="text-left py-2 px-2">Name</th>' +
             '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Roles</th>' +
-            '<th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
+            '<th class="text-left py-2 px-2">Active</th><th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
           items.forEach(function(u) {
             var roleCells = buildRoleCheckboxes(u.id, u.role);
             var activeToggle = u.is_active
               ? '<button class="toggle-active text-xs text-green-600 hover:text-red-600" data-id="' + u.id + '" data-active="true" title="Click to deactivate">Active</button>'
               : '<button class="toggle-active text-xs text-red-600 hover:text-green-600" data-id="' + u.id + '" data-active="false" title="Click to activate">Inactive</button>';
+            var resetBtn = '<button class="reset-pwd text-xs text-blue-600 hover:text-blue-800 underline" data-id="' + u.id + '" data-username="' + escapeAttr(u.username) + '">Reset Password</button>';
             html += '<tr class="border-b border-gray-100">' +
               '<td class="py-2 px-2 font-medium">' + escapeHtml(u.username) + '</td>' +
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
               '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
               '<td class="py-2 px-2">' + roleCells + '</td>' +
-              '<td class="py-2 px-2">' + activeToggle + '</td></tr>';
+              '<td class="py-2 px-2">' + activeToggle + '</td>' +
+              '<td class="py-2 px-2">' + resetBtn + '</td></tr>';
           });
           html += '</tbody></table>';
           el.innerHTML = html;
@@ -391,6 +413,26 @@ import Layout from '../../components/layout/Layout.astro';
               });
               if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed'); }
               loadUsers();
+            });
+          });
+
+          el.querySelectorAll('.reset-pwd').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+              var uid = this.getAttribute('data-id');
+              var uname = this.getAttribute('data-username');
+              var newPwd = prompt('Enter new password for "' + uname + '" (min 4 chars):');
+              if (!newPwd) return;
+              if (newPwd.length < 4) { alert('Password must be at least 4 characters.'); return; }
+              var res = await fetch('/api/admin/users/' + uid + '/reset-password', {
+                method: 'POST', headers: jsonHdr,
+                body: JSON.stringify({ new_password: newPwd })
+              });
+              if (res.ok) {
+                alert('Password reset successfully for "' + uname + '".');
+              } else {
+                var b = await res.json();
+                alert(b.detail || 'Failed to reset password');
+              }
             });
           });
 
@@ -551,41 +593,149 @@ import Layout from '../../components/layout/Layout.astro';
       } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
     });
 
-    // ---- LLM Settings ----
-    (function loadLLM() {
-      fetch('/api/admin/config/llm', { headers: authHdr })
+    // ---- LLM Providers CRUD ----
+    var _llmProviders = [];
+    function llmLoadProviders() {
+      fetch('/api/admin/llm/providers', { headers: authHdr })
         .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var cfg = data.value || {};
-          if (cfg.provider) document.getElementById('llm-provider').value = cfg.provider;
-          if (cfg.api_key) document.getElementById('llm-api-key').value = cfg.api_key;
-          if (cfg.model) document.getElementById('llm-model').value = cfg.model;
-          if (cfg.endpoint) document.getElementById('llm-endpoint').value = cfg.endpoint;
+        .then(function(list) {
+          _llmProviders = list || [];
+          llmRenderList();
         })
-        .catch(function() {});
-    })();
-
-    document.getElementById('save-llm-btn').addEventListener('click', async function() {
-      var resultEl = document.getElementById('llm-result');
-      try {
-        await fetch('/api/admin/config/llm', {
-          method: 'PUT', headers: jsonHdr,
-          body: JSON.stringify({ value: {
-            provider: document.getElementById('llm-provider').value,
-            api_key: document.getElementById('llm-api-key').value,
-            model: document.getElementById('llm-model').value,
-            endpoint: document.getElementById('llm-endpoint').value,
-          }})
+        .catch(function() {
+          document.getElementById('llm-providers-list').innerHTML = '<p class="text-red-500 text-sm">Failed to load providers.</p>';
         });
-        resultEl.textContent = 'LLM config saved.';
-        resultEl.className = 'text-sm text-green-600';
-        resultEl.classList.remove('hidden');
+    }
+    function llmRenderList() {
+      var el = document.getElementById('llm-providers-list');
+      if (!_llmProviders.length) { el.innerHTML = '<p class="text-gray-400 text-sm">No providers configured yet. Add one below.</p>'; return; }
+      var html = '<table class="w-full text-sm border"><thead class="bg-gray-100"><tr>' +
+        '<th class="px-3 py-2 text-left">Name</th><th class="px-3 py-2 text-left">Type</th>' +
+        '<th class="px-3 py-2 text-left">Model</th><th class="px-3 py-2 text-left">API Key</th>' +
+        '<th class="px-3 py-2 text-center">Active</th><th class="px-3 py-2 text-right">Actions</th></tr></thead><tbody>';
+      _llmProviders.forEach(function(p) {
+        var typeLbl = { openai: 'OpenAI', azure_openai: 'Azure OpenAI', anthropic: 'Anthropic', btp: 'SAP BTP' }[p.provider_type] || p.provider_type;
+        html += '<tr class="border-t' + (p.is_active ? ' bg-green-50' : '') + '">' +
+          '<td class="px-3 py-2 font-medium">' + esc(p.name) + '</td>' +
+          '<td class="px-3 py-2">' + typeLbl + '</td>' +
+          '<td class="px-3 py-2 text-xs text-gray-600">' + esc(p.model || '-') + '</td>' +
+          '<td class="px-3 py-2 text-xs text-gray-400 font-mono">' + esc(p.api_key_masked) + '</td>' +
+          '<td class="px-3 py-2 text-center">' +
+            (p.is_active
+              ? '<span class="text-green-600 font-semibold text-xs">Active</span>'
+              : '<button class="text-xs text-blue-600 underline llm-activate-btn" data-id="' + p.id + '">Activate</button>') +
+          '</td>' +
+          '<td class="px-3 py-2 text-right space-x-2">' +
+            '<button class="text-xs text-blue-600 underline llm-edit-btn" data-id="' + p.id + '">Edit</button>' +
+            '<button class="text-xs text-red-600 underline llm-del-btn" data-id="' + p.id + '">Delete</button>' +
+          '</td></tr>';
+      });
+      html += '</tbody></table>';
+      el.innerHTML = html;
+
+      // Bind buttons
+      el.querySelectorAll('.llm-activate-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { llmActivate(this.getAttribute('data-id')); });
+      });
+      el.querySelectorAll('.llm-edit-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { llmStartEdit(this.getAttribute('data-id')); });
+      });
+      el.querySelectorAll('.llm-del-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { llmDelete(this.getAttribute('data-id')); });
+      });
+    }
+    async function llmActivate(id) {
+      await fetch('/api/admin/llm/providers/' + id + '/activate', { method: 'POST', headers: authHdr });
+      llmLoadProviders();
+    }
+    async function llmDelete(id) {
+      if (!confirm('Delete this LLM provider?')) return;
+      await fetch('/api/admin/llm/providers/' + id, { method: 'DELETE', headers: authHdr });
+      llmLoadProviders();
+    }
+    function llmStartEdit(id) {
+      var p = _llmProviders.find(function(x) { return x.id === id; });
+      if (!p) return;
+      document.getElementById('llm-edit-id').value = p.id;
+      document.getElementById('llm-name').value = p.name || '';
+      document.getElementById('llm-provider-type').value = p.provider_type || 'openai';
+      document.getElementById('llm-api-key').value = '';
+      document.getElementById('llm-api-key').placeholder = p.api_key_masked || 'Leave blank to keep';
+      document.getElementById('llm-model').value = p.model || '';
+      document.getElementById('llm-endpoint').value = p.endpoint || '';
+      document.getElementById('llm-form-title').textContent = 'Edit Provider: ' + p.name;
+      document.getElementById('llm-save-btn').textContent = 'Update Provider';
+      document.getElementById('llm-cancel-btn').classList.remove('hidden');
+    }
+    function llmResetForm() {
+      document.getElementById('llm-edit-id').value = '';
+      document.getElementById('llm-name').value = '';
+      document.getElementById('llm-provider-type').value = 'openai';
+      document.getElementById('llm-api-key').value = '';
+      document.getElementById('llm-api-key').placeholder = 'sk-...';
+      document.getElementById('llm-model').value = '';
+      document.getElementById('llm-endpoint').value = '';
+      document.getElementById('llm-form-title').textContent = 'Add New Provider';
+      document.getElementById('llm-save-btn').textContent = 'Add Provider';
+      document.getElementById('llm-cancel-btn').classList.add('hidden');
+      document.getElementById('llm-result').classList.add('hidden');
+    }
+    document.getElementById('llm-cancel-btn').addEventListener('click', llmResetForm);
+
+    document.getElementById('llm-save-btn').addEventListener('click', async function() {
+      var resultEl = document.getElementById('llm-result');
+      var editId = document.getElementById('llm-edit-id').value;
+      var payload = {
+        name: document.getElementById('llm-name').value.trim(),
+        provider_type: document.getElementById('llm-provider-type').value,
+        api_key: document.getElementById('llm-api-key').value,
+        model: document.getElementById('llm-model').value.trim(),
+        endpoint: document.getElementById('llm-endpoint').value.trim(),
+        is_active: !_llmProviders.length,
+      };
+      if (!payload.name) { alert('Provider name is required.'); return; }
+      try {
+        var url = editId ? '/api/admin/llm/providers/' + editId : '/api/admin/llm/providers';
+        var method = editId ? 'PUT' : 'POST';
+        var res = await fetch(url, { method: method, headers: jsonHdr, body: JSON.stringify(payload) });
+        if (!res.ok) { var err = await res.json(); throw new Error(err.detail || 'Error'); }
+        resultEl.textContent = editId ? 'Provider updated.' : 'Provider added.';
+        resultEl.className = 'text-sm text-green-600 mt-2'; resultEl.classList.remove('hidden');
+        llmResetForm(); llmLoadProviders();
       } catch(e) {
         resultEl.textContent = 'Error: ' + e.message;
-        resultEl.className = 'text-sm text-red-600';
-        resultEl.classList.remove('hidden');
+        resultEl.className = 'text-sm text-red-600 mt-2'; resultEl.classList.remove('hidden');
       }
     });
+
+    document.getElementById('llm-test-btn').addEventListener('click', async function() {
+      var resultEl = document.getElementById('llm-result');
+      var payload = {
+        name: document.getElementById('llm-name').value.trim() || 'test',
+        provider_type: document.getElementById('llm-provider-type').value,
+        api_key: document.getElementById('llm-api-key').value,
+        model: document.getElementById('llm-model').value.trim(),
+        endpoint: document.getElementById('llm-endpoint').value.trim(),
+      };
+      if (!payload.api_key) { alert('Enter an API key to test.'); return; }
+      resultEl.textContent = 'Testing...'; resultEl.className = 'text-sm text-gray-600 mt-2'; resultEl.classList.remove('hidden');
+      try {
+        var res = await fetch('/api/admin/llm/providers/test', { method: 'POST', headers: jsonHdr, body: JSON.stringify(payload) });
+        var data = await res.json();
+        if (data.success) {
+          resultEl.textContent = 'Connection OK! Response: "' + data.response + '" (' + data.latency_ms + 'ms)';
+          resultEl.className = 'text-sm text-green-600 mt-2';
+        } else {
+          resultEl.textContent = 'Test failed: ' + (data.error || 'Unknown error');
+          resultEl.className = 'text-sm text-red-600 mt-2';
+        }
+      } catch(e) {
+        resultEl.textContent = 'Test error: ' + e.message;
+        resultEl.className = 'text-sm text-red-600 mt-2';
+      }
+    });
+
+    llmLoadProviders();
 
     // ---- Config ----
     document.getElementById('load-cfg-btn').addEventListener('click', async function() {

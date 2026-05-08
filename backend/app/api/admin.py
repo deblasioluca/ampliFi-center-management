@@ -144,6 +144,29 @@ def update_user(
     return UserOut.model_validate(user)
 
 
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    body: PasswordReset,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    if len(body.new_password) < 4:
+        raise HTTPException(status_code=422, detail="Password must be at least 4 characters")
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = hash_password(body.new_password)
+    user.failed_logins = 0
+    user.locked_until = None
+    db.commit()
+    return {"status": "password_reset", "username": user.username}
+
+
 @router.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
@@ -2386,6 +2409,213 @@ def llm_usage_summary(
         monthly_cap_usd=guardrail_config.get("monthly_cap_usd", 500.0),
     )
     return guardrail.get_usage_summary(db)
+
+
+# --- LLM Providers CRUD ---
+
+_LLM_KEY = "llm_providers"
+
+
+class LLMProviderBody(BaseModel):
+    name: str
+    provider_type: str  # openai | azure_openai | anthropic | btp
+    api_key: str = ""
+    model: str = ""
+    endpoint: str = ""
+    is_active: bool = False
+
+
+@router.get("/llm/providers")
+def list_llm_providers(
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> list[dict]:
+    """List all configured LLM providers."""
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == _LLM_KEY)).scalar_one_or_none()
+    providers = (cfg.value if cfg else []) or []
+    # Migrate from old single-provider format
+    if isinstance(providers, dict):
+        providers = [providers] if providers else []
+    # Mask API keys
+    safe = []
+    for p in providers:
+        out = dict(p)
+        key = out.get("api_key", "")
+        out["api_key_masked"] = ("*" * 8 + key[-4:]) if len(key) > 4 else "****"
+        del out["api_key"]
+        safe.append(out)
+    return safe
+
+
+@router.post("/llm/providers")
+def add_llm_provider(
+    body: LLMProviderBody,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Add a new LLM provider configuration."""
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == _LLM_KEY)).scalar_one_or_none()
+    providers: list = (cfg.value if cfg else []) or []
+    if isinstance(providers, dict):
+        providers = [providers] if providers else []
+
+    new_id = str(uuid.uuid4())[:8]
+    entry = {
+        "id": new_id,
+        "name": body.name,
+        "provider_type": body.provider_type,
+        "api_key": body.api_key,
+        "model": body.model,
+        "endpoint": body.endpoint,
+        "is_active": body.is_active,
+    }
+    # If this is the first or marked active, deactivate others
+    if body.is_active or not providers:
+        for p in providers:
+            p["is_active"] = False
+        entry["is_active"] = True
+    providers.append(entry)
+
+    if cfg:
+        cfg.value = providers
+        cfg.updated_by = _user.id
+    else:
+        cfg = AppConfig(key=_LLM_KEY, value=providers, updated_by=_user.id)
+        db.add(cfg)
+    db.commit()
+    return {"id": new_id, "status": "added"}
+
+
+@router.put("/llm/providers/{provider_id}")
+def update_llm_provider(
+    provider_id: str,
+    body: LLMProviderBody,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Update an existing LLM provider."""
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == _LLM_KEY)).scalar_one_or_none()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="No providers configured")
+    providers: list = cfg.value or []
+    if isinstance(providers, dict):
+        providers = [providers] if providers else []
+
+    found = False
+    for p in providers:
+        if p.get("id") == provider_id:
+            p["name"] = body.name
+            p["provider_type"] = body.provider_type
+            if body.api_key:
+                p["api_key"] = body.api_key
+            p["model"] = body.model
+            p["endpoint"] = body.endpoint
+            if body.is_active:
+                for q in providers:
+                    q["is_active"] = False
+                p["is_active"] = True
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    cfg.value = providers
+    cfg.updated_by = _user.id
+    db.commit()
+    return {"status": "updated"}
+
+
+@router.delete("/llm/providers/{provider_id}")
+def delete_llm_provider(
+    provider_id: str,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Delete an LLM provider."""
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == _LLM_KEY)).scalar_one_or_none()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="No providers configured")
+    providers: list = cfg.value or []
+    if isinstance(providers, dict):
+        providers = [providers] if providers else []
+
+    was_active = False
+    new_list = []
+    for p in providers:
+        if p.get("id") == provider_id:
+            was_active = p.get("is_active", False)
+        else:
+            new_list.append(p)
+    if len(new_list) == len(providers):
+        raise HTTPException(status_code=404, detail="Provider not found")
+    # If deleted provider was active and others remain, activate the first
+    if was_active and new_list:
+        new_list[0]["is_active"] = True
+
+    cfg.value = new_list
+    cfg.updated_by = _user.id
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.post("/llm/providers/{provider_id}/activate")
+def activate_llm_provider(
+    provider_id: str,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Set a provider as the active one."""
+    cfg = db.execute(select(AppConfig).where(AppConfig.key == _LLM_KEY)).scalar_one_or_none()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="No providers configured")
+    providers: list = cfg.value or []
+
+    found = False
+    for p in providers:
+        if p.get("id") == provider_id:
+            found = True
+        p["is_active"] = p.get("id") == provider_id
+    if not found:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    cfg.value = providers
+    cfg.updated_by = _user.id
+    db.commit()
+    return {"status": "activated"}
+
+
+@router.post("/llm/providers/test")
+def test_llm_provider(
+    body: LLMProviderBody,
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    """Test an LLM provider connection with a simple prompt."""
+    from app.infra.llm.provider import Message, get_provider
+
+    config = {
+        "provider": body.provider_type,
+        "api_key": body.api_key,
+        "model": body.model,
+        "endpoint": body.endpoint,
+        "deployment": body.model,
+    }
+    try:
+        provider = get_provider(config, cache=False)
+        result = provider.complete(
+            model=body.model or "",
+            messages=[Message(role="user", content="Say 'Hello from ampliFi!' in one sentence.")],
+            max_tokens=50,
+        )
+        if "Error" in result.text:
+            return {"success": False, "error": result.text}
+        return {
+            "success": True,
+            "response": result.text,
+            "model": result.model,
+            "latency_ms": result.latency_ms,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # --- Datasphere Integration ---

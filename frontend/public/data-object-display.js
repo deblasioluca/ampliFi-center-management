@@ -931,9 +931,9 @@
       return this._renderGLHierarchical(items);
     }
 
-    // Need a selected hierarchy with tree data. Try inline first.
+    // Prefer /tree endpoint data (enriched); fall back to inline hierarchy data.
     var hierData = this._hierData;
-    if (!hierData && this._hierPickerId && this.inlineHierarchies && this._data && this._data.hierarchies) {
+    if (!hierData && this._hierPickerId && this._data && this._data.hierarchies) {
       var inlineHier = this._data.hierarchies.filter(function (h) { return h.id === self._hierPickerId; })[0];
       if (inlineHier && inlineHier.nodes) hierData = inlineHier;
     }
@@ -1184,7 +1184,7 @@
     var idSeq = 0;
 
     function countAll(node) {
-      var cnt = (node.items || []).length;
+      var cnt = node.leaf_count || (node.items || []).length;
       (node.children || []).forEach(function (c) { cnt += countAll(c); });
       return cnt;
     }
@@ -1193,7 +1193,7 @@
       idSeq++;
       var nodeId = self.containerId + '-tt-' + idSeq;
       var pad = depth * 12;
-      var lc = node.leaf_count || countAll(node);
+      var lc = countAll(node);
       var hasChildren = (node.children && node.children.length) || (node.items && node.items.length);
       var isSelected = self._selectedHierNode === node.setname;
       var isExpanded = self._allExpanded || self._expandedNodes[node.setname] !== false;
@@ -1268,10 +1268,19 @@
       return result;
     }
 
-    var detailItems = [];
+    function collectLeafValues(node) {
+      var vals = (node.items || []).map(function (x) { return x.value || x.id_field || ''; });
+      (node.children || []).forEach(function (c) {
+        vals = vals.concat(collectLeafValues(c));
+      });
+      return vals;
+    }
+
+    var treeLeafItems = [];
+    var leafValues = [];
     if (selected && selected.indexOf('__leaf__') === 0) {
       var leafVal = selected.substring(8);
-      // Find this leaf in tree items
+      leafValues = [leafVal];
       function findLeaf(nodes) {
         for (var i = 0; i < nodes.length; i++) {
           var node = nodes[i];
@@ -1282,32 +1291,54 @@
         }
         return null;
       }
-      detailItems = findLeaf(hierData.tree || []) || [];
+      treeLeafItems = findLeaf(hierData.tree || []) || [];
     } else if (selected) {
       var node = findNode(hierData.tree || [], selected);
-      if (node) detailItems = collectItems(node);
+      if (node) {
+        treeLeafItems = collectItems(node);
+        leafValues = collectLeafValues(node);
+      }
     }
+
+    // Cross-reference loaded data items with leaf values for richer detail.
+    // This is essential for Balances/Entities where tree items only have basic
+    // CC/PC/Entity info but loaded items have the actual data (amounts, etc.).
+    var idField = this.identityField || 'cctr';
+    var entityField = this.entityField;
+    var matchedItems = [];
+    if (leafValues.length && items && items.length) {
+      var leafSet = {};
+      leafValues.forEach(function (v) { leafSet[v] = true; });
+      matchedItems = items.filter(function (row) {
+        if (leafSet[row[idField]]) return true;
+        if (entityField && leafSet[row[entityField]]) return true;
+        return false;
+      });
+    }
+
+    // Prefer loaded data items if they exist (they have more detail), else use tree items
+    var detailItems = matchedItems.length ? matchedItems : treeLeafItems;
 
     if (!detailItems.length) {
       return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No items under this node.</div>';
     }
 
-    // Build detail table from tree items (these have enriched fields: value, name, ccode, pctr, etc.)
+    // Build detail table columns
     var detailCols = [];
-    if (detailItems.length) {
-      var first = detailItems[0];
-      Object.keys(first).forEach(function (k) {
-        if (k !== 'value') detailCols.push(k);
-      });
-      // Prepend value as first column
-      detailCols.unshift('value');
-    }
-    // Use configured cols if they exist and match, otherwise use tree item fields
+    var first = detailItems[0];
+    Object.keys(first).forEach(function (k) {
+      if (k !== 'levels' && k !== 'monthly_balances') detailCols.push(k);
+    });
+    // Use configured cols if they exist and match, otherwise use auto-discovered
     if (cols.length) {
-      // Check if the tree items have the configured column fields
-      var treeCols = Object.keys(detailItems[0] || {});
-      var overlap = cols.filter(function (c) { return treeCols.indexOf(c) >= 0; });
+      var itemCols = Object.keys(first);
+      var overlap = cols.filter(function (c) { return itemCols.indexOf(c) >= 0; });
       if (overlap.length) detailCols = overlap;
+    }
+    // Apply excludeColumns
+    var excl = this.excludeColumns;
+    if (excl.length) {
+      detailCols = detailCols.filter(function (c) { return excl.indexOf(c) < 0; });
     }
 
     var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">';
@@ -1408,19 +1439,14 @@
     if (hierBtn) hierBtn.addEventListener('click', function () {
       self._view = 'hierarchy';
       self._page = 1;
-      // Re-fetch with large page size + inline hierarchies if needed
-      if (self.inlineHierarchies || (self._hierPickerId && !self._hierData && typeof self._hierPickerId === 'number')) {
-        self.loadData(function () {
-          // Also load tree data if needed and not inline
-          if (!self.inlineHierarchies && self._hierPickerId && !self._hierData && typeof self._hierPickerId === 'number') {
-            self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
-          } else {
-            self.render();
-          }
-        });
-        return;
-      }
-      self.loadData(function () { self.render(); });
+      self.loadData(function () {
+        // Always load tree data for hierarchical view when a hierarchy is selected
+        if (self._hierPickerId && typeof self._hierPickerId === 'number') {
+          self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
+        } else {
+          self.render();
+        }
+      });
     });
 
     // Search
@@ -1462,8 +1488,8 @@
 
         // Always re-fetch data (for hierarchy_id param or inline hierarchies)
         self.loadData(function () {
-          // For non-inline mode, also load tree data when in hierarchical view
-          if (!self.inlineHierarchies && self._view === 'hierarchy' && self._hierPickerId && typeof self._hierPickerId === 'number') {
+          // Always load tree data when in hierarchical view with a selected hierarchy
+          if (self._view === 'hierarchy' && self._hierPickerId && typeof self._hierPickerId === 'number') {
             self.loadHierarchyTree(self._hierPickerId, function () { self.render(); });
           } else {
             self.render();
