@@ -18,6 +18,8 @@ from app.models.core import (
     HousekeepingItem,
     LegacyCostCenter,
     LegacyProfitCenter,
+    ReviewItem,
+    ReviewScope,
     TargetCostCenter,
     TargetProfitCenter,
     Wave,
@@ -56,6 +58,192 @@ def global_stats(db: Session = Depends(get_db)) -> dict:
             "waves_total": waves_total,
             "balances_total": balances_total,
         },
+    }
+
+
+@router.get("/dashboard-progress")
+def dashboard_progress(db: Session = Depends(get_db)) -> dict:
+    """Aggregate progress & reduction metrics for the main dashboard."""
+    # Active waves (not closed/cancelled)
+    active_waves = (
+        db.execute(
+            select(Wave).where(
+                Wave.status.notin_(["closed", "cancelled"]),
+                Wave.is_full_scope.is_(False),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    active_wave_ids = [w.id for w in active_waves]
+
+    # Entities in scope across active waves
+    entities_in_scope = 0
+    if active_wave_ids:
+        entities_in_scope = (
+            db.execute(
+                select(func.count(distinct(WaveEntity.entity_id))).where(
+                    WaveEntity.wave_id.in_(active_wave_ids)
+                )
+            ).scalar()
+            or 0
+        )
+    total_entities = db.execute(select(func.count(Entity.id))).scalar() or 0
+
+    # CCs analysed across active wave runs (using preferred_run_id or latest)
+    preferred_run_ids = [w.preferred_run_id for w in active_waves if w.preferred_run_id]
+    if not preferred_run_ids and active_wave_ids:
+        # Fallback: latest completed run per wave
+        for wid in active_wave_ids:
+            latest = db.execute(
+                select(AnalysisRun.id)
+                .where(
+                    AnalysisRun.wave_id == wid,
+                    AnalysisRun.status == "completed",
+                )
+                .order_by(AnalysisRun.created_at.desc())
+                .limit(1)
+            ).scalar()
+            if latest:
+                preferred_run_ids.append(latest)
+
+    # Proposal breakdown by cleansing_outcome
+    outcome_counts: dict[str, int] = {}
+    total_proposals = 0
+    if preferred_run_ids:
+        rows = db.execute(
+            select(
+                CenterProposal.cleansing_outcome,
+                func.count(CenterProposal.id),
+            )
+            .where(CenterProposal.run_id.in_(preferred_run_ids))
+            .group_by(CenterProposal.cleansing_outcome)
+        ).all()
+        for outcome, cnt in rows:
+            outcome_counts[outcome] = cnt
+            total_proposals += cnt
+
+    keep_count = outcome_counts.get("KEEP", 0)
+    retire_count = outcome_counts.get("RETIRE", 0)
+    merge_count = outcome_counts.get("MERGE_MAP", 0)
+    redesign_count = outcome_counts.get("REDESIGN", 0)
+    reducing = retire_count + merge_count + redesign_count
+    reduction_pct = round(reducing / total_proposals * 100, 1) if total_proposals else 0
+
+    # Review progress across active wave scopes
+    review_total = 0
+    review_decided = 0
+    review_approved = 0
+    review_rejected = 0
+    if active_wave_ids:
+        scope_ids = (
+            db.execute(select(ReviewScope.id).where(ReviewScope.wave_id.in_(active_wave_ids)))
+            .scalars()
+            .all()
+        )
+        if scope_ids:
+            review_total = (
+                db.execute(
+                    select(func.count(ReviewItem.id)).where(ReviewItem.scope_id.in_(scope_ids))
+                ).scalar()
+                or 0
+            )
+            review_decided = (
+                db.execute(
+                    select(func.count(ReviewItem.id)).where(
+                        ReviewItem.scope_id.in_(scope_ids),
+                        ReviewItem.decision != "PENDING",
+                    )
+                ).scalar()
+                or 0
+            )
+            review_approved = (
+                db.execute(
+                    select(func.count(ReviewItem.id)).where(
+                        ReviewItem.scope_id.in_(scope_ids),
+                        ReviewItem.decision == "APPROVED",
+                    )
+                ).scalar()
+                or 0
+            )
+            review_rejected = (
+                db.execute(
+                    select(func.count(ReviewItem.id)).where(
+                        ReviewItem.scope_id.in_(scope_ids),
+                        ReviewItem.decision == "NOT_REQUIRED",
+                    )
+                ).scalar()
+                or 0
+            )
+
+    # Per-wave summary
+    wave_summaries = []
+    for w in active_waves:
+        w_entities = (
+            db.execute(select(func.count(WaveEntity.id)).where(WaveEntity.wave_id == w.id)).scalar()
+            or 0
+        )
+        w_proposals = 0
+        w_run_id = w.preferred_run_id
+        if w_run_id:
+            w_proposals = (
+                db.execute(
+                    select(func.count(CenterProposal.id)).where(CenterProposal.run_id == w_run_id)
+                ).scalar()
+                or 0
+            )
+        wave_summaries.append(
+            {
+                "id": w.id,
+                "name": w.name,
+                "code": w.code,
+                "status": w.status,
+                "entities": w_entities,
+                "proposals": w_proposals,
+            }
+        )
+
+    # Total CCs/PCs in universe
+    total_cc = (
+        db.execute(
+            select(func.count(LegacyCostCenter.id)).where(LegacyCostCenter.is_active.is_(True))
+        ).scalar()
+        or 0
+    )
+    total_pc = (
+        db.execute(
+            select(func.count(LegacyProfitCenter.id)).where(LegacyProfitCenter.is_active.is_(True))
+        ).scalar()
+        or 0
+    )
+
+    return {
+        "scope": {
+            "total_entities": total_entities,
+            "entities_in_scope": entities_in_scope,
+            "total_cc": total_cc,
+            "total_pc": total_pc,
+            "centers_analysed": total_proposals,
+        },
+        "reduction": {
+            "total": total_proposals,
+            "keep": keep_count,
+            "retire": retire_count,
+            "merge": merge_count,
+            "redesign": redesign_count,
+            "reduction_pct": reduction_pct,
+        },
+        "review": {
+            "total": review_total,
+            "decided": review_decided,
+            "pending": review_total - review_decided,
+            "approved": review_approved,
+            "rejected": review_rejected,
+            "completion_pct": (
+                round(review_decided / review_total * 100, 1) if review_total else 0
+            ),
+        },
+        "waves": wave_summaries,
     }
 
 

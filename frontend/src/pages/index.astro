@@ -76,18 +76,82 @@ import Layout from '../components/layout/Layout.astro';
     </div>
   </div>
 
-  <!-- Row 2: Wave Progress + Analysis Summary (admin only) -->
-  <div id="admin-dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-    <!-- Wave Progress -->
-    <div class="card lg:col-span-2">
-      <h2 class="text-base font-semibold text-gray-900 mb-3">Wave Progress</h2>
-      <div id="wave-progress" class="space-y-3 text-sm">Loading...</div>
+  <!-- Row 2: Overall Progress (admin only) -->
+  <div id="admin-dashboard" class="space-y-6 mb-6">
+    <!-- Progress KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3" id="progress-kpis">
+      <div class="card text-center py-3">
+        <h3 class="text-[10px] font-medium text-gray-400 uppercase">Entities in Scope</h3>
+        <div id="pk-entities" class="text-lg font-bold text-amplifi-700 mt-0.5">--</div>
+        <div id="pk-entities-sub" class="text-[10px] text-gray-400">of -- total</div>
+      </div>
+      <div class="card text-center py-3">
+        <h3 class="text-[10px] font-medium text-gray-400 uppercase">Centers Analysed</h3>
+        <div id="pk-analysed" class="text-lg font-bold text-blue-700 mt-0.5">--</div>
+        <div class="text-[10px] text-gray-400">cost centers</div>
+      </div>
+      <div class="card text-center py-3 bg-green-50">
+        <h3 class="text-[10px] font-medium text-green-600 uppercase">Keep</h3>
+        <div id="pk-keep" class="text-lg font-bold text-green-700 mt-0.5">--</div>
+        <div id="pk-keep-pct" class="text-[10px] text-green-500">--%</div>
+      </div>
+      <div class="card text-center py-3 bg-red-50">
+        <h3 class="text-[10px] font-medium text-red-600 uppercase">Retire</h3>
+        <div id="pk-retire" class="text-lg font-bold text-red-700 mt-0.5">--</div>
+        <div id="pk-retire-pct" class="text-[10px] text-red-500">--%</div>
+      </div>
+      <div class="card text-center py-3 bg-orange-50">
+        <h3 class="text-[10px] font-medium text-orange-600 uppercase">Merge</h3>
+        <div id="pk-merge" class="text-lg font-bold text-orange-700 mt-0.5">--</div>
+        <div id="pk-merge-pct" class="text-[10px] text-orange-500">--%</div>
+      </div>
+      <div class="card text-center py-3 bg-purple-50">
+        <h3 class="text-[10px] font-medium text-purple-600 uppercase">Redesign</h3>
+        <div id="pk-redesign" class="text-lg font-bold text-purple-700 mt-0.5">--</div>
+        <div id="pk-redesign-pct" class="text-[10px] text-purple-500">--%</div>
+      </div>
+      <div class="card text-center py-3 bg-teal-50">
+        <h3 class="text-[10px] font-medium text-teal-600 uppercase">Reduction</h3>
+        <div id="pk-reduction" class="text-2xl font-bold text-teal-700 mt-0.5">--%</div>
+        <div class="text-[10px] text-teal-500">target</div>
+      </div>
+      <div class="card text-center py-3">
+        <h3 class="text-[10px] font-medium text-gray-400 uppercase">Review</h3>
+        <div id="pk-review" class="text-lg font-bold text-amplifi-700 mt-0.5">--%</div>
+        <div id="pk-review-sub" class="text-[10px] text-gray-400">-- / -- decided</div>
+      </div>
     </div>
 
-    <!-- Data Quality Summary -->
-    <div class="card">
-      <h2 class="text-base font-semibold text-gray-900 mb-3">Data Quality</h2>
-      <div id="data-quality" class="space-y-2 text-sm">Loading...</div>
+    <!-- Review breakdown bar -->
+    <div class="card" id="review-bar-card">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-gray-900">Review Progress</h2>
+        <span id="review-bar-label" class="text-xs text-gray-500">--</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-4 overflow-hidden flex">
+        <div id="review-bar-approved" class="bg-green-500 h-4 transition-all" style="width:0%"></div>
+        <div id="review-bar-rejected" class="bg-red-400 h-4 transition-all" style="width:0%"></div>
+        <div id="review-bar-pending" class="bg-gray-200 h-4 transition-all" style="width:0%"></div>
+      </div>
+      <div class="flex gap-4 mt-1.5 text-[10px] text-gray-500">
+        <span><span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>Approved <span id="review-legend-approved">0</span></span>
+        <span><span class="inline-block w-2 h-2 rounded-full bg-red-400 mr-1"></span>Rejected <span id="review-legend-rejected">0</span></span>
+        <span><span class="inline-block w-2 h-2 rounded-full bg-gray-200 mr-1"></span>Pending <span id="review-legend-pending">0</span></span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Wave Progress -->
+      <div class="card lg:col-span-2">
+        <h2 class="text-base font-semibold text-gray-900 mb-3">Wave Progress</h2>
+        <div id="wave-progress" class="space-y-3 text-sm">Loading...</div>
+      </div>
+
+      <!-- Data Quality Summary -->
+      <div class="card">
+        <h2 class="text-base font-semibold text-gray-900 mb-3">Data Quality</h2>
+        <div id="data-quality" class="space-y-2 text-sm">Loading...</div>
+      </div>
     </div>
   </div>
 
@@ -189,6 +253,49 @@ import Layout from '../components/layout/Layout.astro';
     }
     info.innerHTML = html || '<span class="text-gray-400">No checks available</span>';
   }).catch(function() { document.getElementById('system-info').textContent = 'Unable to reach backend'; });
+
+  // Dashboard progress KPIs (admin only)
+  if (isAdmin) {
+    fetch('/api/stats/dashboard-progress', { headers: headers }).then(chk).then(function(r) { return r.json(); }).then(function(d) {
+      var s = d.scope || {};
+      var red = d.reduction || {};
+      var rev = d.review || {};
+      function pct(n, t) { return t ? Math.round(n / t * 100) : 0; }
+
+      document.getElementById('pk-entities').textContent = fmt(s.entities_in_scope);
+      document.getElementById('pk-entities-sub').textContent = 'of ' + fmt(s.total_entities) + ' total';
+      document.getElementById('pk-analysed').textContent = fmt(s.centers_analysed);
+
+      document.getElementById('pk-keep').textContent = fmt(red.keep);
+      document.getElementById('pk-keep-pct').textContent = pct(red.keep, red.total) + '%';
+      document.getElementById('pk-retire').textContent = fmt(red.retire);
+      document.getElementById('pk-retire-pct').textContent = pct(red.retire, red.total) + '%';
+      document.getElementById('pk-merge').textContent = fmt(red.merge);
+      document.getElementById('pk-merge-pct').textContent = pct(red.merge, red.total) + '%';
+      document.getElementById('pk-redesign').textContent = fmt(red.redesign);
+      document.getElementById('pk-redesign-pct').textContent = pct(red.redesign, red.total) + '%';
+      document.getElementById('pk-reduction').textContent = (red.reduction_pct || 0) + '%';
+
+      document.getElementById('pk-review').textContent = (rev.completion_pct || 0) + '%';
+      document.getElementById('pk-review-sub').textContent = fmt(rev.decided) + ' / ' + fmt(rev.total) + ' decided';
+
+      // Review bar
+      if (rev.total > 0) {
+        var appPct = pct(rev.approved, rev.total);
+        var rejPct = pct(rev.rejected, rev.total);
+        var penPct = 100 - appPct - rejPct;
+        document.getElementById('review-bar-approved').style.width = appPct + '%';
+        document.getElementById('review-bar-rejected').style.width = rejPct + '%';
+        document.getElementById('review-bar-pending').style.width = penPct + '%';
+        document.getElementById('review-bar-label').textContent = fmt(rev.decided) + ' / ' + fmt(rev.total) + ' items decided (' + rev.completion_pct + '%)';
+      } else {
+        document.getElementById('review-bar-label').textContent = 'No review items yet';
+      }
+      document.getElementById('review-legend-approved').textContent = fmt(rev.approved);
+      document.getElementById('review-legend-rejected').textContent = fmt(rev.rejected);
+      document.getElementById('review-legend-pending').textContent = fmt(rev.pending);
+    }).catch(function() {});
+  }
 
   // Recent waves (activity feed)
   if (isAdmin) {
