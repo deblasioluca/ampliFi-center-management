@@ -96,6 +96,9 @@ def _parse_date(raw: str) -> datetime | None:
     return None
 
 
+_truncation_warned: set[str] = set()
+
+
 def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
     """Truncate string values that exceed their column's declared length."""
     from sqlalchemy import String as SAString
@@ -110,13 +113,16 @@ def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
             continue
         col_type = col_attr.type
         if isinstance(col_type, SAString) and col_type.length and len(val) > col_type.length:
-            logger.warning(
-                "Truncating %s.%s from %d to %d chars",
-                model_cls.__tablename__,
-                key,
-                len(val),
-                col_type.length,
-            )
+            warn_key = f"{model_cls.__tablename__}.{key}"
+            if warn_key not in _truncation_warned:
+                _truncation_warned.add(warn_key)
+                logger.warning(
+                    "Truncating %s.%s from %d to %d chars (further warnings suppressed)",
+                    model_cls.__tablename__,
+                    key,
+                    len(val),
+                    col_type.length,
+                )
             kwargs[key] = val[: col_type.length]
     return kwargs
 
