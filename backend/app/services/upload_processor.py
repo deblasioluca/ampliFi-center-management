@@ -96,6 +96,9 @@ def _parse_date(raw: str) -> datetime | None:
     return None
 
 
+_truncation_warned: set[str] = set()
+
+
 def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
     """Truncate string values that exceed their column's declared length."""
     from sqlalchemy import String as SAString
@@ -110,13 +113,16 @@ def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
             continue
         col_type = col_attr.type
         if isinstance(col_type, SAString) and col_type.length and len(val) > col_type.length:
-            logger.warning(
-                "Truncating %s.%s from %d to %d chars",
-                model_cls.__tablename__,
-                key,
-                len(val),
-                col_type.length,
-            )
+            warn_key = f"{model_cls.__tablename__}.{key}"
+            if warn_key not in _truncation_warned:
+                _truncation_warned.add(warn_key)
+                logger.warning(
+                    "Truncating %s.%s from %d to %d chars (further warnings suppressed)",
+                    model_cls.__tablename__,
+                    key,
+                    len(val),
+                    col_type.length,
+                )
             kwargs[key] = val[: col_type.length]
     return kwargs
 
@@ -1005,27 +1011,75 @@ _SAP_LABEL_FRAGMENTS = frozenset(
 )
 
 
+# SAP code fields that should NEVER contain spaces in real data.
+# If any of these contain a space, the row is a description/label row.
+_SAP_CODE_FIELDS = frozenset(
+    {
+        "cctr",
+        "coarea",
+        "pctr",
+        "ccode",
+        "mandt",
+        "bukrs",
+        "saknr",
+        "ktopl",
+        "gpn",
+        "gsber",
+        "werks",
+        "land1",
+        "waers",
+        "currency",
+        "spras",
+    }
+)
+
+
 def _skip_label_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Skip leading rows that look like SAP field description labels, not data."""
+    """Skip leading rows that look like SAP field description labels, not data.
+
+    Uses two detection methods:
+    1. Primary: Check if SAP code fields (cctr, coarea, mandt, etc.) contain
+       spaces — real code values never have spaces, but labels like "Valid To",
+       "CO Area" do.
+    2. Fallback: Check if >30% of values match known SAP field description
+       fragments.
+    """
     skip_count = 0
     for row in rows:
         vals = [v for k, v in row.items() if v and v != "True" and v != "False" and k != "_extras"]
         if not vals:
             break
-        # Count how many values look like descriptions (multi-word, alphabetic)
-        label_hits = 0
-        for v in vals:
-            vl = v.lower().strip()
-            if any(frag in vl for frag in _SAP_LABEL_FRAGMENTS):
-                label_hits += 1
-        # If >30% of non-empty values look like labels, skip this row
-        if len(vals) > 3 and label_hits / len(vals) > 0.3:
-            logger.info(
-                "Skipping SAP description row (row %d, %d/%d label-like values)",
-                skip_count + 1,
-                label_hits,
-                len(vals),
+
+        is_label = False
+
+        # Primary check: code fields should never contain spaces
+        for field in _SAP_CODE_FIELDS:
+            val = (row.get(field) or "").strip()
+            if val and " " in val:
+                logger.info(
+                    "Skipping SAP description row (row %d): code field '%s' contains space ('%s')",
+                    skip_count + 1,
+                    field,
+                    val,
+                )
+                is_label = True
+                break
+
+        # Fallback: fragment-based detection
+        if not is_label and len(vals) > 3:
+            label_hits = sum(
+                1 for v in vals if any(frag in v.lower().strip() for frag in _SAP_LABEL_FRAGMENTS)
             )
+            if label_hits / len(vals) > 0.3:
+                logger.info(
+                    "Skipping SAP description row (row %d, %d/%d label-like values)",
+                    skip_count + 1,
+                    label_hits,
+                    len(vals),
+                )
+                is_label = True
+
+        if is_label:
             skip_count += 1
         else:
             break
