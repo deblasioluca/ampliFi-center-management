@@ -239,6 +239,202 @@ class SapBtpProvider:
         return completion.tokens_in * rate_in + completion.tokens_out * rate_out
 
 
+class OpenAIProvider:
+    """Standard OpenAI API provider."""
+
+    def __init__(self, config: dict) -> None:
+        self._config = config
+        self._api_key = config.get("api_key", "")
+        self._model = config.get("model", "gpt-4o")
+        self._endpoint = config.get("endpoint", "https://api.openai.com/v1")
+
+    @property
+    def name(self) -> str:
+        return "openai"
+
+    def complete(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float = 0.0,
+        max_tokens: int = 2000,
+        metadata: dict | None = None,
+    ) -> Completion:
+        phash = _prompt_hash(model, messages, temperature)
+        start = time.monotonic()
+        use_model = model or self._model
+
+        try:
+            import httpx
+
+            url = f"{self._endpoint.rstrip('/')}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": use_model,
+                "messages": [{"role": m.role, "content": m.content} for m in messages],
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            resp = httpx.post(url, headers=headers, json=body, timeout=120.0)
+            resp.raise_for_status()
+            data = resp.json()
+
+            text = data["choices"][0]["message"]["content"]
+            usage = data.get("usage", {})
+            latency = int((time.monotonic() - start) * 1000)
+
+            completion = Completion(
+                text=text,
+                model=use_model,
+                tokens_in=usage.get("prompt_tokens", 0),
+                tokens_out=usage.get("completion_tokens", 0),
+                latency_ms=latency,
+                prompt_hash=phash,
+                metadata=metadata or {},
+            )
+            completion.cost_usd = self.estimate_cost(completion)
+            return completion
+
+        except Exception as e:
+            logger.error("llm.openai.error", error=str(e), model=use_model)
+            return Completion(
+                text=f"[LLM Error: {e}]",
+                model=use_model,
+                prompt_hash=phash,
+                metadata={"error": str(e)},
+            )
+
+    def estimate_cost(self, completion: Completion) -> float:
+        rate_in = 0.0025 / 1000
+        rate_out = 0.010 / 1000
+        return completion.tokens_in * rate_in + completion.tokens_out * rate_out
+
+
+class AnthropicProvider:
+    """Anthropic Claude API provider."""
+
+    def __init__(self, config: dict) -> None:
+        self._config = config
+        self._api_key = config.get("api_key", "")
+        self._model = config.get("model", "claude-sonnet-4-20250514")
+        self._endpoint = config.get("endpoint", "https://api.anthropic.com")
+
+    @property
+    def name(self) -> str:
+        return "anthropic"
+
+    def complete(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float = 0.0,
+        max_tokens: int = 2000,
+        metadata: dict | None = None,
+    ) -> Completion:
+        phash = _prompt_hash(model, messages, temperature)
+        start = time.monotonic()
+        use_model = model or self._model
+
+        try:
+            import httpx
+
+            url = f"{self._endpoint.rstrip('/')}/v1/messages"
+            headers = {
+                "x-api-key": self._api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+            # Anthropic: system message is separate, not in messages array
+            system_text = ""
+            user_messages = []
+            for m in messages:
+                if m.role == "system":
+                    system_text += m.content + "\n"
+                else:
+                    user_messages.append({"role": m.role, "content": m.content})
+            if not user_messages:
+                user_messages = [{"role": "user", "content": "Hello"}]
+
+            body: dict = {
+                "model": use_model,
+                "messages": user_messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            if system_text.strip():
+                body["system"] = system_text.strip()
+
+            resp = httpx.post(url, headers=headers, json=body, timeout=120.0)
+            resp.raise_for_status()
+            data = resp.json()
+
+            text = ""
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    text += block.get("text", "")
+            usage = data.get("usage", {})
+            latency = int((time.monotonic() - start) * 1000)
+
+            completion = Completion(
+                text=text,
+                model=use_model,
+                tokens_in=usage.get("input_tokens", 0),
+                tokens_out=usage.get("output_tokens", 0),
+                latency_ms=latency,
+                prompt_hash=phash,
+                metadata=metadata or {},
+            )
+            completion.cost_usd = self.estimate_cost(completion)
+            return completion
+
+        except Exception as e:
+            logger.error("llm.anthropic.error", error=str(e), model=use_model)
+            return Completion(
+                text=f"[LLM Error: {e}]",
+                model=use_model,
+                prompt_hash=phash,
+                metadata={"error": str(e)},
+            )
+
+    def estimate_cost(self, completion: Completion) -> float:
+        rate_in = 0.003 / 1000
+        rate_out = 0.015 / 1000
+        return completion.tokens_in * rate_in + completion.tokens_out * rate_out
+
+
+def get_active_provider_config(db: object) -> dict | None:
+    """Look up the active LLM provider from app_config (llm_providers key).
+
+    Returns a config dict ready for ``get_provider``, or *None* if nothing
+    is configured.  ``db`` is a SQLAlchemy Session.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.models.core import AppConfig
+
+    cfg = db.execute(
+        sa_select(AppConfig).where(AppConfig.key == "llm_providers")
+    ).scalar_one_or_none()
+    providers = (cfg.value if cfg else None) or []
+    if isinstance(providers, dict):
+        providers = [providers] if providers else []
+    active = next((p for p in providers if p.get("is_active")), None)
+    if not active and providers:
+        active = providers[0]
+    if not active:
+        return None
+    return {
+        "provider": active.get("provider_type", "openai"),
+        "api_key": active.get("api_key", ""),
+        "model": active.get("model", ""),
+        "endpoint": active.get("endpoint", ""),
+        "deployment": active.get("model", ""),
+    }
+
+
 def get_provider(config: dict, cache: bool = True) -> LLMProvider:
     """Factory: create an LLM provider from config.
 
@@ -246,10 +442,14 @@ def get_provider(config: dict, cache: bool = True) -> LLMProvider:
     a Redis-backed response cache to avoid duplicate API calls.
     """
     provider_type = config.get("provider", "azure")
-    if provider_type == "azure":
+    if provider_type == "azure" or provider_type == "azure_openai":
         inner: LLMProvider = AzureOpenAIProvider(config)
     elif provider_type == "btp":
         inner = SapBtpProvider(config)
+    elif provider_type == "openai":
+        inner = OpenAIProvider(config)
+    elif provider_type == "anthropic":
+        inner = AnthropicProvider(config)
     else:
         raise ValueError(f"Unknown LLM provider: {provider_type}")
 
