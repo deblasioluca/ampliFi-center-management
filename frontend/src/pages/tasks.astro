@@ -84,6 +84,7 @@ import Layout from '../components/layout/Layout.astro';
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-900">Review Items</h2>
         <div class="flex gap-2">
+          <button id="request-new-btn" class="btn-secondary text-xs">+ Request New CC/PC</button>
           <button id="approve-all-btn" class="btn-success text-xs">Approve All Pending</button>
           <button id="complete-review-btn" class="btn-primary text-xs">Complete Review</button>
         </div>
@@ -121,6 +122,62 @@ import Layout from '../components/layout/Layout.astro';
       </div>
       <div id="why-content" class="text-sm space-y-2">Loading...</div>
     </div>
+
+    <!-- Request New CC/PC Modal -->
+    <div id="new-center-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-900" id="new-center-title">Request New Center</h3>
+          <button id="close-new-modal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <form id="new-center-form" class="space-y-4">
+          <input type="hidden" id="nc-clone-from" value="" />
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select id="nc-target-object" class="input text-sm">
+                <option value="CC">Cost Center</option>
+                <option value="PC">Profit Center</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Responsible</label>
+              <input type="text" id="nc-responsible" class="input text-sm" placeholder="Owner name..." />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Name / Short Text</label>
+            <input type="text" id="nc-name" class="input text-sm" placeholder="Short description..." required />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Entity (Company Code)</label>
+              <input type="text" id="nc-ccode" class="input text-sm" placeholder="e.g. 1000" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Controlling Area</label>
+              <input type="text" id="nc-coarea" class="input text-sm" placeholder="e.g. 1000" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Hierarchy Node (optional)</label>
+            <input type="text" id="nc-hier-node" class="input text-sm" placeholder="Node name to place under..." />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Purpose / Justification</label>
+            <textarea id="nc-purpose" class="input text-sm" rows="3" placeholder="Why is this center needed?" required></textarea>
+          </div>
+          <div id="nc-clone-info" class="hidden bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-700">
+            <strong>Cloning from:</strong> <span id="nc-clone-label"></span>
+            <p class="mt-1 text-blue-600">Fields have been pre-filled from the source center. Amend as needed.</p>
+          </div>
+          <div class="flex justify-end gap-3 pt-2">
+            <button type="button" id="cancel-new-center" class="btn-secondary text-sm">Cancel</button>
+            <button type="submit" class="btn-amplifi text-sm">Submit Request</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </Layout>
 
@@ -147,7 +204,7 @@ import Layout from '../components/layout/Layout.astro';
         var data = await res.json();
         document.getElementById('no-review').classList.add('hidden');
         document.getElementById('review-scope').classList.remove('hidden');
-        document.getElementById('scope-wave').textContent = data.wave_code || data.wave_id || '--';
+        document.getElementById('scope-wave').textContent = data.wave_name || data.wave_code || data.wave_id || '--';
         document.getElementById('scope-total').textContent = (data.total_items || 0).toLocaleString();
         document.getElementById('scope-decided').textContent = (data.decided_items || 0).toLocaleString();
         document.getElementById('scope-pending').textContent = ((data.total_items || 0) - (data.decided_items || 0)).toLocaleString();
@@ -179,12 +236,12 @@ import Layout from '../components/layout/Layout.astro';
         var actionFilter = document.getElementById('review-filter-action').value;
         var filtered = data.items.filter(function(item) {
           if (searchVal) {
-            var text = ((item.legacy_cc_code || '') + ' ' + (item.cc_code || '') + ' ' + (item.entity_name || '') + ' ' + (item.cleansing_action || '') + ' ' + (item.cc_description || '')).toLowerCase();
+            var text = ((item.cctr || '') + ' ' + (item.txtsh || '') + ' ' + (item.entity_code || '') + ' ' + (item.cleansing_outcome || '') + ' ' + (item.txtmi || '')).toLowerCase();
             if (text.indexOf(searchVal) === -1) return false;
           }
-          if (statusFilter === 'pending' && item.stakeholder_decision && item.stakeholder_decision !== 'pending') return false;
-          if (statusFilter === 'decided' && (!item.stakeholder_decision || item.stakeholder_decision === 'pending')) return false;
-          if (actionFilter && (item.cleansing_action || '').toUpperCase() !== actionFilter) return false;
+          if (statusFilter === 'pending' && item.decision && item.decision !== 'PENDING') return false;
+          if (statusFilter === 'decided' && (!item.decision || item.decision === 'PENDING')) return false;
+          if (actionFilter && (item.cleansing_outcome || '').toUpperCase() !== actionFilter) return false;
           return true;
         });
         if (filtered.length === 0) {
@@ -196,20 +253,23 @@ import Layout from '../components/layout/Layout.astro';
           var tr = document.createElement('tr');
           tr.className = 'border-b border-gray-100 hover:bg-blue-50 cursor-pointer';
           tr.setAttribute('data-item-id', item.id);
-          var decided = item.stakeholder_decision && item.stakeholder_decision !== 'pending';
-          var actionCls = actionColors[(item.cleansing_action || '').toUpperCase()] || 'bg-amplifi-50 text-amplifi-700';
+          var decided = item.decision && item.decision !== 'PENDING';
+          var action = item.cleansing_outcome || '';
+          var actionCls = actionColors[action.toUpperCase()] || 'bg-amplifi-50 text-amplifi-700';
           tr.innerHTML =
-            '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(item.legacy_cc_code || item.cc_code || '--') + '</td>' +
-            '<td class="py-2 px-3 text-xs max-w-[200px] truncate">' + escapeHtml(item.cc_description || item.cc_name || '--') + '</td>' +
-            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.entity_name || '--') + '</td>' +
-            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ' + actionCls + '">' + escapeHtml(item.cleansing_action || '--') + '</span></td>' +
-            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.target_cc_code || item.mapping_target || '--') + '</td>' +
+            '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(item.cctr || '--') + '</td>' +
+            '<td class="py-2 px-3 text-xs max-w-[200px] truncate">' + escapeHtml(item.txtsh || item.txtmi || '--') + '</td>' +
+            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.entity_code || item.ccode || '--') + '</td>' +
+            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ' + actionCls + '">' + escapeHtml(action || '--') + '</span></td>' +
+            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.target_object || item.merge_into_cctr || '--') + '</td>' +
             '<td class="py-2 px-3">' + (decided
-              ? '<span class="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">' + escapeHtml(item.stakeholder_decision) + '</span>'
+              ? '<span class="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">' + escapeHtml(item.decision) + '</span>'
               : '<span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700">pending</span>') + '</td>' +
-            '<td class="py-2 px-3">' + (decided ? '<span class="text-xs text-gray-400">Done</span>' :
+            '<td class="py-2 px-3 whitespace-nowrap">' + (decided ? '<span class="text-xs text-gray-400">Done</span>' :
               '<button data-id="' + item.id + '" data-action="APPROVE" class="decide-btn text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 mr-1">Approve</button>' +
-              '<button data-id="' + item.id + '" data-action="REJECT" class="decide-btn text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">Reject</button>') + '</td>';
+              '<button data-id="' + item.id + '" data-action="REJECT" class="decide-btn text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 mr-1">Reject</button>') +
+              '<button data-clone-cctr="' + escapeHtml(item.cctr || '') + '" data-clone-name="' + escapeHtml(item.txtsh || '') + '" data-clone-ccode="' + escapeHtml(item.ccode || item.entity_code || '') + '" data-clone-responsible="' + escapeHtml(item.responsible || '') + '" class="clone-btn text-xs px-2 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100" title="Clone as new center">Clone</button>' +
+              '</td>';
           // Row click to show why panel
           tr.addEventListener('click', function(e) {
             if (e.target.tagName === 'BUTTON') return;
@@ -238,13 +298,37 @@ import Layout from '../components/layout/Layout.astro';
         var pag = document.getElementById('review-pagination');
         pag.innerHTML = '';
         var totalPages = Math.ceil((data.total || 0) / 20);
-        for (var p = 1; p <= totalPages; p++) {
-          var btn = document.createElement('button');
-          btn.textContent = p;
-          btn.className = p === page ? 'btn-amplifi text-xs px-3 py-1' : 'btn-secondary text-xs px-3 py-1';
-          btn.setAttribute('data-page', p);
-          btn.addEventListener('click', function() { loadItems(currentToken, parseInt(this.getAttribute('data-page'))); });
-          pag.appendChild(btn);
+        if (totalPages > 1) {
+          var pagHtml = '';
+          // Prev button
+          if (page > 1) {
+            pagHtml += '<button data-page="' + (page - 1) + '" class="btn-secondary text-xs px-2 py-1">&laquo; Prev</button>';
+          }
+          // Page numbers: show first, last, current +/- 2, with ellipsis
+          var pages = [];
+          for (var p = 1; p <= totalPages; p++) {
+            if (p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)) {
+              pages.push(p);
+            }
+          }
+          var lastShown = 0;
+          pages.forEach(function(pg) {
+            if (lastShown && pg - lastShown > 1) {
+              pagHtml += '<span class="text-xs text-gray-400 px-1">...</span>';
+            }
+            pagHtml += '<button data-page="' + pg + '" class="' +
+              (pg === page ? 'btn-amplifi' : 'btn-secondary') + ' text-xs px-2 py-1 min-w-[28px]">' + pg + '</button>';
+            lastShown = pg;
+          });
+          // Next button
+          if (page < totalPages) {
+            pagHtml += '<button data-page="' + (page + 1) + '" class="btn-secondary text-xs px-2 py-1">Next &raquo;</button>';
+          }
+          pagHtml += '<span class="text-xs text-gray-400 ml-2">(' + (data.total || 0) + ' items)</span>';
+          pag.innerHTML = pagHtml;
+          pag.querySelectorAll('[data-page]').forEach(function(btn) {
+            btn.addEventListener('click', function() { loadItems(currentToken, parseInt(this.getAttribute('data-page'))); });
+          });
         }
       } catch(e) {
         tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-red-500">' + escapeHtml(e.message) + '</td></tr>';
@@ -265,7 +349,7 @@ import Layout from '../components/layout/Layout.astro';
       try {
         var res = await fetch('/api/review/' + currentToken + '/items?page=1&size=9999', { headers: authHeaders() });
         var data = await res.json();
-        var pendingIds = (data.items || []).filter(function(i) { return !i.stakeholder_decision || i.stakeholder_decision === 'pending'; }).map(function(i) { return i.id; });
+        var pendingIds = (data.items || []).filter(function(i) { return !i.decision || i.decision === 'PENDING'; }).map(function(i) { return i.id; });
         if (pendingIds.length === 0) { alert('No pending items'); return; }
         await fetch('/api/review/' + currentToken + '/items/bulk-decide', {
           method: 'POST', headers: authHeaders(),
@@ -292,15 +376,15 @@ import Layout from '../components/layout/Layout.astro';
       var content = document.getElementById('why-content');
       panel.classList.remove('hidden');
       var html = '<div class="grid grid-cols-2 gap-3">';
-      html += '<div><span class="text-gray-500">Cost Center:</span> <span class="font-mono font-medium">' + escapeHtml(item.legacy_cc_code || item.cc_code || '--') + '</span></div>';
-      html += '<div><span class="text-gray-500">Description:</span> ' + escapeHtml(item.cc_description || item.cc_name || '--') + '</div>';
-      html += '<div><span class="text-gray-500">Entity:</span> ' + escapeHtml(item.entity_name || '--') + '</div>';
-      html += '<div><span class="text-gray-500">Proposal:</span> <span class="font-medium">' + escapeHtml(item.cleansing_action || '--') + '</span></div>';
-      html += '<div><span class="text-gray-500">Target:</span> ' + escapeHtml(item.target_cc_code || item.mapping_target || 'N/A') + '</div>';
-      html += '<div><span class="text-gray-500">Confidence:</span> ' + ((item.confidence || 0) * 100).toFixed(0) + '%</div>';
+      html += '<div><span class="text-gray-500">Cost Center:</span> <span class="font-mono font-medium">' + escapeHtml(item.cctr || '--') + '</span></div>';
+      html += '<div><span class="text-gray-500">Description:</span> ' + escapeHtml(item.txtsh || item.txtmi || '--') + '</div>';
+      html += '<div><span class="text-gray-500">Entity:</span> ' + escapeHtml(item.entity_code || item.ccode || '--') + '</div>';
+      html += '<div><span class="text-gray-500">Proposal:</span> <span class="font-medium">' + escapeHtml(item.cleansing_outcome || '--') + '</span></div>';
+      html += '<div><span class="text-gray-500">Target:</span> ' + escapeHtml(item.target_object || item.merge_into_cctr || 'N/A') + '</div>';
+      html += '<div><span class="text-gray-500">Confidence:</span> ' + ((parseFloat(item.confidence) || 0) * 100).toFixed(0) + '%</div>';
       html += '</div>';
-      if (item.reasoning || item.why) {
-        html += '<div class="mt-3 p-3 bg-gray-50 rounded"><h4 class="text-xs font-medium text-gray-600 mb-1">Reasoning</h4><p class="text-xs text-gray-700">' + escapeHtml(item.reasoning || item.why) + '</p></div>';
+      if (item.rule_path) {
+        html += '<div class="mt-3 p-3 bg-gray-50 rounded"><h4 class="text-xs font-medium text-gray-600 mb-1">Rule Path</h4><p class="text-xs text-gray-700">' + escapeHtml(item.rule_path) + '</p></div>';
       }
       if (item.routine_outputs && item.routine_outputs.length) {
         html += '<div class="mt-3"><h4 class="text-xs font-medium text-gray-600 mb-1">Routine Outputs</h4><div class="space-y-1">';
@@ -419,5 +503,76 @@ import Layout from '../components/layout/Layout.astro';
         rows[selectedRow].scrollIntoView({ block: 'nearest' });
       }
     }
+
+    // ── Request New / Clone Modal ──────────────────────────────────────
+    var modal = document.getElementById('new-center-modal');
+    function openNewCenterModal(opts) {
+      opts = opts || {};
+      document.getElementById('nc-clone-from').value = opts.cloneFrom || '';
+      document.getElementById('nc-name').value = opts.name || '';
+      document.getElementById('nc-ccode').value = opts.ccode || '';
+      document.getElementById('nc-responsible').value = opts.responsible || '';
+      document.getElementById('nc-coarea').value = '';
+      document.getElementById('nc-hier-node').value = '';
+      document.getElementById('nc-purpose').value = '';
+      if (opts.cloneFrom) {
+        document.getElementById('new-center-title').textContent = 'Clone Center: ' + opts.cloneFrom;
+        document.getElementById('nc-clone-info').classList.remove('hidden');
+        document.getElementById('nc-clone-label').textContent = opts.cloneFrom + (opts.name ? ' — ' + opts.name : '');
+      } else {
+        document.getElementById('new-center-title').textContent = 'Request New Center';
+        document.getElementById('nc-clone-info').classList.add('hidden');
+      }
+      modal.classList.remove('hidden');
+    }
+    function closeModal() { modal.classList.add('hidden'); }
+
+    document.getElementById('request-new-btn').addEventListener('click', function() { openNewCenterModal(); });
+    document.getElementById('close-new-modal').addEventListener('click', closeModal);
+    document.getElementById('cancel-new-center').addEventListener('click', closeModal);
+
+    // Clone button handler (delegated)
+    document.getElementById('review-items').addEventListener('click', function(e) {
+      var cloneBtn = e.target.closest('.clone-btn');
+      if (cloneBtn) {
+        e.stopPropagation();
+        openNewCenterModal({
+          cloneFrom: cloneBtn.dataset.cloneCctr,
+          name: cloneBtn.dataset.cloneName,
+          ccode: cloneBtn.dataset.cloneCcode,
+          responsible: cloneBtn.dataset.cloneResponsible
+        });
+      }
+    });
+
+    // Submit new center request
+    document.getElementById('new-center-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      if (!currentToken) return alert('No active review scope');
+      var body = {
+        purpose: document.getElementById('nc-purpose').value.trim(),
+        target_object: document.getElementById('nc-target-object').value,
+        responsible: document.getElementById('nc-responsible').value.trim() || null,
+        proposed_name: document.getElementById('nc-name').value.trim() || null,
+        proposed_ccode: document.getElementById('nc-ccode').value.trim() || null,
+        proposed_coarea: document.getElementById('nc-coarea').value.trim() || null,
+        hierarchy_node: document.getElementById('nc-hier-node').value.trim() || null,
+        clone_from: document.getElementById('nc-clone-from').value.trim() || null,
+      };
+      if (!body.purpose) return alert('Please provide a purpose/justification');
+      try {
+        var res = await fetch('/api/review/' + currentToken + '/items/request-new', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) { var err = await res.json().catch(function(){return {};}); throw new Error(err.detail || 'Request failed'); }
+        closeModal();
+        loadItems(currentToken, currentPage);
+        alert('Request submitted successfully! The admin will review your request.');
+      } catch(err) {
+        alert('Error: ' + err.message);
+      }
+    });
   })();
 </script>
