@@ -934,8 +934,18 @@ def _read_excel_with_options(
     return result
 
 
-def _normalize_headers(rows: list[dict[str, str]], mapping: dict[str, str]) -> list[dict[str, str]]:
-    """Normalize column headers using mapping."""
+def _normalize_headers(
+    rows: list[dict[str, str]],
+    mapping: dict[str, str],
+    *,
+    skip_label_row: bool = False,
+) -> list[dict[str, str]]:
+    """Normalize column headers using mapping.
+
+    Args:
+        skip_label_row: When True, detect and skip a leading SAP description
+            row (common in SAP exports that have two header rows).
+    """
     result = []
     for row in rows:
         normalized: dict[str, str] = {}
@@ -949,11 +959,7 @@ def _normalize_headers(rows: list[dict[str, str]], mapping: dict[str, str]) -> l
         if extras:
             normalized["_extras"] = str(extras)
         result.append(normalized)
-    # Detect and skip SAP description/label row (second header row in SAP exports).
-    # SAP exports often have: Row 1=technical names, Row 2=descriptions, Row 3+=data.
-    # Heuristic: if the first data row's values are mostly known SAP field descriptions
-    # or long alphabetic strings (not codes/numbers), skip it.
-    if result:
+    if skip_label_row and result:
         result = _skip_label_rows(result)
     return result
 
@@ -1003,16 +1009,14 @@ def _skip_label_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     """Skip leading rows that look like SAP field description labels, not data."""
     skip_count = 0
     for row in rows:
-        vals = [v for v in row.values() if v and v != "True" and v != "False"]
+        vals = [v for k, v in row.items() if v and v != "True" and v != "False" and k != "_extras"]
         if not vals:
             break
         # Count how many values look like descriptions (multi-word, alphabetic)
         label_hits = 0
         for v in vals:
             vl = v.lower().strip()
-            if any(frag in vl for frag in _SAP_LABEL_FRAGMENTS) or (
-                " " in v and len(v) > 5 and v.replace(" ", "").replace(".", "").isalpha()
-            ):
+            if any(frag in vl for frag in _SAP_LABEL_FRAGMENTS):
                 label_hits += 1
         # If >30% of non-empty values look like labels, skip this row
         if len(vals) > 3 and label_hits / len(vals) > 0.3:
@@ -1130,7 +1134,25 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "cc_with_hierarchy": CC_HIER_EXCEL_COLUMNS,
     }.get(batch.kind, {})
 
-    normalized = _normalize_headers(rows, mapping) if mapping else rows
+    # SAP exports often have a second header row with field descriptions;
+    # skip it for SAP-sourced upload kinds.
+    _sap_kinds = {
+        "cost_center",
+        "cost_centers",
+        "profit_center",
+        "profit_centers",
+        "entity",
+        "entities",
+        "employee",
+        "employees",
+        "gl_accounts_ska1",
+        "gl_accounts_skb1",
+    }
+    normalized = (
+        _normalize_headers(rows, mapping, skip_label_row=batch.kind in _sap_kinds)
+        if mapping
+        else rows
+    )
 
     # Publish total + reset progress so frontend can show a progress bar
     _flush_progress(batch.id, 0, len(normalized))
@@ -1440,7 +1462,25 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "cc_with_hierarchy": CC_HIER_EXCEL_COLUMNS,
     }.get(batch.kind, {})
 
-    normalized = _normalize_headers(rows, mapping) if mapping else rows
+    # SAP exports often have a second header row with field descriptions;
+    # skip it for SAP-sourced upload kinds.
+    _sap_kinds = {
+        "cost_center",
+        "cost_centers",
+        "profit_center",
+        "profit_centers",
+        "entity",
+        "entities",
+        "employee",
+        "employees",
+        "gl_accounts_ska1",
+        "gl_accounts_skb1",
+    }
+    normalized = (
+        _normalize_headers(rows, mapping, skip_label_row=batch.kind in _sap_kinds)
+        if mapping
+        else rows
+    )
     loaded = 0
 
     # Read scope + data_category from batch (defaults for backward compat)
