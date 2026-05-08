@@ -5,8 +5,9 @@ comma-separated roles (e.g. "admin,data_manager"). Renames "analyst"
 to "data_manager" for all existing users.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "phase29_multi_role"
 down_revision = "phase28_wave_archive"

@@ -5,9 +5,10 @@ Revises: phase15_hierarchy_label
 Create Date: 2026-04-28
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "phase16_explorer_src"
 down_revision = "phase15_hierarchy_label"

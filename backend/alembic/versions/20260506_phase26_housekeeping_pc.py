@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "phase26_housekeeping_pc"
