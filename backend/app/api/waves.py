@@ -1605,7 +1605,7 @@ def target_summary(
     mapping_count = (
         db.execute(
             select(func.count(CenterMapping.id)).where(
-                CenterMapping.notes.like(f"%wave:{wave_id}%")
+                CenterMapping.notes.like(f"wave:{wave_id} %")
             )
         ).scalar()
         or 0
@@ -1617,7 +1617,7 @@ def target_summary(
         cnt = (
             db.execute(
                 select(func.count(CenterMapping.id)).where(
-                    CenterMapping.notes.like(f"%wave:{wave_id}%"),
+                    CenterMapping.notes.like(f"wave:{wave_id} %"),
                     CenterMapping.mapping_type == mapping_type,
                 )
             ).scalar()
@@ -1716,7 +1716,7 @@ def mdg_export(
 
     elif export_type == "mapping":
         mappings = (
-            db.execute(select(CenterMapping).where(CenterMapping.notes.like(f"%wave:{wave_id}%")))
+            db.execute(select(CenterMapping).where(CenterMapping.notes.like(f"wave:{wave_id} %")))
             .scalars()
             .all()
         )

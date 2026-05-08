@@ -658,7 +658,7 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         mapping_count = (
             db.execute(
                 select(func.count(CenterMapping.id)).where(
-                    CenterMapping.notes.like(f"%wave:{wave_id}%")
+                    CenterMapping.notes.like(f"wave:{wave_id} %")
                 )
             ).scalar()
             or 0
