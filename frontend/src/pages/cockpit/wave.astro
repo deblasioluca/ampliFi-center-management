@@ -405,13 +405,14 @@ import Layout from '../../components/layout/Layout.astro';
   <div id="assign-reviewer-overlay" class="hidden fixed inset-0 bg-black/50 z-40 flex items-start justify-center pt-20">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
       <h2 class="text-lg font-semibold mb-4">Assign Reviewer</h2>
-      <p class="text-xs text-gray-500 mb-3">Search for an employee to assign as the reviewer for this scope.</p>
+      <p class="text-xs text-gray-500 mb-3">Search for a registered user to assign as the reviewer for this scope.</p>
       <form id="assign-reviewer-form" class="space-y-3">
-        <div>
+        <div class="relative">
           <label class="block text-xs font-medium mb-1">Reviewer</label>
-          <div id="assign-reviewer-picker"></div>
+          <input type="text" id="ar-search" class="input text-sm w-full" placeholder="Search user by name or email..." autocomplete="off" />
           <input type="hidden" id="ar-name" />
           <input type="hidden" id="ar-email" />
+          <div id="ar-results" class="hidden absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto text-xs"></div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
           <button type="button" onclick="document.getElementById('assign-reviewer-overlay').classList.add('hidden')" class="btn-secondary">Cancel</button>
@@ -1086,13 +1087,49 @@ import Layout from '../../components/layout/Layout.astro';
     })
     .catch(function() {});
 
-  // Mount reviewer picker for assign-reviewer overlay
-  var assignReviewerPicker = window.mountEmployeePicker('assign-reviewer-picker', {
-    placeholder: 'Search reviewer by name, GPN, or email…',
-    onChange: function(emp) {
-      document.getElementById('ar-name').value = emp ? (emp.display_name || emp.bs_name || '') : '';
-      document.getElementById('ar-email').value = emp ? (emp.email_address || '') : '';
-    },
+  // User search for assign-reviewer overlay
+  var _arSearchTimer = null;
+  document.getElementById('ar-search').addEventListener('input', function() {
+    var q = this.value.trim();
+    var resultsEl = document.getElementById('ar-results');
+    clearTimeout(_arSearchTimer);
+    document.getElementById('ar-name').value = '';
+    document.getElementById('ar-email').value = '';
+    if (q.length < 2) { resultsEl.classList.add('hidden'); return; }
+    _arSearchTimer = setTimeout(function() {
+      fetch('/api/admin/users?page=1&size=500', { headers: authHdr })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var items = (data.items || []).filter(function(u) {
+            var text = ((u.display_name || '') + ' ' + (u.username || '') + ' ' + (u.email || '')).toLowerCase();
+            return text.indexOf(q.toLowerCase()) >= 0;
+          });
+          if (!items.length) { resultsEl.innerHTML = '<div class="px-3 py-2 text-gray-400">No users found</div>'; resultsEl.classList.remove('hidden'); return; }
+          var html = '';
+          items.forEach(function(u) {
+            html += '<div class="ar-pick px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100" ' +
+              'data-name="' + escAttr(u.display_name || u.username) + '" data-email="' + escAttr(u.email || '') + '">' +
+              '<span class="font-medium">' + esc(u.display_name || u.username) + '</span>' +
+              (u.email ? ' <span class="text-gray-400">' + esc(u.email) + '</span>' : '') +
+              ' <span class="text-gray-300 text-[10px]">' + esc((u.roles || [u.role]).join(', ')) + '</span></div>';
+          });
+          resultsEl.innerHTML = html;
+          resultsEl.classList.remove('hidden');
+          resultsEl.querySelectorAll('.ar-pick').forEach(function(el) {
+            el.addEventListener('click', function() {
+              document.getElementById('ar-name').value = this.getAttribute('data-name');
+              document.getElementById('ar-email').value = this.getAttribute('data-email');
+              document.getElementById('ar-search').value = this.getAttribute('data-name') + (this.getAttribute('data-email') ? ' (' + this.getAttribute('data-email') + ')' : '');
+              resultsEl.classList.add('hidden');
+            });
+          });
+        });
+    }, 300);
+  });
+  document.addEventListener('click', function(e) {
+    var s = document.getElementById('ar-search');
+    var r = document.getElementById('ar-results');
+    if (s && r && !s.contains(e.target) && !r.contains(e.target)) r.classList.add('hidden');
   });
 
   // ── Scope-form context-sensitive UX ──────────────────────────────
