@@ -1337,25 +1337,20 @@
       });
     }
 
-    // If we have fewer matches than leaf values and a data endpoint exists,
-    // fetch ALL items for these leaf values on demand.
-    if (leafValues.length && matchedItems.length < leafValues.length && this.dataEndpoint) {
-      // Return a loading placeholder and trigger async fetch
-      var detailId = this.containerId + '-hier-detail';
-      var detailEl = document.getElementById(detailId);
-      if (!detailEl) {
-        // Render a container we can find later
-        var placeholder = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+    // Always fetch full items from the data endpoint when a node is selected.
+    // Tree leaf items only have basic fields — the endpoint returns full detail.
+    if (leafValues.length && this.dataEndpoint) {
+      // If we already have full matches for all leaves, use them directly
+      if (matchedItems.length >= leafValues.length) {
+        // All items matched — skip fetch, use matched items below
+      } else {
+        // Need to fetch full data
+        var loadingHtml = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
           '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
           'Loading ' + leafValues.length + ' items...</div>';
-        // Schedule async fetch
         this._fetchNodeItems(leafValues, treeLeafItems);
-        return placeholder;
+        return loadingHtml;
       }
-      this._fetchNodeItems(leafValues, treeLeafItems);
-      return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
-        '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
-        'Loading ' + leafValues.length + ' items...</div>';
     }
 
     // Prefer loaded data items if they exist (they have more detail), else use tree items
