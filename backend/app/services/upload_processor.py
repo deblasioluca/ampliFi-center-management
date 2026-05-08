@@ -1377,16 +1377,18 @@ def load_upload(batch_id: int, db: Session) -> dict:
         _flush_progress(batch.id, 0, len(normalized))
 
     if batch.kind in ("cost_center", "cost_centers"):
+        # Bulk pre-fetch existing records to avoid N+1 queries
+        existing_ccs = {
+            (cc.coarea, cc.cctr): cc
+            for cc in db.execute(
+                select(LegacyCostCenter).where(LegacyCostCenter.scope == batch_scope)
+            ).scalars()
+        }
+        batch_size = 500
         for row in normalized:
             if not row.get("cctr") or not row.get("coarea"):
                 continue
-            existing = db.execute(
-                select(LegacyCostCenter).where(
-                    LegacyCostCenter.scope == batch_scope,
-                    LegacyCostCenter.coarea == row["coarea"],
-                    LegacyCostCenter.cctr == row["cctr"],
-                )
-            ).scalar_one_or_none()
+            existing = existing_ccs.get((row["coarea"], row["cctr"]))
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             cc_kwargs: dict = {}
             for field_name in _CC_MODEL_FIELDS:
@@ -1399,7 +1401,6 @@ def load_upload(batch_id: int, db: Session) -> dict:
             cc_kwargs["cctr"] = row["cctr"]
             if row.get("is_active"):
                 cc_kwargs["is_active"] = is_act
-            # Populate legacy valid_from/valid_to from SAP DATS or legacy keys
             for sap_key, legacy_key in (("datab", "valid_from"), ("datbi", "valid_to")):
                 raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
@@ -1426,22 +1427,29 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 cc_kwargs["refresh_batch"] = batch.id
                 cc_kwargs["scope"] = batch_scope
                 cc_kwargs["data_category"] = batch_category
-                db.add(LegacyCostCenter(**cc_kwargs))
+                new_cc = LegacyCostCenter(**cc_kwargs)
+                db.add(new_cc)
+                existing_ccs[(row["coarea"], row["cctr"])] = new_cc
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % batch_size == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % batch_size:
+            db.flush()
 
     elif batch.kind in ("profit_center", "profit_centers"):
+        # Bulk pre-fetch existing records to avoid N+1 queries
+        existing_pcs = {
+            (pc.coarea, pc.pctr): pc
+            for pc in db.execute(
+                select(LegacyProfitCenter).where(LegacyProfitCenter.scope == batch_scope)
+            ).scalars()
+        }
+        batch_size = 500
         for row in normalized:
             if not row.get("pctr"):
                 continue
-            existing = db.execute(
-                select(LegacyProfitCenter).where(
-                    LegacyProfitCenter.scope == batch_scope,
-                    LegacyProfitCenter.coarea == row.get("coarea", ""),
-                    LegacyProfitCenter.pctr == row["pctr"],
-                )
-            ).scalar_one_or_none()
+            existing = existing_pcs.get((row.get("coarea", ""), row["pctr"]))
             is_act = row.get("is_active", "").upper() not in ("FALSE", "0", "NO", "N")
             pc_kwargs: dict = {}
             for field_name in _PC_MODEL_FIELDS:
@@ -1454,7 +1462,6 @@ def load_upload(batch_id: int, db: Session) -> dict:
             pc_kwargs["pctr"] = row["pctr"]
             if row.get("is_active"):
                 pc_kwargs["is_active"] = is_act
-            # Populate legacy valid_from/valid_to from SAP DATS or legacy keys
             for sap_key, legacy_key in (("datab", "valid_from"), ("datbi", "valid_to")):
                 raw = row.get(legacy_key) or row.get(sap_key)
                 if raw and isinstance(raw, str):
@@ -1472,12 +1479,18 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 pc_kwargs["refresh_batch"] = batch.id
                 pc_kwargs["scope"] = batch_scope
                 pc_kwargs["data_category"] = batch_category
-                db.add(LegacyProfitCenter(**pc_kwargs))
+                new_pc = LegacyProfitCenter(**pc_kwargs)
+                db.add(new_pc)
+                existing_pcs[(row.get("coarea", ""), row["pctr"])] = new_pc
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % batch_size == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % batch_size:
+            db.flush()
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
+        batch_size = 500
         for row in normalized:
             if not row.get("cctr"):
                 continue
@@ -1532,19 +1545,23 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % batch_size == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % batch_size:
+            db.flush()
 
     elif batch.kind in ("entity", "entities"):
+        # Bulk pre-fetch existing entities
+        existing_ents = {
+            e.ccode: e
+            for e in db.execute(select(Entity).where(Entity.scope == batch_scope)).scalars()
+        }
+        batch_size = 500
         for row in normalized:
             if not row.get("ccode"):
                 continue
-            existing = db.execute(
-                select(Entity).where(
-                    Entity.scope == batch_scope,
-                    Entity.ccode == row["ccode"],
-                )
-            ).scalar_one_or_none()
+            existing = existing_ents.get(row["ccode"])
             ent_kwargs: dict = {}
             for field_name in _ENTITY_MODEL_FIELDS:
                 if field_name == "is_active":
@@ -1570,27 +1587,33 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     ent_kwargs["name"] = row["ccode"]
                 ent_kwargs["scope"] = batch_scope
                 ent_kwargs["data_category"] = batch_category
-                db.add(Entity(**ent_kwargs))
+                new_ent = Entity(**ent_kwargs)
+                db.add(new_ent)
+                existing_ents[row["ccode"]] = new_ent
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % batch_size == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % batch_size:
+            db.flush()
 
     elif batch.kind in ("employee", "employees"):
+        # Bulk pre-fetch existing employees for this batch
+        existing_emps = {
+            emp.gpn: emp
+            for emp in db.execute(
+                select(Employee).where(
+                    Employee.scope == batch_scope,
+                    Employee.refresh_batch == batch.id,
+                )
+            ).scalars()
+        }
+        batch_size = 500
         for row in normalized:
             gpn = row.get("gpn", "").strip()
             if not gpn:
                 continue
-            existing = (
-                db.execute(
-                    select(Employee).where(
-                        Employee.scope == batch_scope,
-                        Employee.gpn == gpn,
-                        Employee.refresh_batch == batch.id,
-                    )
-                )
-                .scalars()
-                .first()
-            )
+            existing = existing_emps.get(gpn)
             # Separate model fields from extra attrs
             model_kwargs: dict = {}
             extra_attrs: dict = {}
@@ -1623,10 +1646,15 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 model_kwargs["scope"] = batch_scope
                 model_kwargs["data_category"] = batch_category
-                db.add(Employee(**model_kwargs))
+                new_emp = Employee(**model_kwargs)
+                db.add(new_emp)
+                existing_emps[gpn] = new_emp
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % batch_size == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % batch_size:
+            db.flush()
 
     elif batch.kind in ("hierarchy", "hierarchies"):
         # Pass 1: create Hierarchy headers
