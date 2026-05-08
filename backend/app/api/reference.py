@@ -1241,7 +1241,17 @@ def hierarchy_tree(
     hier_id: int,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Build a full tree structure for a hierarchy: root → nodes → leaves with CC details."""
+    """Build a full tree structure for a hierarchy.
+
+    Returns both a nested ``tree`` (for tree-panel rendering) and flat
+    ``nodes`` / ``leaves`` arrays (for the DOD's ``_renderHierarchical``
+    which builds its own childMap). Leaf items are enriched with basic
+    detail fields depending on the hierarchy's setclass:
+
+    * CC hierarchy (0101): leaf value = cctr → look up LegacyCostCenter
+    * PC hierarchy (0104): leaf value = pctr → look up LegacyProfitCenter
+    * Entity hierarchy (0106): leaf value = ccode → look up Entity
+    """
     hier = db.get(Hierarchy, hier_id)
     if not hier:
         raise HTTPException(status_code=404, detail="Hierarchy not found")
@@ -1264,23 +1274,60 @@ def hierarchy_tree(
         children_map.setdefault(n.parent_setname, []).append(n.child_setname)
         all_children.add(n.child_setname)
 
-    # Build leaves map: setname → list of cost center values
+    # Build leaves map: setname → list of values
     leaves_map: dict[str, list[str]] = {}
     for lf in leaves:
         leaves_map.setdefault(lf.setname, []).append(lf.value)
 
-    # Collect all CC values for lookup
-    all_cc_values = {lf.value for lf in leaves}
-    cc_lookup: dict[str, LegacyCostCenter] = {}
-    if all_cc_values:
-        ccs = (
-            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(all_cc_values)))
-            .scalars()
-            .all()
-        )
-        cc_lookup = {cc.cctr: cc for cc in ccs}
+    # Setclass-aware leaf enrichment
+    norm_sc = normalise_setclass(hier.setclass)
+    all_leaf_values = {lf.value for lf in leaves}
+    leaf_detail: dict[str, dict] = {}  # value → detail dict
 
-    # Find root nodes (parents that are not children of anything, or the hierarchy setname itself)
+    if all_leaf_values:
+        if norm_sc == SETCLASS_PROFIT_CENTER:
+            rows = (
+                db.execute(
+                    select(LegacyProfitCenter).where(LegacyProfitCenter.pctr.in_(all_leaf_values))
+                )
+                .scalars()
+                .all()
+            )
+            for r in rows:
+                leaf_detail[r.pctr] = {
+                    "id_field": r.pctr,
+                    "name": r.txtsh,
+                    "ccode": r.ccode,
+                }
+        elif norm_sc == SETCLASS_ENTITY:
+            from app.models.core import Entity
+
+            rows = (
+                db.execute(select(Entity).where(Entity.ccode.in_(all_leaf_values))).scalars().all()
+            )
+            for r in rows:
+                leaf_detail[r.ccode] = {
+                    "id_field": r.ccode,
+                    "name": r.name,
+                }
+        else:
+            rows = (
+                db.execute(
+                    select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(all_leaf_values))
+                )
+                .scalars()
+                .all()
+            )
+            for r in rows:
+                leaf_detail[r.cctr] = {
+                    "id_field": r.cctr,
+                    "name": r.txtsh,
+                    "ccode": r.ccode,
+                    "pctr": r.pctr,
+                    "responsible": r.responsible,
+                }
+
+    # Find root nodes
     all_parents = set(children_map.keys())
     roots = all_parents - all_children
     if not roots:
@@ -1289,27 +1336,27 @@ def hierarchy_tree(
     def build_node(setname: str, depth: int = 0) -> dict:
         node_children = children_map.get(setname, [])
         node_leaves = leaves_map.get(setname, [])
-        cc_items = []
+        items = []
         for val in node_leaves:
-            cc = cc_lookup.get(val)
-            cc_items.append(
-                {
-                    "cctr": val,
-                    "name": cc.txtsh if cc else None,
-                    "ccode": cc.ccode if cc else None,
-                    "responsible": cc.responsible if cc else None,
-                    "pctr": cc.pctr if cc else None,
-                }
-            )
+            detail = leaf_detail.get(val, {})
+            items.append({"value": val, **detail})
         return {
             "setname": setname,
             "type": "leaf" if (not node_children and node_leaves) else "node",
             "children": [build_node(c, depth + 1) for c in sorted(node_children)],
-            "cost_centers": cc_items,
+            "items": items,
+            "leaf_count": len(node_leaves),
             "depth": depth,
         }
 
     tree = [build_node(r) for r in sorted(roots)]
+
+    # Flat arrays for DOD's hierarchical renderer
+    flat_nodes = [
+        {"parent_setname": n.parent_setname, "child_setname": n.child_setname, "seq": n.seq}
+        for n in nodes
+    ]
+    flat_leaves = [{"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves]
 
     return {
         "hierarchy_id": hier_id,
@@ -1317,6 +1364,9 @@ def hierarchy_tree(
         "setname": hier.setname,
         "description": hier.description,
         "tree": tree,
+        "nodes": flat_nodes,
+        "leaves": flat_leaves,
+        "total_leaves": len(leaves),
     }
 
 

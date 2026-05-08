@@ -878,6 +878,7 @@ def data_browser(
             "id": h.id,
             "setname": h.setname,
             "setclass": h.setclass,
+            "description": h.description,
             "label": h.label or base,
             "coarea": h.coarea,
         }

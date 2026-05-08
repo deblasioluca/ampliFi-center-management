@@ -468,6 +468,7 @@ import Layout from '../../components/layout/Layout.astro';
     showCSV: true,
     pageSize: 500,
     hierPageSize: 2000,
+    excludeColumns: ['id', 'scope', 'data_category', 'mandt'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr,
     toolbarButtons: [
@@ -496,6 +497,7 @@ import Layout from '../../components/layout/Layout.astro';
     showCSV: true,
     pageSize: 500,
     hierPageSize: 5000,
+    excludeColumns: ['id', 'scope', 'data_category', 'client', 'mandt'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr,
     toolbarButtons: [
@@ -549,6 +551,7 @@ import Layout from '../../components/layout/Layout.astro';
     showCSV: true,
     pageSize: 500,
     hierPageSize: 5000,
+    excludeColumns: ['id', 'scope', 'data_category', 'client', 'mandt'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr,
     toolbarButtons: [
@@ -691,15 +694,23 @@ import Layout from '../../components/layout/Layout.astro';
     title: 'Hierarchies',
     dataEndpoint: '/api/legacy/hierarchies',
     hierarchyEndpoint: '/api/legacy/hierarchies',
-    identityField: 'id',
+    identityField: 'setname',
     showViewToggle: true,
     showHierarchyPicker: true,
     showSearch: true,
     showCSV: true,
     pageSize: 200,
-    hierPageSize: 200,
+    hierPageSize: 10000,
+    excludeColumns: ['id', 'is_active'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr,
+    onHierarchyChange: function(hierId) {
+      if (hierId && typeof hierId === 'number') {
+        dodHierarchies.dataEndpoint = '/api/legacy/hierarchies/' + hierId + '/leaves';
+      } else {
+        dodHierarchies.dataEndpoint = '/api/legacy/hierarchies';
+      }
+    },
     toolbarButtons: [
       { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
         if (!confirm('Delete ALL hierarchies?')) return;
