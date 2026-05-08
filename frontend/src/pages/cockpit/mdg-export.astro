@@ -2,73 +2,146 @@
 import Layout from '../../components/layout/Layout.astro';
 ---
 <Layout title="MDG Export" requireAuth={true} requiredRole="data_manager">
-  <div class="max-w-4xl mx-auto p-6">
+  <div class="max-w-5xl mx-auto p-6">
     <a href="/cockpit" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Cockpit</a>
     <h1 class="text-2xl font-bold text-gray-800 mb-2 mt-2">MDG Export</h1>
     <p class="text-gray-600 mb-6">
-      Generate Master Data Governance export files for signed-off waves.
-      These files can be imported into SAP MDG for creating target cost centers.
+      Generate target cost center and profit center numbers, then export MDG files for SAP.
     </p>
 
+    <!-- Step 1: Select Wave -->
     <div class="bg-white rounded-lg shadow p-6 mb-6">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Select Wave</h3>
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">1. Select Wave</h3>
       <select id="sel-wave" class="border rounded px-3 py-2 w-full mb-4">
         <option value="">Select a signed-off wave...</option>
       </select>
-
-      <div id="wave-info" class="hidden bg-gray-50 rounded p-4 mb-4 text-sm">
-        <div class="grid grid-cols-2 gap-4">
+      <div id="wave-info" class="hidden bg-gray-50 rounded p-4 text-sm">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div><span class="text-gray-500">Status:</span> <span id="info-status" class="font-medium"></span></div>
           <div><span class="text-gray-500">Total proposals:</span> <span id="info-proposals" class="font-medium"></span></div>
+          <div><span class="text-gray-500">KEEP:</span> <span id="info-keep" class="font-medium text-green-600"></span></div>
           <div><span class="text-gray-500">RETIRE:</span> <span id="info-retire" class="font-medium text-red-600"></span></div>
-          <div><span class="text-gray-500">MERGE_MAP:</span> <span id="info-merge" class="font-medium text-amber-600"></span></div>
+          <div><span class="text-gray-500">MERGE:</span> <span id="info-merge" class="font-medium text-amber-600"></span></div>
+          <div><span class="text-gray-500">REDESIGN:</span> <span id="info-redesign" class="font-medium text-blue-600"></span></div>
+          <div><span class="text-gray-500">Target type:</span> <span id="info-target" class="font-medium"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Generate Target Numbers -->
+    <div id="step-generate" class="bg-white rounded-lg shadow p-6 mb-6 hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">2. Generate Target Numbers</h3>
+      <p class="text-xs text-gray-500 mb-4">
+        Assigns new CC/PC numbers to every proposal. All SAP attributes are inherited from the legacy source.
+        For merges, attributes are inherited from the primary source center.
+      </p>
+
+      <!-- Target summary (shown after generation) -->
+      <div id="target-summary" class="hidden mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-blue-50 rounded p-3 text-center">
+            <div class="text-2xl font-bold text-blue-700" id="sum-cc">0</div>
+            <div class="text-xs text-blue-600">Target Cost Centers</div>
+          </div>
+          <div class="bg-purple-50 rounded p-3 text-center">
+            <div class="text-2xl font-bold text-purple-700" id="sum-pc">0</div>
+            <div class="text-xs text-purple-600">Target Profit Centers</div>
+          </div>
+          <div class="bg-gray-50 rounded p-3 text-center">
+            <div class="text-2xl font-bold text-gray-700" id="sum-map">0</div>
+            <div class="text-xs text-gray-600">Mapping Records</div>
+          </div>
+          <div class="bg-green-50 rounded p-3 text-center">
+            <div class="text-2xl font-bold text-green-700" id="sum-status">—</div>
+            <div class="text-xs text-green-600">Status</div>
+          </div>
+        </div>
+
+        <!-- Mapping breakdown -->
+        <div id="mapping-breakdown" class="mt-3 grid grid-cols-4 gap-2 text-xs">
+          <div class="bg-green-50 rounded p-2 text-center">
+            <span class="font-semibold text-green-700" id="map-keep">0</span>
+            <span class="text-green-600"> 1:1 (Keep)</span>
+          </div>
+          <div class="bg-red-50 rounded p-2 text-center">
+            <span class="font-semibold text-red-700" id="map-retire">0</span>
+            <span class="text-red-600"> Retire</span>
+          </div>
+          <div class="bg-amber-50 rounded p-2 text-center">
+            <span class="font-semibold text-amber-700" id="map-merge">0</span>
+            <span class="text-amber-600"> Merge</span>
+          </div>
+          <div class="bg-blue-50 rounded p-2 text-center">
+            <span class="font-semibold text-blue-700" id="map-redesign">0</span>
+            <span class="text-blue-600"> Redesign</span>
+          </div>
+        </div>
+
+        <!-- Owner conflicts warning -->
+        <div id="owner-conflicts" class="hidden mt-3 bg-yellow-50 border border-yellow-200 rounded p-3 text-xs">
+          <h4 class="font-semibold text-yellow-800 mb-1">Owner Conflicts Detected</h4>
+          <div id="conflict-list" class="text-yellow-700 space-y-1"></div>
         </div>
       </div>
 
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Export Format</h3>
-      <div class="flex gap-4 mb-4">
-        <label class="flex items-center gap-2">
-          <input type="radio" name="format" value="csv" checked class="w-4 h-4"> CSV
-        </label>
-        <label class="flex items-center gap-2">
-          <input type="radio" name="format" value="xlsx" class="w-4 h-4"> Excel (XLSX)
-        </label>
-        <label class="flex items-center gap-2">
-          <input type="radio" name="format" value="json" class="w-4 h-4"> JSON
-        </label>
-      </div>
-
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Include</h3>
-      <div class="space-y-2 mb-6">
-        <label class="flex items-center gap-2">
-          <input type="checkbox" checked class="w-4 h-4" id="incl-retire"> RETIRE decisions (decommission list)
-        </label>
-        <label class="flex items-center gap-2">
-          <input type="checkbox" checked class="w-4 h-4" id="incl-merge"> MERGE_MAP decisions (mapping table)
-        </label>
-        <label class="flex items-center gap-2">
-          <input type="checkbox" checked class="w-4 h-4" id="incl-redesign"> REDESIGN decisions (new target centers)
-        </label>
-        <label class="flex items-center gap-2">
-          <input type="checkbox" class="w-4 h-4" id="incl-keep"> KEEP decisions (no-change confirmation)
-        </label>
-      </div>
-
-      <button id="btn-export" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50" disabled>
-        Generate Export File
+      <button id="btn-generate" class="px-6 py-2 bg-amplifi-600 text-white rounded hover:bg-amplifi-700 disabled:opacity-50" disabled>
+        Generate Target Numbers
       </button>
+      <span id="gen-status" class="ml-3 text-sm text-gray-500 hidden"></span>
     </div>
 
-    <!-- Export History -->
-    <div class="bg-white rounded-lg shadow p-6">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Recent Exports</h3>
-      <div id="export-history" class="text-sm text-gray-500">No previous exports</div>
+    <!-- Step 3: Export Files -->
+    <div id="step-export" class="bg-white rounded-lg shadow p-6 mb-6 hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">3. Export MDG Files</h3>
+      <p class="text-xs text-gray-500 mb-4">
+        Download separate files for target cost centers, profit centers, the old→new mapping table,
+        and the retire/decommission list.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button class="export-btn flex items-center gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition text-left"
+                data-type="cost_center">
+          <div class="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-sm">CC</div>
+          <div>
+            <div class="font-medium text-blue-800">Target Cost Centers</div>
+            <div class="text-xs text-blue-600">SAP CSKS/CSKT structure with all inherited fields</div>
+          </div>
+        </button>
+
+        <button class="export-btn flex items-center gap-3 p-4 bg-purple-50 rounded-lg border border-purple-200 hover:bg-purple-100 transition text-left"
+                data-type="profit_center">
+          <div class="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-sm">PC</div>
+          <div>
+            <div class="font-medium text-purple-800">Target Profit Centers</div>
+            <div class="text-xs text-purple-600">SAP CEPC/CEPCT structure with all inherited fields</div>
+          </div>
+        </button>
+
+        <button class="export-btn flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition text-left"
+                data-type="mapping">
+          <div class="w-10 h-10 bg-gray-600 rounded flex items-center justify-center text-white font-bold text-sm">MAP</div>
+          <div>
+            <div class="font-medium text-gray-800">Old → New Mapping</div>
+            <div class="text-xs text-gray-600">Legacy CC/PC to target CC/PC mapping table</div>
+          </div>
+        </button>
+
+        <button class="export-btn flex items-center gap-3 p-4 bg-red-50 rounded-lg border border-red-200 hover:bg-red-100 transition text-left"
+                data-type="retire">
+          <div class="w-10 h-10 bg-red-600 rounded flex items-center justify-center text-white font-bold text-sm">RET</div>
+          <div>
+            <div class="font-medium text-red-800">Decommission List</div>
+            <div class="text-xs text-red-600">Legacy centers marked for deactivation</div>
+          </div>
+        </button>
+      </div>
     </div>
   </div>
 
   <script>
     const token = localStorage.getItem('amplifi_token');
     const headers = { Authorization: `Bearer ${token}` };
+    let selectedWaveId = null;
 
     async function loadWaves() {
       try {
@@ -76,66 +149,169 @@ import Layout from '../../components/layout/Layout.astro';
         const data = await resp.json();
         const sel = document.getElementById('sel-wave');
         (data.items || []).forEach(w => {
-          const opt = document.createElement('option');
-          opt.value = w.id;
-          opt.textContent = `${w.name} (${w.status})`;
-          sel.appendChild(opt);
+          if (['signed_off', 'closed'].includes(w.status)) {
+            const opt = document.createElement('option');
+            opt.value = w.id;
+            opt.textContent = `${w.name} (${w.status})`;
+            sel.appendChild(opt);
+          }
         });
       } catch (e) { console.error('Failed to load waves:', e); }
     }
 
     document.getElementById('sel-wave')?.addEventListener('change', async function () {
-      const waveId = this.value;
+      selectedWaveId = this.value;
       const infoEl = document.getElementById('wave-info');
-      const btn = document.getElementById('btn-export');
-      if (!waveId) { infoEl?.classList.add('hidden'); btn.disabled = true; return; }
+      const stepGen = document.getElementById('step-generate');
+      const stepExport = document.getElementById('step-export');
+
+      if (!selectedWaveId) {
+        infoEl?.classList.add('hidden');
+        stepGen?.classList.add('hidden');
+        stepExport?.classList.add('hidden');
+        return;
+      }
 
       try {
-        const resp = await fetch(`/api/waves/${waveId}`, { headers });
+        const resp = await fetch(`/api/waves/${selectedWaveId}`, { headers });
         const wave = await resp.json();
+        const kpis = wave.kpis || {};
+
         document.getElementById('info-status').textContent = wave.status;
-        document.getElementById('info-proposals').textContent = wave.kpis?.total_centers || '0';
-        document.getElementById('info-retire').textContent = wave.kpis?.retire || '0';
-        document.getElementById('info-merge').textContent = wave.kpis?.merge_map || '0';
+        document.getElementById('info-proposals').textContent = kpis.total_centers || '0';
+        document.getElementById('info-keep').textContent = kpis.keep || '0';
+        document.getElementById('info-retire').textContent = kpis.retire || '0';
+        document.getElementById('info-merge').textContent = kpis.merge_map || '0';
+        document.getElementById('info-redesign').textContent = kpis.redesign || '0';
+        document.getElementById('info-target').textContent = kpis.target_type || 'CC_AND_PC';
         infoEl?.classList.remove('hidden');
-        btn.disabled = false;
+        stepGen?.classList.remove('hidden');
+        document.getElementById('btn-generate').disabled = false;
+
+        // Check if targets already exist
+        await loadTargetSummary();
       } catch (e) { console.error(e); }
     });
 
-    document.getElementById('btn-export')?.addEventListener('click', async function () {
-      const waveId = document.getElementById('sel-wave').value;
-      if (!waveId) return;
+    async function loadTargetSummary() {
+      if (!selectedWaveId) return;
+      try {
+        const resp = await fetch(`/api/waves/${selectedWaveId}/target-summary`, { headers });
+        if (!resp.ok) return;
+        const data = await resp.json();
 
-      const format = document.querySelector('input[name="format"]:checked')?.value || 'csv';
-      const outcomes = [];
-      if (document.getElementById('incl-retire').checked) outcomes.push('RETIRE');
-      if (document.getElementById('incl-merge').checked) outcomes.push('MERGE_MAP');
-      if (document.getElementById('incl-redesign').checked) outcomes.push('REDESIGN');
-      if (document.getElementById('incl-keep').checked) outcomes.push('KEEP');
+        if (data.has_targets) {
+          showTargetSummary(data);
+          document.getElementById('btn-generate').textContent = 'Regenerate Target Numbers';
+        } else {
+          document.getElementById('target-summary')?.classList.add('hidden');
+          document.getElementById('step-export')?.classList.add('hidden');
+          document.getElementById('btn-generate').textContent = 'Generate Target Numbers';
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    function showTargetSummary(data) {
+      document.getElementById('sum-cc').textContent = data.target_cc_count.toLocaleString();
+      document.getElementById('sum-pc').textContent = data.target_pc_count.toLocaleString();
+      document.getElementById('sum-map').textContent = data.mapping_count.toLocaleString();
+      document.getElementById('sum-status').textContent = 'Ready';
+
+      const bd = data.mapping_breakdown || {};
+      document.getElementById('map-keep').textContent = (bd['1:1'] || 0).toLocaleString();
+      document.getElementById('map-retire').textContent = (bd.retire || 0).toLocaleString();
+      document.getElementById('map-merge').textContent = (bd.merge || 0).toLocaleString();
+      document.getElementById('map-redesign').textContent = (bd.redesign || 0).toLocaleString();
+
+      document.getElementById('target-summary')?.classList.remove('hidden');
+      document.getElementById('step-export')?.classList.remove('hidden');
+
+      // Show owner conflicts if any
+      if (data.owner_conflicts && data.owner_conflicts.length > 0) {
+        const conflictEl = document.getElementById('owner-conflicts');
+        const listEl = document.getElementById('conflict-list');
+        listEl.innerHTML = data.owner_conflicts.map(c =>
+          `<div>Target <strong>${c.target_cctr}</strong> (${c.coarea}): ${c.source_count} sources with different owners: ${c.owners.join(', ')}</div>`
+        ).join('');
+        conflictEl?.classList.remove('hidden');
+      } else {
+        document.getElementById('owner-conflicts')?.classList.add('hidden');
+      }
+    }
+
+    document.getElementById('btn-generate')?.addEventListener('click', async function () {
+      if (!selectedWaveId) return;
 
       this.disabled = true;
-      this.textContent = 'Generating...';
+      const statusEl = document.getElementById('gen-status');
+      statusEl.textContent = 'Generating target numbers...';
+      statusEl?.classList.remove('hidden');
 
       try {
-        const params = new URLSearchParams({ format, outcomes: outcomes.join(',') });
-        const resp = await fetch(`/api/waves/${waveId}/mdg-export?${params}`, { headers });
-        if (!resp.ok) throw new Error(await resp.text());
+        const resp = await fetch(`/api/waves/${selectedWaveId}/generate-targets`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || 'Generation failed');
+        }
+        const result = await resp.json();
 
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `mdg_export_wave_${waveId}.${format}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        if (result.already_generated) {
+          statusEl.textContent = 'Targets already generated. Showing existing data.';
+        } else {
+          statusEl.textContent = `Generated ${result.target_cc_count} CCs, ${result.target_pc_count} PCs, ${result.mapping_count} mappings.`;
+        }
+        statusEl.classList.remove('text-red-600');
+        statusEl.classList.add('text-green-600');
 
-        alert('Export downloaded successfully.');
+        await loadTargetSummary();
       } catch (e) {
-        alert('Export failed: ' + e.message);
+        statusEl.textContent = 'Error: ' + e.message;
+        statusEl.classList.remove('text-green-600');
+        statusEl.classList.add('text-red-600');
       } finally {
         this.disabled = false;
-        this.textContent = 'Generate Export File';
       }
+    });
+
+    // Export button handlers
+    document.querySelectorAll('.export-btn').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        if (!selectedWaveId) return;
+        const exportType = this.dataset.type;
+
+        const origHTML = this.innerHTML;
+        this.innerHTML = '<span class="text-sm">Downloading...</span>';
+        this.disabled = true;
+
+        try {
+          const resp = await fetch(
+            `/api/waves/${selectedWaveId}/mdg-export?export_type=${exportType}`,
+            { headers }
+          );
+          if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Export failed');
+          }
+          const data = await resp.json();
+
+          // Download as CSV
+          const blob = new Blob([data.content], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = data.filename;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          alert('Export failed: ' + e.message);
+        } finally {
+          this.innerHTML = origHTML;
+          this.disabled = false;
+        }
+      });
     });
 
     loadWaves();

@@ -10,15 +10,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.decision_tree.engine import CleansingOutcome, TargetObject
 from app.models.core import (
     AnalysisRun,
+    CenterMapping,
     CenterProposal,
     Employee,
     LegacyCostCenter,
+    LegacyProfitCenter,
     NamingAllocation,
     NamingPool,
     TargetCostCenter,
@@ -402,3 +404,576 @@ def inherit_attributes(legacy: LegacyCostCenter, target_cc: TargetCostCenter, db
         for key in inherited_keys:
             if key in legacy.attrs:
                 target_cc.attrs[key] = legacy.attrs[key]
+
+
+# ---------------------------------------------------------------------------
+# Common SAP fields to copy from legacy → target (attribute inheritance)
+# ---------------------------------------------------------------------------
+
+# CC fields shared between LegacyCostCenter and TargetCostCenter
+_CC_INHERIT_FIELDS = [
+    "mandt",
+    "coarea",
+    "txtsh",
+    "txtmi",
+    "datbi",
+    "datab",
+    "bkzkp",
+    "pkzkp",
+    "ccode",
+    "gsber",
+    "cctrcgy",
+    "responsible",
+    "verak_user",
+    "currency",
+    "kalsm",
+    "txjcd",
+    "pctr",
+    "werks",
+    "logsystem",
+    "ersda",
+    "usnam",
+    "bkzks",
+    "bkzer",
+    "bkzob",
+    "pkzks",
+    "pkzer",
+    "vmeth",
+    "mgefl",
+    "abtei",
+    "nkost",
+    "kvewe",
+    "kappl",
+    "koszschl",
+    "land1",
+    "anred",
+    "name1",
+    "name2",
+    "name3",
+    "name4",
+    "ort01",
+    "ort02",
+    "stras",
+    "pfach",
+    "pstlz",
+    "pstl2",
+    "regio",
+    "spras",
+    "telbx",
+    "telf1",
+    "telf2",
+    "telfx",
+    "teltx",
+    "telx1",
+    "datlt",
+    "drnam",
+    "khinr",
+    "cckey",
+    "kompl",
+    "stakz",
+    "objnr",
+    "funkt",
+    "afunk",
+    "cpi_templ",
+    "cpd_templ",
+    "func_area",
+    "sci_templ",
+    "scd_templ",
+    "ski_templ",
+    "skd_templ",
+    # CI_CSKS customer fields
+    "zzcuemncfu",
+    "zzcueabacc",
+    "zzcuegbcd",
+    "zzcueubcd",
+    "zzcuenkos",
+    "zzstrpctyp",
+    "zzstrkklas",
+    "zzstraagcd",
+    "zzstrgfd",
+    "zzstrfst",
+    "zzstrmacve",
+    "zzstrabukr",
+    "zzstrugcd",
+    "zzstrinadt",
+    "zzstrkstyp",
+    "zzstrverik",
+    "zzstrcurr2",
+    "zzstrlccid",
+    "zzstrmaloc",
+    "zzstrtaxcd",
+    "zzstrgrpid",
+    "zzstrregcode",
+    "zzstrtaxarea",
+    "zzstrrepsit",
+    "zzstrgsm",
+    "zzcemapar",
+    "zzledger",
+    "zzhdstat",
+    "zzhdtype",
+    "zzfmd",
+    "zzfmdcc",
+    "zzfmdnode",
+    "zzstate",
+    "zztax",
+    "zzstrentsa",
+    "zzstrentzu",
+    "xblnr",
+    # JV fields
+    "vname",
+    "recid",
+    "etype",
+    "jv_otype",
+    "jv_jibcl",
+    "jv_jibsa",
+    "ferc_ind",
+]
+
+# PC fields shared between LegacyProfitCenter and TargetProfitCenter
+_PC_INHERIT_FIELDS = [
+    "mandt",
+    "coarea",
+    "txtsh",
+    "txtmi",
+    "datbi",
+    "datab",
+    "ersda",
+    "usnam",
+    "merkmal",
+    "department",
+    "responsible",
+    "verak_user",
+    "currency",
+    "nprctr",
+    "land1",
+    "anred",
+    "name1",
+    "name2",
+    "name3",
+    "name4",
+    "ort01",
+    "ort02",
+    "stras",
+    "pfach",
+    "pstlz",
+    "pstl2",
+    "language",
+    "telbx",
+    "telf1",
+    "telf2",
+    "telfx",
+    "teltx",
+    "telx1",
+    "datlt",
+    "drnam",
+    "khinr",
+    "ccode",
+    "vname",
+    "recid",
+    "etype",
+    "txjcd",
+    "regio",
+    "kvewe",
+    "kappl",
+    "kalsm",
+    "logsystem",
+    "lock_ind",
+    "pca_template",
+    "segment",
+]
+
+
+def _copy_cc_fields(legacy: LegacyCostCenter, target: TargetCostCenter) -> None:
+    """Copy all SAP fields from a legacy CC to a target CC."""
+    for field in _CC_INHERIT_FIELDS:
+        val = getattr(legacy, field, None)
+        if val is not None and hasattr(target, field):
+            setattr(target, field, val)
+    if legacy.attrs:
+        target.attrs = dict(legacy.attrs)
+
+
+def _copy_pc_fields(legacy_pc: LegacyProfitCenter, target: TargetProfitCenter) -> None:
+    """Copy all SAP fields from a legacy PC to a target PC."""
+    for field in _PC_INHERIT_FIELDS:
+        val = getattr(legacy_pc, field, None)
+        if val is not None and hasattr(target, field):
+            setattr(target, field, val)
+    if legacy_pc.attrs:
+        target.attrs = dict(legacy_pc.attrs)
+
+
+# ---------------------------------------------------------------------------
+# Generate wave targets — called from MDG export or explicitly
+# ---------------------------------------------------------------------------
+
+
+def generate_wave_targets(wave_id: int, db: Session) -> dict:
+    """Generate target CC/PC records and mapping for all proposals in a wave.
+
+    Every proposal (KEEP, MERGE_MAP, REDESIGN) gets a new target CC number.
+    If the target type includes PC (CC_AND_PC), a new target PC number is also
+    generated. All SAP attributes are inherited from the legacy source.
+
+    For MERGE_MAP: multiple source CCs map to one target CC. The target
+    inherits attributes from the first source CC in the group.
+
+    For RETIRE: no target CC/PC is created; the legacy center is marked
+    for deactivation in the mapping table.
+
+    Returns a summary dict with counts and any owner conflicts detected.
+    """
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise ValueError(f"Wave {wave_id} not found")
+
+    preferred_run_id = (wave.config or {}).get("preferred_run_id")
+    if not preferred_run_id:
+        raise ValueError("No preferred run set for this wave")
+
+    # Check if targets already exist for this wave
+    existing_cc = (
+        db.execute(select(TargetCostCenter).where(TargetCostCenter.approved_in_wave == wave_id))
+        .scalars()
+        .first()
+    )
+    if existing_cc:
+        # Count existing targets
+        cc_count = (
+            db.execute(
+                select(func.count(TargetCostCenter.id)).where(
+                    TargetCostCenter.approved_in_wave == wave_id
+                )
+            ).scalar()
+            or 0
+        )
+        pc_count = (
+            db.execute(
+                select(func.count(TargetProfitCenter.id)).where(
+                    TargetProfitCenter.approved_in_wave == wave_id
+                )
+            ).scalar()
+            or 0
+        )
+        mapping_count = (
+            db.execute(
+                select(func.count(CenterMapping.id)).where(
+                    CenterMapping.notes.like(f"%wave:{wave_id}%")
+                )
+            ).scalar()
+            or 0
+        )
+        return {
+            "wave_id": wave_id,
+            "already_generated": True,
+            "target_cc_count": cc_count,
+            "target_pc_count": pc_count,
+            "mapping_count": mapping_count,
+        }
+
+    proposals = (
+        db.execute(select(CenterProposal).where(CenterProposal.run_id == preferred_run_id))
+        .scalars()
+        .all()
+    )
+
+    # Load naming config from wave
+    naming_cfg = (wave.config or {}).get("naming", {})
+    cc_template = naming_cfg.get("cc_template", "{coarea}{seq:6}")
+    pc_template = naming_cfg.get("pc_template", "{coarea}{seq:6}")
+    seq_start = int(naming_cfg.get("seq_start", 1))
+
+    # Sequence counters per coarea
+    cc_seq: dict[str, int] = {}
+    pc_seq: dict[str, int] = {}
+
+    def next_cc_id(coarea: str, template: str) -> str:
+        if coarea not in cc_seq:
+            cc_seq[coarea] = seq_start
+        seq = cc_seq[coarea]
+        cc_seq[coarea] = seq + 1
+        return _format_naming(template, coarea, seq)
+
+    def next_pc_id(coarea: str, template: str) -> str:
+        if coarea not in pc_seq:
+            pc_seq[coarea] = seq_start
+        seq = pc_seq[coarea]
+        pc_seq[coarea] = seq + 1
+        return _format_naming(template, coarea, seq)
+
+    # Group proposals by outcome
+    created_cc = 0
+    created_pc = 0
+    created_mappings = 0
+    owner_conflicts: list[dict] = []
+
+    # For MERGE: group by merge_into_cctr to deduplicate target
+    merge_groups: dict[str, list[CenterProposal]] = {}
+
+    for proposal in proposals:
+        outcome, target = get_effective_outcome(proposal)
+        if outcome == "MERGE_MAP" and proposal.merge_into_cctr:
+            key = f"{proposal.merge_into_cctr}"
+            merge_groups.setdefault(key, []).append(proposal)
+
+    # Track created CC/PC IDs to avoid duplicates
+    seen_cc: dict[tuple[str, str], int] = {}  # (coarea, new_cctr) → target_cc_id
+    seen_pc: dict[tuple[str, str], int] = {}  # (coarea, new_pctr) → target_pc_id
+
+    # --- Process MERGE groups first ---
+    for _merge_key, group in merge_groups.items():
+        primary = group[0]
+        primary_legacy = db.get(LegacyCostCenter, primary.legacy_cc_id)
+        if not primary_legacy:
+            continue
+
+        _, target_type = get_effective_outcome(primary)
+        coarea = primary_legacy.coarea
+        new_cctr = next_cc_id(coarea, cc_template)
+
+        # Create target CC inheriting all fields from primary source
+        tcc = TargetCostCenter(
+            source_proposal_id=primary.id,
+            approved_in_wave=wave_id,
+            is_active=True,
+        )
+        _copy_cc_fields(primary_legacy, tcc)
+        tcc.cctr = new_cctr  # Override with new number
+        db.add(tcc)
+        db.flush()
+        seen_cc[(coarea, new_cctr)] = tcc.id
+        created_cc += 1
+
+        # Detect owner conflicts in group
+        owners = set()
+        for p in group:
+            leg = db.get(LegacyCostCenter, p.legacy_cc_id)
+            if leg and leg.responsible:
+                owners.add(leg.responsible)
+        if len(owners) > 1:
+            owner_conflicts.append(
+                {
+                    "target_cctr": new_cctr,
+                    "coarea": coarea,
+                    "owners": list(owners),
+                    "source_count": len(group),
+                }
+            )
+
+        # Create target PC if needed
+        new_pctr = None
+        if target_type in ("PC", "PC_ONLY", "CC_AND_PC"):
+            new_pctr = next_pc_id(coarea, pc_template)
+            # Try to find a legacy PC to inherit from
+            legacy_pc = _find_legacy_pc(primary_legacy, db)
+            tpc = TargetProfitCenter(
+                source_proposal_id=primary.id,
+                approved_in_wave=wave_id,
+                is_active=True,
+            )
+            if legacy_pc:
+                _copy_pc_fields(legacy_pc, tpc)
+            else:
+                tpc.coarea = coarea
+                tpc.txtsh = primary_legacy.txtsh
+                tpc.txtmi = primary_legacy.txtmi
+                tpc.ccode = primary_legacy.ccode
+                tpc.responsible = primary_legacy.responsible
+                tpc.currency = primary_legacy.currency
+            tpc.pctr = new_pctr
+            db.add(tpc)
+            db.flush()
+            seen_pc[(coarea, new_pctr)] = tpc.id
+            created_pc += 1
+
+            # Update the CC target's pctr reference
+            tcc.pctr = new_pctr
+
+        # Create mappings for ALL source CCs in the group
+        for p in group:
+            leg = db.get(LegacyCostCenter, p.legacy_cc_id)
+            if not leg:
+                continue
+            mapping = CenterMapping(
+                object_type="cost_center",
+                legacy_coarea=leg.coarea,
+                legacy_center=leg.cctr,
+                legacy_name=leg.txtsh,
+                target_coarea=coarea,
+                target_center=new_cctr,
+                target_name=primary_legacy.txtsh,
+                mapping_type="merge",
+                notes=f"wave:{wave_id} outcome:MERGE_MAP",
+            )
+            db.add(mapping)
+            created_mappings += 1
+
+            # PC mapping
+            if new_pctr and leg.pctr:
+                pc_mapping = CenterMapping(
+                    object_type="profit_center",
+                    legacy_coarea=leg.coarea,
+                    legacy_center=leg.pctr,
+                    legacy_name=leg.txtsh,
+                    target_coarea=coarea,
+                    target_center=new_pctr,
+                    target_name=primary_legacy.txtsh,
+                    mapping_type="merge",
+                    notes=f"wave:{wave_id} outcome:MERGE_MAP",
+                )
+                db.add(pc_mapping)
+                created_mappings += 1
+
+    # --- Process KEEP and REDESIGN proposals (1:1 mapping) ---
+    for proposal in proposals:
+        outcome, target_type = get_effective_outcome(proposal)
+
+        # Skip MERGE (already handled) and RETIRE
+        if outcome == "MERGE_MAP":
+            continue
+
+        legacy = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+        if not legacy:
+            continue
+
+        coarea = legacy.coarea
+
+        if outcome == "RETIRE":
+            # No target created — just a mapping record for the decommission list
+            mapping = CenterMapping(
+                object_type="cost_center",
+                legacy_coarea=coarea,
+                legacy_center=legacy.cctr,
+                legacy_name=legacy.txtsh,
+                target_coarea=coarea,
+                target_center="RETIRED",
+                target_name="",
+                mapping_type="retire",
+                notes=f"wave:{wave_id} outcome:RETIRE",
+            )
+            db.add(mapping)
+            created_mappings += 1
+            continue
+
+        # KEEP or REDESIGN: create target CC with new number
+        new_cctr = next_cc_id(coarea, cc_template)
+
+        tcc = TargetCostCenter(
+            source_proposal_id=proposal.id,
+            approved_in_wave=wave_id,
+            is_active=True,
+        )
+        _copy_cc_fields(legacy, tcc)
+        tcc.cctr = new_cctr  # Override with new number
+        db.add(tcc)
+        db.flush()
+        seen_cc[(coarea, new_cctr)] = tcc.id
+        created_cc += 1
+
+        # Create mapping: old CC → new CC
+        mapping = CenterMapping(
+            object_type="cost_center",
+            legacy_coarea=coarea,
+            legacy_center=legacy.cctr,
+            legacy_name=legacy.txtsh,
+            target_coarea=coarea,
+            target_center=new_cctr,
+            target_name=legacy.txtsh,
+            mapping_type="1:1" if outcome == "KEEP" else "redesign",
+            notes=f"wave:{wave_id} outcome:{outcome}",
+        )
+        db.add(mapping)
+        created_mappings += 1
+
+        # Create target PC if needed
+        if target_type in ("PC", "PC_ONLY", "CC_AND_PC"):
+            new_pctr = next_pc_id(coarea, pc_template)
+            legacy_pc = _find_legacy_pc(legacy, db)
+
+            tpc = TargetProfitCenter(
+                source_proposal_id=proposal.id,
+                approved_in_wave=wave_id,
+                is_active=True,
+            )
+            if legacy_pc:
+                _copy_pc_fields(legacy_pc, tpc)
+            else:
+                tpc.coarea = coarea
+                tpc.txtsh = legacy.txtsh
+                tpc.txtmi = legacy.txtmi
+                tpc.ccode = legacy.ccode
+                tpc.responsible = legacy.responsible
+                tpc.currency = legacy.currency
+            tpc.pctr = new_pctr
+            db.add(tpc)
+            db.flush()
+            seen_pc[(coarea, new_pctr)] = tpc.id
+            created_pc += 1
+
+            # Update the CC target's pctr reference
+            tcc.pctr = new_pctr
+
+            # PC mapping
+            pc_mapping = CenterMapping(
+                object_type="profit_center",
+                legacy_coarea=coarea,
+                legacy_center=legacy.pctr or legacy.cctr,
+                legacy_name=legacy.txtsh,
+                target_coarea=coarea,
+                target_center=new_pctr,
+                target_name=legacy.txtsh,
+                mapping_type="1:1" if outcome == "KEEP" else "redesign",
+                notes=f"wave:{wave_id} outcome:{outcome}",
+            )
+            db.add(pc_mapping)
+            created_mappings += 1
+
+    db.commit()
+
+    result = {
+        "wave_id": wave_id,
+        "already_generated": False,
+        "target_cc_count": created_cc,
+        "target_pc_count": created_pc,
+        "mapping_count": created_mappings,
+        "owner_conflicts": owner_conflicts,
+        "sequences": {
+            "cc": dict(cc_seq),
+            "pc": dict(pc_seq),
+        },
+    }
+    logger.info("targets.generated", **result)
+    return result
+
+
+def _find_legacy_pc(legacy_cc: LegacyCostCenter, db: Session) -> LegacyProfitCenter | None:
+    """Find the legacy profit center associated with a cost center."""
+    if not legacy_cc.pctr:
+        return None
+    return (
+        db.execute(
+            select(LegacyProfitCenter).where(
+                LegacyProfitCenter.coarea == legacy_cc.coarea,
+                LegacyProfitCenter.pctr == legacy_cc.pctr,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _format_naming(template: str, coarea: str, seq: int) -> str:
+    """Format a naming template with coarea and sequence number."""
+    import re
+
+    def replacer(match: re.Match) -> str:
+        name = match.group(1)
+        width = match.group(2)
+        if name == "seq":
+            w = int(width) if width else 6
+            return str(seq).zfill(w)
+        if name == "coarea":
+            return coarea
+        return match.group(0)
+
+    return re.sub(r"\{(\w+)(?::(\d+))?\}", replacer, template)

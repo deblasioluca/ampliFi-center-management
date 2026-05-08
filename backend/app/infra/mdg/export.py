@@ -171,6 +171,52 @@ def export_profit_centers(
     )
 
 
+MAPPING_COLUMNS = [
+    "OBJECT_TYPE",  # CCTR or PCTR
+    "CO_AREA",  # Controlling area
+    "LEGACY_CENTER",  # Old center ID
+    "LEGACY_NAME",  # Old center name
+    "TARGET_CENTER",  # New center ID
+    "TARGET_NAME",  # New center name
+    "MAPPING_TYPE",  # 1:1 | merge | redesign | retire
+]
+
+
+def export_mapping_table(
+    mappings: list,
+    wave_id: int,
+) -> MDGExportResult:
+    """Export old→new center mapping table."""
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=MAPPING_COLUMNS, delimiter=";")
+    writer.writeheader()
+
+    for m in mappings:
+        row = {
+            "OBJECT_TYPE": "CCTR" if m.object_type == "cost_center" else "PCTR",
+            "CO_AREA": m.legacy_coarea,
+            "LEGACY_CENTER": m.legacy_center,
+            "LEGACY_NAME": m.legacy_name or "",
+            "TARGET_CENTER": m.target_center,
+            "TARGET_NAME": m.target_name or "",
+            "MAPPING_TYPE": m.mapping_type or "",
+        }
+        writer.writerow(row)
+
+    content = output.getvalue()
+    now = datetime.utcnow()
+    filename = f"MDG_MAPPING_WAVE{wave_id}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return MDGExportResult(
+        filename=filename,
+        content=content,
+        record_count=len(mappings),
+        export_type="mapping",
+        wave_id=wave_id,
+        exported_at=now,
+    )
+
+
 def export_retire_list(
     centers: list[dict],
     wave_id: int,
