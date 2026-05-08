@@ -144,6 +144,29 @@ def update_user(
     return UserOut.model_validate(user)
 
 
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    body: PasswordReset,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    if len(body.new_password) < 4:
+        raise HTTPException(status_code=422, detail="Password must be at least 4 characters")
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = hash_password(body.new_password)
+    user.failed_logins = 0
+    user.locked_until = None
+    db.commit()
+    return {"status": "password_reset", "username": user.username}
+
+
 @router.delete("/users/{user_id}")
 def delete_user(
     user_id: int,

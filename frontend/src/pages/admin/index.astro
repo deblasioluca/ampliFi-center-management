@@ -341,18 +341,20 @@ import Layout from '../../components/layout/Layout.astro';
           html += '<table class="w-full text-xs"><thead><tr class="border-b">' +
             '<th class="text-left py-2 px-2">Username</th><th class="text-left py-2 px-2">Name</th>' +
             '<th class="text-left py-2 px-2">Email</th><th class="text-left py-2 px-2">Roles</th>' +
-            '<th class="text-left py-2 px-2">Active</th></tr></thead><tbody>';
+            '<th class="text-left py-2 px-2">Active</th><th class="text-left py-2 px-2">Actions</th></tr></thead><tbody>';
           items.forEach(function(u) {
             var roleCells = buildRoleCheckboxes(u.id, u.role);
             var activeToggle = u.is_active
               ? '<button class="toggle-active text-xs text-green-600 hover:text-red-600" data-id="' + u.id + '" data-active="true" title="Click to deactivate">Active</button>'
               : '<button class="toggle-active text-xs text-red-600 hover:text-green-600" data-id="' + u.id + '" data-active="false" title="Click to activate">Inactive</button>';
+            var resetBtn = '<button class="reset-pwd text-xs text-blue-600 hover:text-blue-800 underline" data-id="' + u.id + '" data-username="' + escapeAttr(u.username) + '">Reset Password</button>';
             html += '<tr class="border-b border-gray-100">' +
               '<td class="py-2 px-2 font-medium">' + escapeHtml(u.username) + '</td>' +
               '<td class="py-2 px-2">' + escapeHtml(u.display_name) + '</td>' +
               '<td class="py-2 px-2 text-gray-400">' + escapeHtml(u.email || '-') + '</td>' +
               '<td class="py-2 px-2">' + roleCells + '</td>' +
-              '<td class="py-2 px-2">' + activeToggle + '</td></tr>';
+              '<td class="py-2 px-2">' + activeToggle + '</td>' +
+              '<td class="py-2 px-2">' + resetBtn + '</td></tr>';
           });
           html += '</tbody></table>';
           el.innerHTML = html;
@@ -391,6 +393,26 @@ import Layout from '../../components/layout/Layout.astro';
               });
               if (!res.ok) { var b = await res.json(); alert(b.detail || 'Failed'); }
               loadUsers();
+            });
+          });
+
+          el.querySelectorAll('.reset-pwd').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+              var uid = this.getAttribute('data-id');
+              var uname = this.getAttribute('data-username');
+              var newPwd = prompt('Enter new password for "' + uname + '" (min 4 chars):');
+              if (!newPwd) return;
+              if (newPwd.length < 4) { alert('Password must be at least 4 characters.'); return; }
+              var res = await fetch('/api/admin/users/' + uid + '/reset-password', {
+                method: 'POST', headers: jsonHdr,
+                body: JSON.stringify({ new_password: newPwd })
+              });
+              if (res.ok) {
+                alert('Password reset successfully for "' + uname + '".');
+              } else {
+                var b = await res.json();
+                alert(b.detail || 'Failed to reset password');
+              }
             });
           });
 
