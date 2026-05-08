@@ -609,11 +609,29 @@ import Layout from '../../components/layout/Layout.astro';
       var pct = p.completion_pct || 0;
       document.getElementById('progress-bar').style.width = pct + '%';
       document.getElementById('progress-text').textContent = p.decided_items + '/' + p.total_review_items + ' items reviewed (' + pct + '%)';
-      // Re-render pipeline with review % if wave is loaded
-      if (wave) {
-        var currentStep = statusToStep(wave.status, wave.entity_count || 0);
-        renderPipeline(currentStep, pct);
+      // Use the status from progress (may have been auto-corrected)
+      var effectiveStatus = p.status || (wave && wave.status) || 'draft';
+      if (wave && wave.status !== effectiveStatus) {
+        wave.status = effectiveStatus;
+        // Re-render badge + actions for the corrected status
+        var badge = document.getElementById('wave-status-badge');
+        badge.textContent = effectiveStatus.toUpperCase().replace('_', ' ');
+        badge.className = 'px-3 py-1 rounded-full text-xs font-medium ' + (statusColors[effectiveStatus] || 'bg-gray-100');
+        var actions = '';
+        if (effectiveStatus === 'in_review') {
+          actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Create Scope / Invite Reviewers</button>';
+          actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
+        }
+        if (effectiveStatus === 'signed_off') {
+          actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
+          actions += '<button onclick="exportMDG(\'profit_center\')" class="btn-sm bg-teal-600 text-white">Export PC (MDG)</button>';
+          actions += '<button onclick="exportMDG(\'retire\')" class="btn-sm bg-red-600 text-white">Export Retire List</button>';
+          actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
+        }
+        document.getElementById('wave-actions').innerHTML = actions;
       }
+      var currentStep = statusToStep(effectiveStatus, (wave && wave.entity_count) || 0);
+      renderPipeline(currentStep, pct);
     }).catch(function() {});
   }
   loadWave();
