@@ -1141,7 +1141,10 @@ def transfer_to_explorer(
     """
     if current_user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if current_user.role not in ("admin", "data_manager"):
+    from app.api.deps import _user_roles
+
+    user_roles = _user_roles(current_user)
+    if not user_roles & {"admin", "data_manager"}:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     supported = ["cost-centers", "profit-centers", "entities", "employees", "balances"]
