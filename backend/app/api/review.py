@@ -136,9 +136,12 @@ def scope_items(
     scope = _get_scope(token, db)
 
     # Auto-populate review items if scope has none and wave has a preferred run
-    existing_count = db.execute(
-        select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
-    ).scalar() or 0
+    existing_count = (
+        db.execute(
+            select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
+        ).scalar()
+        or 0
+    )
     if existing_count == 0:
         _auto_populate_scope(scope, db)
 
@@ -357,9 +360,7 @@ def request_new_center(
     scope = _get_scope(token, db)
     from datetime import datetime
 
-    comment_text = (
-        f"NEW CENTER REQUEST — Purpose: {body.purpose} | Target: {body.target_object}"
-    )
+    comment_text = f"NEW CENTER REQUEST — Purpose: {body.purpose} | Target: {body.target_object}"
     if body.responsible:
         comment_text += f" | Responsible: {body.responsible}"
     if body.bs_relevance:
