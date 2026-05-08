@@ -60,59 +60,8 @@ import Layout from '../components/layout/Layout.astro';
       </div>
     </div>
 
-    <!-- Filter bar -->
-    <div class="card mb-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <input type="text" id="review-search" class="input text-sm flex-1 min-w-[200px]" placeholder="Search by cost center, entity, or proposal..." />
-        <select id="review-filter-status" class="input text-sm w-40">
-          <option value="">All statuses</option>
-          <option value="pending">Pending only</option>
-          <option value="decided">Decided only</option>
-        </select>
-        <select id="review-filter-action" class="input text-sm w-40">
-          <option value="">All proposals</option>
-          <option value="KEEP">KEEP</option>
-          <option value="RETIRE">RETIRE</option>
-          <option value="MERGE_MAP">MERGE/MAP</option>
-          <option value="REDESIGN">REDESIGN</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Review items table -->
-    <div class="card">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-gray-900">Review Items</h2>
-        <div class="flex gap-2">
-          <button id="request-new-btn" class="btn-secondary text-xs">+ Request New CC/PC</button>
-          <button id="approve-all-btn" class="btn-success text-xs">Approve All Pending</button>
-          <button id="complete-review-btn" class="btn-primary text-xs">Complete Review</button>
-        </div>
-      </div>
-
-      <p class="text-xs text-gray-500 mb-3">Click a row to see the analysis reasoning (why this proposal was made).</p>
-
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-gray-200">
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Cost Center</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Description</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Entity</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Proposal</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Target</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Status</th>
-              <th class="text-left py-2 px-3 font-medium text-gray-500">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="review-items">
-            <tr><td colspan="7" class="py-8 text-center text-gray-400">Loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div id="review-pagination" class="mt-4 flex justify-center gap-2"></div>
-    </div>
+    <!-- DOD-powered review items table (same as all other data tabs) -->
+    <div id="review-dod-container" class="card"></div>
 
     <!-- Why Panel (hidden, shown on row click) -->
     <div id="why-panel" class="card mt-4 hidden">
@@ -122,69 +71,75 @@ import Layout from '../components/layout/Layout.astro';
       </div>
       <div id="why-content" class="text-sm space-y-2">Loading...</div>
     </div>
+  </div>
 
-    <!-- Request New CC/PC Modal -->
-    <div id="new-center-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900" id="new-center-title">Request New Center</h3>
-          <button id="close-new-modal" class="text-gray-400 hover:text-gray-600">&times;</button>
-        </div>
-        <form id="new-center-form" class="space-y-4">
-          <input type="hidden" id="nc-clone-from" value="" />
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
-              <select id="nc-target-object" class="input text-sm">
-                <option value="CC">Cost Center</option>
-                <option value="PC">Profit Center</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Responsible</label>
-              <input type="text" id="nc-responsible" class="input text-sm" placeholder="Owner name..." />
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Name / Short Text</label>
-            <input type="text" id="nc-name" class="input text-sm" placeholder="Short description..." required />
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Entity (Company Code)</label>
-              <input type="text" id="nc-ccode" class="input text-sm" placeholder="e.g. 1000" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Controlling Area</label>
-              <input type="text" id="nc-coarea" class="input text-sm" placeholder="e.g. 1000" />
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Hierarchy Node (optional)</label>
-            <input type="text" id="nc-hier-node" class="input text-sm" placeholder="Node name to place under..." />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Purpose / Justification</label>
-            <textarea id="nc-purpose" class="input text-sm" rows="3" placeholder="Why is this center needed?" required></textarea>
-          </div>
-          <div id="nc-clone-info" class="hidden bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-700">
-            <strong>Cloning from:</strong> <span id="nc-clone-label"></span>
-            <p class="mt-1 text-blue-600">Fields have been pre-filled from the source center. Amend as needed.</p>
-          </div>
-          <div class="flex justify-end gap-3 pt-2">
-            <button type="button" id="cancel-new-center" class="btn-secondary text-sm">Cancel</button>
-            <button type="submit" class="btn-amplifi text-sm">Submit Request</button>
-          </div>
-        </form>
+  <!-- Request New CC/PC Modal -->
+  <div id="new-center-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900" id="new-center-title">Request New Center</h3>
+        <button id="close-new-modal" class="text-gray-400 hover:text-gray-600">&times;</button>
       </div>
+      <form id="new-center-form" class="space-y-4">
+        <input type="hidden" id="nc-clone-from" value="" />
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select id="nc-target-object" class="input text-sm">
+              <option value="CC">Cost Center</option>
+              <option value="PC">Profit Center</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Responsible</label>
+            <input type="text" id="nc-responsible" class="input text-sm" placeholder="Owner name..." />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Name / Short Text</label>
+          <input type="text" id="nc-name" class="input text-sm" placeholder="Short description..." required />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Entity (Company Code)</label>
+            <input type="text" id="nc-ccode" class="input text-sm" placeholder="e.g. 1000" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Controlling Area</label>
+            <input type="text" id="nc-coarea" class="input text-sm" placeholder="e.g. 1000" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Hierarchy Node</label>
+          <div class="relative">
+            <select id="nc-hier-node" class="input text-sm">
+              <option value="">(none — no hierarchy placement)</option>
+            </select>
+            <p class="text-[10px] text-gray-400 mt-0.5">Select a node under which this center should be placed</p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Purpose / Justification</label>
+          <textarea id="nc-purpose" class="input text-sm" rows="3" placeholder="Why is this center needed?" required></textarea>
+        </div>
+        <div id="nc-clone-info" class="hidden bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-700">
+          <strong>Cloning from:</strong> <span id="nc-clone-label"></span>
+          <p class="mt-1 text-blue-600">Fields have been pre-filled from the source center. Amend as needed.</p>
+        </div>
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" id="cancel-new-center" class="btn-secondary text-sm">Cancel</button>
+          <button type="submit" class="btn-amplifi text-sm">Submit Request</button>
+        </div>
+      </form>
     </div>
   </div>
 </Layout>
 
+<script is:inline src="/data-object-display.js"></script>
 <script is:inline>
   (function() {
     var currentToken = localStorage.getItem('amplifi_review_token') || '';
-    var currentPage = 1;
+    var reviewDod = null;
 
     function authHeaders() {
       var t = localStorage.getItem('amplifi_token');
@@ -197,6 +152,7 @@ import Layout from '../components/layout/Layout.astro';
       return div.innerHTML;
     }
 
+    // ── Scope loading ───────────────────────────────────────────────────
     async function loadScope(token) {
       try {
         var res = await fetch('/api/review/' + token, { headers: authHeaders() });
@@ -210,141 +166,89 @@ import Layout from '../components/layout/Layout.astro';
         document.getElementById('scope-pending').textContent = ((data.total_items || 0) - (data.decided_items || 0)).toLocaleString();
         localStorage.setItem('amplifi_review_token', token);
         currentToken = token;
-        loadItems(token, 1);
+        initReviewDOD(token);
       } catch(err) {
         document.getElementById('token-error').textContent = err.message;
         document.getElementById('token-error').classList.remove('hidden');
       }
     }
 
-    async function loadItems(token, page) {
-      currentPage = page;
-      var tbody = document.getElementById('review-items');
-      tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">Loading...</td></tr>';
-      try {
-        var res = await fetch('/api/review/' + token + '/items?page=' + page + '&size=20', { headers: authHeaders() });
-        if (!res.ok) throw new Error('Failed to load items');
-        var data = await res.json();
-        tbody.innerHTML = '';
-        if (!data.items || data.items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">No items found</td></tr>';
-          return;
-        }
-        // Apply client-side search/filter
-        var searchVal = (document.getElementById('review-search').value || '').toLowerCase();
-        var statusFilter = document.getElementById('review-filter-status').value;
-        var actionFilter = document.getElementById('review-filter-action').value;
-        var filtered = data.items.filter(function(item) {
-          if (searchVal) {
-            var text = ((item.cctr || '') + ' ' + (item.txtsh || '') + ' ' + (item.entity_code || '') + ' ' + (item.cleansing_outcome || '') + ' ' + (item.txtmi || '')).toLowerCase();
-            if (text.indexOf(searchVal) === -1) return false;
-          }
-          if (statusFilter === 'pending' && item.decision && item.decision !== 'PENDING') return false;
-          if (statusFilter === 'decided' && (!item.decision || item.decision === 'PENDING')) return false;
-          if (actionFilter && (item.cleansing_outcome || '').toUpperCase() !== actionFilter) return false;
-          return true;
-        });
-        if (filtered.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-400">No items match your filters</td></tr>';
-          return;
-        }
-        var actionColors = { KEEP: 'bg-green-50 text-green-700', RETIRE: 'bg-red-50 text-red-700', MERGE_MAP: 'bg-purple-50 text-purple-700', REDESIGN: 'bg-blue-50 text-blue-700' };
-        filtered.forEach(function(item) {
-          var tr = document.createElement('tr');
-          tr.className = 'border-b border-gray-100 hover:bg-blue-50 cursor-pointer';
-          tr.setAttribute('data-item-id', item.id);
-          var decided = item.decision && item.decision !== 'PENDING';
-          var action = item.cleansing_outcome || '';
-          var actionCls = actionColors[action.toUpperCase()] || 'bg-amplifi-50 text-amplifi-700';
-          tr.innerHTML =
-            '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(item.cctr || '--') + '</td>' +
-            '<td class="py-2 px-3 text-xs max-w-[200px] truncate">' + escapeHtml(item.txtsh || item.txtmi || '--') + '</td>' +
-            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.entity_code || item.ccode || '--') + '</td>' +
-            '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ' + actionCls + '">' + escapeHtml(action || '--') + '</span></td>' +
-            '<td class="py-2 px-3 text-xs">' + escapeHtml(item.target_object || item.merge_into_cctr || '--') + '</td>' +
-            '<td class="py-2 px-3">' + (decided
-              ? '<span class="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">' + escapeHtml(item.decision) + '</span>'
-              : '<span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700">pending</span>') + '</td>' +
-            '<td class="py-2 px-3 whitespace-nowrap">' + (decided ? '<span class="text-xs text-gray-400">Done</span>' :
-              '<button data-id="' + item.id + '" data-action="APPROVE" class="decide-btn text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 mr-1">Approve</button>' +
-              '<button data-id="' + item.id + '" data-action="REJECT" class="decide-btn text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 mr-1">Reject</button>') +
-              '<button data-clone-cctr="' + escapeHtml(item.cctr || '') + '" data-clone-name="' + escapeHtml(item.txtsh || '') + '" data-clone-ccode="' + escapeHtml(item.ccode || item.entity_code || '') + '" data-clone-responsible="' + escapeHtml(item.responsible || '') + '" class="clone-btn text-xs px-2 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100" title="Clone as new center">Clone</button>' +
-              '</td>';
-          // Row click to show why panel
-          tr.addEventListener('click', function(e) {
-            if (e.target.tagName === 'BUTTON') return;
-            showWhyPanel(item);
-          });
-          tbody.appendChild(tr);
-        });
-
-        // Click handlers
-        tbody.querySelectorAll('.decide-btn').forEach(function(btn) {
-          btn.addEventListener('click', async function() {
-            var itemId = this.getAttribute('data-id');
-            var decision = this.getAttribute('data-action');
-            try {
-              await fetch('/api/review/' + currentToken + '/items/' + itemId + '/decide', {
-                method: 'POST', headers: authHeaders(),
-                body: JSON.stringify({ decision: decision })
-              });
-              loadItems(currentToken, currentPage);
-              loadScope(currentToken);
-            } catch(e) { alert('Failed: ' + e.message); }
-          });
-        });
-
-        // Pagination
-        var pag = document.getElementById('review-pagination');
-        pag.innerHTML = '';
-        var totalPages = Math.ceil((data.total || 0) / 20);
-        if (totalPages > 1) {
-          var pagHtml = '';
-          // Prev button
-          if (page > 1) {
-            pagHtml += '<button data-page="' + (page - 1) + '" class="btn-secondary text-xs px-2 py-1">&laquo; Prev</button>';
-          }
-          // Page numbers: show first, last, current +/- 2, with ellipsis
-          var pages = [];
-          for (var p = 1; p <= totalPages; p++) {
-            if (p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)) {
-              pages.push(p);
-            }
-          }
-          var lastShown = 0;
-          pages.forEach(function(pg) {
-            if (lastShown && pg - lastShown > 1) {
-              pagHtml += '<span class="text-xs text-gray-400 px-1">...</span>';
-            }
-            pagHtml += '<button data-page="' + pg + '" class="' +
-              (pg === page ? 'btn-amplifi' : 'btn-secondary') + ' text-xs px-2 py-1 min-w-[28px]">' + pg + '</button>';
-            lastShown = pg;
-          });
-          // Next button
-          if (page < totalPages) {
-            pagHtml += '<button data-page="' + (page + 1) + '" class="btn-secondary text-xs px-2 py-1">Next &raquo;</button>';
-          }
-          pagHtml += '<span class="text-xs text-gray-400 ml-2">(' + (data.total || 0) + ' items)</span>';
-          pag.innerHTML = pagHtml;
-          pag.querySelectorAll('[data-page]').forEach(function(btn) {
-            btn.addEventListener('click', function() { loadItems(currentToken, parseInt(this.getAttribute('data-page'))); });
-          });
-        }
-      } catch(e) {
-        tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-red-500">' + escapeHtml(e.message) + '</td></tr>';
+    // ── Initialize DataObjectDisplay for review items ────────────────────
+    function initReviewDOD(token) {
+      if (reviewDod) {
+        // Update data endpoint if token changed
+        reviewDod.dataEndpoint = '/api/review/' + token + '/items';
+        reviewDod._page = 1;
+        reviewDod.loadData(function() { reviewDod.render(); });
+        return;
       }
+
+      reviewDod = new window.DataObjectDisplay({
+        objectType: 'review-items',
+        containerId: 'review-dod-container',
+        dataEndpoint: '/api/review/' + token + '/items',
+        hierarchyEndpoint: '/api/legacy/hierarchies',
+        authHeaders: authHeaders(),
+        identityField: 'cctr',
+        showHierarchyPicker: true,
+        showViewToggle: true,
+        showSearch: true,
+        showPagination: true,
+        showCSV: true,
+        pageSize: 50,
+        hierPageSize: 5000,
+        columns: [
+          { key: 'cctr', label: 'Cost Center' },
+          { key: 'txtsh', label: 'Description' },
+          { key: 'ccode', label: 'Entity' },
+          { key: 'cleansing_outcome', label: 'Proposal' },
+          { key: 'target_object', label: 'Target' },
+          { key: 'decision', label: 'Status' },
+          { key: 'responsible', label: 'Responsible' },
+          { key: 'coarea', label: 'Co. Area' }
+        ],
+        excludeColumns: ['id', 'proposal_id', 'comment', 'confidence', 'rule_path', 'merge_into_cctr', 'txtmi', 'cctrcgy', 'currency', 'pctr', 'entity_code', 'routine_outputs'],
+        toolbarButtons: [
+          { label: '+ Request New CC/PC', className: 'text-xs px-3 py-1.5 rounded border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium', title: 'Request a new center', onclick: function() { openNewCenterModal(); } },
+          { label: 'Approve All Pending', className: 'text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 font-medium', title: 'Approve all pending items', onclick: function() { approveAll(); } },
+          { label: 'Complete Review', className: 'text-xs px-3 py-1.5 rounded bg-amplifi-600 text-white hover:bg-amplifi-700 font-medium', title: 'Complete this review', onclick: function() { completeReview(); } }
+        ],
+        rowActions: [
+          { label: 'Approve', className: 'text-xs px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 mr-1', title: 'Approve', onclick: function(row) { decideItem(row.id, 'APPROVED'); } },
+          { label: 'Reject', className: 'text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 mr-1', title: 'Reject', onclick: function(row) { decideItem(row.id, 'NOT_REQUIRED'); } },
+          { label: 'Clone', className: 'text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100', title: 'Clone as new center', onclick: function(row) {
+            if (row._hierNode) {
+              openNewCenterModal({ hierNode: row._hierNode });
+            } else {
+              openNewCenterModal({ cloneFrom: row.cctr, name: row.txtsh, ccode: row.ccode, responsible: row.responsible });
+            }
+          }}
+        ],
+        onRowClick: function(row) { showWhyPanel(row); }
+      });
+
+      reviewDod.loadDisplayConfig(function() {
+        reviewDod.loadHierarchyOptions(function() {
+          reviewDod.loadData(function() {
+            reviewDod.render();
+          });
+        });
+      });
     }
 
-    // Load review button
-    document.getElementById('load-review-btn').addEventListener('click', function() {
-      var token = document.getElementById('review-token').value.trim();
-      if (!token) return;
-      document.getElementById('token-error').classList.add('hidden');
-      loadScope(token);
-    });
+    // ── Actions ─────────────────────────────────────────────────────────
+    async function decideItem(itemId, decision) {
+      try {
+        await fetch('/api/review/' + currentToken + '/items/' + itemId + '/decide', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ decision: decision })
+        });
+        reviewDod.loadData(function() { reviewDod.render(); });
+        refreshScopeSummary();
+      } catch(e) { alert('Failed: ' + e.message); }
+    }
 
-    // Approve all pending
-    document.getElementById('approve-all-btn').addEventListener('click', async function() {
+    async function approveAll() {
       if (!confirm('Approve all pending items?')) return;
       try {
         var res = await fetch('/api/review/' + currentToken + '/items?page=1&size=9999', { headers: authHeaders() });
@@ -355,12 +259,12 @@ import Layout from '../components/layout/Layout.astro';
           method: 'POST', headers: authHeaders(),
           body: JSON.stringify({ item_ids: pendingIds, decision: 'APPROVE' })
         });
-        loadScope(currentToken);
+        reviewDod.loadData(function() { reviewDod.render(); });
+        refreshScopeSummary();
       } catch(e) { alert('Failed: ' + e.message); }
-    });
+    }
 
-    // Complete review
-    document.getElementById('complete-review-btn').addEventListener('click', async function() {
+    async function completeReview() {
       if (!confirm('Complete this review? This cannot be undone.')) return;
       try {
         await fetch('/api/review/' + currentToken + '/complete', { method: 'POST', headers: authHeaders() });
@@ -368,9 +272,20 @@ import Layout from '../components/layout/Layout.astro';
         localStorage.removeItem('amplifi_review_token');
         window.location.reload();
       } catch(e) { alert('Failed: ' + e.message); }
-    });
+    }
 
-    // Why panel
+    async function refreshScopeSummary() {
+      try {
+        var res = await fetch('/api/review/' + currentToken, { headers: authHeaders() });
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('scope-total').textContent = (data.total_items || 0).toLocaleString();
+        document.getElementById('scope-decided').textContent = (data.decided_items || 0).toLocaleString();
+        document.getElementById('scope-pending').textContent = ((data.total_items || 0) - (data.decided_items || 0)).toLocaleString();
+      } catch(e) {}
+    }
+
+    // ── Why panel ───────────────────────────────────────────────────────
     function showWhyPanel(item) {
       var panel = document.getElementById('why-panel');
       var content = document.getElementById('why-content');
@@ -386,27 +301,19 @@ import Layout from '../components/layout/Layout.astro';
       if (item.rule_path) {
         html += '<div class="mt-3 p-3 bg-gray-50 rounded"><h4 class="text-xs font-medium text-gray-600 mb-1">Rule Path</h4><p class="text-xs text-gray-700">' + escapeHtml(item.rule_path) + '</p></div>';
       }
-      if (item.routine_outputs && item.routine_outputs.length) {
-        html += '<div class="mt-3"><h4 class="text-xs font-medium text-gray-600 mb-1">Routine Outputs</h4><div class="space-y-1">';
-        item.routine_outputs.forEach(function(r) {
-          html += '<div class="text-xs p-2 bg-gray-50 rounded"><span class="font-medium">' + escapeHtml(r.routine_code || r.code) + ':</span> ' + escapeHtml(r.verdict || r.outcome) + ' — ' + escapeHtml(r.reason || '') + '</div>';
-        });
-        html += '</div></div>';
-      }
       content.innerHTML = html;
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // Search/filter handlers
-    document.getElementById('review-search').addEventListener('input', function() {
-      clearTimeout(this._t);
-      var self = this;
-      this._t = setTimeout(function() { if (currentToken) loadItems(currentToken, currentPage); }, 300);
+    // ── Load review button ──────────────────────────────────────────────
+    document.getElementById('load-review-btn').addEventListener('click', function() {
+      var token = document.getElementById('review-token').value.trim();
+      if (!token) return;
+      document.getElementById('token-error').classList.add('hidden');
+      loadScope(token);
     });
-    document.getElementById('review-filter-status').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
-    document.getElementById('review-filter-action').addEventListener('change', function() { if (currentToken) loadItems(currentToken, currentPage); });
 
-    // Auto-load assigned review scopes for the logged-in user
+    // ── Auto-load assigned review scopes ────────────────────────────────
     (async function() {
       try {
         var res = await fetch('/api/waves/review-scopes', { headers: authHeaders() });
@@ -439,17 +346,13 @@ import Layout from '../components/layout/Layout.astro';
         });
         list.innerHTML = html;
 
-        // Click handler: load scope by token
         list.querySelectorAll('[data-scope-token]').forEach(function(card) {
           card.addEventListener('click', function() {
             var token = this.getAttribute('data-scope-token');
-            if (token) {
-              loadScope(token);
-            }
+            if (token) loadScope(token);
           });
         });
 
-        // If only one scope and no token loaded yet, auto-load it
         if (scopes.length === 1 && !currentToken && scopes[0].token) {
           loadScope(scopes[0].token);
         }
@@ -462,48 +365,6 @@ import Layout from '../components/layout/Layout.astro';
       loadScope(currentToken);
     }
 
-    // Keyboard navigation for review items table
-    var selectedRow = -1;
-    document.addEventListener('keydown', function(e) {
-      var table = document.querySelector('#review-items-table tbody');
-      if (!table) return;
-      var rows = table.querySelectorAll('tr');
-      if (!rows.length) return;
-
-      if (e.key === 'ArrowDown' || e.key === 'j') {
-        e.preventDefault();
-        selectedRow = Math.min(selectedRow + 1, rows.length - 1);
-        highlightRow(rows);
-      } else if (e.key === 'ArrowUp' || e.key === 'k') {
-        e.preventDefault();
-        selectedRow = Math.max(selectedRow - 1, 0);
-        highlightRow(rows);
-      } else if (e.key === 'Enter' && selectedRow >= 0) {
-        e.preventDefault();
-        var btn = rows[selectedRow].querySelector('button');
-        if (btn) btn.click();
-      } else if (e.key === 'a' && selectedRow >= 0) {
-        // Quick approve
-        var approveBtn = rows[selectedRow].querySelector('.btn-approve');
-        if (approveBtn) approveBtn.click();
-      } else if (e.key === 'r' && selectedRow >= 0) {
-        // Quick reject
-        var rejectBtn = rows[selectedRow].querySelector('.btn-reject');
-        if (rejectBtn) rejectBtn.click();
-      }
-    });
-
-    function highlightRow(rows) {
-      rows.forEach(function(r, i) {
-        r.classList.toggle('bg-amplifi-50', i === selectedRow);
-        r.classList.toggle('ring-2', i === selectedRow);
-        r.classList.toggle('ring-amplifi-300', i === selectedRow);
-      });
-      if (selectedRow >= 0 && rows[selectedRow]) {
-        rows[selectedRow].scrollIntoView({ block: 'nearest' });
-      }
-    }
-
     // ── Request New / Clone Modal ──────────────────────────────────────
     var modal = document.getElementById('new-center-modal');
     function openNewCenterModal(opts) {
@@ -513,8 +374,17 @@ import Layout from '../components/layout/Layout.astro';
       document.getElementById('nc-ccode').value = opts.ccode || '';
       document.getElementById('nc-responsible').value = opts.responsible || '';
       document.getElementById('nc-coarea').value = '';
-      document.getElementById('nc-hier-node').value = '';
       document.getElementById('nc-purpose').value = '';
+      // Set hierarchy picker
+      var hierSelect = document.getElementById('nc-hier-node');
+      if (opts.hierNode) {
+        // Try to select the matching option
+        for (var i = 0; i < hierSelect.options.length; i++) {
+          if (hierSelect.options[i].value === opts.hierNode) { hierSelect.selectedIndex = i; break; }
+        }
+      } else {
+        hierSelect.selectedIndex = 0;
+      }
       if (opts.cloneFrom) {
         document.getElementById('new-center-title').textContent = 'Clone Center: ' + opts.cloneFrom;
         document.getElementById('nc-clone-info').classList.remove('hidden');
@@ -525,25 +395,11 @@ import Layout from '../components/layout/Layout.astro';
       }
       modal.classList.remove('hidden');
     }
-    function closeModal() { modal.classList.add('hidden'); }
+    window.openNewCenterModal = openNewCenterModal;
 
-    document.getElementById('request-new-btn').addEventListener('click', function() { openNewCenterModal(); });
+    function closeModal() { modal.classList.add('hidden'); }
     document.getElementById('close-new-modal').addEventListener('click', closeModal);
     document.getElementById('cancel-new-center').addEventListener('click', closeModal);
-
-    // Clone button handler (delegated)
-    document.getElementById('review-items').addEventListener('click', function(e) {
-      var cloneBtn = e.target.closest('.clone-btn');
-      if (cloneBtn) {
-        e.stopPropagation();
-        openNewCenterModal({
-          cloneFrom: cloneBtn.dataset.cloneCctr,
-          name: cloneBtn.dataset.cloneName,
-          ccode: cloneBtn.dataset.cloneCcode,
-          responsible: cloneBtn.dataset.cloneResponsible
-        });
-      }
-    });
 
     // Submit new center request
     document.getElementById('new-center-form').addEventListener('submit', async function(e) {
@@ -556,7 +412,7 @@ import Layout from '../components/layout/Layout.astro';
         proposed_name: document.getElementById('nc-name').value.trim() || null,
         proposed_ccode: document.getElementById('nc-ccode').value.trim() || null,
         proposed_coarea: document.getElementById('nc-coarea').value.trim() || null,
-        hierarchy_node: document.getElementById('nc-hier-node').value.trim() || null,
+        hierarchy_node: document.getElementById('nc-hier-node').value || null,
         clone_from: document.getElementById('nc-clone-from').value.trim() || null,
       };
       if (!body.purpose) return alert('Please provide a purpose/justification');
@@ -568,11 +424,55 @@ import Layout from '../components/layout/Layout.astro';
         });
         if (!res.ok) { var err = await res.json().catch(function(){return {};}); throw new Error(err.detail || 'Request failed'); }
         closeModal();
-        loadItems(currentToken, currentPage);
-        alert('Request submitted successfully! The admin will review your request.');
+        if (reviewDod) { reviewDod.loadData(function() { reviewDod.render(); }); }
+        refreshScopeSummary();
+        alert('Request submitted! The admin will review it.');
       } catch(err) {
         alert('Error: ' + err.message);
       }
     });
+
+    // ── Load hierarchy nodes for the picker ─────────────────────────────
+    (async function loadHierNodePicker() {
+      function flattenTree(nodes, result) {
+        (nodes || []).forEach(function(n) {
+          if (n.type === 'node' || (n.children && n.children.length)) {
+            result.push({ setname: n.setname, leaf_count: n.leaf_count || 0 });
+          }
+          if (n.children) flattenTree(n.children, result);
+        });
+      }
+      try {
+        var res = await fetch('/api/legacy/hierarchies?size=200', { headers: authHeaders() });
+        if (!res.ok) return;
+        var data = await res.json();
+        var hiers = data.items || data || [];
+        if (!hiers.length) return;
+        var select = document.getElementById('nc-hier-node');
+        for (var h = 0; h < hiers.length; h++) {
+          var hier = hiers[h];
+          var hierId = hier.id;
+          var hierName = hier.description || hier.setname || hier.name || ('Hierarchy ' + hierId);
+          try {
+            var treeRes = await fetch('/api/legacy/hierarchies/' + hierId + '/tree', { headers: authHeaders() });
+            if (!treeRes.ok) continue;
+            var treeData = await treeRes.json();
+            var flatNodes = [];
+            flattenTree(treeData.tree || [], flatNodes);
+            if (flatNodes.length) {
+              var optgroup = document.createElement('optgroup');
+              optgroup.label = hierName;
+              flatNodes.forEach(function(n) {
+                var opt = document.createElement('option');
+                opt.value = n.setname;
+                opt.textContent = n.setname + ' (' + n.leaf_count + ' items)';
+                optgroup.appendChild(opt);
+              });
+              select.appendChild(optgroup);
+            }
+          } catch(e) { /* skip */ }
+        }
+      } catch(e) { /* ignore */ }
+    })();
   })();
 </script>

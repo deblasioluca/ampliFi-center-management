@@ -79,7 +79,9 @@ export function getStaticPaths() {
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-700 mb-1">Hierarchy Node</label>
-            <input id="nc-hier-node" type="text" class="input text-sm w-full" placeholder="Node to place under..." />
+            <select id="nc-hier-node" class="input text-sm w-full">
+              <option value="">(none)</option>
+            </select>
           </div>
         </div>
         <div>
@@ -753,5 +755,48 @@ export function getStaticPaths() {
       if (current) { var id = parseInt(current.id.replace('item-', '')); decide(id, 'COMMENTED'); }
     }
   });
+
+  // Load hierarchy nodes into the picker
+  (async function() {
+    function flattenTree(nodes, result) {
+      (nodes || []).forEach(function(n) {
+        if (n.type === 'node' || (n.children && n.children.length)) {
+          result.push({ setname: n.setname, leaf_count: n.leaf_count || 0 });
+        }
+        if (n.children) flattenTree(n.children, result);
+      });
+    }
+    try {
+      var res = await fetch('/api/legacy/hierarchies?size=200');
+      if (!res.ok) return;
+      var data = await res.json();
+      var hiers = data.items || data || [];
+      if (!hiers.length) return;
+      var select = document.getElementById('nc-hier-node');
+      for (var h = 0; h < hiers.length; h++) {
+        var hier = hiers[h];
+        var hierId = hier.id;
+        var hierName = hier.description || hier.setname || hier.name || ('Hierarchy ' + hierId);
+        try {
+          var treeRes = await fetch('/api/legacy/hierarchies/' + hierId + '/tree');
+          if (!treeRes.ok) continue;
+          var treeData = await treeRes.json();
+          var flatNodes = [];
+          flattenTree(treeData.tree || [], flatNodes);
+          if (flatNodes.length) {
+            var optgroup = document.createElement('optgroup');
+            optgroup.label = hierName;
+            flatNodes.forEach(function(n) {
+              var opt = document.createElement('option');
+              opt.value = n.setname;
+              opt.textContent = n.setname + ' (' + n.leaf_count + ' items)';
+              optgroup.appendChild(opt);
+            });
+            select.appendChild(optgroup);
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+  })();
 })();
 </script>

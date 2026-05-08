@@ -5,9 +5,10 @@ Revises: phase24_scope_segregation
 Create Date: 2026-05-05
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "phase25_v2_decision_tree"
 down_revision = "phase24_scope_segregation"
