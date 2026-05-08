@@ -18,12 +18,15 @@ from app.infra.db.session import get_db
 from app.models.core import (
     AnalysisRun,
     AppUser,
+    CenterMapping,
     CenterProposal,
     Entity,
     HierarchyLeaf,
     LegacyCostCenter,
     ReviewItem,
     ReviewScope,
+    TargetCostCenter,
+    TargetProfitCenter,
     Wave,
     WaveEntity,
     WaveHierarchyScope,
@@ -1541,6 +1544,97 @@ def lock_and_create_targets(
     return result
 
 
+@router.post("/{wave_id}/generate-targets")
+def generate_targets(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
+) -> dict:
+    """Generate target CC/PC records from all approved proposals.
+
+    Every KEEP/MERGE/REDESIGN proposal gets a new target CC (and PC if
+    CC_AND_PC). All SAP attributes are inherited from the legacy source.
+    RETIRE proposals get a mapping record but no target object.
+    """
+    from app.domain.proposal.service import generate_wave_targets
+
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+    if wave.status not in ("signed_off", "closed", "locked", "in_review"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Wave must be signed_off/closed for target generation (current: {wave.status})",
+        )
+
+    try:
+        result = generate_wave_targets(wave_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    return result
+
+
+@router.get("/{wave_id}/target-summary")
+def target_summary(
+    wave_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
+) -> dict:
+    """Get summary of generated targets for a wave."""
+    wave = db.get(Wave, wave_id)
+    if not wave:
+        raise HTTPException(status_code=404, detail="Wave not found")
+
+    cc_count = (
+        db.execute(
+            select(func.count(TargetCostCenter.id)).where(
+                TargetCostCenter.approved_in_wave == wave_id
+            )
+        ).scalar()
+        or 0
+    )
+    pc_count = (
+        db.execute(
+            select(func.count(TargetProfitCenter.id)).where(
+                TargetProfitCenter.approved_in_wave == wave_id
+            )
+        ).scalar()
+        or 0
+    )
+    mapping_count = (
+        db.execute(
+            select(func.count(CenterMapping.id)).where(
+                CenterMapping.notes.like(f"wave:{wave_id} %")
+            )
+        ).scalar()
+        or 0
+    )
+
+    # Breakdown by mapping type
+    type_counts = {}
+    for mapping_type in ["1:1", "merge", "redesign", "retire"]:
+        cnt = (
+            db.execute(
+                select(func.count(CenterMapping.id)).where(
+                    CenterMapping.notes.like(f"wave:{wave_id} %"),
+                    CenterMapping.mapping_type == mapping_type,
+                )
+            ).scalar()
+            or 0
+        )
+        type_counts[mapping_type] = cnt
+
+    return {
+        "wave_id": wave_id,
+        "target_cc_count": cc_count,
+        "target_pc_count": pc_count,
+        "mapping_count": mapping_count,
+        "mapping_breakdown": type_counts,
+        "has_targets": cc_count > 0 or pc_count > 0,
+    }
+
+
 @router.get("/{wave_id}/mdg-export")
 def mdg_export(
     wave_id: int,
@@ -1548,9 +1642,20 @@ def mdg_export(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> dict:
-    """Generate MDG export file for the wave's target objects."""
-    from app.infra.mdg.export import export_cost_centers, export_profit_centers, export_retire_list
-    from app.models.core import TargetCostCenter, TargetProfitCenter
+    """Generate MDG export file for the wave's target objects.
+
+    Export types:
+    - cost_center: Target CC list (SAP CSKS structure) with full SAP fields
+    - profit_center: Target PC list (SAP CEPC structure) with full SAP fields
+    - retire: Decommission list for legacy centers to deactivate
+    - mapping: Old→New CC/PC mapping table
+    """
+    from app.infra.mdg.export import (
+        export_cost_centers,
+        export_mapping_table,
+        export_profit_centers,
+        export_retire_list,
+    )
 
     wave = db.get(Wave, wave_id)
     if not wave:
@@ -1564,21 +1669,14 @@ def mdg_export(
             .scalars()
             .all()
         )
-        centers = [
-            {
-                "cctr": t.cctr,
-                "coarea": t.coarea,
-                "txtsh": t.txtsh,
-                "txtmi": t.txtmi,
-                "responsible": t.responsible,
-                "ccode": t.ccode,
-                "cctrcgy": t.cctrcgy,
-                "currency": t.currency,
-                "pctr": t.pctr,
-            }
-            for t in targets
-        ]
+        if not targets:
+            raise HTTPException(
+                status_code=404,
+                detail="No target cost centers found. Run 'Generate Target Numbers' first.",
+            )
+        centers = [_cc_to_export_dict(t) for t in targets]
         result = export_cost_centers(centers, wave_id)
+
     elif export_type == "profit_center":
         targets = (
             db.execute(
@@ -1587,21 +1685,15 @@ def mdg_export(
             .scalars()
             .all()
         )
-        centers = [
-            {
-                "pctr": t.pctr,
-                "coarea": t.coarea,
-                "txtsh": t.txtsh,
-                "txtmi": t.txtmi,
-                "responsible": t.responsible,
-                "ccode": t.ccode,
-                "currency": t.currency,
-            }
-            for t in targets
-        ]
+        if not targets:
+            raise HTTPException(
+                status_code=404,
+                detail="No target profit centers found. Run 'Generate Target Numbers' first.",
+            )
+        centers = [_pc_to_export_dict(t) for t in targets]
         result = export_profit_centers(centers, wave_id)
+
     elif export_type == "retire":
-        # Get proposals with RETIRE outcome for the preferred run
         preferred_run_id = (wave.config or {}).get("preferred_run_id")
         if not preferred_run_id:
             raise HTTPException(status_code=400, detail="No preferred run set")
@@ -1619,20 +1711,22 @@ def mdg_export(
         for p in proposals:
             cc = db.get(LegacyCostCenter, p.legacy_cc_id)
             if cc:
-                centers.append(
-                    {
-                        "cctr": cc.cctr,
-                        "coarea": cc.coarea,
-                        "txtsh": cc.txtsh,
-                        "txtmi": cc.txtmi,
-                        "responsible": cc.responsible,
-                        "ccode": cc.ccode,
-                        "cctrcgy": cc.cctrcgy,
-                        "currency": cc.currency,
-                        "pctr": cc.pctr,
-                    }
-                )
+                centers.append(_legacy_cc_to_export_dict(cc))
         result = export_retire_list(centers, wave_id)
+
+    elif export_type == "mapping":
+        mappings = (
+            db.execute(select(CenterMapping).where(CenterMapping.notes.like(f"wave:{wave_id} %")))
+            .scalars()
+            .all()
+        )
+        if not mappings:
+            raise HTTPException(
+                status_code=404,
+                detail="No mapping records found. Run 'Generate Target Numbers' first.",
+            )
+        result = export_mapping_table(mappings, wave_id)
+
     else:
         raise HTTPException(status_code=400, detail=f"Invalid export_type: {export_type}")
 
@@ -1641,6 +1735,67 @@ def mdg_export(
         "content": result.content,
         "record_count": result.record_count,
         "export_type": result.export_type,
+    }
+
+
+def _cc_to_export_dict(t: TargetCostCenter) -> dict:
+    """Convert a TargetCostCenter row to a dict for MDG export with full SAP fields."""
+    return {
+        "cctr": t.cctr,
+        "coarea": t.coarea,
+        "txtsh": t.txtsh,
+        "txtmi": t.txtmi,
+        "responsible": t.responsible,
+        "ccode": t.ccode,
+        "cctrcgy": t.cctrcgy,
+        "currency": t.currency,
+        "pctr": t.pctr,
+        "gsber": t.gsber,
+        "werks": t.werks,
+        "kalsm": t.kalsm,
+        "txjcd": t.txjcd,
+        "func_area": t.func_area,
+        "land1": t.land1,
+        "name1": t.name1,
+        "regio": t.regio,
+        "abtei": t.abtei,
+        "datab": t.datab,
+        "datbi": t.datbi,
+    }
+
+
+def _pc_to_export_dict(t: TargetProfitCenter) -> dict:
+    """Convert a TargetProfitCenter row to a dict for MDG export with full SAP fields."""
+    return {
+        "pctr": t.pctr,
+        "coarea": t.coarea,
+        "txtsh": t.txtsh,
+        "txtmi": t.txtmi,
+        "responsible": t.responsible,
+        "ccode": t.ccode,
+        "currency": t.currency,
+        "department": t.department,
+        "land1": t.land1,
+        "name1": t.name1,
+        "regio": t.regio,
+        "datab": t.datab,
+        "datbi": t.datbi,
+        "segment": t.segment,
+    }
+
+
+def _legacy_cc_to_export_dict(cc: LegacyCostCenter) -> dict:
+    """Convert a LegacyCostCenter to a dict for the retire export."""
+    return {
+        "cctr": cc.cctr,
+        "coarea": cc.coarea,
+        "txtsh": cc.txtsh,
+        "txtmi": cc.txtmi,
+        "responsible": cc.responsible,
+        "ccode": cc.ccode,
+        "cctrcgy": cc.cctrcgy,
+        "currency": cc.currency,
+        "pctr": cc.pctr,
     }
 
 

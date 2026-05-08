@@ -56,8 +56,8 @@ import Layout from '../../components/layout/Layout.astro';
         </div>
 
         <div class="flex items-center gap-2">
-          <input type="checkbox" id="legacy-survival" checked class="rounded" />
-          <label for="legacy-survival" class="text-sm text-gray-700">Legacy Survival: KEEP centers retain their original ID</label>
+          <input type="checkbox" id="legacy-survival" class="rounded" />
+          <label for="legacy-survival" class="text-sm text-gray-700">Legacy Survival: KEEP centers retain their original ID (not recommended — every center should get a new number)</label>
         </div>
 
         <button id="btn-save-naming" class="btn-amplifi text-sm w-full">Save Naming Configuration</button>
@@ -78,7 +78,7 @@ import Layout from '../../components/layout/Layout.astro';
         <div class="space-y-2 text-xs">
           <div class="p-2 bg-green-50 rounded flex items-start gap-2">
             <span class="text-green-600 font-bold">KEEP</span>
-            <span>If "Legacy Survival" is enabled, the original CC/PC ID is preserved. No new number is generated.</span>
+            <span>A new target CC/PC number is generated. All SAP attributes are inherited from the legacy center.</span>
           </div>
           <div class="p-2 bg-red-50 rounded flex items-start gap-2">
             <span class="text-red-600 font-bold">RETIRE</span>

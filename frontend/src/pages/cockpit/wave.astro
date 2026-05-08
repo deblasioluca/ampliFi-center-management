@@ -590,9 +590,8 @@ import Layout from '../../components/layout/Layout.astro';
       if (w.status === 'proposed' || w.status === 'locked' || w.status === 'in_review') actions += '<button onclick="document.getElementById(\'scope-overlay\').classList.remove(\'hidden\')" class="btn-sm bg-orange-600 text-white">Create Scope / Invite Reviewers</button>';
       if (w.status === 'in_review') actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
       if (w.status === 'signed_off') {
-        actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
-        actions += '<button onclick="exportMDG(\'profit_center\')" class="btn-sm bg-teal-600 text-white">Export PC (MDG)</button>';
-        actions += '<button onclick="exportMDG(\'retire\')" class="btn-sm bg-red-600 text-white">Export Retire List</button>';
+        actions += '<button onclick="generateTargets()" class="btn-sm bg-teal-600 text-white">Generate Target Numbers</button>';
+        actions += '<a href="/cockpit/mdg-export" class="btn-sm bg-teal-700 text-white inline-block">MDG Export</a>';
         actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
       }
       if (w.status === 'locked') actions += '<button onclick="unlockWave()" class="btn-sm text-yellow-700 border border-yellow-300">Unlock</button>';
@@ -623,9 +622,8 @@ import Layout from '../../components/layout/Layout.astro';
           actions += '<button onclick="signoffWave()" class="btn-sm bg-green-600 text-white">Sign Off</button>';
         }
         if (effectiveStatus === 'signed_off') {
-          actions += '<button onclick="exportMDG(\'cost_center\')" class="btn-sm bg-teal-600 text-white">Export CC (MDG)</button>';
-          actions += '<button onclick="exportMDG(\'profit_center\')" class="btn-sm bg-teal-600 text-white">Export PC (MDG)</button>';
-          actions += '<button onclick="exportMDG(\'retire\')" class="btn-sm bg-red-600 text-white">Export Retire List</button>';
+          actions += '<button onclick="generateTargets()" class="btn-sm bg-teal-600 text-white">Generate Target Numbers</button>';
+          actions += '<a href="/cockpit/mdg-export" class="btn-sm bg-teal-700 text-white inline-block">MDG Export</a>';
           actions += '<button onclick="closeWave()" class="btn-sm bg-gray-600 text-white">Close Wave</button>';
         }
         document.getElementById('wave-actions').innerHTML = actions;
@@ -1456,6 +1454,23 @@ import Layout from '../../components/layout/Layout.astro';
     a.download = d.filename;
     a.click();
     uiAlert('Exported ' + d.record_count + ' records to ' + d.filename);
+  };
+
+  window.generateTargets = async function() {
+    if (!confirm('Generate target CC/PC numbers for all proposals in this wave? This assigns new numbers to every KEEP/MERGE/REDESIGN center.')) return;
+    try {
+      var res = await fetch('/api/waves/' + waveId + '/generate-targets', {
+        method: 'POST',
+        headers: Object.assign({}, authHdr, { 'Content-Type': 'application/json' }),
+      });
+      if (!res.ok) { var d = await res.json(); uiAlert(d.detail || 'Generation failed'); return; }
+      var result = await res.json();
+      if (result.already_generated) {
+        uiAlert('Targets already generated: ' + result.target_cc_count + ' CCs, ' + result.target_pc_count + ' PCs. Go to MDG Export page for details.');
+      } else {
+        uiAlert('Generated ' + result.target_cc_count + ' target CCs, ' + result.target_pc_count + ' target PCs, ' + result.mapping_count + ' mapping records.');
+      }
+    } catch(e) { uiAlert('Error: ' + e.message); }
   };
 
   // ── V2 Simulation Tab ─────────────────────────────────────────────────
