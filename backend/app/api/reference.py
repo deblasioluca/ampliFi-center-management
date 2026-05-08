@@ -358,6 +358,7 @@ def list_entities(
     pag: PaginationParams = Depends(pagination),
     country: str | None = None,
     search: str | None = None,
+    search_values: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
     hierarchy_id: int | None = None,
@@ -377,6 +378,11 @@ def list_entities(
         pattern = f"%{search}%"
         query = query.where(Entity.ccode.ilike(pattern) | Entity.name.ilike(pattern))
         count_q = count_q.where(Entity.ccode.ilike(pattern) | Entity.name.ilike(pattern))
+    if search_values:
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            query = query.where(Entity.ccode.in_(vals))
+            count_q = count_q.where(Entity.ccode.in_(vals))
     total = db.execute(count_q).scalar() or 0
     entities = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
@@ -422,6 +428,7 @@ def list_legacy_ccs(
     coarea: str | None = None,
     cctr: str | None = None,
     search: str | None = None,
+    search_values: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
     hierarchy_id: int | None = None,
@@ -455,6 +462,11 @@ def list_legacy_ccs(
             | LegacyCostCenter.txtsh.ilike(pattern)
             | LegacyCostCenter.txtmi.ilike(pattern)
         )
+    if search_values:
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            query = query.where(LegacyCostCenter.cctr.in_(vals))
+            count_q = count_q.where(LegacyCostCenter.cctr.in_(vals))
     total = db.execute(count_q).scalar() or 0
     ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
@@ -510,6 +522,7 @@ def list_legacy_pcs(
     ccode: str | None = None,
     coarea: str | None = None,
     search: str | None = None,
+    search_values: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
     hierarchy_id: int | None = None,
@@ -540,6 +553,11 @@ def list_legacy_pcs(
             | LegacyProfitCenter.txtsh.ilike(pattern)
             | LegacyProfitCenter.txtmi.ilike(pattern)
         )
+    if search_values:
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            query = query.where(LegacyProfitCenter.pctr.in_(vals))
+            count_q = count_q.where(LegacyProfitCenter.pctr.in_(vals))
     total = db.execute(count_q).scalar() or 0
     pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
@@ -865,6 +883,7 @@ def list_balances(
     coarea: str | None = None,
     cctr: str | None = None,
     fiscal_year: int | None = None,
+    search_values: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
     hierarchy_id: int | None = None,
@@ -889,6 +908,11 @@ def list_balances(
     if fiscal_year:
         query = query.where(Balance.fiscal_year == fiscal_year)
         count_q = count_q.where(Balance.fiscal_year == fiscal_year)
+    if search_values:
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            query = query.where(Balance.cctr.in_(vals))
+            count_q = count_q.where(Balance.cctr.in_(vals))
     total = db.execute(count_q).scalar() or 0
     rows = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
 
