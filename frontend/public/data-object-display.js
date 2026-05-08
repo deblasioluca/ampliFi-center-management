@@ -91,6 +91,7 @@
     this.hierarchyTypes = opts.hierarchyTypes || null;
     this.glHierarchyMode = opts.glHierarchyMode || null;
     this.columns = opts.columns || null;
+    this.excludeColumns = opts.excludeColumns || [];
     this.inlineHierarchies = opts.inlineHierarchies || false;
     this.includeBalances = opts.includeBalances || false;
     this.onDataLoad = opts.onDataLoad || null;
@@ -101,6 +102,8 @@
     this.extraFilters = opts.extraFilters || [];
     // Callback when extra filter changes
     this.onExtraFilterChange = opts.onExtraFilterChange || null;
+    // Callback when hierarchy picker changes (receives hierId or null)
+    this.onHierarchyChange = opts.onHierarchyChange || null;
     // Title shown above the table
     this.title = opts.title || '';
 
@@ -111,6 +114,7 @@
     this._sort = { col: null, dir: 'asc' };
     this._hierPickerId = null;
     this._hierData = null;
+    this._hierAutoSelected = false;
     this._hierOptions = [];
     this._data = null;
     this._displayConfig = null;
@@ -145,16 +149,29 @@
   // ── Get effective table columns ─────────────────────────────────────
 
   DataObjectDisplay.prototype.getTableColumns = function () {
+    var excl = this.excludeColumns;
+    function applyExclude(arr) {
+      if (!excl.length) return arr;
+      return arr.filter(function (c) { return excl.indexOf(c) < 0; });
+    }
     // Check display config first
     if (this._displayConfig) {
       var cols = this._displayConfig.table_columns;
-      if (cols && cols.length) return cols;
+      if (cols && cols.length) return applyExclude(cols);
       cols = (this._displayConfig.all_columns || []).slice(0, 10);
-      if (cols.length) return cols;
+      if (cols.length) return applyExclude(cols);
     }
     // Fallback: use caller-specified columns
     if (this.columns && this.columns.length) {
-      return this.columns.map(function (c) { return c.key || c; });
+      return applyExclude(this.columns.map(function (c) { return c.key || c; }));
+    }
+    // Auto-discover from first data item
+    if (this._data && this._data.items && this._data.items.length) {
+      var first = this._data.items[0];
+      var auto = Object.keys(first).filter(function (k) {
+        return k !== 'levels' && k !== 'monthly_balances';
+      });
+      return applyExclude(auto);
     }
     return [];
   };
@@ -200,7 +217,7 @@
     var items = this._hierOptions;
     if (!items.length && !this.glHierarchyMode) return '';
 
-    var html = '<select class="input text-xs flex-shrink-0" style="max-width:280px" data-dod-role="hier-picker">';
+    var html = '<select class="input text-xs flex-shrink-0" style="max-width:400px" data-dod-role="hier-picker">';
     html += '<option value="">(none — no hierarchy)</option>';
 
     if (this.glHierarchyMode) {
@@ -241,15 +258,18 @@
 
     html += '</select>';
 
-    // Auto-select if only one hierarchy
-    if (!filterTypes) {
-      if (items.length === 1) {
-        this._hierPickerId = items[0].id;
-      }
-    } else {
-      var filtered = items.filter(function (h) { return filterTypes.indexOf(h.setclass) >= 0; });
-      if (filtered.length === 1) {
-        this._hierPickerId = filtered[0].id;
+    // Auto-select only on first load (not every render)
+    if (!this._hierAutoSelected) {
+      this._hierAutoSelected = true;
+      if (!filterTypes) {
+        if (items.length === 1) {
+          this._hierPickerId = items[0].id;
+        }
+      } else {
+        var filtered = items.filter(function (h) { return filterTypes.indexOf(normaliseSetclass(h.setclass)) >= 0; });
+        if (filtered.length === 1) {
+          this._hierPickerId = filtered[0].id;
+        }
       }
     }
 
@@ -339,9 +359,24 @@
 
   // ── Data loading ────────────────────────────────────────────────────
 
+  DataObjectDisplay.prototype._showLoading = function () {
+    var container = document.getElementById(this.containerId);
+    if (!container) return;
+    // Show loading indicator without clearing existing content
+    var existing = container.querySelector('[data-dod-loading]');
+    if (!existing) {
+      var el = document.createElement('div');
+      el.setAttribute('data-dod-loading', '1');
+      el.className = 'text-sm text-gray-500 py-3 flex items-center gap-2';
+      el.innerHTML = '<svg class="animate-spin h-4 w-4 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Loading...';
+      container.insertBefore(el, container.firstChild);
+    }
+  };
+
   DataObjectDisplay.prototype.loadData = function (cb) {
     var self = this;
     if (!this.dataEndpoint) { if (cb) cb(null); return; }
+    this._showLoading();
 
     // Use larger page size in hierarchical mode
     var effectiveSize = (this._view === 'hierarchy') ? this.hierPageSize : this.pageSize;
@@ -728,6 +763,10 @@
     var container = document.getElementById(this.containerId);
     if (!container) return;
 
+    // Remove loading indicator
+    var loadingEl = container.querySelector('[data-dod-loading]');
+    if (loadingEl) loadingEl.remove();
+
     var data = this._data;
     if (!data) {
       container.innerHTML = '<span class="text-sm text-gray-400">Loading...</span>';
@@ -828,7 +867,7 @@
       var key = row[self.identityField] || row.id;
       var lvls = hierMap[key] || {};
       hierLevels.forEach(function (lv) {
-        html += '<td class="py-1.5 px-2 font-mono text-amplifi-700">' + esc(lvls[lv] || '') + '</td>';
+        html += '<td class="py-1.5 px-2 font-mono text-amplifi-700 whitespace-nowrap">' + esc(lvls[lv] || '') + '</td>';
       });
 
       // Data cells
@@ -838,7 +877,7 @@
         if (val === true) display = '<span class="text-green-600">Yes</span>';
         else if (val === false) display = '<span class="text-red-500">No</span>';
         else if (val != null) display = esc(String(val));
-        html += '<td class="py-1.5 px-2" title="' + escAttr(String(val || '')) + '">' + display + '</td>';
+        html += '<td class="py-1.5 px-2 whitespace-nowrap" title="' + escAttr(String(val || '')) + '">' + display + '</td>';
       });
 
       html += '</tr>';
@@ -900,18 +939,25 @@
     }
     if (!this._hierPickerId || !hierData) {
       if (this._hierPickerId && !hierData) {
-        return '<span class="text-gray-400 text-sm">Loading hierarchy tree...</span>';
+        return '<span class="text-gray-400 text-sm"><svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>Loading hierarchy tree...</span>';
       }
-      return '<span class="text-gray-400 text-sm">Select a hierarchy from the picker above to view hierarchical display.</span>';
+      return '<span class="text-gray-400 text-sm">Select a hierarchy from the picker to view hierarchical display.</span>';
     }
 
     var setclass = hierData.setclass || '';
-
-    // Build leaf-items map based on normalised setclass
-    var leafItemsMap = {};
     var normSetclass = normaliseSetclass(setclass);
+
+    // ── Strategy: Use /tree endpoint's nested tree if available ──
+    // The tree endpoint returns enriched nodes with leaf_count and items
+    // (with name lookups). This avoids needing to load ALL data items.
+    if (hierData.tree && hierData.tree.length) {
+      return this._renderHierFromTree(hierData, items);
+    }
+
+    // ── Fallback: inline hierarchy mode (Data Browser) ──
+    // Build leaf-items map from loaded items
+    var leafItemsMap = {};
     if (normSetclass === '0106') {
-      // Entity hierarchy — leaves are ccodes
       items.forEach(function (it) {
         var key = it[self.entityField];
         if (!key) return;
@@ -919,7 +965,6 @@
         leafItemsMap[key].push(it);
       });
     } else if (normSetclass === '0104') {
-      // PC hierarchy — leaves are pctrs
       items.forEach(function (it) {
         var key = it[self.profitCenterField];
         if (!key) return;
@@ -927,7 +972,6 @@
         leafItemsMap[key].push(it);
       });
     } else {
-      // CC hierarchy or default — leaves match identityField
       items.forEach(function (it) {
         var key = it[self.identityField];
         if (!key) return;
@@ -935,7 +979,7 @@
       });
     }
 
-    // Build child map from tree data
+    // Build child map from flat nodes/leaves
     var childMap = {};
     var nodes = hierData.nodes || [];
     var leaves = hierData.leaves || [];
@@ -944,7 +988,7 @@
       var parent = n.parent_setname || n.parent;
       var child = n.child_setname || n.child;
       if (!childMap[parent]) childMap[parent] = [];
-      childMap[parent].push({ type: 'node', name: child, seq: n.seq || 0, description: n.description || '' });
+      childMap[parent].push({ type: 'node', name: child, seq: n.seq || 0 });
     });
     leaves.forEach(function (lf) {
       var parent = lf.setname || lf.parent;
@@ -954,10 +998,7 @@
 
     // Find roots
     var allChildren = {};
-    nodes.forEach(function (n) {
-      var child = n.child_setname || n.child;
-      allChildren[child] = 1;
-    });
+    nodes.forEach(function (n) { allChildren[n.child_setname || n.child] = 1; });
     var roots = [];
     nodes.forEach(function (n) {
       var parent = n.parent_setname || n.parent;
@@ -967,24 +1008,17 @@
       roots.push(nodes[0].parent_setname || nodes[0].parent);
     }
 
-    // Count leaves function
     function countLeaves(nodeName) {
       var ch = childMap[nodeName] || [];
       var cnt = 0;
       ch.forEach(function (c) {
-        if (c.type === 'leaf') {
-          cnt += (leafItemsMap[c.value] || []).length;
-        } else {
-          cnt += countLeaves(c.name);
-        }
+        if (c.type === 'leaf') cnt += (leafItemsMap[c.value] || []).length;
+        else cnt += countLeaves(c.name);
       });
       return cnt;
     }
 
-    // Split panel: tree left, detail right
     var html = '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
-
-    // Left panel — tree
     html += '<div class="w-80 flex-shrink-0 border rounded bg-white overflow-auto">';
 
     var idSeq = 0;
@@ -1000,45 +1034,35 @@
       out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" data-dod-toggle="' + escAttr(nodeId) + '">' +
         (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
       out += '<span data-dod-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' +
-        (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '" title="' + escAttr(nodeName) + '">';
+        (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '">';
       out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
 
       var children = childMap[nodeName] || [];
       children.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
-
       out += '<div id="' + escAttr(nodeId) + '" class="tree-children' + (isExpanded ? '' : ' hidden') + '">';
 
-      // Render child nodes
       children.forEach(function (c) {
         if (c.type === 'node') {
           out += buildTree(c.name, depth + 1);
-        }
-      });
-
-      // Render leaves directly under this node with indentation
-      children.forEach(function (c) {
-        if (c.type === 'leaf') {
+        } else {
           var leafItems = leafItemsMap[c.value] || [];
+          var leafPad = (depth + 1) * 12;
           if (leafItems.length) {
             leafItems.forEach(function (item) {
-              var leafPad = (depth + 1) * 12;
               var isLeafSelected = self._selectedHierNode === ('__leaf__' + c.value);
               out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
                 '<span data-dod-hier-node="__leaf__' + escAttr(c.value) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded font-medium' +
                 (isLeafSelected ? ' text-blue-700 bg-blue-50' : ' text-gray-700') + '">' +
-                '📄 ' + esc(item[self.identityField] || c.value) +
+                esc(item[self.identityField] || c.value) +
                 (item.txtsh ? ' — ' + esc(item.txtsh) : (item.name ? ' — ' + esc(item.name) : '')) +
                 '</span></div>';
             });
           } else {
-            // Leaf without matching item — still show value
-            var leafPad2 = (depth + 1) * 12;
-            out += '<div style="padding-left:' + leafPad2 + 'px" class="py-0.5">' +
-              '<span class="text-xs text-gray-400 px-1">📄 ' + esc(c.value) + ' (no match)</span></div>';
+            out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
+              '<span class="text-xs text-gray-400 px-1">' + esc(c.value) + '</span></div>';
           }
         }
       });
-
       out += '</div>';
       return out;
     }
@@ -1139,6 +1163,168 @@
         else if (val === false) display = '<span class="text-red-500">No</span>';
         else if (val != null) display = esc(String(val));
         html += '<td class="py-1.5 px-2">' + display + '</td>';
+      });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    return html;
+  };
+
+  // ── Hierarchical view from /tree endpoint (enriched nodes) ──────────
+
+  DataObjectDisplay.prototype._renderHierFromTree = function (hierData, items) {
+    var self = this;
+    var treeNodes = hierData.tree || [];
+
+    // Split panel: tree left, detail right
+    var html = '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
+    html += '<div class="w-80 flex-shrink-0 border rounded bg-white overflow-auto">';
+
+    var idSeq = 0;
+
+    function countAll(node) {
+      var cnt = (node.items || []).length;
+      (node.children || []).forEach(function (c) { cnt += countAll(c); });
+      return cnt;
+    }
+
+    function buildNode(node, depth) {
+      idSeq++;
+      var nodeId = self.containerId + '-tt-' + idSeq;
+      var pad = depth * 12;
+      var lc = node.leaf_count || countAll(node);
+      var hasChildren = (node.children && node.children.length) || (node.items && node.items.length);
+      var isSelected = self._selectedHierNode === node.setname;
+      var isExpanded = self._allExpanded || self._expandedNodes[node.setname] !== false;
+
+      var out = '<div style="padding-left:' + pad + 'px" class="py-0.5 flex items-center gap-1">';
+      if (hasChildren) {
+        out += '<span class="text-[10px] text-gray-400 cursor-pointer select-none" data-dod-toggle="' + escAttr(nodeId) + '">' +
+          (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
+      } else {
+        out += '<span class="text-[10px] w-3"></span>';
+      }
+      out += '<span data-dod-hier-node="' + escAttr(node.setname) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' +
+        (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '">';
+      out += esc(node.setname) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
+
+      out += '<div id="' + escAttr(nodeId) + '" class="tree-children' + (isExpanded ? '' : ' hidden') + '">';
+
+      // Child nodes
+      (node.children || []).forEach(function (c) { out += buildNode(c, depth + 1); });
+
+      // Leaf items directly under this node
+      (node.items || []).forEach(function (item) {
+        var leafPad = (depth + 1) * 12;
+        var leafKey = item.value || item.id_field || '';
+        var isLeafSelected = self._selectedHierNode === ('__leaf__' + leafKey);
+        out += '<div style="padding-left:' + leafPad + 'px" class="py-0.5">' +
+          '<span data-dod-hier-node="__leaf__' + escAttr(leafKey) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded font-medium' +
+          (isLeafSelected ? ' text-blue-700 bg-blue-50' : ' text-gray-700') + '">' +
+          esc(leafKey) + (item.name ? ' — ' + esc(item.name) : '') +
+          '</span></div>';
+      });
+
+      out += '</div>';
+      return out;
+    }
+
+    treeNodes.forEach(function (root) { html += buildNode(root, 0); });
+    html += '</div>';
+
+    // Right panel — detail table
+    html += '<div class="flex-1 border rounded bg-white overflow-auto">';
+    if (this._selectedHierNode) {
+      html += this._renderHierTreeDetail(hierData, items);
+    } else {
+      html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a node in the tree to view details.</div>';
+    }
+    html += '</div></div>';
+    return html;
+  };
+
+  // Detail panel for tree-based hierarchical view
+  DataObjectDisplay.prototype._renderHierTreeDetail = function (hierData, items) {
+    var self = this;
+    var selected = this._selectedHierNode;
+    var cols = this.getTableColumns();
+
+    // Find the selected node in the tree and collect all leaf items under it
+    function findNode(nodes, name) {
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].setname === name) return nodes[i];
+        var found = findNode(nodes[i].children || [], name);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function collectItems(node) {
+      var result = (node.items || []).slice();
+      (node.children || []).forEach(function (c) {
+        result = result.concat(collectItems(c));
+      });
+      return result;
+    }
+
+    var detailItems = [];
+    if (selected && selected.indexOf('__leaf__') === 0) {
+      var leafVal = selected.substring(8);
+      // Find this leaf in tree items
+      function findLeaf(nodes) {
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var it = (node.items || []).filter(function (x) { return (x.value || x.id_field) === leafVal; });
+          if (it.length) return it;
+          var found = findLeaf(node.children || []);
+          if (found) return found;
+        }
+        return null;
+      }
+      detailItems = findLeaf(hierData.tree || []) || [];
+    } else if (selected) {
+      var node = findNode(hierData.tree || [], selected);
+      if (node) detailItems = collectItems(node);
+    }
+
+    if (!detailItems.length) {
+      return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No items under this node.</div>';
+    }
+
+    // Build detail table from tree items (these have enriched fields: value, name, ccode, pctr, etc.)
+    var detailCols = [];
+    if (detailItems.length) {
+      var first = detailItems[0];
+      Object.keys(first).forEach(function (k) {
+        if (k !== 'value') detailCols.push(k);
+      });
+      // Prepend value as first column
+      detailCols.unshift('value');
+    }
+    // Use configured cols if they exist and match, otherwise use tree item fields
+    if (cols.length) {
+      // Check if the tree items have the configured column fields
+      var treeCols = Object.keys(detailItems[0] || {});
+      var overlap = cols.filter(function (c) { return treeCols.indexOf(c) >= 0; });
+      if (overlap.length) detailCols = overlap;
+    }
+
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">';
+    detailCols.forEach(function (col) {
+      html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    detailItems.forEach(function (row) {
+      html += '<tr class="border-b hover:bg-gray-50">';
+      detailCols.forEach(function (col) {
+        var val = row[col];
+        var display = '';
+        if (val === true) display = '<span class="text-green-600">Yes</span>';
+        else if (val === false) display = '<span class="text-red-500">No</span>';
+        else if (val != null) display = esc(String(val));
+        html += '<td class="py-1.5 px-2 whitespace-nowrap">' + display + '</td>';
       });
       html += '</tr>';
     });
@@ -1270,6 +1456,9 @@
           self._hierPickerId = parseInt(val, 10);
           self._hierData = null;
         }
+
+        // Let caller react to hierarchy changes (e.g. Hierarchies tab switches endpoint)
+        if (self.onHierarchyChange) self.onHierarchyChange(self._hierPickerId);
 
         // Always re-fetch data (for hierarchy_id param or inline hierarchies)
         self.loadData(function () {
