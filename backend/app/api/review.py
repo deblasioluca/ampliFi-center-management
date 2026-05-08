@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
@@ -132,6 +132,8 @@ def scope_items(
     pag: PaginationParams = Depends(pagination),
     decision: str | None = None,
     search: str | None = None,
+    hierarchy_id: int | None = Query(None),
+    search_values: str | None = Query(None),
 ) -> dict:
     scope = _get_scope(token, db)
 
@@ -152,49 +154,64 @@ def scope_items(
     )
     if decision:
         query = query.where(ReviewItem.decision == decision)
+    # Determine if we need the CC join (for search or search_values)
+    needs_cc_join = bool(search or search_values)
+    if needs_cc_join:
+        from app.models.core import LegacyCostCenter
+
+        query = query.join(
+            CenterProposal,
+            ReviewItem.proposal_id == CenterProposal.id,
+            isouter=True,
+        ).join(
+            LegacyCostCenter,
+            CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+            isouter=True,
+        )
     if search:
         from app.models.core import LegacyCostCenter
 
-        query = (
-            query.join(
-                CenterProposal,
-                ReviewItem.proposal_id == CenterProposal.id,
-                isouter=True,
-            )
-            .join(
-                LegacyCostCenter,
-                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
-                isouter=True,
-            )
-            .where(
-                LegacyCostCenter.cctr.ilike(f"%{search}%")
-                | LegacyCostCenter.txtsh.ilike(f"%{search}%")
-                | LegacyCostCenter.ccode.ilike(f"%{search}%")
-            )
+        query = query.where(
+            LegacyCostCenter.cctr.ilike(f"%{search}%")
+            | LegacyCostCenter.txtsh.ilike(f"%{search}%")
+            | LegacyCostCenter.ccode.ilike(f"%{search}%")
         )
+    if search_values:
+        from app.models.core import LegacyCostCenter
+
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            query = query.where(LegacyCostCenter.cctr.in_(vals))
+
     total_q = select(func.count(ReviewItem.id)).where(ReviewItem.scope_id == scope.id)
     if decision:
         total_q = total_q.where(ReviewItem.decision == decision)
+    if needs_cc_join:
+        from app.models.core import LegacyCostCenter
+
+        total_q = total_q.join(
+            CenterProposal,
+            ReviewItem.proposal_id == CenterProposal.id,
+            isouter=True,
+        ).join(
+            LegacyCostCenter,
+            CenterProposal.legacy_cc_id == LegacyCostCenter.id,
+            isouter=True,
+        )
     if search:
         from app.models.core import LegacyCostCenter
 
-        total_q = (
-            total_q.join(
-                CenterProposal,
-                ReviewItem.proposal_id == CenterProposal.id,
-                isouter=True,
-            )
-            .join(
-                LegacyCostCenter,
-                CenterProposal.legacy_cc_id == LegacyCostCenter.id,
-                isouter=True,
-            )
-            .where(
-                LegacyCostCenter.cctr.ilike(f"%{search}%")
-                | LegacyCostCenter.txtsh.ilike(f"%{search}%")
-                | LegacyCostCenter.ccode.ilike(f"%{search}%")
-            )
+        total_q = total_q.where(
+            LegacyCostCenter.cctr.ilike(f"%{search}%")
+            | LegacyCostCenter.txtsh.ilike(f"%{search}%")
+            | LegacyCostCenter.ccode.ilike(f"%{search}%")
         )
+    if search_values:
+        from app.models.core import LegacyCostCenter
+
+        vals = [v.strip() for v in search_values.split(",") if v.strip()]
+        if vals:
+            total_q = total_q.where(LegacyCostCenter.cctr.in_(vals))
     total = db.execute(total_q).scalar() or 0
     result = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size))
     items = result.unique().scalars().all()
@@ -252,10 +269,24 @@ def scope_items(
             row["cctrcgy"] = None
             row["currency"] = None
         enriched.append(row)
+
+    # Resolve hierarchy paths if hierarchy_id is specified
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    if hierarchy_id is not None and enriched:
+        from app.api.reference import _resolve_hierarchy_paths
+
+        leaf_values = [r["cctr"] for r in enriched if r.get("cctr")]
+        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, leaf_values)
+        for row in enriched:
+            row["levels"] = paths.get(row.get("cctr") or "", [])
+
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
+        "hierarchy_id": hierarchy_id,
+        "hierarchy_max_depth": max_depth,
         "items": enriched,
     }
 

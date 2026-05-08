@@ -128,6 +128,7 @@
     this._selectedHierNode = null;
     this._idSeq = 0;
     this._hierInlined = false;
+    this._hierDetailItems = [];
   }
 
   // ── Display config loading ──────────────────────────────────────────
@@ -1386,10 +1387,13 @@
     detailCols.forEach(function (col) {
       html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
     });
+    if (self.rowActions.length) {
+      html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">Actions</th>';
+    }
     html += '</tr></thead><tbody>';
 
-    detailItems.forEach(function (row) {
-      html += '<tr class="border-b hover:bg-gray-50">';
+    detailItems.forEach(function (row, rowIdx) {
+      html += '<tr class="border-b hover:bg-gray-50" data-dod-row-idx="' + rowIdx + '">';
       detailCols.forEach(function (col) {
         var val = row[col];
         var display = '';
@@ -1398,10 +1402,21 @@
         else if (val != null) display = esc(String(val));
         html += '<td class="py-1.5 px-2 whitespace-nowrap">' + display + '</td>';
       });
+      if (self.rowActions.length) {
+        html += '<td class="py-1.5 px-2 whitespace-nowrap">';
+        self.rowActions.forEach(function (act, actIdx) {
+          html += '<button data-dod-role="row-action" data-dod-action-idx="' + actIdx + '" data-dod-row-idx="' + rowIdx + '" ' +
+            'class="' + (act.className || 'text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-100 mr-1') + '" ' +
+            'title="' + escAttr(act.title || act.label) + '">' + esc(act.label) + '</button>';
+        });
+        html += '</td>';
+      }
       html += '</tr>';
     });
 
     html += '</tbody></table>';
+    // Store detail items for row-action click resolution
+    self._hierDetailItems = detailItems;
     return html;
   };
 
@@ -1504,10 +1519,13 @@
     detailCols.forEach(function (col) {
       html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
     });
+    if (self.rowActions.length) {
+      html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">Actions</th>';
+    }
     html += '</tr></thead><tbody>';
 
-    items.forEach(function (row) {
-      html += '<tr class="border-b hover:bg-gray-50">';
+    items.forEach(function (row, rowIdx) {
+      html += '<tr class="border-b hover:bg-gray-50" data-dod-row-idx="' + rowIdx + '">';
       detailCols.forEach(function (col) {
         var val = row[col];
         var display = '';
@@ -1516,10 +1534,37 @@
         else if (val != null) display = esc(String(val));
         html += '<td class="py-1.5 px-2 whitespace-nowrap">' + display + '</td>';
       });
+      if (self.rowActions.length) {
+        html += '<td class="py-1.5 px-2 whitespace-nowrap">';
+        self.rowActions.forEach(function (act, actIdx) {
+          html += '<button data-dod-role="row-action" data-dod-action-idx="' + actIdx + '" data-dod-row-idx="' + rowIdx + '" ' +
+            'class="' + (act.className || 'text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-100 mr-1') + '" ' +
+            'title="' + escAttr(act.title || act.label) + '">' + esc(act.label) + '</button>';
+        });
+        html += '</td>';
+      }
       html += '</tr>';
     });
     html += '</tbody></table>';
+    // Store detail items for row-action resolution
+    self._hierDetailItems = items;
     detailEl.innerHTML = html;
+
+    // Bind row action listeners on the newly rendered detail panel
+    if (self.rowActions.length) {
+      detailEl.querySelectorAll('[data-dod-role="row-action"]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var actIdx = parseInt(this.dataset.dodActionIdx, 10);
+          var rowIdx = parseInt(this.dataset.dodRowIdx, 10);
+          var act = self.rowActions[actIdx];
+          var row = items[rowIdx];
+          if (act && act.onclick && row) {
+            act.onclick(row, self);
+          }
+        });
+      });
+    }
   };
 
   // ── GL artificial hierarchical view ─────────────────────────────────
@@ -1805,7 +1850,7 @@
       }
     });
 
-    // Row action buttons (tabular view)
+    // Row action buttons (tabular + hierarchical detail)
     if (self.rowActions.length) {
       container.querySelectorAll('[data-dod-role="row-action"]').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
@@ -1813,7 +1858,9 @@
           var actIdx = parseInt(this.dataset.dodActionIdx, 10);
           var rowIdx = parseInt(this.dataset.dodRowIdx, 10);
           var act = self.rowActions[actIdx];
-          var items = self._lastRenderedItems || (self._data ? self._data.items : []) || [];
+          var items = (self._view === 'hierarchical' && self._hierDetailItems && self._hierDetailItems.length)
+            ? self._hierDetailItems
+            : (self._lastRenderedItems || (self._data ? self._data.items : []) || []);
           var row = items[rowIdx];
           if (act && act.onclick && row) {
             act.onclick(row, self);
