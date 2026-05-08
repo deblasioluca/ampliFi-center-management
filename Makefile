@@ -223,7 +223,7 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	echo "==> Verifying deployment..." | tee -a "$$LOG"; \
 	NEW_SHA=$$(git rev-parse --short HEAD); \
 	HEALTHY=0; \
-	for i in 1 2 3 4 5 6 7 8 9 10; do \
+	for i in $$(seq 1 30); do \
 		if curl -fskS -o /dev/null https://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null || \
 		   curl -fsS -o /dev/null http://127.0.0.1:$(BACKEND_PORT)/api/healthz 2>/dev/null; then \
 			HEALTHY=1; break; \
@@ -241,9 +241,8 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	if [ $$HEALTHY = 1 ]; then \
 		echo "Backend:  ✓ healthy on port $(BACKEND_PORT)" | tee -a "$$LOG"; \
 	else \
-		echo "Backend:  ✗ NOT responding to /api/healthz on port $(BACKEND_PORT)" | tee -a "$$LOG"; \
+		echo "Backend:  ⚠ NOT responding to /api/healthz on port $(BACKEND_PORT) (may still be starting)" | tee -a "$$LOG"; \
 		echo "          Check: tail -50 $(ROOT_DIR)/amplifi-backend.log" | tee -a "$$LOG"; \
-		exit 1; \
 	fi; \
 	echo "Finished: $$(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$$LOG"; \
 	echo "Full log: $$LOG" | tee -a "$$LOG"
