@@ -462,9 +462,7 @@ def complete_review(token: str, db: Session = Depends(get_db)) -> dict:
         wave = db.get(Wave, scope.wave_id)
         if wave and wave.status == "in_review":
             all_scopes = (
-                db.execute(
-                    select(ReviewScope).where(ReviewScope.wave_id == wave.id)
-                )
+                db.execute(select(ReviewScope).where(ReviewScope.wave_id == wave.id))
                 .scalars()
                 .all()
             )
