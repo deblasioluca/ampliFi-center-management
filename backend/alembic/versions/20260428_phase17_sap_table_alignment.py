@@ -8,8 +8,9 @@ Revises: phase16_explorer_src
 Create Date: 2026-04-28
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "phase17_sap_align"
 down_revision = "phase16_explorer_src"

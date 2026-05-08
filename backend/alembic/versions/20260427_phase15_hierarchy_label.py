@@ -5,8 +5,9 @@ Revises: phase14_datasphere
 Create Date: 2026-04-27
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "phase15_hierarchy_label"
 down_revision = "phase14_datasphere"
