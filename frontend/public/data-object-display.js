@@ -106,6 +106,8 @@
     this.onHierarchyChange = opts.onHierarchyChange || null;
     // Title shown above the table
     this.title = opts.title || '';
+    // Row action buttons: [{label, className, title, onclick(row, self)}]
+    this.rowActions = opts.rowActions || [];
 
     // State
     this._view = opts.defaultView || 'tabular';
@@ -819,6 +821,7 @@
     var hierMap = this._cachedHierMap || {};
 
     var sorted = this.sortItems(items, hierMap);
+    this._lastRenderedItems = sorted;
 
     // Header
     var html = '<div class="overflow-x-auto overflow-y-auto" style="max-height:calc(100vh - 480px)">';
@@ -830,9 +833,9 @@
       html += '<th class="py-1.5 px-2 text-left font-medium bg-amplifi-50 relative" style="position:relative">' +
         '<div class="flex items-center gap-1">' +
         '<span class="cursor-pointer flex-1" data-dod-sort="' + escAttr(lv) + '">' + esc(lv) + self._sortIcon(lv) + '</span>' +
-        '<span data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(lv) + '" ' +
-        'class="cursor-pointer text-[10px] px-0.5 rounded hover:bg-blue-100' +
-        (isLvFiltered ? ' text-blue-600 font-bold' : ' text-gray-400') + '" title="Filter">&#9660;</span>' +
+        '<button data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(lv) + '" ' +
+        'class="cursor-pointer text-xs px-1 py-0.5 rounded border border-gray-300 hover:bg-blue-100 hover:border-blue-400 leading-none' +
+        (isLvFiltered ? ' bg-blue-100 text-blue-700 border-blue-400 font-bold' : ' text-gray-500 bg-white') + '" title="Filter column">&#9660;</button>' +
         '</div>';
       if (self._openFilterCol === lv) {
         html += self._buildFilterDropdown(lv);
@@ -847,9 +850,9 @@
         '<div class="flex items-center gap-1">' +
         '<span class="cursor-pointer flex-1" data-dod-sort="' + escAttr(col) + '">' +
         esc(self.colLabel(col)) + self._sortIcon(col) + '</span>' +
-        '<span data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(col) + '" ' +
-        'class="cursor-pointer text-[10px] px-0.5 rounded hover:bg-blue-100' +
-        (isColFiltered ? ' text-blue-600 font-bold' : ' text-gray-400') + '" title="Filter">&#9660;</span>' +
+        '<button data-dod-role="filter-toggle" data-dod-filter-col="' + escAttr(col) + '" ' +
+        'class="cursor-pointer text-xs px-1 py-0.5 rounded border border-gray-300 hover:bg-blue-100 hover:border-blue-400 leading-none' +
+        (isColFiltered ? ' bg-blue-100 text-blue-700 border-blue-400 font-bold' : ' text-gray-500 bg-white') + '" title="Filter column">&#9660;</button>' +
         '</div>';
       if (self._openFilterCol === col) {
         html += self._buildFilterDropdown(col);
@@ -857,11 +860,15 @@
       html += '</th>';
     });
 
+    // Actions column header
+    if (self.rowActions.length) {
+      html += '<th class="py-1.5 px-2 text-left font-medium text-gray-500">Actions</th>';
+    }
     html += '</tr></thead><tbody>';
 
     // Rows
-    sorted.forEach(function (row) {
-      html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-id="' + (row.id || '') + '">';
+    sorted.forEach(function (row, rowIdx) {
+      html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-id="' + (row.id || '') + '" data-dod-row-idx="' + rowIdx + '">';
 
       // Hierarchy level cells
       var key = row[self.identityField] || row.id;
@@ -879,6 +886,17 @@
         else if (val != null) display = esc(String(val));
         html += '<td class="py-1.5 px-2 whitespace-nowrap" title="' + escAttr(String(val || '')) + '">' + display + '</td>';
       });
+
+      // Action buttons
+      if (self.rowActions.length) {
+        html += '<td class="py-1.5 px-2 whitespace-nowrap">';
+        self.rowActions.forEach(function (act, actIdx) {
+          html += '<button data-dod-role="row-action" data-dod-action-idx="' + actIdx + '" data-dod-row-idx="' + rowIdx + '" ' +
+            'class="' + (act.className || 'text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-100 mr-1') + '" ' +
+            'title="' + escAttr(act.title || act.label) + '">' + esc(act.label) + '</button>';
+        });
+        html += '</td>';
+      }
 
       html += '</tr>';
     });
@@ -1035,7 +1053,11 @@
         (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
       out += '<span data-dod-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' +
         (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '">';
-      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
+      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span>';
+      if (self.rowActions.length) {
+        out += '<button data-dod-role="node-add" data-dod-node-name="' + escAttr(nodeName) + '" class="text-[10px] px-1 py-0 rounded border border-gray-300 text-gray-500 hover:bg-blue-50 hover:text-blue-600 ml-1" title="Add new under this node">+</button>';
+      }
+      out += '</div>';
 
       var children = childMap[nodeName] || [];
       children.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
@@ -1301,8 +1323,6 @@
     }
 
     // Cross-reference loaded data items with leaf values for richer detail.
-    // This is essential for Balances/Entities where tree items only have basic
-    // CC/PC/Entity info but loaded items have the actual data (amounts, etc.).
     var idField = this.identityField || 'cctr';
     var entityField = this.entityField;
     var matchedItems = [];
@@ -1314,6 +1334,27 @@
         if (entityField && leafSet[row[entityField]]) return true;
         return false;
       });
+    }
+
+    // If we have fewer matches than leaf values and a data endpoint exists,
+    // fetch ALL items for these leaf values on demand.
+    if (leafValues.length && matchedItems.length < leafValues.length && this.dataEndpoint) {
+      // Return a loading placeholder and trigger async fetch
+      var detailId = this.containerId + '-hier-detail';
+      var detailEl = document.getElementById(detailId);
+      if (!detailEl) {
+        // Render a container we can find later
+        var placeholder = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+          '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
+          'Loading ' + leafValues.length + ' items...</div>';
+        // Schedule async fetch
+        this._fetchNodeItems(leafValues, treeLeafItems);
+        return placeholder;
+      }
+      this._fetchNodeItems(leafValues, treeLeafItems);
+      return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+        '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
+        'Loading ' + leafValues.length + ' items...</div>';
     }
 
     // Prefer loaded data items if they exist (they have more detail), else use tree items
@@ -1362,6 +1403,123 @@
 
     html += '</tbody></table>';
     return html;
+  };
+
+  // ── Fetch items for selected hierarchy node on demand ────────────────
+
+  DataObjectDisplay.prototype._fetchNodeItems = function (leafValues, fallbackItems) {
+    var self = this;
+    // Avoid duplicate fetches for the same selection
+    var cacheKey = leafValues.slice().sort().join(',');
+    if (this._lastNodeFetchKey === cacheKey) return;
+    this._lastNodeFetchKey = cacheKey;
+
+    // Build search query from leaf values (batch in chunks to avoid URL length issues)
+    // Use a POST-style approach via search param with comma-separated values
+    var params = [];
+    params.push('page=1');
+    // Limit to a reasonable batch — fetch up to 500 items for the selected node
+    params.push('size=500');
+    if (leafValues.length <= 200) {
+      params.push('search_values=' + encodeURIComponent(leafValues.join(',')));
+    } else {
+      // Too many values — use search to narrow by the first few unique prefixes
+      // Fallback: just use a large page fetch without filter
+      params.push('size=5000');
+    }
+
+    // Add scope/category params if present
+    var eq = this.extraQueryParams;
+    Object.keys(eq).forEach(function (k) {
+      if (eq[k] != null && eq[k] !== '') params.push(k + '=' + encodeURIComponent(eq[k]));
+    });
+
+    var fetchFn = window.apiFetch || fetch;
+    fetchFn(this.apiBase + this.dataEndpoint + '?' + params.join('&'), {
+      headers: this.authHeaders,
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var fetchedItems = d.items || [];
+        if (fetchedItems.length) {
+          // Filter to only items matching our leaf values
+          var leafSet = {};
+          leafValues.forEach(function (v) { leafSet[v] = true; });
+          var idField = self.identityField || 'cctr';
+          var entityField = self.entityField;
+          var matched = fetchedItems.filter(function (row) {
+            if (leafSet[row[idField]]) return true;
+            if (entityField && leafSet[row[entityField]]) return true;
+            return false;
+          });
+          if (matched.length) {
+            self._nodeDetailCache = matched;
+          } else {
+            self._nodeDetailCache = fetchedItems.length ? fetchedItems : fallbackItems;
+          }
+        } else {
+          self._nodeDetailCache = fallbackItems;
+        }
+        // Re-render the detail panel only
+        self._updateDetailPanel();
+      })
+      .catch(function () {
+        self._nodeDetailCache = fallbackItems;
+        self._updateDetailPanel();
+      });
+  };
+
+  DataObjectDisplay.prototype._updateDetailPanel = function () {
+    var container = document.getElementById(this.containerId);
+    if (!container) return;
+    // Find the detail panel — it's the second child of the flex container
+    var detailEl = container.querySelector('.flex-1.border.rounded.bg-white.overflow-auto');
+    if (!detailEl) return;
+
+    var items = this._nodeDetailCache || [];
+    if (!items.length) {
+      detailEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No items under this node.</div>';
+      return;
+    }
+
+    var self = this;
+    var cols = this.getTableColumns();
+    // Build detail table columns
+    var detailCols = [];
+    var first = items[0];
+    Object.keys(first).forEach(function (k) {
+      if (k !== 'levels' && k !== 'monthly_balances') detailCols.push(k);
+    });
+    if (cols.length) {
+      var itemCols = Object.keys(first);
+      var overlap = cols.filter(function (c) { return itemCols.indexOf(c) >= 0; });
+      if (overlap.length) detailCols = overlap;
+    }
+    var excl = this.excludeColumns;
+    if (excl.length) {
+      detailCols = detailCols.filter(function (c) { return excl.indexOf(c) < 0; });
+    }
+
+    var html = '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50">';
+    detailCols.forEach(function (col) {
+      html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    items.forEach(function (row) {
+      html += '<tr class="border-b hover:bg-gray-50">';
+      detailCols.forEach(function (col) {
+        var val = row[col];
+        var display = '';
+        if (val === true) display = '<span class="text-green-600">Yes</span>';
+        else if (val === false) display = '<span class="text-red-500">No</span>';
+        else if (val != null) display = esc(String(val));
+        html += '<td class="py-1.5 px-2 whitespace-nowrap">' + display + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    detailEl.innerHTML = html;
   };
 
   // ── GL artificial hierarchical view ─────────────────────────────────
@@ -1501,7 +1659,7 @@
     // Sorting
     container.querySelectorAll('[data-dod-sort]').forEach(function (th) {
       th.addEventListener('click', function (e) {
-        if (e.target.tagName === 'INPUT') return; // don't sort on filter click
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('[data-dod-role="filter-toggle"]')) return;
         var col = this.dataset.dodSort;
         if (self._sort.col === col) {
           self._sort.dir = self._sort.dir === 'asc' ? 'desc' : 'asc';
@@ -1646,6 +1804,34 @@
         el.addEventListener('click', function () { btn.onclick(self); });
       }
     });
+
+    // Row action buttons (tabular view)
+    if (self.rowActions.length) {
+      container.querySelectorAll('[data-dod-role="row-action"]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var actIdx = parseInt(this.dataset.dodActionIdx, 10);
+          var rowIdx = parseInt(this.dataset.dodRowIdx, 10);
+          var act = self.rowActions[actIdx];
+          var items = self._lastRenderedItems || (self._data ? self._data.items : []) || [];
+          var row = items[rowIdx];
+          if (act && act.onclick && row) {
+            act.onclick(row, self);
+          }
+        });
+      });
+      // Node-add buttons (hierarchical view)
+      container.querySelectorAll('[data-dod-role="node-add"]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var nodeName = this.dataset.dodNodeName;
+          var act = self.rowActions[0]; // First action = "Add"
+          if (act && act.onclick) {
+            act.onclick({ _hierNode: nodeName }, self);
+          }
+        });
+      });
+    }
 
     // Extra filter widgets
     container.querySelectorAll('[data-dod-role="extra-filter"]').forEach(function (el) {

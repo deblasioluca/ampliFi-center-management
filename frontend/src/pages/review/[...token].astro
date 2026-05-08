@@ -33,7 +33,7 @@ export function getStaticPaths() {
       </div>
       <div class="flex gap-2">
         <button onclick="bulkApprove()" class="btn-sm bg-green-600 text-white hover:bg-green-700">Approve All Pending</button>
-        <button onclick="document.getElementById('new-center-modal').classList.remove('hidden')" class="btn-sm bg-blue-600 text-white hover:bg-blue-700">+ Request New Center</button>
+        <button onclick="openNewCenterModal()" class="btn-sm bg-blue-600 text-white hover:bg-blue-700">+ Request New Center</button>
         <button onclick="requestChanges()" class="btn-sm bg-yellow-600 text-white hover:bg-yellow-700">Request Changes</button>
         <button onclick="completeReview()" class="btn-sm bg-amplifi-600 text-white hover:bg-amplifi-700">Complete Review</button>
       </div>
@@ -41,30 +41,50 @@ export function getStaticPaths() {
     <div id="review-content"></div>
   </div>
 
-  <!-- Request New Center Modal -->
+  <!-- Request New / Clone Center Modal -->
   <div id="new-center-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-16">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Request New Center</h2>
+        <h2 class="text-lg font-semibold" id="nc-modal-title">Request New Center</h2>
         <button onclick="document.getElementById('new-center-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
       </div>
-      <p class="text-xs text-gray-500 mb-4">If a center is missing from the proposed list, request its creation here. The data manager will review your request.</p>
+      <div id="nc-clone-info" class="hidden bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-700 mb-3">
+        <strong>Cloning from:</strong> <span id="nc-clone-label"></span>
+        <p class="mt-1 text-blue-600">Fields pre-filled. Amend as needed.</p>
+      </div>
       <form id="new-center-form" class="space-y-3">
+        <input type="hidden" id="nc-clone-from" value="" />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Type</label>
+            <select id="nc-target" class="input text-sm w-full">
+              <option value="CC">Cost Center</option>
+              <option value="PC">Profit Center</option>
+              <option value="CC_AND_PC">Both CC + PC</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Responsible</label>
+            <input id="nc-responsible" type="text" class="input text-sm w-full" placeholder="Owner name..." />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Proposed Name <span class="text-red-500">*</span></label>
+          <input id="nc-name" type="text" class="input text-sm w-full" placeholder="Short text / description..." required />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Entity (Company Code)</label>
+            <input id="nc-ccode" type="text" class="input text-sm w-full" placeholder="e.g. 1000" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Hierarchy Node</label>
+            <input id="nc-hier-node" type="text" class="input text-sm w-full" placeholder="Node to place under..." />
+          </div>
+        </div>
         <div>
           <label class="block text-xs font-medium text-gray-700 mb-1">Purpose / Justification <span class="text-red-500">*</span></label>
-          <textarea id="nc-purpose" class="input text-sm w-full h-20" placeholder="Describe why this new center is needed..." required></textarea>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-700 mb-1">Target Object Type</label>
-          <select id="nc-target" class="input text-sm w-full">
-            <option value="CC">Cost Center (CC)</option>
-            <option value="PC">Profit Center (PC)</option>
-            <option value="CC_AND_PC">Both CC + PC</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-700 mb-1">Responsible Person</label>
-          <input id="nc-responsible" type="text" class="input text-sm w-full" placeholder="GPN or name of responsible person" />
+          <textarea id="nc-purpose" class="input text-sm w-full h-20" placeholder="Why is this center needed?" required></textarea>
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-700 mb-1">Balance Sheet Relevance</label>
@@ -291,10 +311,11 @@ export function getStaticPaths() {
         '<td class="px-3 py-2 text-right">';
       if (item.decision === 'PENDING') {
         html += '<button onclick="decide(' + item.id + ',\'APPROVED\')" class="text-xs text-green-600 hover:underline mr-2">Approve</button>' +
-          '<button onclick="decide(' + item.id + ',\'COMMENTED\')" class="text-xs text-yellow-600 hover:underline">Comment</button>';
+          '<button onclick="decide(' + item.id + ',\'COMMENTED\')" class="text-xs text-yellow-600 hover:underline mr-2">Comment</button>';
       } else {
-        html += '<button onclick="decide(' + item.id + ',\'PENDING\')" class="text-xs text-gray-500 hover:underline">Undo</button>';
+        html += '<button onclick="decide(' + item.id + ',\'PENDING\')" class="text-xs text-gray-500 hover:underline mr-2">Undo</button>';
       }
+      html += '<button onclick="openNewCenterModal({cloneFrom:\'' + esc(item.cctr || '') + '\',name:\'' + esc(item.txtsh || '') + '\',ccode:\'' + esc(item.ccode || '') + '\',responsible:\'' + esc(item.responsible || '') + '\'})" class="text-xs text-gray-500 hover:underline" title="Clone as new center">Clone</button>';
       html += '</td></tr>';
     });
     html += '</tbody></table>';
@@ -636,6 +657,27 @@ export function getStaticPaths() {
   };
 
   // Request New Center form
+  // Open new-center modal (optionally with clone data)
+  window.openNewCenterModal = function(opts) {
+    opts = opts || {};
+    document.getElementById('nc-clone-from').value = opts.cloneFrom || '';
+    document.getElementById('nc-name').value = opts.name || '';
+    document.getElementById('nc-ccode').value = opts.ccode || '';
+    document.getElementById('nc-responsible').value = opts.responsible || '';
+    document.getElementById('nc-hier-node').value = opts.hierNode || '';
+    document.getElementById('nc-purpose').value = '';
+    document.getElementById('nc-bs').value = '';
+    if (opts.cloneFrom) {
+      document.getElementById('nc-modal-title').textContent = 'Clone Center: ' + opts.cloneFrom;
+      document.getElementById('nc-clone-info').classList.remove('hidden');
+      document.getElementById('nc-clone-label').textContent = opts.cloneFrom + (opts.name ? ' — ' + opts.name : '');
+    } else {
+      document.getElementById('nc-modal-title').textContent = 'Request New Center';
+      document.getElementById('nc-clone-info').classList.add('hidden');
+    }
+    document.getElementById('new-center-modal').classList.remove('hidden');
+  };
+
   document.getElementById('new-center-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var purpose = document.getElementById('nc-purpose').value.trim();
@@ -648,7 +690,11 @@ export function getStaticPaths() {
           purpose: purpose,
           target_object: document.getElementById('nc-target').value,
           responsible: document.getElementById('nc-responsible').value || null,
-          bs_relevance: document.getElementById('nc-bs').value || null
+          bs_relevance: document.getElementById('nc-bs').value || null,
+          proposed_name: document.getElementById('nc-name').value || null,
+          proposed_ccode: document.getElementById('nc-ccode').value || null,
+          hierarchy_node: document.getElementById('nc-hier-node').value || null,
+          clone_from: document.getElementById('nc-clone-from').value || null
         })
       });
       if (res.ok) {
@@ -656,7 +702,12 @@ export function getStaticPaths() {
         document.getElementById('nc-purpose').value = '';
         document.getElementById('nc-responsible').value = '';
         document.getElementById('nc-bs').value = '';
-        alert('New center request submitted. The data manager will review it.');
+        document.getElementById('nc-name').value = '';
+        document.getElementById('nc-ccode').value = '';
+        document.getElementById('nc-hier-node').value = '';
+        document.getElementById('nc-clone-from').value = '';
+        document.getElementById('nc-clone-info').classList.add('hidden');
+        alert('Request submitted. The data manager will review it.');
         loadItems(1);
       } else {
         var err = await res.json();

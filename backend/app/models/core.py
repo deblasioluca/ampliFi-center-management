@@ -1059,7 +1059,7 @@ class ReviewItem(TimestampMixin, Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     scope: Mapped[ReviewScope] = relationship(back_populates="items")
-    proposal: Mapped[CenterProposal] = relationship()
+    proposal: Mapped[CenterProposal | None] = relationship()
 
 
 # ---------- target objects ----------

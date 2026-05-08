@@ -37,7 +37,8 @@ import Layout from '../../components/layout/Layout.astro';
                           s.status === 'expired' ? 'bg-red-100 text-red-700' :
                           'bg-gray-100 text-gray-700';
         var pct = s.total_items ? Math.round((s.decided_items || 0) / s.total_items * 100) : 0;
-        html += '<a href="/review/' + (s.token || '') + '" class="block card hover:shadow-md transition-shadow">' +
+        var link = s.token ? '/review/' + s.token : '/tasks';
+        html += '<a href="' + link + '" class="block card hover:shadow-md transition-shadow">' +
           '<div class="flex items-center justify-between mb-2">' +
           '<h3 class="font-semibold text-gray-900">' + (s.name || 'Review Scope') + '</h3>' +
           '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + statusColor + '">' + (s.status || 'pending') + '</span>' +
