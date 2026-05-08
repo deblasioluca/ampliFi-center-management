@@ -427,7 +427,304 @@ import Layout from '../../components/layout/Layout.astro';
     }
   });
 
+  // ── Upload form submit handler ──────────────────────────────────────
+  document.getElementById('upload-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('upload-file');
+    var uScope = document.getElementById('upload-scope').value;
+    var uCat = document.getElementById('upload-category').value;
+    var type = document.getElementById('upload-type').value;
+    var resultEl = document.getElementById('upload-result');
+    var progressEl = document.getElementById('upload-progress');
+    var progressBar = document.getElementById('upload-progress-bar');
+    var progressText = document.getElementById('upload-progress-text');
+    resultEl.classList.add('hidden');
+    if (!uScope) { alert('Please select a scope.'); return; }
+    if (!uCat) { alert('Please select a data category.'); return; }
+    if (!type) { alert('Please select a data type.'); return; }
+    if (!fileInput.files[0]) return;
+    if (!token) { alert('Please log in first to upload data.'); return; }
+    var kindMap = {
+      cost_center: 'cost_centers', profit_center: 'profit_centers',
+      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      entity: 'entities',
+      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
+      entity_hierarchy: 'entity_hierarchy',
+      balance: 'balances', balance_gcr: 'balances_gcr',
+      employee: 'employees'
+    };
+    var uploadKind = kindMap[type] || type;
+    if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';
+    if (uCat === 'target' && type === 'profit_center') uploadKind = 'target_profit_centers';
 
+    var formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    document.getElementById('upload-btn').disabled = true;
+    document.getElementById('upload-btn').textContent = 'Uploading...';
+    progressEl.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    progressText.textContent = '0%';
+
+    var xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', function(ev) {
+      if (ev.lengthComputable) {
+        var pct = Math.round((ev.loaded / ev.total) * 100);
+        progressBar.style.width = pct + '%';
+        progressText.textContent = pct + '%';
+      }
+    });
+    xhr.addEventListener('load', function() {
+      progressEl.classList.add('hidden');
+      document.getElementById('upload-btn').disabled = false;
+      document.getElementById('upload-btn').textContent = 'Upload';
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (xhr.status === 401 || xhr.status === 403) {
+          resultEl.textContent = 'Error: Session expired — please log in again.';
+          resultEl.className = 'text-sm text-red-600';
+        } else if (xhr.status >= 400) {
+          resultEl.textContent = 'Error: ' + (data.detail || 'Upload failed');
+          resultEl.className = 'text-sm text-red-600';
+        } else {
+          resultEl.textContent = 'Upload successful (ID: ' + data.id + '). Use Validate then Load to import data.';
+          resultEl.className = 'text-sm text-green-600';
+          refreshAllData(); loadUploadHistory();
+        }
+      } catch(err) {
+        resultEl.textContent = 'Error: Upload failed';
+        resultEl.className = 'text-sm text-red-600';
+      }
+      resultEl.classList.remove('hidden');
+    });
+    xhr.addEventListener('error', function() {
+      progressEl.classList.add('hidden');
+      document.getElementById('upload-btn').disabled = false;
+      document.getElementById('upload-btn').textContent = 'Upload';
+      resultEl.textContent = 'Error: Network error during upload';
+      resultEl.className = 'text-sm text-red-600';
+      resultEl.classList.remove('hidden');
+    });
+    var uploadUrl = '/api/admin/uploads?kind=' + encodeURIComponent(uploadKind) +
+      '&scope=' + encodeURIComponent(uScope) +
+      '&data_category=' + encodeURIComponent(uCat);
+    if (uploadKind === 'cc_with_hierarchy') {
+      var sheetName = document.getElementById('cc-hier-sheet').value || 'Database';
+      var headerRow = document.getElementById('cc-hier-header-row').value || '2';
+      var loadCc = document.getElementById('cc-hier-load-cc').checked;
+      var loadExt = document.getElementById('cc-hier-load-ext').checked;
+      var loadCema = document.getElementById('cc-hier-load-cema').checked;
+      uploadUrl += '&sheet_name=' + encodeURIComponent(sheetName) +
+        '&header_row=' + encodeURIComponent(headerRow) +
+        '&load_cc=' + loadCc + '&load_ext_hier=' + loadExt +
+        '&load_cema_hier=' + loadCema;
+    }
+    xhr.open('POST', uploadUrl);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.send(formData);
+  });
+
+  // ── Upload history ──────────────────────────────────────────────────
+  function loadUploadHistory() {
+    fetch('/api/admin/uploads?size=20', { headers: authHdr })
+      .then(function(r) { return r.json(); }).then(function(d) {
+      var el = document.getElementById('upload-history');
+      var items = d.items || [];
+      if (!items.length) { el.textContent = 'No uploads yet.'; return; }
+      var html = '<table class="w-full text-xs"><thead>' +
+        '<tr class="border-b bg-gray-50">' +
+        '<th class="py-2 px-2 text-left">ID</th>' +
+        '<th class="py-2 px-2 text-left">Scope</th>' +
+        '<th class="py-2 px-2 text-left">Category</th>' +
+        '<th class="py-2 px-2 text-left">Type</th>' +
+        '<th class="py-2 px-2 text-left">Source</th>' +
+        '<th class="py-2 px-2 text-left">Status</th>' +
+        '<th class="py-2 px-2 text-right">Rows</th>' +
+        '<th class="py-2 px-2 text-right">Valid</th>' +
+        '<th class="py-2 px-2 text-right">Errors</th>' +
+        '<th class="py-2 px-2 text-right">Loaded</th>' +
+        '<th class="py-2 px-2 text-left">Actions</th>' +
+        '</tr></thead><tbody>';
+      items.forEach(function(u) {
+        var statusColor = u.status === 'loaded' ? 'text-green-600'
+          : u.status === 'failed' ? 'text-red-600'
+          : (u.status === 'validating' || u.status === 'loading')
+            ? 'text-yellow-600' : 'text-gray-600';
+        var actions = '';
+        if (u.status === 'uploaded' || u.status === 'failed') {
+          actions = '<button onclick="validateUpload(' + u.id +
+            ')" class="text-blue-600 hover:underline mr-2">Validate</button>';
+        } else if (u.status === 'validated') {
+          actions = '<button onclick="loadUpload(' + u.id +
+            ')" class="text-green-600 hover:underline mr-2">Load</button>';
+        } else if (u.status === 'loaded') {
+          actions = '<button onclick="rollbackUpload(' + u.id +
+            ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
+        } else if (u.status === 'validating' || u.status === 'loading') {
+          var pct = (u.rows_total > 0 && u.rows_processed != null)
+            ? Math.round((u.rows_processed / u.rows_total) * 100) : 0;
+          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
+          actions = '<div class="inline-flex items-center gap-2">' +
+            '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" ' +
+            'title="' + fmt(u.rows_processed || 0) + ' / ' +
+            fmt(u.rows_total) + ' rows">' +
+            '<div class="bg-yellow-500 h-3 rounded-full transition-all ' +
+            'duration-300" style="width:' + pct + '%"></div></div>' +
+            '<span class="text-yellow-700 text-[10px] font-medium ' +
+            'whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
+            '</div> ' +
+            '<button onclick="resetUpload(' + u.id +
+            ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
+            'title="Reset stuck batch">Reset</button>';
+        }
+        actions += '<button onclick="deleteUpload(' + u.id +
+          ')" class="text-red-500 hover:underline text-xs" ' +
+          'title="Delete this upload batch">Delete</button>';
+        var scopeLabel = {
+          cleanup: 'CM Cleanup',
+          housekeeping: 'CM Housekeeping',
+          explorer: 'Data Explorer'
+        };
+        var sourceInfo = (u.source_method || 'file') +
+          (u.source_detail ? ': ' + u.source_detail : '');
+        html += '<tr class="border-b hover:bg-gray-50">' +
+          '<td class="py-1.5 px-2">' + u.id + '</td>' +
+          '<td class="py-1.5 px-2">' +
+          esc(scopeLabel[u.scope] || u.scope || '-') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.data_category || '-') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(u.kind) + '</td>' +
+          '<td class="py-1.5 px-2 text-[10px]">' + esc(sourceInfo) + '</td>' +
+          '<td class="py-1.5 px-2 ' + statusColor + ' font-medium">' +
+          esc(u.status) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_total) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_valid) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_error) + '</td>' +
+          '<td class="py-1.5 px-2 text-right">' + fmt(u.rows_loaded) + '</td>' +
+          '<td class="py-1.5 px-2">' + actions + '</td></tr>';
+      });
+      el.innerHTML = html + '</tbody></table>';
+    }).catch(function() {
+      document.getElementById('upload-history').textContent = 'Error loading uploads.';
+    });
+  }
+  loadUploadHistory();
+
+  function pollBatchStatus(id, targetStatuses, label) {
+    return new Promise(function(resolve) {
+      loadUploadHistory();
+      var attempts = 0;
+      var maxAttempts = 180;
+      var interval = setInterval(function() {
+        attempts++;
+        fetch('/api/admin/uploads/' + id, { headers: authHdr })
+          .then(function(r) { return r.json(); }).then(function(b) {
+          loadUploadHistory();
+          if (targetStatuses.indexOf(b.status) !== -1) {
+            clearInterval(interval); resolve(b);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval); resolve(null);
+          }
+        }).catch(function() {
+          if (attempts >= maxAttempts) { clearInterval(interval); resolve(null); }
+        });
+      }, 2000);
+    });
+  }
+  window.validateUpload = async function(id) {
+    if (!token) { alert('Please log in first.'); return; }
+    var res = await fetch('/api/admin/uploads/' + id + '/validate',
+      { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) {
+      alert('Session expired — please log in again.'); return;
+    }
+    var d = await res.json();
+    if (!res.ok) { alert('Validation error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
+    loadUploadHistory();
+    var result = await pollBatchStatus(id, ['validated', 'failed'], 'Validating');
+    if (!result) { alert('Validation timed out — check status manually.'); return; }
+    if (result.status === 'failed') {
+      alert('Validation failed — check upload errors for details.');
+    } else {
+      alert('Validation: ' + result.status +
+        (result.rows_error ? ' (' + result.rows_error + ' errors)' : '') +
+        ' — ' + (result.rows_valid || 0) + ' valid rows');
+    }
+    loadUploadHistory();
+  };
+  window.loadUpload = async function(id) {
+    if (!token) { alert('Please log in first.'); return; }
+    var res = await fetch('/api/admin/uploads/' + id + '/load',
+      { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) {
+      alert('Session expired — please log in again.'); return;
+    }
+    var d = await res.json();
+    if (!res.ok) { alert('Load error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
+    loadUploadHistory();
+    var result = await pollBatchStatus(id, ['loaded', 'failed'], 'Loading');
+    if (!result) { alert('Load timed out — check status manually.'); return; }
+    if (result.status === 'failed') {
+      alert('Load failed — check upload errors for details.');
+    } else {
+      alert('Load: ' + result.status +
+        (result.rows_loaded ? ' (' + result.rows_loaded + ' rows)' : ''));
+    }
+    loadUploadHistory(); refreshAllData();
+  };
+  window.rollbackUpload = async function(id) {
+    if (!confirm('Rollback this upload? This will remove all data loaded from this batch.')) return;
+    if (!token) { alert('Please log in first.'); return; }
+    var res = await fetch('/api/admin/uploads/' + id + '/rollback',
+      { method: 'POST', headers: authHdr });
+    if (res.status === 401 || res.status === 403) {
+      alert('Session expired — please log in again.'); return;
+    }
+    var d = await res.json();
+    if (!res.ok) { alert('Rollback error: ' + (d.detail || 'Unknown error')); loadUploadHistory(); return; }
+    alert('Rollback: ' + d.status +
+      (d.rows_deleted ? ' (' + d.rows_deleted + ' rows removed)' : ''));
+    loadUploadHistory(); refreshAllData();
+  };
+  window.deleteUpload = async function(id) {
+    if (!confirm('Delete this upload batch? If data was loaded, it will remain — use Rollback first.')) return;
+    try {
+      var res = await fetch('/api/data/uploads', {
+        method: 'DELETE', headers: jsonHdr,
+        body: JSON.stringify({ ids: [id] })
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Delete failed');
+      loadUploadHistory(); refreshAllData();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+  window.resetUpload = async function(id) {
+    if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
+    if (!token) { alert('Please log in first.'); return; }
+    try {
+      var res = await fetch('/api/admin/uploads/' + id + '/reset',
+        { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Reset failed');
+      alert(d.message || 'Batch reset successfully.');
+      loadUploadHistory();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  // ── Download upload template ────────────────────────────────────────
+  document.getElementById('download-template-btn').addEventListener('click', async function() {
+    var kind = document.getElementById('upload-type').value;
+    if (!kind) { alert('Please select a data type first.'); return; }
+    try {
+      var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
+      if (!res.ok) { alert('Failed to fetch template'); return; }
+      var d = await res.json();
+      var blob = new Blob([d.content], { type: 'text/csv' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = kind + '_template.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(e) { alert('Error: ' + e.message); }
+  });
 
   // ═══════════════════════════════════════════════════════════════════
   // Central DataObjectDisplay instances for ALL data tabs.

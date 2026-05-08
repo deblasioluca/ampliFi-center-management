@@ -638,7 +638,6 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         .first()
     )
     if existing_cc:
-        # Count existing targets
         cc_count = (
             db.execute(
                 select(func.count(TargetCostCenter.id)).where(
@@ -677,13 +676,35 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         .all()
     )
 
+    # --- Pre-load ALL legacy CCs and PCs in bulk (avoid N+1 queries) ---
+    legacy_cc_ids = {p.legacy_cc_id for p in proposals if p.legacy_cc_id}
+    legacy_cc_map: dict[int, LegacyCostCenter] = {}
+    if legacy_cc_ids:
+        rows = (
+            db.execute(select(LegacyCostCenter).where(LegacyCostCenter.id.in_(legacy_cc_ids)))
+            .scalars()
+            .all()
+        )
+        legacy_cc_map = {cc.id: cc for cc in rows}
+
+    # Pre-load legacy PCs keyed by (coarea, pctr) for fast lookup
+    legacy_pc_map: dict[tuple[str, str], LegacyProfitCenter] = {}
+    pctr_keys = set()
+    for cc in legacy_cc_map.values():
+        if cc.pctr and cc.coarea:
+            pctr_keys.add((cc.coarea, cc.pctr))
+    if pctr_keys:
+        all_pcs = db.execute(select(LegacyProfitCenter)).scalars().all()
+        for pc in all_pcs:
+            if pc.coarea and pc.pctr:
+                legacy_pc_map[(pc.coarea, pc.pctr)] = pc
+
     # Load naming config from wave
     naming_cfg = (wave.config or {}).get("naming", {})
     cc_template = naming_cfg.get("cc_template", "{coarea}{seq:6}")
     pc_template = naming_cfg.get("pc_template", "{coarea}{seq:6}")
     seq_start = int(naming_cfg.get("seq_start", 1))
 
-    # Sequence counters per coarea
     cc_seq: dict[str, int] = {}
     pc_seq: dict[str, int] = {}
 
@@ -701,29 +722,28 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         pc_seq[coarea] = seq + 1
         return _format_naming(template, coarea, seq)
 
-    # Group proposals by outcome
     created_cc = 0
     created_pc = 0
     created_mappings = 0
     owner_conflicts: list[dict] = []
 
+    # Collect all objects to add in bulk
+    pending_targets: list[TargetCostCenter | TargetProfitCenter] = []
+    pending_mappings: list[CenterMapping] = []
+    # Track CC→PC reference updates (applied after all CCs created)
+    cc_pc_links: list[tuple[TargetCostCenter, str]] = []
+
     # For MERGE: group by merge_into_cctr to deduplicate target
     merge_groups: dict[str, list[CenterProposal]] = {}
-
     for proposal in proposals:
-        outcome, target = get_effective_outcome(proposal)
+        outcome, _target = get_effective_outcome(proposal)
         if outcome == "MERGE_MAP" and proposal.merge_into_cctr:
-            key = f"{proposal.merge_into_cctr}"
-            merge_groups.setdefault(key, []).append(proposal)
-
-    # Track created CC/PC IDs to avoid duplicates
-    seen_cc: dict[tuple[str, str], int] = {}  # (coarea, new_cctr) → target_cc_id
-    seen_pc: dict[tuple[str, str], int] = {}  # (coarea, new_pctr) → target_pc_id
+            merge_groups.setdefault(str(proposal.merge_into_cctr), []).append(proposal)
 
     # --- Process MERGE groups first ---
     for _merge_key, group in merge_groups.items():
         primary = group[0]
-        primary_legacy = db.get(LegacyCostCenter, primary.legacy_cc_id)
+        primary_legacy = legacy_cc_map.get(primary.legacy_cc_id)
         if not primary_legacy:
             continue
 
@@ -731,23 +751,20 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         coarea = primary_legacy.coarea
         new_cctr = next_cc_id(coarea, cc_template)
 
-        # Create target CC inheriting all fields from primary source
         tcc = TargetCostCenter(
             source_proposal_id=primary.id,
             approved_in_wave=wave_id,
             is_active=True,
         )
         _copy_cc_fields(primary_legacy, tcc)
-        tcc.cctr = new_cctr  # Override with new number
-        db.add(tcc)
-        db.flush()
-        seen_cc[(coarea, new_cctr)] = tcc.id
+        tcc.cctr = new_cctr
+        pending_targets.append(tcc)
         created_cc += 1
 
-        # Detect owner conflicts in group
+        # Detect owner conflicts
         owners = set()
         for p in group:
-            leg = db.get(LegacyCostCenter, p.legacy_cc_id)
+            leg = legacy_cc_map.get(p.legacy_cc_id)
             if leg and leg.responsible:
                 owners.add(leg.responsible)
         if len(owners) > 1:
@@ -764,8 +781,8 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
         new_pctr = None
         if target_type in ("PC", "PC_ONLY", "CC_AND_PC"):
             new_pctr = next_pc_id(coarea, pc_template)
-            # Try to find a legacy PC to inherit from
-            legacy_pc = _find_legacy_pc(primary_legacy, db)
+            pc_key = (primary_legacy.coarea, primary_legacy.pctr) if primary_legacy.pctr else None
+            legacy_pc = legacy_pc_map.get(pc_key) if pc_key else None
             tpc = TargetProfitCenter(
                 source_proposal_id=primary.id,
                 approved_in_wave=wave_id,
@@ -781,81 +798,76 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
                 tpc.responsible = primary_legacy.responsible
                 tpc.currency = primary_legacy.currency
             tpc.pctr = new_pctr
-            db.add(tpc)
-            db.flush()
-            seen_pc[(coarea, new_pctr)] = tpc.id
+            pending_targets.append(tpc)
             created_pc += 1
-
-            # Update the CC target's pctr reference
-            tcc.pctr = new_pctr
+            cc_pc_links.append((tcc, new_pctr))
 
         # Create mappings for ALL source CCs in the group
         for p in group:
-            leg = db.get(LegacyCostCenter, p.legacy_cc_id)
+            leg = legacy_cc_map.get(p.legacy_cc_id)
             if not leg:
                 continue
-            mapping = CenterMapping(
-                object_type="cost_center",
-                legacy_coarea=leg.coarea,
-                legacy_center=leg.cctr,
-                legacy_name=leg.txtsh,
-                target_coarea=coarea,
-                target_center=new_cctr,
-                target_name=primary_legacy.txtsh,
-                mapping_type="merge",
-                notes=f"wave:{wave_id} outcome:MERGE_MAP",
-            )
-            db.add(mapping)
-            created_mappings += 1
-
-            # PC mapping
-            if new_pctr and leg.pctr:
-                pc_mapping = CenterMapping(
-                    object_type="profit_center",
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="cost_center",
                     legacy_coarea=leg.coarea,
-                    legacy_center=leg.pctr,
+                    legacy_center=leg.cctr,
                     legacy_name=leg.txtsh,
                     target_coarea=coarea,
-                    target_center=new_pctr,
+                    target_center=new_cctr,
                     target_name=primary_legacy.txtsh,
                     mapping_type="merge",
                     notes=f"wave:{wave_id} outcome:MERGE_MAP",
                 )
-                db.add(pc_mapping)
+            )
+            created_mappings += 1
+
+            if new_pctr and leg.pctr:
+                pending_mappings.append(
+                    CenterMapping(
+                        object_type="profit_center",
+                        legacy_coarea=leg.coarea,
+                        legacy_center=leg.pctr,
+                        legacy_name=leg.txtsh,
+                        target_coarea=coarea,
+                        target_center=new_pctr,
+                        target_name=primary_legacy.txtsh,
+                        mapping_type="merge",
+                        notes=f"wave:{wave_id} outcome:MERGE_MAP",
+                    )
+                )
                 created_mappings += 1
 
     # --- Process KEEP and REDESIGN proposals (1:1 mapping) ---
     for proposal in proposals:
         outcome, target_type = get_effective_outcome(proposal)
 
-        # Skip MERGE (already handled) and RETIRE
         if outcome == "MERGE_MAP":
             continue
 
-        legacy = db.get(LegacyCostCenter, proposal.legacy_cc_id)
+        legacy = legacy_cc_map.get(proposal.legacy_cc_id)
         if not legacy:
             continue
 
         coarea = legacy.coarea
 
         if outcome == "RETIRE":
-            # No target created — just a mapping record for the decommission list
-            mapping = CenterMapping(
-                object_type="cost_center",
-                legacy_coarea=coarea,
-                legacy_center=legacy.cctr,
-                legacy_name=legacy.txtsh,
-                target_coarea=coarea,
-                target_center="RETIRED",
-                target_name="",
-                mapping_type="retire",
-                notes=f"wave:{wave_id} outcome:RETIRE",
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="cost_center",
+                    legacy_coarea=coarea,
+                    legacy_center=legacy.cctr,
+                    legacy_name=legacy.txtsh,
+                    target_coarea=coarea,
+                    target_center="RETIRED",
+                    target_name="",
+                    mapping_type="retire",
+                    notes=f"wave:{wave_id} outcome:RETIRE",
+                )
             )
-            db.add(mapping)
             created_mappings += 1
             continue
 
-        # KEEP or REDESIGN: create target CC with new number
         new_cctr = next_cc_id(coarea, cc_template)
 
         tcc = TargetCostCenter(
@@ -864,31 +876,28 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
             is_active=True,
         )
         _copy_cc_fields(legacy, tcc)
-        tcc.cctr = new_cctr  # Override with new number
-        db.add(tcc)
-        db.flush()
-        seen_cc[(coarea, new_cctr)] = tcc.id
+        tcc.cctr = new_cctr
+        pending_targets.append(tcc)
         created_cc += 1
 
-        # Create mapping: old CC → new CC
-        mapping = CenterMapping(
-            object_type="cost_center",
-            legacy_coarea=coarea,
-            legacy_center=legacy.cctr,
-            legacy_name=legacy.txtsh,
-            target_coarea=coarea,
-            target_center=new_cctr,
-            target_name=legacy.txtsh,
-            mapping_type="1:1" if outcome == "KEEP" else "redesign",
-            notes=f"wave:{wave_id} outcome:{outcome}",
+        pending_mappings.append(
+            CenterMapping(
+                object_type="cost_center",
+                legacy_coarea=coarea,
+                legacy_center=legacy.cctr,
+                legacy_name=legacy.txtsh,
+                target_coarea=coarea,
+                target_center=new_cctr,
+                target_name=legacy.txtsh,
+                mapping_type="1:1" if outcome == "KEEP" else "redesign",
+                notes=f"wave:{wave_id} outcome:{outcome}",
+            )
         )
-        db.add(mapping)
         created_mappings += 1
 
-        # Create target PC if needed
         if target_type in ("PC", "PC_ONLY", "CC_AND_PC"):
             new_pctr = next_pc_id(coarea, pc_template)
-            legacy_pc = _find_legacy_pc(legacy, db)
+            legacy_pc = legacy_pc_map.get((legacy.coarea, legacy.pctr)) if legacy.pctr else None
 
             tpc = TargetProfitCenter(
                 source_proposal_id=proposal.id,
@@ -905,29 +914,32 @@ def generate_wave_targets(wave_id: int, db: Session) -> dict:
                 tpc.responsible = legacy.responsible
                 tpc.currency = legacy.currency
             tpc.pctr = new_pctr
-            db.add(tpc)
-            db.flush()
-            seen_pc[(coarea, new_pctr)] = tpc.id
+            pending_targets.append(tpc)
             created_pc += 1
+            cc_pc_links.append((tcc, new_pctr))
 
-            # Update the CC target's pctr reference
-            tcc.pctr = new_pctr
-
-            # PC mapping
-            pc_mapping = CenterMapping(
-                object_type="profit_center",
-                legacy_coarea=coarea,
-                legacy_center=legacy.pctr or legacy.cctr,
-                legacy_name=legacy.txtsh,
-                target_coarea=coarea,
-                target_center=new_pctr,
-                target_name=legacy.txtsh,
-                mapping_type="1:1" if outcome == "KEEP" else "redesign",
-                notes=f"wave:{wave_id} outcome:{outcome}",
+            pending_mappings.append(
+                CenterMapping(
+                    object_type="profit_center",
+                    legacy_coarea=coarea,
+                    legacy_center=legacy.pctr or legacy.cctr,
+                    legacy_name=legacy.txtsh,
+                    target_coarea=coarea,
+                    target_center=new_pctr,
+                    target_name=legacy.txtsh,
+                    mapping_type="1:1" if outcome == "KEEP" else "redesign",
+                    notes=f"wave:{wave_id} outcome:{outcome}",
+                )
             )
-            db.add(pc_mapping)
             created_mappings += 1
 
+    # --- Bulk insert: one flush for targets, one for mappings ---
+    db.add_all(pending_targets)
+    # Apply CC→PC cross-references before flush
+    for tcc_obj, pctr_val in cc_pc_links:
+        tcc_obj.pctr = pctr_val
+    db.flush()
+    db.add_all(pending_mappings)
     db.commit()
 
     result = {
