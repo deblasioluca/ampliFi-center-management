@@ -949,7 +949,83 @@ def _normalize_headers(rows: list[dict[str, str]], mapping: dict[str, str]) -> l
         if extras:
             normalized["_extras"] = str(extras)
         result.append(normalized)
+    # Detect and skip SAP description/label row (second header row in SAP exports).
+    # SAP exports often have: Row 1=technical names, Row 2=descriptions, Row 3+=data.
+    # Heuristic: if the first data row's values are mostly known SAP field descriptions
+    # or long alphabetic strings (not codes/numbers), skip it.
+    if result:
+        result = _skip_label_rows(result)
     return result
+
+
+# Known SAP field description fragments that indicate a label row (lowercase).
+_SAP_LABEL_FRAGMENTS = frozenset(
+    {
+        "client",
+        "cost center",
+        "controlling area",
+        "company code",
+        "currency",
+        "valid to",
+        "valid from",
+        "profit center",
+        "created on",
+        "person responsible",
+        "department",
+        "business area",
+        "language",
+        "country",
+        "postal code",
+        "telephone",
+        "fax number",
+        "logical system",
+        "lock indicator",
+        "overhead key",
+        "functional area",
+        "costing sheet",
+        "indicator",
+        "template",
+        "hierarchy",
+        "successor",
+        "segment",
+        "field status",
+        "account group",
+        "account number",
+        "chart of accounts",
+        "reconciliation",
+        "open item",
+        "line item",
+    }
+)
+
+
+def _skip_label_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Skip leading rows that look like SAP field description labels, not data."""
+    skip_count = 0
+    for row in rows:
+        vals = [v for v in row.values() if v and v != "True" and v != "False"]
+        if not vals:
+            break
+        # Count how many values look like descriptions (multi-word, alphabetic)
+        label_hits = 0
+        for v in vals:
+            vl = v.lower().strip()
+            if any(frag in vl for frag in _SAP_LABEL_FRAGMENTS) or (
+                " " in v and len(v) > 5 and v.replace(" ", "").replace(".", "").isalpha()
+            ):
+                label_hits += 1
+        # If >30% of non-empty values look like labels, skip this row
+        if len(vals) > 3 and label_hits / len(vals) > 0.3:
+            logger.info(
+                "Skipping SAP description row (row %d, %d/%d label-like values)",
+                skip_count + 1,
+                label_hits,
+                len(vals),
+            )
+            skip_count += 1
+        else:
+            break
+    return rows[skip_count:]
 
 
 def validate_upload(batch_id: int, db: Session) -> dict:
