@@ -1286,9 +1286,13 @@ def hierarchy_tree(
 
     if all_leaf_values:
         if norm_sc == SETCLASS_PROFIT_CENTER:
-            rows = db.execute(
-                select(LegacyProfitCenter).where(LegacyProfitCenter.pctr.in_(all_leaf_values))
-            ).scalars().all()
+            rows = (
+                db.execute(
+                    select(LegacyProfitCenter).where(LegacyProfitCenter.pctr.in_(all_leaf_values))
+                )
+                .scalars()
+                .all()
+            )
             for r in rows:
                 leaf_detail[r.pctr] = {
                     "id_field": r.pctr,
@@ -1297,18 +1301,23 @@ def hierarchy_tree(
                 }
         elif norm_sc == SETCLASS_ENTITY:
             from app.models.core import Entity
-            rows = db.execute(
-                select(Entity).where(Entity.ccode.in_(all_leaf_values))
-            ).scalars().all()
+
+            rows = (
+                db.execute(select(Entity).where(Entity.ccode.in_(all_leaf_values))).scalars().all()
+            )
             for r in rows:
                 leaf_detail[r.ccode] = {
                     "id_field": r.ccode,
                     "name": r.name,
                 }
         else:
-            rows = db.execute(
-                select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(all_leaf_values))
-            ).scalars().all()
+            rows = (
+                db.execute(
+                    select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(all_leaf_values))
+                )
+                .scalars()
+                .all()
+            )
             for r in rows:
                 leaf_detail[r.cctr] = {
                     "id_field": r.cctr,
@@ -1347,10 +1356,7 @@ def hierarchy_tree(
         {"parent_setname": n.parent_setname, "child_setname": n.child_setname, "seq": n.seq}
         for n in nodes
     ]
-    flat_leaves = [
-        {"setname": lf.setname, "value": lf.value, "seq": lf.seq}
-        for lf in leaves
-    ]
+    flat_leaves = [{"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves]
 
     return {
         "hierarchy_id": hier_id,
