@@ -360,6 +360,7 @@ def list_entities(
     search: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
+    hierarchy_id: int | None = None,
 ) -> dict:
     query = select(Entity).order_by(Entity.ccode)
     count_q = select(func.count(Entity.id))
@@ -378,10 +379,19 @@ def list_entities(
         count_q = count_q.where(Entity.ccode.ilike(pattern) | Entity.name.ilike(pattern))
     total = db.execute(count_q).scalar() or 0
     entities = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    if hierarchy_id is not None and entities:
+        leaf_values = [e.ccode for e in entities if e.ccode]
+        paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, leaf_values)
+
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
+        "hierarchy_id": hierarchy_id,
+        "hierarchy_max_depth": max_depth,
         "items": [
             {
                 "id": e.id,
@@ -397,6 +407,7 @@ def list_entities(
                 "fiscal_year_variant": e.fiscal_year_variant,
                 "company": e.company,
                 "is_active": e.is_active,
+                "levels": paths.get(e.ccode, []),
             }
             for e in entities
         ],
@@ -856,6 +867,7 @@ def list_balances(
     fiscal_year: int | None = None,
     scope: str | None = None,
     data_category: str | None = None,
+    hierarchy_id: int | None = None,
 ) -> dict:
     query = select(Balance).order_by(Balance.fiscal_year.desc(), Balance.period.desc())
     count_q = select(func.count(Balance.id))
@@ -879,10 +891,27 @@ def list_balances(
         count_q = count_q.where(Balance.fiscal_year == fiscal_year)
     total = db.execute(count_q).scalar() or 0
     rows = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
+
+    paths: dict[str, list[str]] = {}
+    max_depth = 0
+    use_ccode_key = False
+    if hierarchy_id is not None and rows:
+        hier = db.get(Hierarchy, hierarchy_id)
+        if hier:
+            sc = normalise_setclass(hier.setclass)
+            use_ccode_key = sc == SETCLASS_ENTITY
+            if use_ccode_key:
+                leaf_values = list({b.ccode for b in rows if b.ccode})
+            else:
+                leaf_values = list({b.cctr for b in rows if b.cctr})
+            paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, leaf_values)
+
     return {
         "total": total,
         "page": pag.page,
         "size": pag.size,
+        "hierarchy_id": hierarchy_id,
+        "hierarchy_max_depth": max_depth,
         "items": [
             {
                 "id": b.id,
@@ -898,6 +927,7 @@ def list_balances(
                 "gc2_amt": str(b.gc2_amt) if b.gc2_amt is not None else "0",
                 "currency_tc": b.currency_tc,
                 "posting_count": b.posting_count,
+                "levels": paths.get(b.ccode if use_ccode_key else b.cctr, []),
             }
             for b in rows
         ],
@@ -1298,6 +1328,9 @@ def hierarchy_tree(
                     "id_field": r.pctr,
                     "name": r.txtsh,
                     "ccode": r.ccode,
+                    "coarea": r.coarea,
+                    "currency": r.currency,
+                    "is_active": r.is_active,
                 }
         elif norm_sc == SETCLASS_ENTITY:
             from app.models.core import Entity
@@ -1309,6 +1342,11 @@ def hierarchy_tree(
                 leaf_detail[r.ccode] = {
                     "id_field": r.ccode,
                     "name": r.name,
+                    "country": r.country,
+                    "region": r.region,
+                    "currency": r.currency,
+                    "city": r.city,
+                    "is_active": r.is_active,
                 }
         else:
             rows = (

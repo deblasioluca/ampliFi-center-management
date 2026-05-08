@@ -667,7 +667,8 @@ import Layout from '../../components/layout/Layout.astro';
     title: 'Balances',
     dataEndpoint: '/api/legacy/balances',
     hierarchyEndpoint: '/api/legacy/hierarchies',
-    identityField: 'id',
+    identityField: 'cctr',
+    entityField: 'ccode',
     showViewToggle: true,
     showHierarchyPicker: true,
     hierarchyTypes: ['0101', '0106'],
@@ -675,6 +676,7 @@ import Layout from '../../components/layout/Layout.astro';
     showCSV: true,
     pageSize: 50,
     hierPageSize: 5000,
+    excludeColumns: ['id', 'scope', 'data_category', 'mandt'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr,
     toolbarButtons: [
