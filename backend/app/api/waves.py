@@ -1301,8 +1301,11 @@ def create_review_scope(
                 )
             )
 
-    # Transition wave to in_review if first scope
-    if wave.status == "locked":
+    # Auto-transition wave through the pipeline
+    if wave.status == "proposed":
+        wave.status = "in_review"
+        wave.locked_at = datetime.now(UTC)
+    elif wave.status == "locked":
         wave.status = "in_review"
 
     db.commit()
@@ -1666,6 +1669,23 @@ def wave_progress(wave_id: int, db: Session = Depends(get_db)) -> dict:
         )
         total_review_items += t
         decided_items += d
+    # Auto-correct wave status based on actual review state
+    status_changed = False
+    if scopes and wave.status in ("proposed", "locked"):
+        # Scopes exist → should be at least in_review
+        wave.status = "in_review"
+        if not wave.locked_at:
+            wave.locked_at = datetime.now(UTC)
+        status_changed = True
+    if wave.status == "in_review" and scopes:
+        all_complete = all(s.status == "completed" for s in scopes)
+        if all_complete and total_review_items > 0 and decided_items >= total_review_items:
+            wave.status = "signed_off"
+            wave.signed_off_at = datetime.now(UTC)
+            status_changed = True
+    if status_changed:
+        db.commit()
+
     return {
         "wave_id": wave.id,
         "status": wave.status,

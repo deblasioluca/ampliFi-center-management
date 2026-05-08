@@ -454,5 +454,24 @@ def complete_review(token: str, db: Session = Depends(get_db)) -> dict:
 
     scope.status = "completed"
     scope.completed_at = datetime.now(UTC)
+
+    # Check if all scopes for this wave are now completed — advance wave status
+    if scope.wave_id:
+        from app.models.core import Wave
+
+        wave = db.get(Wave, scope.wave_id)
+        if wave and wave.status == "in_review":
+            all_scopes = (
+                db.execute(
+                    select(ReviewScope).where(ReviewScope.wave_id == wave.id)
+                )
+                .scalars()
+                .all()
+            )
+            all_complete = all(s.status == "completed" or s.id == scope.id for s in all_scopes)
+            if all_complete:
+                wave.status = "signed_off"
+                wave.signed_off_at = datetime.now(UTC)
+
     db.commit()
     return {"status": "completed"}
