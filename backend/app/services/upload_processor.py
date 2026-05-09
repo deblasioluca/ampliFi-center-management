@@ -1098,31 +1098,50 @@ _CENTER_MAPPING_MODEL_FIELDS = {
 }
 
 
-def _read_file(path: str) -> list[dict[str, str]]:
+def _read_file(path: str, batch_id: int | None = None) -> list[dict[str, str]]:
     """Read CSV or Excel file and return list of row dicts."""
     p = Path(path)
     suffix = p.suffix.lower()
+    file_size_mb = round(p.stat().st_size / 1_048_576, 1)
+    logger.info("_read_file start", path=str(p), format=suffix, size_mb=file_size_mb)
 
     if suffix in (".xlsx", ".xls"):
         try:
             import openpyxl
 
+            t0 = _time.monotonic()
             wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+            logger.info(
+                "_read_file workbook opened",
+                elapsed_sec=round(_time.monotonic() - t0, 2),
+            )
             ws = wb.active
             rows_iter = ws.iter_rows(values_only=True)
             headers = [str(h or "").strip() for h in next(rows_iter)]
             result = []
-            for row in rows_iter:
+            for row_num, row in enumerate(rows_iter, start=1):
                 d = {}
                 for i, val in enumerate(row):
                     if i < len(headers) and headers[i]:
                         d[headers[i]] = str(val) if val is not None else ""
                 result.append(d)
+                if row_num % 50000 == 0:
+                    logger.info(
+                        "_read_file progress",
+                        rows_read=row_num,
+                        elapsed_sec=round(_time.monotonic() - t0, 2),
+                    )
             wb.close()
+            logger.info(
+                "_read_file complete",
+                total_rows=len(result),
+                elapsed_sec=round(_time.monotonic() - t0, 2),
+            )
             return result
         except ImportError as exc:
             raise ValueError("openpyxl not installed") from exc
     else:
+        t0 = _time.monotonic()
         # Try UTF-8 first, fall back to cp1252 (European Excel default)
         for enc in ("utf-8-sig", "cp1252"):
             try:
@@ -1146,7 +1165,15 @@ def _read_file(path: str) -> list[dict[str, str]]:
         else:
             delim = ","
         reader = csv.DictReader(io.StringIO("\n".join(clean_lines)), delimiter=delim)
-        return [dict(row) for row in reader]
+        result = [dict(row) for row in reader]
+        logger.info(
+            "_read_file complete",
+            total_rows=len(result),
+            format="csv",
+            delimiter=repr(delim),
+            elapsed_sec=round(_time.monotonic() - t0, 2),
+        )
+        return result
 
 
 def _read_excel_with_options(
@@ -1163,7 +1190,21 @@ def _read_excel_with_options(
     """
     import openpyxl
 
+    p = Path(path)
+    file_size_mb = round(p.stat().st_size / 1_048_576, 1)
+    logger.info(
+        "_read_excel_with_options start",
+        path=path,
+        sheet=sheet_name,
+        header_row=header_row,
+        size_mb=file_size_mb,
+    )
+    t0 = _time.monotonic()
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    logger.info(
+        "_read_excel_with_options workbook opened",
+        elapsed_sec=round(_time.monotonic() - t0, 2),
+    )
     if sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
     else:
@@ -1191,13 +1232,24 @@ def _read_excel_with_options(
     headers = [str(h or "").strip() for h in raw_headers]
 
     result: list[dict[str, str]] = []
-    for row in rows_iter:
+    for row_num, row in enumerate(rows_iter, start=1):
         d: dict[str, str] = {}
         for i, val in enumerate(row):
             if i < len(headers) and headers[i]:
                 d[headers[i]] = str(val) if val is not None else ""
         result.append(d)
+        if row_num % 50000 == 0:
+            logger.info(
+                "_read_excel_with_options progress",
+                rows_read=row_num,
+                elapsed_sec=round(_time.monotonic() - t0, 2),
+            )
     wb.close()
+    logger.info(
+        "_read_excel_with_options complete",
+        total_rows=len(result),
+        elapsed_sec=round(_time.monotonic() - t0, 2),
+    )
     return result
 
 
