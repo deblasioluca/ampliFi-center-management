@@ -1339,6 +1339,7 @@ def _run_validate_in_background(batch_id: int) -> None:
     from app.services.upload_processor import validate_upload
 
     _log = _logging.getLogger(__name__)
+    _log.info("Background validate task started for batch %s", batch_id)
     db = SessionLocal()
     try:
         batch = db.get(UploadBatch, batch_id)
@@ -1381,6 +1382,7 @@ def _run_load_in_background(batch_id: int) -> None:
     from app.services.upload_processor import load_upload
 
     _log = _logging.getLogger(__name__)
+    _log.info("Background load task started for batch %s", batch_id)
     db = SessionLocal()
     try:
         batch = db.get(UploadBatch, batch_id)
