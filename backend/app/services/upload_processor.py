@@ -221,6 +221,9 @@ def _match_employee_from_verak(
     return None, "no_match"
 
 
+_VERAK_AUTO_FIXED = "auto_fixed"  # sentinel — no DQ row persisted
+
+
 def _validate_verak(
     obj_type: str,
     obj_id: int,
@@ -229,11 +232,15 @@ def _validate_verak(
     name_map: dict[str, list[Employee]],
     scope: str,
     batch_id: int | None,
-) -> tuple[str | None, int | None, DataQualityIssue | None]:
+) -> tuple[str | None, int | None, DataQualityIssue | str | None]:
     """Validate VERAK field and return corrected value + DQ issue if needed.
 
     Returns:
-        (corrected_verak, employee_id, dq_issue_or_None)
+        (corrected_verak, employee_id, dq_issue_or_sentinel_or_None)
+        The third element is a ``DataQualityIssue`` for issues that need
+        reviewer action, the string sentinel ``_VERAK_AUTO_FIXED`` when the
+        value was silently auto-corrected (no DB row needed), or ``None``
+        when the value is already correct.
     """
     verak = (verak or "").strip()
     if not verak:
@@ -267,26 +274,8 @@ def _validate_verak(
         # Check if already in standard format
         if verak == formatted:
             return formatted, emp_id, None
-        # Auto-correct to standard format
-        logger.info("VERAK auto-corrected: '%s' → '%s' (employee %s)", verak, formatted, emp.gpn)
-        return (
-            formatted,
-            emp_id,
-            DataQualityIssue(
-                scope=scope,
-                object_type=obj_type,
-                object_id=obj_id,
-                field_name="responsible",
-                rule_code="VERAK_AUTO_CORRECTED",
-                severity="info",
-                message=f"Auto-corrected from '{verak}' to standard format",
-                current_value=verak,
-                suggested_value=formatted,
-                suggested_employee_id=emp_id,
-                status="auto_fixed",
-                batch_id=batch_id,
-            ),
-        )
+        # Auto-correct to standard format — no DQ row stored
+        return formatted, emp_id, _VERAK_AUTO_FIXED
 
     # No employee found
     return (
@@ -1835,6 +1824,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
     gpn_map: dict[str, Employee] = {}
     name_map: dict[str, list[Employee]] = {}
     dq_issues: list[DataQualityIssue] = []
+    dq_auto_fixed_count = 0
     if batch.kind in _verak_kinds:
         gpn_map, name_map = _build_employee_lookup(db, batch_scope)
         # Clear previous DQ issues for this batch
@@ -1920,7 +1910,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     cc.responsible = corrected
                 if emp_id is not None:
                     cc.responsible_employee_id = emp_id
-                if dq:
+                if dq is _VERAK_AUTO_FIXED:
+                    dq_auto_fixed_count += 1
+                elif isinstance(dq, DataQualityIssue):
                     dq_issues.append(dq)
 
     elif batch.kind in ("profit_center", "profit_centers"):
@@ -1994,7 +1986,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     pc.responsible = corrected
                 if emp_id is not None:
                     pc.responsible_employee_id = emp_id
-                if dq:
+                if dq is _VERAK_AUTO_FIXED:
+                    dq_auto_fixed_count += 1
+                elif isinstance(dq, DataQualityIssue):
                     dq_issues.append(dq)
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
@@ -2606,18 +2600,20 @@ def load_upload(batch_id: int, db: Session) -> dict:
         db.flush()  # ensure leaves are visible for the query
         dq_issues.extend(_check_hierarchy_orphans(db, batch, batch_scope))
 
-    # Persist any data-quality issues raised during loading
+    # Persist any data-quality issues raised during loading (in chunks)
+    dq_open = len(dq_issues)  # all persisted issues are open (auto-fixed are counted separately)
     if dq_issues:
-        for dq in dq_issues:
-            db.add(dq)
-        db.flush()
-        dq_open = sum(1 for d in dq_issues if d.status == "open")
-        dq_auto = sum(1 for d in dq_issues if d.status == "auto_fixed")
+        dq_chunk = 5000
+        for i in range(0, len(dq_issues), dq_chunk):
+            db.add_all(dq_issues[i : i + dq_chunk])
+            db.flush()
+    dq_total = dq_open + dq_auto_fixed_count
+    if dq_total:
         logger.info(
             "Data quality: %d issues (%d open, %d auto-fixed) for batch %d",
-            len(dq_issues),
+            dq_total,
             dq_open,
-            dq_auto,
+            dq_auto_fixed_count,
             batch.id,
         )
 
@@ -2628,10 +2624,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
     db.commit()
 
     result: dict = {"status": "loaded", "rows_loaded": loaded}
-    if dq_issues:
-        result["dq_issues_total"] = len(dq_issues)
-        result["dq_issues_open"] = sum(1 for d in dq_issues if d.status == "open")
-        result["dq_issues_auto_fixed"] = sum(1 for d in dq_issues if d.status == "auto_fixed")
+    if dq_total:
+        result["dq_issues_total"] = dq_total
+        result["dq_issues_open"] = dq_open
+        result["dq_issues_auto_fixed"] = dq_auto_fixed_count
     return result
 
 
