@@ -212,11 +212,7 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	echo "==> Applying database migrations..." | tee -a "$$LOG"; \
 	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 		python -m alembic upgrade head 2>&1 | tee -a "$$LOG" | tail -5; \
-	echo "[ok] Database migrations applied" | tee -a "$$LOG"; \
-	echo "==> Seeding..." | tee -a "$$LOG"; \
-	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
-		python -m app.cli seed 2>&1 | tee -a "$$LOG" | tail -5; \
-	echo "[ok] Admin user + sample data seeded" | tee -a "$$LOG"
+	echo "[ok] Database migrations applied" | tee -a "$$LOG"
 	@$(MAKE) -s restart 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log
 	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
 	echo "" | tee -a "$$LOG"; \
