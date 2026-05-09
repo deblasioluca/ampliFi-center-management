@@ -6,6 +6,7 @@ import ast
 import contextlib
 import csv
 import io
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models.core import (
     Balance,
     CenterMapping,
+    DataQualityIssue,
     Employee,
     Entity,
     GLAccountSKA1,
@@ -125,6 +127,174 @@ def _truncate_to_model(model_cls: type, kwargs: dict) -> dict:
                 )
             kwargs[key] = val[: col_type.length]
     return kwargs
+
+
+# ---------------------------------------------------------------------------
+# VERAK (responsible person) data-quality validation
+# ---------------------------------------------------------------------------
+
+# Pattern: "<GPN> <First initial>. <Lastname>"
+_VERAK_PATTERN = re.compile(r"^(\S+)\s+([A-Za-z])\.\s+(.+)$")
+
+
+def _build_employee_lookup(
+    db: Session, scope: str
+) -> tuple[dict[str, Employee], dict[str, list[Employee]]]:
+    """Pre-fetch employees and build lookup dicts for VERAK matching.
+
+    Returns:
+        gpn_map: GPN → Employee (primary lookup)
+        name_map: "first_lower last_lower" → [Employee, ...] (fallback)
+    """
+    emps = db.execute(select(Employee).where(Employee.scope == scope)).scalars().all()
+    gpn_map: dict[str, Employee] = {}
+    name_map: dict[str, list[Employee]] = {}
+    for e in emps:
+        gpn_map[e.gpn] = e
+        first = (e.vorname or e.bs_first_name or e.bs_firstname or "").strip().lower()
+        last = (e.name or e.bs_last_name or e.bs_lastname or "").strip().lower()
+        if first and last:
+            key = f"{first} {last}"
+            name_map.setdefault(key, []).append(e)
+            # Also index by last name only for partial matches
+            name_map.setdefault(last, []).append(e)
+    return gpn_map, name_map
+
+
+def _match_employee_from_verak(
+    verak: str,
+    gpn_map: dict[str, Employee],
+    name_map: dict[str, list[Employee]],
+) -> tuple[Employee | None, str]:
+    """Try to resolve VERAK value to an Employee.
+
+    Returns:
+        (employee_or_None, match_reason)
+        match_reason: "pattern_gpn", "gpn_only", "name_match", "no_match"
+    """
+    verak = verak.strip()
+    if not verak:
+        return None, "empty"
+
+    # 1. Standard pattern: "<GPN> <Initial>. <Lastname>"
+    m = _VERAK_PATTERN.match(verak)
+    if m:
+        gpn = m.group(1)
+        emp = gpn_map.get(gpn)
+        if emp:
+            return emp, "pattern_gpn"
+        return None, "pattern_gpn_not_found"
+
+    # 2. Single token — might be just a GPN
+    parts = verak.split()
+    if len(parts) == 1:
+        emp = gpn_map.get(parts[0])
+        if emp:
+            return emp, "gpn_only"
+        return None, "gpn_not_found"
+
+    # 3. GPN + full name (non-standard format): first token is GPN
+    if parts[0] in gpn_map:
+        return gpn_map[parts[0]], "gpn_prefix"
+
+    # 4. Name-only: "<First> <Last>" or "<Last>, <First>"
+    name_lower = verak.lower().strip()
+    # Try "first last"
+    candidates = name_map.get(name_lower, [])
+    if len(candidates) == 1:
+        return candidates[0], "name_match"
+    # Try "last, first" → "first last"
+    if "," in verak:
+        comma_parts = [p.strip() for p in verak.split(",", 1)]
+        if len(comma_parts) == 2:
+            rearranged = f"{comma_parts[1]} {comma_parts[0]}".lower()
+            candidates = name_map.get(rearranged, [])
+            if len(candidates) == 1:
+                return candidates[0], "name_match"
+    # Try matching just last name from the name parts
+    if len(parts) >= 2:
+        last_lower = parts[-1].lower()
+        candidates = name_map.get(last_lower, [])
+        if len(candidates) == 1:
+            return candidates[0], "lastname_match"
+
+    return None, "no_match"
+
+
+def _validate_verak(
+    obj_type: str,
+    obj_id: int,
+    verak: str,
+    gpn_map: dict[str, Employee],
+    name_map: dict[str, list[Employee]],
+    scope: str,
+    batch_id: int | None,
+) -> tuple[str | None, int | None, DataQualityIssue | None]:
+    """Validate VERAK field and return corrected value + DQ issue if needed.
+
+    Returns:
+        (corrected_verak, employee_id, dq_issue_or_None)
+    """
+    verak = (verak or "").strip()
+    if not verak:
+        return None, None, None
+
+    emp, reason = _match_employee_from_verak(verak, gpn_map, name_map)
+
+    if emp:
+        formatted = emp.verak_display
+        emp_id = emp.id
+        if not emp.is_active:
+            # Employee exists but no longer active → needs reviewer
+            return verak, emp_id, DataQualityIssue(
+                scope=scope,
+                object_type=obj_type,
+                object_id=obj_id,
+                field_name="responsible",
+                rule_code="VERAK_EMPLOYEE_INACTIVE",
+                severity="error",
+                message=f"Employee {emp.gpn} is no longer active; new owner required",
+                current_value=verak,
+                suggested_value=formatted,
+                suggested_employee_id=emp_id,
+                status="open",
+                batch_id=batch_id,
+            )
+        # Check if already in standard format
+        if verak == formatted:
+            return formatted, emp_id, None
+        # Auto-correct to standard format
+        logger.info(
+            "VERAK auto-corrected: '%s' → '%s' (employee %s)", verak, formatted, emp.gpn
+        )
+        return formatted, emp_id, DataQualityIssue(
+            scope=scope,
+            object_type=obj_type,
+            object_id=obj_id,
+            field_name="responsible",
+            rule_code="VERAK_AUTO_CORRECTED",
+            severity="info",
+            message=f"Auto-corrected from '{verak}' to standard format",
+            current_value=verak,
+            suggested_value=formatted,
+            suggested_employee_id=emp_id,
+            status="auto_fixed",
+            batch_id=batch_id,
+        )
+
+    # No employee found
+    return verak, None, DataQualityIssue(
+        scope=scope,
+        object_type=obj_type,
+        object_id=obj_id,
+        field_name="responsible",
+        rule_code="VERAK_EMPLOYEE_NOT_FOUND",
+        severity="error",
+        message=f"Cannot resolve employee from VERAK value '{verak}' ({reason})",
+        current_value=verak,
+        status="open",
+        batch_id=batch_id,
+    )
 
 
 # Column mappings: normalize header names to model fields
@@ -1546,6 +1716,20 @@ def load_upload(batch_id: int, db: Session) -> dict:
     if batch.kind != "cc_with_hierarchy":
         _flush_progress(batch.id, 0, len(normalized))
 
+    # Pre-build employee lookup for VERAK validation (CC/PC kinds)
+    _verak_kinds = {
+        "cost_center", "cost_centers", "profit_center", "profit_centers",
+    }
+    gpn_map: dict[str, Employee] = {}
+    name_map: dict[str, list[Employee]] = {}
+    dq_issues: list[DataQualityIssue] = []
+    if batch.kind in _verak_kinds:
+        gpn_map, name_map = _build_employee_lookup(db, batch_scope)
+        # Clear previous DQ issues for this batch
+        db.execute(
+            sa_delete(DataQualityIssue).where(DataQualityIssue.batch_id == batch.id)
+        )
+
     if batch.kind in ("cost_center", "cost_centers"):
         # Bulk pre-fetch existing records to avoid N+1 queries
         existing_ccs = {
@@ -1607,6 +1791,23 @@ def load_upload(batch_id: int, db: Session) -> dict:
         if loaded % batch_size:
             db.flush()
 
+        # VERAK validation pass (after flush so objects have IDs)
+        if gpn_map:
+            for cc in existing_ccs.values():
+                verak = cc.responsible
+                if not verak:
+                    continue
+                corrected, emp_id, dq = _validate_verak(
+                    "cost_center", cc.id, verak, gpn_map, name_map,
+                    batch_scope, batch.id,
+                )
+                if corrected and corrected != verak:
+                    cc.responsible = corrected
+                if emp_id is not None:
+                    cc.responsible_employee_id = emp_id
+                if dq:
+                    dq_issues.append(dq)
+
     elif batch.kind in ("profit_center", "profit_centers"):
         # Bulk pre-fetch existing records to avoid N+1 queries
         existing_pcs = {
@@ -1658,6 +1859,23 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 _flush_progress(batch.id, loaded)
         if loaded % batch_size:
             db.flush()
+
+        # VERAK validation pass (after flush so objects have IDs)
+        if gpn_map:
+            for pc in existing_pcs.values():
+                verak = pc.responsible
+                if not verak:
+                    continue
+                corrected, emp_id, dq = _validate_verak(
+                    "profit_center", pc.id, verak, gpn_map, name_map,
+                    batch_scope, batch.id,
+                )
+                if corrected and corrected != verak:
+                    pc.responsible = corrected
+                if emp_id is not None:
+                    pc.responsible_employee_id = emp_id
+                if dq:
+                    dq_issues.append(dq)
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
         batch_size = 500
@@ -1768,22 +1986,22 @@ def load_upload(batch_id: int, db: Session) -> dict:
             db.flush()
 
     elif batch.kind in ("employee", "employees"):
-        # Bulk pre-fetch existing employees for this batch
-        existing_emps = {
+        # Bulk pre-fetch ALL existing employees in scope (not just this batch)
+        # so we can mark missing ones as inactive after loading.
+        all_existing_emps = {
             emp.gpn: emp
             for emp in db.execute(
-                select(Employee).where(
-                    Employee.scope == batch_scope,
-                    Employee.refresh_batch == batch.id,
-                )
+                select(Employee).where(Employee.scope == batch_scope)
             ).scalars()
         }
+        uploaded_gpns: set[str] = set()
         batch_size = 500
         for row in normalized:
             gpn = row.get("gpn", "").strip()
             if not gpn:
                 continue
-            existing = existing_emps.get(gpn)
+            uploaded_gpns.add(gpn)
+            existing = all_existing_emps.get(gpn)
             # Separate model fields from extra attrs
             model_kwargs: dict = {}
             extra_attrs: dict = {}
@@ -1808,6 +2026,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 if raw and isinstance(raw, str):
                     model_kwargs[dt_field] = _parse_date(raw)
             model_kwargs["refresh_batch"] = batch.id
+            model_kwargs["is_active"] = True  # present in upload → active
             _truncate_to_model(Employee, model_kwargs)
             if existing:
                 for k, v in model_kwargs.items():
@@ -1818,13 +2037,27 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 model_kwargs["data_category"] = batch_category
                 new_emp = Employee(**model_kwargs)
                 db.add(new_emp)
-                existing_emps[gpn] = new_emp
+                all_existing_emps[gpn] = new_emp
             loaded += 1
             if loaded % batch_size == 0:
                 db.flush()
                 _flush_progress(batch.id, loaded)
         if loaded % batch_size:
             db.flush()
+
+        # Mark employees NOT in this upload as inactive
+        inactive_count = 0
+        for gpn, emp in all_existing_emps.items():
+            if gpn not in uploaded_gpns and emp.is_active:
+                emp.is_active = False
+                inactive_count += 1
+        if inactive_count:
+            db.flush()
+            logger.info(
+                "Marked %d employees as inactive (not in upload batch %d)",
+                inactive_count,
+                batch.id,
+            )
 
     elif batch.kind in ("hierarchy", "hierarchies"):
         # Pass 1: create Hierarchy headers
@@ -2243,13 +2476,30 @@ def load_upload(batch_id: int, db: Session) -> dict:
     elif batch.kind == "cc_with_hierarchy":
         loaded = _load_cc_with_hierarchy(batch, db, batch_scope, batch_category)
 
+    # Persist any data-quality issues raised during loading
+    if dq_issues:
+        for dq in dq_issues:
+            db.add(dq)
+        db.flush()
+        dq_open = sum(1 for d in dq_issues if d.status == "open")
+        dq_auto = sum(1 for d in dq_issues if d.status == "auto_fixed")
+        logger.info(
+            "Data quality: %d issues (%d open, %d auto-fixed) for batch %d",
+            len(dq_issues), dq_open, dq_auto, batch.id,
+        )
+
     batch.rows_loaded = loaded
     batch.rows_processed = loaded
     batch.status = "loaded"
     batch.loaded_at = datetime.now(UTC)
     db.commit()
 
-    return {"status": "loaded", "rows_loaded": loaded}
+    result: dict = {"status": "loaded", "rows_loaded": loaded}
+    if dq_issues:
+        result["dq_issues_total"] = len(dq_issues)
+        result["dq_issues_open"] = sum(1 for d in dq_issues if d.status == "open")
+        result["dq_issues_auto_fixed"] = sum(1 for d in dq_issues if d.status == "auto_fixed")
+    return result
 
 
 def _load_cc_with_hierarchy(

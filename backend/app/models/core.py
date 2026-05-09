@@ -393,6 +393,8 @@ class Employee(TimestampMixin, Base):
     locn_city_name_1: Mapped[str | None] = mapped_column(String(100))
     locn_ctry_cd_1: Mapped[str | None] = mapped_column(String(5))
     building_cd_1: Mapped[str | None] = mapped_column(String(20))
+    # --- app fields ---
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # --- overflow ---
     attrs: Mapped[dict | None] = mapped_column(JSONB)
     refresh_batch: Mapped[int | None] = mapped_column(
@@ -406,6 +408,17 @@ class Employee(TimestampMixin, Base):
         legacy_name = self.bs_name or f"{self.bs_firstname or ''} {self.bs_lastname or ''}".strip()
         name = sap_name or legacy_name
         return f"{self.gpn} {name}".strip()
+
+    @property
+    def verak_display(self) -> str:
+        """Format as '<GPN> <First initial>. <Lastname>' for VERAK field."""
+        first = (self.vorname or self.bs_first_name or self.bs_firstname or "").strip()
+        last = (self.name or self.bs_last_name or self.bs_lastname or "").strip()
+        if first and last:
+            return f"{self.gpn} {first[0]}. {last}"
+        if last:
+            return f"{self.gpn} {last}"
+        return self.gpn
 
 
 class LegacyCostCenter(TimestampMixin, Base):
@@ -1060,6 +1073,57 @@ class ReviewItem(TimestampMixin, Base):
 
     scope: Mapped[ReviewScope] = relationship(back_populates="items")
     proposal: Mapped[CenterProposal | None] = relationship()
+
+
+# ---------- data quality ----------
+
+
+class DataQualityIssue(TimestampMixin, Base):
+    """Configurable data-quality issue raised during upload validation."""
+
+    __tablename__ = "data_quality_issue"
+    __table_args__ = (
+        Index("ix_dqi_scope", "scope"),
+        Index("ix_dqi_status", "status"),
+        Index("ix_dqi_object", "object_type", "object_id"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="cleanup")
+    # What object is affected
+    object_type: Mapped[str] = mapped_column(
+        String(30), nullable=False
+    )  # cost_center, profit_center
+    object_id: Mapped[int] = mapped_column(nullable=False)
+    field_name: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "responsible"
+    # Rule that detected the issue
+    rule_code: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # VERAK_PATTERN, VERAK_EMPLOYEE_INACTIVE, ...
+    severity: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="warning"
+    )  # error, warning, info
+    message: Mapped[str | None] = mapped_column(Text)
+    # Current and suggested values
+    current_value: Mapped[str | None] = mapped_column(Text)
+    suggested_value: Mapped[str | None] = mapped_column(Text)
+    suggested_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.employee.id", ondelete="SET NULL")
+    )
+    # Resolution
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="open"
+    )  # open, resolved, auto_fixed, suppressed
+    resolved_by: Mapped[str | None] = mapped_column(String(100))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_value: Mapped[str | None] = mapped_column(Text)
+    resolved_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.employee.id", ondelete="SET NULL")
+    )
+    batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cleanup.upload_batch.id", ondelete="SET NULL")
+    )
 
 
 # ---------- target objects ----------
@@ -2023,6 +2087,7 @@ LOCAL_ONLY_DOMAINS = [
     "llm_review_pass",
     "housekeeping_cycle",
     "housekeeping_item",
+    "data_quality_issue",
 ]
 
 

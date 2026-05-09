@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
-from app.models.core import CenterProposal, ReviewItem, ReviewScope
+from app.models.core import CenterProposal, DataQualityIssue, ReviewItem, ReviewScope
 
 router = APIRouter()
 
@@ -280,6 +280,32 @@ def scope_items(
         paths, max_depth = _resolve_hierarchy_paths(db, hierarchy_id, leaf_values)
         for row in enriched:
             row["levels"] = paths.get(row.get("cctr") or "", [])
+
+    # Attach open DQ issue counts to each item's cost center
+    cc_ids = []
+    for r in enriched:
+        if r.get("proposal_id"):
+            prop = db.get(CenterProposal, r["proposal_id"])
+            if prop and prop.legacy_cc_id:
+                r["_cc_id"] = prop.legacy_cc_id
+                cc_ids.append(prop.legacy_cc_id)
+    if cc_ids:
+        dq_counts_rows = db.execute(
+            select(DataQualityIssue.object_id, func.count(DataQualityIssue.id))
+            .where(
+                DataQualityIssue.object_type == "cost_center",
+                DataQualityIssue.object_id.in_(cc_ids),
+                DataQualityIssue.status == "open",
+            )
+            .group_by(DataQualityIssue.object_id)
+        ).all()
+        dq_map = {row[0]: row[1] for row in dq_counts_rows}
+        for r in enriched:
+            r["dq_issues_open"] = dq_map.get(r.pop("_cc_id", None), 0)
+    else:
+        for r in enriched:
+            r.pop("_cc_id", None)
+            r["dq_issues_open"] = 0
 
     return {
         "total": total,

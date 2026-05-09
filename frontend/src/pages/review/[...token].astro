@@ -110,6 +110,30 @@ export function getStaticPaths() {
       <div id="compare-body" class="text-sm"></div>
     </div>
   </div>
+
+  <!-- Data Quality Issue Resolution Modal -->
+  <div id="dq-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-12">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Data Quality Issues — <span id="dq-modal-cc" class="font-mono text-amplifi-600"></span></h2>
+        <button onclick="document.getElementById('dq-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+      <div id="dq-modal-body" class="space-y-3 text-sm"></div>
+    </div>
+  </div>
+
+  <!-- Employee Picker Modal (for DQ resolution) -->
+  <div id="emp-picker-modal" class="hidden fixed inset-0 bg-black/50 z-[60] flex items-start justify-center pt-16">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[70vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Select Employee</h2>
+        <button onclick="document.getElementById('emp-picker-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+      <input type="text" id="emp-search-input" class="input text-sm w-full mb-3" placeholder="Search by GPN, name, or email..."
+        oninput="clearTimeout(window._empST); window._empST=setTimeout(function(){searchEmployees()},300)" />
+      <div id="emp-search-results" class="space-y-1 text-sm max-h-96 overflow-y-auto"></div>
+    </div>
+  </div>
 </Layout>
 
 <script is:inline>
@@ -216,7 +240,13 @@ export function getStaticPaths() {
       html += '<tr><td class="py-0.5 text-gray-400">Company Code</td><td class="py-0.5">' + esc(item.ccode || '-') + '</td></tr>';
       html += '<tr><td class="py-0.5 text-gray-400">Controlling Area</td><td class="py-0.5">' + esc(item.coarea || '-') + '</td></tr>';
       html += '<tr><td class="py-0.5 text-gray-400">Profit Center</td><td class="py-0.5 font-mono">' + esc(item.pctr || '-') + '</td></tr>';
-      html += '<tr><td class="py-0.5 text-gray-400">Responsible</td><td class="py-0.5">' + esc(item.responsible || '-') + '</td></tr>';
+      html += '<tr><td class="py-0.5 text-gray-400">Responsible</td><td class="py-0.5">' + esc(item.responsible || '-');
+      if (item.dq_issues_open > 0) {
+        html += ' <span class="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded cursor-pointer" onclick="openDqModal(' + item.id + ', \'' + esc(item.cctr || '') + '\')" title="Data quality issues">';
+        html += '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>';
+        html += item.dq_issues_open + ' issue' + (item.dq_issues_open > 1 ? 's' : '') + '</span>';
+      }
+      html += '</td></tr>';
       html += '<tr><td class="py-0.5 text-gray-400">Category</td><td class="py-0.5">' + esc(item.cctrcgy || '-') + '</td></tr>';
       html += '<tr><td class="py-0.5 text-gray-400">Currency</td><td class="py-0.5">' + esc(item.currency || '-') + '</td></tr>';
       if (item.total_balance !== undefined) html += '<tr><td class="py-0.5 text-gray-400">Total Balance</td><td class="py-0.5 font-mono">' + (item.total_balance || '0') + '</td></tr>';
@@ -798,5 +828,144 @@ export function getStaticPaths() {
       }
     } catch(e) {}
   })();
+
+  // ===== Data Quality Issue Resolution =====
+  window._dqResolvingIssueId = null;
+
+  window.openDqModal = async function(itemId, cctr) {
+    document.getElementById('dq-modal-cc').textContent = cctr;
+    document.getElementById('dq-modal-body').innerHTML = '<div class="text-gray-400">Loading...</div>';
+    document.getElementById('dq-modal').classList.remove('hidden');
+    try {
+      var res = await fetch('/api/dq/issues?object_type=cost_center&status=open&size=50');
+      if (!res.ok) throw new Error('Failed to fetch DQ issues');
+      var data = await res.json();
+      var issues = data.items.filter(function(i) { return i.cctr === cctr; });
+      if (!issues.length) {
+        document.getElementById('dq-modal-body').innerHTML = '<div class="text-green-600">No open issues for this center.</div>';
+        return;
+      }
+      var html = '';
+      issues.forEach(function(iss) {
+        html += '<div class="border rounded p-3 bg-gray-50">';
+        html += '<div class="flex items-center justify-between mb-1">';
+        html += '<span class="font-medium">' + esc(iss.field_name) + '</span>';
+        html += '<span class="text-xs px-2 py-0.5 rounded ' +
+          (iss.severity === 'error' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700') +
+          '">' + esc(iss.severity) + '</span>';
+        html += '</div>';
+        html += '<div class="text-xs text-gray-500 mb-2">' + esc(iss.message || '') + '</div>';
+        html += '<div class="text-xs mb-2"><span class="text-gray-400">Current:</span> <code class="bg-gray-200 px-1 rounded">' + esc(iss.current_value || '-') + '</code></div>';
+        if (iss.suggested_value) {
+          html += '<div class="text-xs mb-2"><span class="text-gray-400">Suggested:</span> <code class="bg-green-100 px-1 rounded">' + esc(iss.suggested_value) + '</code></div>';
+        }
+        html += '<div class="flex gap-2 mt-2">';
+        html += '<button onclick="openEmpPicker(' + iss.id + ')" class="btn-sm bg-amplifi-600 text-white hover:bg-amplifi-700 text-xs">Assign Employee</button>';
+        if (iss.suggested_employee_id) {
+          html += '<button onclick="resolveDqWithSuggested(' + iss.id + ', ' + iss.suggested_employee_id + ')" class="btn-sm bg-green-600 text-white hover:bg-green-700 text-xs">Accept Suggested</button>';
+        }
+        html += '<button onclick="suppressDq(' + iss.id + ')" class="btn-sm bg-gray-400 text-white hover:bg-gray-500 text-xs">Suppress</button>';
+        html += '</div></div>';
+      });
+      document.getElementById('dq-modal-body').innerHTML = html;
+    } catch(e) {
+      document.getElementById('dq-modal-body').innerHTML = '<div class="text-red-600">Error loading issues: ' + esc(e.message) + '</div>';
+    }
+  };
+
+  window.openEmpPicker = function(issueId) {
+    window._dqResolvingIssueId = issueId;
+    document.getElementById('emp-search-input').value = '';
+    document.getElementById('emp-search-results').innerHTML = '<div class="text-gray-400 text-xs">Type to search employees...</div>';
+    document.getElementById('emp-picker-modal').classList.remove('hidden');
+    document.getElementById('emp-search-input').focus();
+  };
+
+  window.searchEmployees = async function() {
+    var q = document.getElementById('emp-search-input').value.trim();
+    var container = document.getElementById('emp-search-results');
+    if (!q || q.length < 2) {
+      container.innerHTML = '<div class="text-gray-400 text-xs">Type at least 2 characters...</div>';
+      return;
+    }
+    container.innerHTML = '<div class="text-gray-400 text-xs">Searching...</div>';
+    try {
+      var res = await fetch('/api/employees?search=' + encodeURIComponent(q) + '&size=20');
+      if (!res.ok) throw new Error('Search failed');
+      var data = await res.json();
+      if (!data.items.length) {
+        container.innerHTML = '<div class="text-gray-400 text-xs">No employees found.</div>';
+        return;
+      }
+      var html = '';
+      data.items.forEach(function(emp) {
+        var active = emp.is_active !== false;
+        html += '<div class="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer border' + (!active ? ' opacity-50' : '') + '" onclick="selectEmployee(' + emp.id + ')">';
+        html += '<div>';
+        html += '<div class="font-medium">' + esc(emp.gpn) + ' — ' + esc(emp.display_name || '') + '</div>';
+        html += '<div class="text-xs text-gray-400">' + esc(emp.verak_display || '') + (emp.email_address ? ' | ' + esc(emp.email_address) : '') + '</div>';
+        html += '</div>';
+        if (!active) html += '<span class="text-xs text-red-500">Inactive</span>';
+        html += '</div>';
+      });
+      container.innerHTML = html;
+    } catch(e) {
+      container.innerHTML = '<div class="text-red-500 text-xs">Error: ' + esc(e.message) + '</div>';
+    }
+  };
+
+  window.selectEmployee = async function(empId) {
+    var issueId = window._dqResolvingIssueId;
+    if (!issueId) return;
+    try {
+      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({employee_id: empId, action: 'resolve'})
+      });
+      if (!res.ok) throw new Error('Failed to resolve');
+      document.getElementById('emp-picker-modal').classList.add('hidden');
+      // Refresh DQ modal
+      var cc = document.getElementById('dq-modal-cc').textContent;
+      openDqModal(0, cc);
+      // Refresh review items
+      window._loadItems && window._loadItems();
+    } catch(e) {
+      alert('Error resolving: ' + e.message);
+    }
+  };
+
+  window.resolveDqWithSuggested = async function(issueId, empId) {
+    try {
+      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({employee_id: empId, action: 'resolve'})
+      });
+      if (!res.ok) throw new Error('Failed to resolve');
+      var cc = document.getElementById('dq-modal-cc').textContent;
+      openDqModal(0, cc);
+      window._loadItems && window._loadItems();
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+  };
+
+  window.suppressDq = async function(issueId) {
+    if (!confirm('Suppress this data quality issue?')) return;
+    try {
+      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'suppress'})
+      });
+      if (!res.ok) throw new Error('Failed to suppress');
+      var cc = document.getElementById('dq-modal-cc').textContent;
+      openDqModal(0, cc);
+      window._loadItems && window._loadItems();
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+  };
 })();
 </script>

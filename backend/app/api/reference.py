@@ -1454,7 +1454,13 @@ def list_employees(
         like = f"%{search}%"
         flt = (
             Employee.gpn.ilike(like)
+            | Employee.name.ilike(like)
+            | Employee.vorname.ilike(like)
             | Employee.bs_name.ilike(like)
+            | Employee.bs_first_name.ilike(like)
+            | Employee.bs_last_name.ilike(like)
+            | Employee.bs_firstname.ilike(like)
+            | Employee.bs_lastname.ilike(like)
             | Employee.email_address.ilike(like)
         )
         query = query.where(flt)
@@ -1480,9 +1486,13 @@ def list_employees(
                 "id": e.id,
                 "gpn": e.gpn,
                 "display_name": e.display_name,
+                "verak_display": e.verak_display,
+                "is_active": e.is_active,
                 "bs_name": e.bs_name,
                 "bs_firstname": e.bs_firstname,
                 "bs_lastname": e.bs_lastname,
+                "name": e.name,
+                "vorname": e.vorname,
                 "email_address": e.email_address,
                 "emp_status": e.emp_status,
                 "ou_cd": e.ou_cd,
