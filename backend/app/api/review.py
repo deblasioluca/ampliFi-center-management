@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
-from app.models.core import CenterProposal, DataQualityIssue, ReviewItem, ReviewScope
+from app.models.core import (
+    CenterProposal,
+    DataQualityIssue,
+    Employee,
+    LegacyCostCenter,
+    LegacyProfitCenter,
+    ReviewItem,
+    ReviewScope,
+)
 
 router = APIRouter()
 
@@ -340,6 +348,78 @@ def decide_item(
     item.decided_at = datetime.now(UTC)
     db.commit()
     return {"status": "decided", "decision": body.decision}
+
+
+class DqResolveBody(BaseModel):
+    employee_id: int | None = None
+    value: str | None = None
+    action: str = "resolve"  # resolve, suppress
+
+
+@router.post("/{token}/dq-resolve/{issue_id}")
+def resolve_dq_issue_via_token(
+    token: str,
+    issue_id: int,
+    body: DqResolveBody,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Resolve a DQ issue using the review scope token (no JWT needed)."""
+    scope = _get_scope(token, db)
+    issue = db.get(DataQualityIssue, issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if issue.status not in ("open",):
+        raise HTTPException(status_code=409, detail=f"Issue already {issue.status}")
+
+    from datetime import datetime
+
+    now = datetime.now(UTC)
+    resolved_value = body.value
+    resolved_emp_id = body.employee_id
+    resolved_by = f"reviewer:{scope.reviewer_name or scope.id}"
+
+    if body.action == "suppress":
+        issue.status = "suppressed"
+        issue.resolved_by = resolved_by
+        issue.resolved_at = now
+        db.commit()
+        return {"status": "suppressed", "issue_id": issue_id}
+
+    if body.employee_id:
+        emp = db.get(Employee, body.employee_id)
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        resolved_value = emp.verak_display
+        resolved_emp_id = emp.id
+
+        if issue.object_type == "cost_center":
+            cc = db.get(LegacyCostCenter, issue.object_id)
+            if cc:
+                cc.responsible = resolved_value
+                cc.responsible_employee_id = emp.id
+        elif issue.object_type == "profit_center":
+            pc = db.get(LegacyProfitCenter, issue.object_id)
+            if pc:
+                pc.responsible = resolved_value
+                pc.responsible_employee_id = emp.id
+    elif body.value:
+        if issue.object_type == "cost_center":
+            cc = db.get(LegacyCostCenter, issue.object_id)
+            if cc:
+                cc.responsible = body.value
+        elif issue.object_type == "profit_center":
+            pc = db.get(LegacyProfitCenter, issue.object_id)
+            if pc:
+                pc.responsible = body.value
+
+    issue.status = "resolved"
+    issue.resolved_by = resolved_by
+    issue.resolved_at = now
+    issue.resolved_value = resolved_value
+    issue.resolved_employee_id = resolved_emp_id
+    db.commit()
+
+    return {"status": "resolved", "issue_id": issue_id, "resolved_value": resolved_value}
 
 
 class BulkDecision(BaseModel):

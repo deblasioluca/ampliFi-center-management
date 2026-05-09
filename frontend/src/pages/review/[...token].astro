@@ -918,7 +918,7 @@ export function getStaticPaths() {
     var issueId = window._dqResolvingIssueId;
     if (!issueId) return;
     try {
-      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+      var res = await fetch('/api/review/' + reviewToken + '/dq-resolve/' + issueId, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({employee_id: empId, action: 'resolve'})
@@ -929,7 +929,7 @@ export function getStaticPaths() {
       var cc = document.getElementById('dq-modal-cc').textContent;
       openDqModal(0, cc);
       // Refresh review items
-      window._loadItems && window._loadItems();
+      window._loadItems && window._loadItems(1);
     } catch(e) {
       alert('Error resolving: ' + e.message);
     }
@@ -937,7 +937,7 @@ export function getStaticPaths() {
 
   window.resolveDqWithSuggested = async function(issueId, empId) {
     try {
-      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+      var res = await fetch('/api/review/' + reviewToken + '/dq-resolve/' + issueId, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({employee_id: empId, action: 'resolve'})
@@ -945,7 +945,7 @@ export function getStaticPaths() {
       if (!res.ok) throw new Error('Failed to resolve');
       var cc = document.getElementById('dq-modal-cc').textContent;
       openDqModal(0, cc);
-      window._loadItems && window._loadItems();
+      window._loadItems && window._loadItems(1);
     } catch(e) {
       alert('Error: ' + e.message);
     }
@@ -954,7 +954,7 @@ export function getStaticPaths() {
   window.suppressDq = async function(issueId) {
     if (!confirm('Suppress this data quality issue?')) return;
     try {
-      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+      var res = await fetch('/api/review/' + reviewToken + '/dq-resolve/' + issueId, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({action: 'suppress'})
@@ -962,7 +962,7 @@ export function getStaticPaths() {
       if (!res.ok) throw new Error('Failed to suppress');
       var cc = document.getElementById('dq-modal-cc').textContent;
       openDqModal(0, cc);
-      window._loadItems && window._loadItems();
+      window._loadItems && window._loadItems(1);
     } catch(e) {
       alert('Error: ' + e.message);
     }

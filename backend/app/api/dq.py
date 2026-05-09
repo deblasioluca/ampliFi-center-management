@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import PaginationParams, pagination, require_role
@@ -52,7 +52,14 @@ def list_issues(
     total = db.execute(count_q).scalar() or 0
     issues = (
         db.execute(
-            query.order_by(DataQualityIssue.severity.desc(), DataQualityIssue.id)
+            query.order_by(
+                case(
+                    (DataQualityIssue.severity == "error", 0),
+                    (DataQualityIssue.severity == "warning", 1),
+                    else_=2,
+                ),
+                DataQualityIssue.id,
+            )
             .offset((pag.page - 1) * pag.size)
             .limit(pag.size)
         )
@@ -245,7 +252,7 @@ def bulk_resolve(
     for iid in body.issue_ids:
         issue = db.get(DataQualityIssue, iid)
         if issue and issue.status == "open":
-            issue.status = body.action
+            issue.status = "suppressed"
             issue.resolved_by = user.username
             issue.resolved_at = now
             count += 1
