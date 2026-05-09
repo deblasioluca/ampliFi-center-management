@@ -1491,6 +1491,14 @@ def load_upload(batch_id: int, db: Session) -> dict:
         rows = [] if batch.kind == "cc_with_hierarchy" else _read_file(batch.storage_uri)
     except Exception as e:
         batch.status = "failed"
+        db.add(
+            UploadError(
+                batch_id=batch.id,
+                row_number=0,
+                error_code="LOAD_FILE_READ",
+                message=f"Cannot read file for loading: {e}",
+            )
+        )
         db.commit()
         return {"status": "failed", "error": str(e)}
 

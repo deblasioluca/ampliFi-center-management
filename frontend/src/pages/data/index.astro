@@ -251,6 +251,24 @@ import Layout from '../../components/layout/Layout.astro';
       <div id="sample-result" class="text-sm mt-3 hidden"></div>
     </div>
   </div>
+
+  <!-- Upload Error Log Modal -->
+  <div id="error-log-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col mx-4">
+      <div class="flex items-center justify-between px-5 py-3 border-b">
+        <h3 class="text-lg font-semibold text-gray-900">Upload Error Log — Batch <span id="error-log-batch-id"></span></h3>
+        <button onclick="document.getElementById('error-log-modal').classList.add('hidden')"
+          class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+      </div>
+      <div id="error-log-content" class="px-5 py-4 overflow-auto flex-1 text-sm">
+        Loading...
+      </div>
+      <div class="px-5 py-3 border-t text-right">
+        <button onclick="document.getElementById('error-log-modal').classList.add('hidden')"
+          class="px-4 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">Close</button>
+      </div>
+    </div>
+  </div>
 </Layout>
 
 <style>
@@ -576,6 +594,11 @@ import Layout from '../../components/layout/Layout.astro';
             ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
             'title="Reset stuck batch">Reset</button>';
         }
+        if (u.error_count > 0 || u.status === 'failed') {
+          actions += '<button onclick="viewUploadErrors(' + u.id +
+            ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
+            'title="View error log">Errors (' + (u.error_count || '!') + ')</button>';
+        }
         actions += '<button onclick="deleteUpload(' + u.id +
           ')" class="text-red-500 hover:underline text-xs" ' +
           'title="Delete this upload batch">Delete</button>';
@@ -642,11 +665,12 @@ import Layout from '../../components/layout/Layout.astro';
     var result = await pollBatchStatus(id, ['validated', 'failed'], 'Validating');
     if (!result) { alert('Validation timed out — check status manually.'); return; }
     if (result.status === 'failed') {
-      alert('Validation failed — check upload errors for details.');
+      viewUploadErrors(id);
     } else {
       alert('Validation: ' + result.status +
         (result.rows_error ? ' (' + result.rows_error + ' errors)' : '') +
         ' — ' + (result.rows_valid || 0) + ' valid rows');
+      if (result.rows_error > 0) viewUploadErrors(id);
     }
     loadUploadHistory();
   };
@@ -663,7 +687,7 @@ import Layout from '../../components/layout/Layout.astro';
     var result = await pollBatchStatus(id, ['loaded', 'failed'], 'Loading');
     if (!result) { alert('Load timed out — check status manually.'); return; }
     if (result.status === 'failed') {
-      alert('Load failed — check upload errors for details.');
+      viewUploadErrors(id);
     } else {
       alert('Load: ' + result.status +
         (result.rows_loaded ? ' (' + result.rows_loaded + ' rows)' : ''));
@@ -707,6 +731,47 @@ import Layout from '../../components/layout/Layout.astro';
       alert(d.message || 'Batch reset successfully.');
       loadUploadHistory();
     } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  window.viewUploadErrors = async function(batchId) {
+    document.getElementById('error-log-batch-id').textContent = batchId;
+    document.getElementById('error-log-content').innerHTML = '<p class="text-gray-500">Loading errors...</p>';
+    document.getElementById('error-log-modal').classList.remove('hidden');
+    try {
+      var res = await fetch('/api/admin/uploads/' + batchId + '/errors?size=200', { headers: authHdr });
+      if (!res.ok) throw new Error('Failed to load errors');
+      var d = await res.json();
+      var items = d.items || [];
+      if (!items.length) {
+        document.getElementById('error-log-content').innerHTML =
+          '<p class="text-gray-500">No error details recorded for this batch.</p>';
+        return;
+      }
+      var html = '<table class="w-full text-xs border"><thead>' +
+        '<tr class="bg-gray-50 border-b">' +
+        '<th class="py-2 px-2 text-left">Row</th>' +
+        '<th class="py-2 px-2 text-left">Column</th>' +
+        '<th class="py-2 px-2 text-left">Code</th>' +
+        '<th class="py-2 px-2 text-left">Message</th>' +
+        '</tr></thead><tbody>';
+      items.forEach(function(e) {
+        html += '<tr class="border-b hover:bg-red-50">' +
+          '<td class="py-1.5 px-2 font-mono">' + (e.row_number || '-') + '</td>' +
+          '<td class="py-1.5 px-2">' + esc(e.column_name || '-') + '</td>' +
+          '<td class="py-1.5 px-2"><span class="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">' +
+          esc(e.error_code) + '</span></td>' +
+          '<td class="py-1.5 px-2 text-gray-700">' + esc(e.message) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      if (d.total > items.length) {
+        html += '<p class="text-xs text-gray-500 mt-2">Showing ' + items.length +
+          ' of ' + d.total + ' errors.</p>';
+      }
+      document.getElementById('error-log-content').innerHTML = html;
+    } catch(e) {
+      document.getElementById('error-log-content').innerHTML =
+        '<p class="text-red-600">Error loading error log: ' + esc(e.message) + '</p>';
+    }
   };
 
   // ── Download upload template ────────────────────────────────────────
