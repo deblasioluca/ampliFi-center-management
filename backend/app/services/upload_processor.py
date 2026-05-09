@@ -307,6 +307,97 @@ def _validate_verak(
     )
 
 
+def _check_hierarchy_orphans(
+    db: Session,
+    batch: UploadBatch,
+    batch_scope: str,
+) -> list[DataQualityIssue]:
+    """Check for hierarchy leaves that reference centers not in CC/PC tables.
+
+    Returns DQ issues for orphan leaves (center in hierarchy but not uploaded).
+    """
+    hierarchies = (
+        db.execute(
+            select(Hierarchy).where(
+                Hierarchy.refresh_batch == batch.id,
+                Hierarchy.scope == batch_scope,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not hierarchies:
+        return []
+
+    issues: list[DataQualityIssue] = []
+    for hier in hierarchies:
+        leaves = (
+            db.execute(
+                select(HierarchyLeaf.value).where(HierarchyLeaf.hierarchy_id == hier.id).distinct()
+            )
+            .scalars()
+            .all()
+        )
+        if not leaves:
+            continue
+
+        is_cc = hier.setclass in ("0101", "FLAT")
+        if is_cc:
+            existing = set(
+                db.execute(
+                    select(LegacyCostCenter.cctr).where(
+                        LegacyCostCenter.scope == batch_scope,
+                        LegacyCostCenter.cctr.in_(leaves),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            obj_type = "cost_center"
+        else:
+            existing = set(
+                db.execute(
+                    select(LegacyProfitCenter.pctr).where(
+                        LegacyProfitCenter.scope == batch_scope,
+                        LegacyProfitCenter.pctr.in_(leaves),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            obj_type = "profit_center"
+
+        orphans = set(leaves) - existing
+        label = hier.label or hier.setname
+        for val in sorted(orphans):
+            issues.append(
+                DataQualityIssue(
+                    scope=batch_scope,
+                    object_type=obj_type,
+                    object_id=hier.id,
+                    field_name="hierarchy_leaf",
+                    rule_code="HIERARCHY_ORPHAN_LEAF",
+                    severity="warning",
+                    message=(
+                        f"Center '{val}' is referenced in hierarchy "
+                        f"'{label}' but not found in uploaded "
+                        f"{'cost' if is_cc else 'profit'} centers"
+                    ),
+                    current_value=val,
+                    status="open",
+                    batch_id=batch.id,
+                )
+            )
+
+    if orphans_total := len(issues):
+        logger.info(
+            "Hierarchy orphan check: %d orphan leaves in batch %d",
+            orphans_total,
+            batch.id,
+        )
+    return issues
+
+
 # Column mappings: normalize header names to model fields
 CC_COLUMNS = {
     # SAP technical names (CSKS/CSKT) — 1:1 mapping
@@ -2494,6 +2585,18 @@ def load_upload(batch_id: int, db: Session) -> dict:
 
     elif batch.kind == "cc_with_hierarchy":
         loaded = _load_cc_with_hierarchy(batch, db, batch_scope, batch_category)
+
+    # Check for hierarchy orphan leaves (centers in hierarchy but not uploaded)
+    _hier_kinds = {
+        "hierarchy",
+        "hierarchies",
+        "hierarchies_flat",
+        "entity_hierarchy",
+        "cc_with_hierarchy",
+    }
+    if batch.kind in _hier_kinds:
+        db.flush()  # ensure leaves are visible for the query
+        dq_issues.extend(_check_hierarchy_orphans(db, batch, batch_scope))
 
     # Persist any data-quality issues raised during loading
     if dq_issues:
