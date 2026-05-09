@@ -1187,6 +1187,7 @@ def create_upload(
     load_cc: bool = Query(default=True),
     load_ext_hier: bool = Query(default=True),
     load_cema_hier: bool = Query(default=True),
+    hierarchy_label: str | None = Query(default=None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
@@ -1211,17 +1212,26 @@ def create_upload(
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest.write_bytes(content)
 
-    # For cc_with_hierarchy, store options in source_detail as JSON
+    # Store options in source_detail as JSON
+    _hier_kinds = {
+        "hierarchies",
+        "hierarchies_flat",
+        "entity_hierarchy",
+        "cc_with_hierarchy",
+    }
     if kind == "cc_with_hierarchy":
-        source_detail = json.dumps(
-            {
-                "sheet_name": sheet_name or "Database",
-                "header_row": header_row if header_row is not None else 2,
-                "load_cc": load_cc,
-                "load_ext_hier": load_ext_hier,
-                "load_cema_hier": load_cema_hier,
-            }
-        )
+        detail_dict = {
+            "sheet_name": sheet_name or "Database",
+            "header_row": header_row if header_row is not None else 2,
+            "load_cc": load_cc,
+            "load_ext_hier": load_ext_hier,
+            "load_cema_hier": load_cema_hier,
+        }
+        if hierarchy_label:
+            detail_dict["hierarchy_label"] = hierarchy_label.strip()
+        source_detail = json.dumps(detail_dict)
+    elif kind in _hier_kinds and hierarchy_label:
+        source_detail = json.dumps({"hierarchy_label": hierarchy_label.strip(), "filename": fname})
     else:
         source_detail = fname
 

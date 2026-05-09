@@ -252,7 +252,7 @@
       if (!list.length) return;
       html += '<optgroup label="' + escAttr(groupLabels[key]) + '">';
       list.forEach(function (h) {
-        var label = esc(h.setname || h.label || '');
+        var label = esc(h.label || h.setname || '');
         if (h.description) label += ' — ' + esc(h.description);
         html += '<option value="' + h.id + '">' + label + '</option>';
       });

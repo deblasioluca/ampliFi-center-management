@@ -196,6 +196,12 @@ import Layout from '../../components/layout/Layout.astro';
                 </label>
               </div>
             </div>
+            <!-- Hierarchy display name (shown for hierarchy upload types) -->
+            <div id="hier-name-options" class="hidden">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Hierarchy Display Name</label>
+              <input type="text" id="hier-display-name" class="input text-sm" placeholder="e.g. Cost Center Hierarchy Q2 2026" />
+              <p class="text-xs text-gray-400 mt-1">Optional — shown in the hierarchy picker instead of the technical name</p>
+            </div>
             <div class="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
               <span class="font-medium">Template:</span>
               <button type="button" id="download-template-btn" class="ml-1 underline hover:text-blue-900">Download CSV template for selected type</button>
@@ -436,12 +442,20 @@ import Layout from '../../components/layout/Layout.astro';
     uploadTypeSel.disabled = false;
   });
 
+  var _hierTypes = ['hierarchy', 'hierarchy_flat', 'entity_hierarchy', 'cc_with_hierarchy'];
   uploadTypeSel.addEventListener('change', function() {
     var ccHierOpts = document.getElementById('cc-hier-options');
+    var hierNameOpts = document.getElementById('hier-name-options');
     if (this.value === 'cc_with_hierarchy') {
       ccHierOpts.classList.remove('hidden');
     } else {
       ccHierOpts.classList.add('hidden');
+    }
+    if (_hierTypes.indexOf(this.value) >= 0) {
+      hierNameOpts.classList.remove('hidden');
+    } else {
+      hierNameOpts.classList.add('hidden');
+      document.getElementById('hier-display-name').value = '';
     }
   });
 
@@ -535,6 +549,10 @@ import Layout from '../../components/layout/Layout.astro';
         '&header_row=' + encodeURIComponent(headerRow) +
         '&load_cc=' + loadCc + '&load_ext_hier=' + loadExt +
         '&load_cema_hier=' + loadCema;
+    }
+    var hierLabel = (document.getElementById('hier-display-name').value || '').trim();
+    if (hierLabel && _hierTypes.indexOf(type) >= 0) {
+      uploadUrl += '&hierarchy_label=' + encodeURIComponent(hierLabel);
     }
     xhr.open('POST', uploadUrl);
     xhr.setRequestHeader('Authorization', 'Bearer ' + token);
@@ -1097,6 +1115,24 @@ import Layout from '../../components/layout/Layout.astro';
         dodHierarchies.dataEndpoint = '/api/legacy/hierarchies';
       }
     },
+    rowActions: [
+      { label: 'Rename', title: 'Set display name', onclick: function(row) {
+        var cur = row.label || row.setname || '';
+        var newName = prompt('Hierarchy display name:', cur);
+        if (newName === null) return;
+        fetch('/api/admin/hierarchies/' + row.id + '?label=' + encodeURIComponent(newName), {
+          method: 'PATCH', headers: authHdr
+        }).then(function(r) { return r.json(); }).then(function() { dodHierarchies.load(); });
+      }},
+      { label: 'Delete', title: 'Delete this hierarchy', className: 'text-xs px-2 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50 mr-1', onclick: function(row) {
+        var name = row.label || row.setname || 'this hierarchy';
+        if (!confirm('Delete hierarchy "' + name + '" and all its nodes/leaves?')) return;
+        fetch('/api/data/hierarchies', {
+          method: 'DELETE', headers: Object.assign({'Content-Type': 'application/json'}, authHdr),
+          body: JSON.stringify({ ids: [row.id] })
+        }).then(function() { loadCounts(); dodHierarchies.load(); });
+      }}
+    ],
     toolbarButtons: [
       { label: 'Delete All', className: 'btn-danger text-xs', onclick: function() {
         if (!confirm('Delete ALL hierarchies?')) return;
