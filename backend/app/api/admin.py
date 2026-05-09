@@ -3094,7 +3094,7 @@ class _ClientLogEntry(BaseModel):
 @router.post("/logs/client")
 def receive_client_log(
     entry: _ClientLogEntry,
-    _user: AppUser = Depends(require_role("admin", "reviewer", "user", "viewer")),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "reviewer", "viewer")),
 ) -> dict:
     from app.infra.logging import add_client_log
 
