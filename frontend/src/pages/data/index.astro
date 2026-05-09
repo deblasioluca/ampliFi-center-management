@@ -1123,6 +1123,14 @@ import Layout from '../../components/layout/Layout.astro';
         fetch('/api/admin/hierarchies/' + row.id + '?label=' + encodeURIComponent(newName), {
           method: 'PATCH', headers: authHdr
         }).then(function(r) { return r.json(); }).then(function() { dodHierarchies.load(); });
+      }},
+      { label: 'Delete', title: 'Delete this hierarchy', className: 'text-xs px-2 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50 mr-1', onclick: function(row) {
+        var name = row.label || row.setname || 'this hierarchy';
+        if (!confirm('Delete hierarchy "' + name + '" and all its nodes/leaves?')) return;
+        fetch('/api/data/hierarchies', {
+          method: 'DELETE', headers: Object.assign({'Content-Type': 'application/json'}, authHdr),
+          body: JSON.stringify({ ids: [row.id] })
+        }).then(function() { loadCounts(); dodHierarchies.load(); });
       }}
     ],
     toolbarButtons: [
