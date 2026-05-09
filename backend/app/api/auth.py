@@ -113,6 +113,7 @@ async def entra_config(request: Request) -> dict:
         # SPA flow: no client secret needed, MSAL.js handles everything
         has_secret = bool(settings.entraid_client_secret.get_secret_value())
         result["auth_mode"] = "server" if has_secret else "spa"
+        result["show_claims"] = settings.entraid_show_claims
         # SPA redirect URI → the login page itself
         # Respects TLS settings: external_url > direct > proxy > off
         if settings.tls_external_url:
