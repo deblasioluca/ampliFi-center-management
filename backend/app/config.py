@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     entraid_client_id: str = ""
     entraid_tenant_id: str = ""
     entraid_client_secret: SecretStr = SecretStr("")
+    entraid_show_claims: bool = False
 
     # --- email ---
     smtp_host: str = "localhost"
