@@ -2894,19 +2894,42 @@ def _build_hierarchy_from_levels(
         if not hier_rows:
             continue
 
-        # Create the Hierarchy header
-        hier = Hierarchy(
-            scope=batch_scope,
-            data_category=batch_category,
-            setclass=setclass,
-            setname=hier_setname[:40],
-            label=hierarchy_label or hier_setname,
-            description=f"Hierarchy {hier_setname} (from Excel upload)",
-            coarea="",
-            refresh_batch=batch.id,
-        )
-        db.add(hier)
-        db.flush()
+        # Build a unique setname (max 40 chars).  When the raw name is
+        # longer than 40 characters, append a short hash suffix so that
+        # two distinct long names that share the same prefix don't collide
+        # on the unique constraint.
+        import hashlib as _hashlib
+
+        if len(hier_setname) > 40:
+            suffix = _hashlib.md5(hier_setname.encode(), usedforsecurity=False).hexdigest()[:6]
+            sname = hier_setname[: 40 - 7] + "_" + suffix
+        else:
+            sname = hier_setname[:40]
+
+        # Upsert: reuse existing hierarchy for same batch if already created
+        existing = db.execute(
+            select(Hierarchy).where(
+                Hierarchy.scope == batch_scope,
+                Hierarchy.setclass == setclass,
+                Hierarchy.setname == sname,
+                Hierarchy.refresh_batch == batch.id,
+            )
+        ).scalar_one_or_none()
+        if existing:
+            hier = existing
+        else:
+            hier = Hierarchy(
+                scope=batch_scope,
+                data_category=batch_category,
+                setclass=setclass,
+                setname=sname,
+                label=hierarchy_label or hier_setname,
+                description=f"Hierarchy {hier_setname} (from Excel upload)",
+                coarea="",
+                refresh_batch=batch.id,
+            )
+            db.add(hier)
+            db.flush()
         loaded += 1
 
         # Build unique nodes and parent→child edges from level columns
