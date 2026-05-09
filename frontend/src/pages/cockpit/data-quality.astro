@@ -49,6 +49,24 @@ import Layout from '../../components/layout/Layout.astro';
     </div>
   </div>
 
+  <!-- Upload DQ Issues (from VERAK validation etc.) -->
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold">Upload Data Quality Issues</h3>
+      <div class="flex gap-2 items-center">
+        <select id="dq-status-filter" class="input text-xs w-28" onchange="loadDqIssues()">
+          <option value="open">Open</option>
+          <option value="">All</option>
+          <option value="resolved">Resolved</option>
+          <option value="auto_fixed">Auto-Fixed</option>
+          <option value="suppressed">Suppressed</option>
+        </select>
+      </div>
+    </div>
+    <div id="dq-summary-row" class="flex gap-3 mb-3 text-xs"></div>
+    <div id="dq-issues-table" class="text-sm">Loading...</div>
+  </div>
+
   <!-- Issues list -->
   <div class="card">
     <h3 class="text-sm font-semibold mb-3">Data Issues</h3>
@@ -157,4 +175,97 @@ import Layout from '../../components/layout/Layout.astro';
   }
 
   loadQuality();
+
+  // DQ Issues from upload validation
+  async function loadDqIssues() {
+    var container = document.getElementById('dq-issues-table');
+    var summaryRow = document.getElementById('dq-summary-row');
+    var status = document.getElementById('dq-status-filter').value;
+    try {
+      // Summary
+      var sumRes = await fetch('/api/dq/issues/summary?scope=cleanup', { headers: headers });
+      if (sumRes.ok) {
+        var sum = await sumRes.json();
+        summaryRow.innerHTML =
+          '<span class="px-2 py-1 rounded bg-red-100 text-red-700">' + (sum.total_open || 0) + ' Open</span>' +
+          '<span class="px-2 py-1 rounded bg-green-100 text-green-700">' + (sum.by_status.resolved || 0) + ' Resolved</span>' +
+          '<span class="px-2 py-1 rounded bg-blue-100 text-blue-700">' + (sum.by_status.auto_fixed || 0) + ' Auto-Fixed</span>' +
+          '<span class="px-2 py-1 rounded bg-gray-100 text-gray-600">' + (sum.by_status.suppressed || 0) + ' Suppressed</span>';
+      }
+
+      // List issues
+      var url = '/api/dq/issues?scope=cleanup&size=50';
+      if (status) url += '&status=' + status;
+      var res = await fetch(url, { headers: headers });
+      if (!res.ok) throw new Error('Failed to load DQ issues');
+      var data = await res.json();
+      if (!data.items.length) {
+        container.innerHTML = '<div class="text-gray-400 py-3">No issues found.</div>';
+        return;
+      }
+      var html = '<table class="w-full text-xs"><thead><tr class="text-left text-gray-500 border-b">';
+      html += '<th class="py-1.5 pr-2">Center</th><th class="py-1.5 pr-2">Field</th><th class="py-1.5 pr-2">Rule</th>';
+      html += '<th class="py-1.5 pr-2">Current Value</th><th class="py-1.5 pr-2">Suggested</th>';
+      html += '<th class="py-1.5 pr-2">Status</th><th class="py-1.5">Actions</th>';
+      html += '</tr></thead><tbody>';
+      data.items.forEach(function(iss) {
+        var sevClass = iss.severity === 'error' ? 'text-red-600' : iss.severity === 'warning' ? 'text-amber-600' : 'text-blue-600';
+        var statusBadge = iss.status === 'open' ? '<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded">' + iss.status + '</span>' :
+          iss.status === 'resolved' ? '<span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">' + iss.status + '</span>' :
+          iss.status === 'auto_fixed' ? '<span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">auto-fix</span>' :
+          '<span class="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">' + iss.status + '</span>';
+        html += '<tr class="border-b border-gray-50 hover:bg-gray-50">';
+        html += '<td class="py-1.5 pr-2 font-mono">' + (iss.cctr || iss.pctr || iss.object_id) + '</td>';
+        html += '<td class="py-1.5 pr-2">' + iss.field_name + '</td>';
+        html += '<td class="py-1.5 pr-2 ' + sevClass + '">' + iss.rule_code + '</td>';
+        html += '<td class="py-1.5 pr-2"><code class="bg-gray-100 px-1 rounded text-xs">' + (iss.current_value || '-') + '</code></td>';
+        html += '<td class="py-1.5 pr-2">' + (iss.suggested_value ? '<code class="bg-green-50 px-1 rounded text-xs">' + iss.suggested_value + '</code>' : '-') + '</td>';
+        html += '<td class="py-1.5 pr-2">' + statusBadge + '</td>';
+        html += '<td class="py-1.5">';
+        if (iss.status === 'open') {
+          html += '<button onclick="resolveDqAdmin(' + iss.id + ')" class="text-xs text-amplifi-600 hover:underline mr-2">Resolve</button>';
+          html += '<button onclick="suppressDqAdmin(' + iss.id + ')" class="text-xs text-gray-500 hover:underline">Suppress</button>';
+        } else if (iss.resolved_value) {
+          html += '<span class="text-xs text-gray-400">' + iss.resolved_value + '</span>';
+        }
+        html += '</td></tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch(e) {
+      container.innerHTML = '<div class="text-red-500">Error: ' + e.message + '</div>';
+    }
+  }
+
+  window.resolveDqAdmin = async function(issueId) {
+    var empGpn = prompt('Enter employee GPN to assign:');
+    if (!empGpn) return;
+    try {
+      // Search for the employee
+      var searchRes = await fetch('/api/employees?search=' + encodeURIComponent(empGpn) + '&size=5', { headers: headers });
+      var searchData = await searchRes.json();
+      if (!searchData.items.length) { alert('Employee not found: ' + empGpn); return; }
+      var emp = searchData.items[0];
+      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({ employee_id: emp.id, action: 'resolve' })
+      });
+      if (!res.ok) throw new Error('Failed to resolve');
+      loadDqIssues();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  window.suppressDqAdmin = async function(issueId) {
+    if (!confirm('Suppress this issue?')) return;
+    try {
+      var res = await fetch('/api/dq/issues/' + issueId + '/resolve', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({ action: 'suppress' })
+      });
+      if (!res.ok) throw new Error('Failed to suppress');
+      loadDqIssues();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  loadDqIssues();
 </script>
