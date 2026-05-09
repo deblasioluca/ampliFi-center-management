@@ -1262,6 +1262,15 @@ def list_uploads(
         .limit(pag.size)
     )
     batches = db.execute(stmt).scalars().all()
+    batch_ids = [b.id for b in batches]
+    error_counts: dict[int, int] = {}
+    if batch_ids:
+        rows = db.execute(
+            select(UploadError.batch_id, func.count(UploadError.id))
+            .where(UploadError.batch_id.in_(batch_ids))
+            .group_by(UploadError.batch_id)
+        ).all()
+        error_counts = {r[0]: r[1] for r in rows}
     return {
         "total": total,
         "page": pag.page,
@@ -1281,6 +1290,7 @@ def list_uploads(
                 "rows_error": b.rows_error,
                 "rows_loaded": b.rows_loaded,
                 "rows_processed": b.rows_processed,
+                "error_count": error_counts.get(b.id, 0),
                 "created_at": str(b.created_at) if b.created_at else None,
             }
             for b in batches
@@ -1297,6 +1307,12 @@ def get_upload(
     batch = db.get(UploadBatch, batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Upload batch not found")
+    error_count = (
+        db.execute(
+            select(func.count(UploadError.id)).where(UploadError.batch_id == batch_id)
+        ).scalar()
+        or 0
+    )
     return {
         "id": batch.id,
         "kind": batch.kind,
@@ -1307,6 +1323,7 @@ def get_upload(
         "rows_error": batch.rows_error,
         "rows_loaded": batch.rows_loaded,
         "rows_processed": batch.rows_processed,
+        "error_count": error_count,
         "storage_uri": batch.storage_uri,
         "created_at": str(batch.created_at) if batch.created_at else None,
         "validated_at": str(batch.validated_at) if batch.validated_at else None,
@@ -1334,13 +1351,21 @@ def _run_validate_in_background(batch_id: int) -> None:
             return
         result = validate_upload(batch_id, db)
         _log.info("Validate batch %s completed: %s", batch_id, result)
-    except Exception:
+    except Exception as exc:
         _log.exception("Validate batch %s failed in background", batch_id)
         try:
             db.rollback()
             batch = db.get(UploadBatch, batch_id)
             if batch:
                 batch.status = "failed"
+                db.add(
+                    UploadError(
+                        batch_id=batch_id,
+                        row_number=0,
+                        error_code="VALIDATE_CRASH",
+                        message=f"Validation failed unexpectedly: {exc}",
+                    )
+                )
                 db.commit()
         except Exception:
             db.rollback()
@@ -1368,13 +1393,21 @@ def _run_load_in_background(batch_id: int) -> None:
             return
         result = load_upload(batch_id, db)
         _log.info("Load batch %s completed: %s", batch_id, result)
-    except Exception:
+    except Exception as exc:
         _log.exception("Load batch %s failed in background", batch_id)
         try:
             db.rollback()
             batch = db.get(UploadBatch, batch_id)
             if batch:
                 batch.status = "failed"
+                db.add(
+                    UploadError(
+                        batch_id=batch_id,
+                        row_number=0,
+                        error_code="LOAD_CRASH",
+                        message=f"Load failed unexpectedly: {exc}",
+                    )
+                )
                 db.commit()
         except Exception:
             db.rollback()
