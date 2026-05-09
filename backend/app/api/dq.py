@@ -52,9 +52,7 @@ def list_issues(
     total = db.execute(count_q).scalar() or 0
     issues = (
         db.execute(
-            query.order_by(
-                DataQualityIssue.severity.desc(), DataQualityIssue.id
-            )
+            query.order_by(DataQualityIssue.severity.desc(), DataQualityIssue.id)
             .offset((pag.page - 1) * pag.size)
             .limit(pag.size)
         )
@@ -125,33 +123,31 @@ def issue_summary(
 
     by_status = {}
     for st in ("open", "resolved", "auto_fixed", "suppressed"):
-        cnt = db.execute(
-            select(func.count(DataQualityIssue.id)).where(
-                DataQualityIssue.status == st,
-                *(
-                    [DataQualityIssue.scope == scope] if scope else []
-                ),
-                *(
-                    [DataQualityIssue.batch_id == batch_id] if batch_id else []
-                ),
-            )
-        ).scalar() or 0
+        cnt = (
+            db.execute(
+                select(func.count(DataQualityIssue.id)).where(
+                    DataQualityIssue.status == st,
+                    *([DataQualityIssue.scope == scope] if scope else []),
+                    *([DataQualityIssue.batch_id == batch_id] if batch_id else []),
+                )
+            ).scalar()
+            or 0
+        )
         by_status[st] = cnt
 
     by_severity = {}
     for sev in ("error", "warning", "info"):
-        cnt = db.execute(
-            select(func.count(DataQualityIssue.id)).where(
-                DataQualityIssue.severity == sev,
-                DataQualityIssue.status == "open",
-                *(
-                    [DataQualityIssue.scope == scope] if scope else []
-                ),
-                *(
-                    [DataQualityIssue.batch_id == batch_id] if batch_id else []
-                ),
-            )
-        ).scalar() or 0
+        cnt = (
+            db.execute(
+                select(func.count(DataQualityIssue.id)).where(
+                    DataQualityIssue.severity == sev,
+                    DataQualityIssue.status == "open",
+                    *([DataQualityIssue.scope == scope] if scope else []),
+                    *([DataQualityIssue.batch_id == batch_id] if batch_id else []),
+                )
+            ).scalar()
+            or 0
+        )
         by_severity[sev] = cnt
 
     return {

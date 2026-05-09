@@ -246,54 +246,64 @@ def _validate_verak(
         emp_id = emp.id
         if not emp.is_active:
             # Employee exists but no longer active → needs reviewer
-            return verak, emp_id, DataQualityIssue(
-                scope=scope,
-                object_type=obj_type,
-                object_id=obj_id,
-                field_name="responsible",
-                rule_code="VERAK_EMPLOYEE_INACTIVE",
-                severity="error",
-                message=f"Employee {emp.gpn} is no longer active; new owner required",
-                current_value=verak,
-                suggested_value=formatted,
-                suggested_employee_id=emp_id,
-                status="open",
-                batch_id=batch_id,
+            return (
+                verak,
+                emp_id,
+                DataQualityIssue(
+                    scope=scope,
+                    object_type=obj_type,
+                    object_id=obj_id,
+                    field_name="responsible",
+                    rule_code="VERAK_EMPLOYEE_INACTIVE",
+                    severity="error",
+                    message=f"Employee {emp.gpn} is no longer active; new owner required",
+                    current_value=verak,
+                    suggested_value=formatted,
+                    suggested_employee_id=emp_id,
+                    status="open",
+                    batch_id=batch_id,
+                ),
             )
         # Check if already in standard format
         if verak == formatted:
             return formatted, emp_id, None
         # Auto-correct to standard format
-        logger.info(
-            "VERAK auto-corrected: '%s' → '%s' (employee %s)", verak, formatted, emp.gpn
+        logger.info("VERAK auto-corrected: '%s' → '%s' (employee %s)", verak, formatted, emp.gpn)
+        return (
+            formatted,
+            emp_id,
+            DataQualityIssue(
+                scope=scope,
+                object_type=obj_type,
+                object_id=obj_id,
+                field_name="responsible",
+                rule_code="VERAK_AUTO_CORRECTED",
+                severity="info",
+                message=f"Auto-corrected from '{verak}' to standard format",
+                current_value=verak,
+                suggested_value=formatted,
+                suggested_employee_id=emp_id,
+                status="auto_fixed",
+                batch_id=batch_id,
+            ),
         )
-        return formatted, emp_id, DataQualityIssue(
+
+    # No employee found
+    return (
+        verak,
+        None,
+        DataQualityIssue(
             scope=scope,
             object_type=obj_type,
             object_id=obj_id,
             field_name="responsible",
-            rule_code="VERAK_AUTO_CORRECTED",
-            severity="info",
-            message=f"Auto-corrected from '{verak}' to standard format",
+            rule_code="VERAK_EMPLOYEE_NOT_FOUND",
+            severity="error",
+            message=f"Cannot resolve employee from VERAK value '{verak}' ({reason})",
             current_value=verak,
-            suggested_value=formatted,
-            suggested_employee_id=emp_id,
-            status="auto_fixed",
+            status="open",
             batch_id=batch_id,
-        )
-
-    # No employee found
-    return verak, None, DataQualityIssue(
-        scope=scope,
-        object_type=obj_type,
-        object_id=obj_id,
-        field_name="responsible",
-        rule_code="VERAK_EMPLOYEE_NOT_FOUND",
-        severity="error",
-        message=f"Cannot resolve employee from VERAK value '{verak}' ({reason})",
-        current_value=verak,
-        status="open",
-        batch_id=batch_id,
+        ),
     )
 
 
@@ -1718,7 +1728,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
 
     # Pre-build employee lookup for VERAK validation (CC/PC kinds)
     _verak_kinds = {
-        "cost_center", "cost_centers", "profit_center", "profit_centers",
+        "cost_center",
+        "cost_centers",
+        "profit_center",
+        "profit_centers",
     }
     gpn_map: dict[str, Employee] = {}
     name_map: dict[str, list[Employee]] = {}
@@ -1726,9 +1739,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
     if batch.kind in _verak_kinds:
         gpn_map, name_map = _build_employee_lookup(db, batch_scope)
         # Clear previous DQ issues for this batch
-        db.execute(
-            sa_delete(DataQualityIssue).where(DataQualityIssue.batch_id == batch.id)
-        )
+        db.execute(sa_delete(DataQualityIssue).where(DataQualityIssue.batch_id == batch.id))
 
     if batch.kind in ("cost_center", "cost_centers"):
         # Bulk pre-fetch existing records to avoid N+1 queries
@@ -1798,8 +1809,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 if not verak:
                     continue
                 corrected, emp_id, dq = _validate_verak(
-                    "cost_center", cc.id, verak, gpn_map, name_map,
-                    batch_scope, batch.id,
+                    "cost_center",
+                    cc.id,
+                    verak,
+                    gpn_map,
+                    name_map,
+                    batch_scope,
+                    batch.id,
                 )
                 if corrected and corrected != verak:
                     cc.responsible = corrected
@@ -1867,8 +1883,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 if not verak:
                     continue
                 corrected, emp_id, dq = _validate_verak(
-                    "profit_center", pc.id, verak, gpn_map, name_map,
-                    batch_scope, batch.id,
+                    "profit_center",
+                    pc.id,
+                    verak,
+                    gpn_map,
+                    name_map,
+                    batch_scope,
+                    batch.id,
                 )
                 if corrected and corrected != verak:
                     pc.responsible = corrected
@@ -1990,9 +2011,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         # so we can mark missing ones as inactive after loading.
         all_existing_emps = {
             emp.gpn: emp
-            for emp in db.execute(
-                select(Employee).where(Employee.scope == batch_scope)
-            ).scalars()
+            for emp in db.execute(select(Employee).where(Employee.scope == batch_scope)).scalars()
         }
         uploaded_gpns: set[str] = set()
         batch_size = 500
@@ -2485,7 +2504,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
         dq_auto = sum(1 for d in dq_issues if d.status == "auto_fixed")
         logger.info(
             "Data quality: %d issues (%d open, %d auto-fixed) for batch %d",
-            len(dq_issues), dq_open, dq_auto, batch.id,
+            len(dq_issues),
+            dq_open,
+            dq_auto,
+            batch.id,
         )
 
     batch.rows_loaded = loaded
