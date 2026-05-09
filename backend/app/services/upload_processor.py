@@ -7,6 +7,7 @@ import contextlib
 import csv
 import io
 import re
+import time as _time
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -1402,6 +1403,13 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         sheet_name = opts.get("sheet_name", "Database")
         header_row = int(opts.get("header_row", 2))
 
+    logger.info(
+        "upload.validate.reading_file",
+        batch_id=batch_id,
+        kind=batch.kind,
+        file=batch.storage_uri,
+    )
+    _t0 = _time.monotonic()
     try:
         if batch.kind == "cc_with_hierarchy":
             rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
@@ -1425,6 +1433,13 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         )
         db.commit()
         return {"status": "failed", "error": str(e)}
+
+    logger.info(
+        "upload.validate.file_read_complete",
+        batch_id=batch_id,
+        rows=len(rows),
+        elapsed_sec=round(_time.monotonic() - _t0, 2),
+    )
 
     mapping = {
         "cost_center": CC_COLUMNS,
@@ -1747,6 +1762,12 @@ def load_upload(batch_id: int, db: Session) -> dict:
         batch.status = "loading"
         db.commit()
 
+    logger.info(
+        "upload.load.reading_file",
+        batch_id=batch_id,
+        kind=batch.kind,
+    )
+    _t0 = _time.monotonic()
     try:
         rows = [] if batch.kind == "cc_with_hierarchy" else _read_file(batch.storage_uri)
     except Exception as e:
@@ -1761,6 +1782,13 @@ def load_upload(batch_id: int, db: Session) -> dict:
         )
         db.commit()
         return {"status": "failed", "error": str(e)}
+
+    logger.info(
+        "upload.load.file_read_complete",
+        batch_id=batch_id,
+        rows=len(rows),
+        elapsed_sec=round(_time.monotonic() - _t0, 2),
+    )
 
     mapping = {
         "cost_center": CC_COLUMNS,
