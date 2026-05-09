@@ -16,13 +16,21 @@ MAX_LOG_ENTRIES = 5000
 
 
 class _LogEntry:
-    __slots__ = ("timestamp", "level", "logger_name", "message")
+    __slots__ = ("timestamp", "level", "logger_name", "message", "source")
 
-    def __init__(self, timestamp: str, level: str, logger_name: str, message: str):
+    def __init__(
+        self,
+        timestamp: str,
+        level: str,
+        logger_name: str,
+        message: str,
+        source: str = "backend",
+    ):
         self.timestamp = timestamp
         self.level = level
         self.logger_name = logger_name
         self.message = message
+        self.source = source
 
 
 _log_buffer: deque[_LogEntry] = deque(maxlen=MAX_LOG_ENTRIES)
@@ -46,11 +54,42 @@ class RingBufferHandler(logging.Handler):
             _log_buffer.append(entry)
 
 
+def add_client_log(
+    level: str,
+    message: str,
+    logger_name: str = "frontend",
+    url: str | None = None,
+) -> None:
+    """Add a log entry originating from the browser client."""
+    ts = datetime.now(tz=UTC).isoformat()
+    if ts.endswith("+00:00"):
+        ts = ts[:-6] + "Z"
+    full_msg = f"[{url}] {message}" if url else message
+    entry = _LogEntry(
+        timestamp=ts,
+        level=level.upper(),
+        logger_name=logger_name,
+        message=full_msg,
+        source="frontend",
+    )
+    with _lock:
+        _log_buffer.append(entry)
+
+
+def flush_logs() -> int:
+    """Clear the in-memory log buffer. Returns the number of entries removed."""
+    with _lock:
+        count = len(_log_buffer)
+        _log_buffer.clear()
+    return count
+
+
 def get_recent_logs(
     limit: int = 200,
     level: str | None = None,
     since: str | None = None,
     search: str | None = None,
+    source: str | None = None,
 ) -> list[dict]:
     """Return recent log entries, newest first."""
     with _lock:
@@ -60,6 +99,8 @@ def get_recent_logs(
     if level:
         level_upper = level.upper()
         entries = [e for e in entries if e.level == level_upper]
+    if source:
+        entries = [e for e in entries if e.source == source]
     if since:
         since_normalized = since.replace("Z", "+00:00") if since.endswith("Z") else since
         try:
@@ -84,6 +125,7 @@ def get_recent_logs(
             "level": e.level,
             "logger": e.logger_name,
             "message": e.message,
+            "source": e.source,
         }
         for e in entries[:limit]
     ]

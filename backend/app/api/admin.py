@@ -3057,12 +3057,52 @@ def get_application_logs(
     level: str | None = Query(None),
     since: str | None = Query(None),
     search: str | None = Query(None),
+    source: str | None = Query(None),
     _user: AppUser = Depends(require_role("admin")),
 ) -> dict:
     from app.infra.logging import get_recent_logs
 
-    entries = get_recent_logs(limit=limit, level=level, since=since, search=search)
+    entries = get_recent_logs(
+        limit=limit,
+        level=level,
+        since=since,
+        search=search,
+        source=source,
+    )
     return {"total": len(entries), "items": entries}
+
+
+@router.delete("/logs")
+def flush_application_logs(
+    _user: AppUser = Depends(require_role("admin")),
+) -> dict:
+    from app.infra.logging import flush_logs
+
+    count = flush_logs()
+    return {"flushed": count}
+
+
+class _ClientLogEntry(BaseModel):
+    level: str = "ERROR"
+    message: str
+    logger: str = "frontend"
+    url: str | None = None
+
+
+@router.post("/logs/client")
+def receive_client_log(
+    entry: _ClientLogEntry,
+    _user: AppUser = Depends(require_role("admin", "reviewer", "user", "viewer")),
+) -> dict:
+    from app.infra.logging import add_client_log
+
+    add_client_log(
+        level=entry.level,
+        message=entry.message,
+        logger_name=entry.logger,
+        url=entry.url,
+    )
+    return {"ok": True}
 
 
 # --- Rule Catalog Q&A (LLM-powered, read-only) ---

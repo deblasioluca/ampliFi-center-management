@@ -245,5 +245,30 @@ const { title, requireAuth = false, adminOnly = false, requiredRole } = Astro.pr
         }
       })();
     </script>
+
+    <!-- Client-side error reporter — sends JS errors/warnings to backend log -->
+    <script is:inline>
+      (function() {
+        var _token = localStorage.getItem('amplifi_token');
+        if (!_token) return;
+        var _hdr = { 'Authorization': 'Bearer ' + _token, 'Content-Type': 'application/json' };
+        function _sendLog(lvl, msg) {
+          try {
+            fetch('/api/admin/logs/client', {
+              method: 'POST',
+              headers: _hdr,
+              body: JSON.stringify({ level: lvl, message: msg, url: location.pathname }),
+            }).catch(function() {});
+          } catch(e) {}
+        }
+        window.addEventListener('error', function(ev) {
+          var msg = (ev.message || 'Unknown error') + (ev.filename ? ' at ' + ev.filename + ':' + ev.lineno : '');
+          _sendLog('ERROR', msg);
+        });
+        window.addEventListener('unhandledrejection', function(ev) {
+          _sendLog('ERROR', 'Unhandled promise rejection: ' + (ev.reason && ev.reason.message || ev.reason || 'unknown'));
+        });
+      })();
+    </script>
   </body>
 </html>
