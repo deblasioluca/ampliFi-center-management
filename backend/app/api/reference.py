@@ -1163,6 +1163,7 @@ def list_hierarchies(
                 "id": h.id,
                 "setclass": h.setclass,
                 "setname": h.setname,
+                "label": h.label or "",
                 "description": h.description,
                 "coarea": h.coarea,
                 "is_active": h.is_active,

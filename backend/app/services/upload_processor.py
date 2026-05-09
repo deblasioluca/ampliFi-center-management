@@ -1889,6 +1889,16 @@ def load_upload(batch_id: int, db: Session) -> dict:
     batch_scope = getattr(batch, "scope", None) or "cleanup"
     batch_category = getattr(batch, "data_category", None) or "legacy"
 
+    # Extract user-defined hierarchy label from source_detail (if set during upload)
+    _hier_label: str | None = None
+    if batch.source_detail:
+        with contextlib.suppress(ValueError, TypeError):
+            import json as _json
+
+            _sd = _json.loads(batch.source_detail)
+            if isinstance(_sd, dict):
+                _hier_label = _sd.get("hierarchy_label")
+
     # Publish total + reset progress for load phase
     # (skip for cc_with_hierarchy — _load_cc_with_hierarchy sets its own total)
     if batch.kind != "cc_with_hierarchy":
@@ -2276,6 +2286,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     data_category=batch_category,
                     setclass=setclass,
                     setname=setname,
+                    label=_hier_label or None,
                     description=row.get("description", ""),
                     coarea=row.get("coarea", ""),
                     refresh_batch=batch.id,
@@ -2401,15 +2412,16 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 root_id = root_row.get("nodeid", "").strip()
                 raw_name = root_row.get("nodename", root_id)
                 description = root_row.get("nodetext", "")
-                label = None
+                label = _hier_label or None
                 hier_attrs: dict | None = None
                 setname = raw_name
                 if is_entity_hier and period_val:
                     max_name = 40 - len(period_val) - 1
                     setname = f"{raw_name[:max_name]}_{period_val}"
-                    label = f"{raw_name} ({period_val})"
+                    if not label:
+                        label = f"{raw_name} ({period_val})"
                     hier_attrs = {"period": period_val}
-                elif is_entity_hier:
+                elif is_entity_hier and not label:
                     label = raw_name
                 h = Hierarchy(
                     scope=batch_scope,
@@ -2666,7 +2678,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             loaded += 1
 
     elif batch.kind == "cc_with_hierarchy":
-        loaded = _load_cc_with_hierarchy(batch, db, batch_scope, batch_category)
+        loaded = _load_cc_with_hierarchy(batch, db, batch_scope, batch_category, _hier_label)
 
     # Check for hierarchy orphan leaves (centers in hierarchy but not uploaded)
     _hier_kinds = {
@@ -2716,6 +2728,7 @@ def _load_cc_with_hierarchy(
     db: Session,
     batch_scope: str,
     batch_category: str,
+    hierarchy_label: str | None = None,
 ) -> int:
     """Load cost centers + hierarchies from a combined Excel file.
 
@@ -2810,6 +2823,7 @@ def _load_cc_with_hierarchy(
             num_levels=_EXT_HIER_LEVELS,
             setclass="0101",
             loaded_so_far=loaded,
+            hierarchy_label=hierarchy_label,
         )
 
     # --- 3) Load CEMA Hierarchy ---
@@ -2827,6 +2841,7 @@ def _load_cc_with_hierarchy(
             num_levels=_CEMA_HIER_LEVELS,
             setclass="0101",
             loaded_so_far=loaded,
+            hierarchy_label=hierarchy_label,
         )
 
     return loaded
@@ -2846,6 +2861,7 @@ def _build_hierarchy_from_levels(
     loaded_so_far: int,
     desc_prefix: str = "",
     desc_suffix: str = "",
+    hierarchy_label: str | None = None,
 ) -> int:
     """Build a hierarchy from flattened level columns (L0..Ln).
 
@@ -2884,7 +2900,7 @@ def _build_hierarchy_from_levels(
             data_category=batch_category,
             setclass=setclass,
             setname=hier_setname[:40],
-            label=hier_setname,
+            label=hierarchy_label or hier_setname,
             description=f"Hierarchy {hier_setname} (from Excel upload)",
             coarea="",
             refresh_batch=batch.id,
