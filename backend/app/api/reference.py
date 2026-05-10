@@ -1607,7 +1607,7 @@ def list_employees(
     total = db.execute(count_q).scalar() or 0
     emps = (
         db.execute(
-            query.order_by(func.lpad(Employee.gpn, 20, "0"))
+            query.order_by(func.lpad(Employee.gpn, 8, "0"))
             .offset((pag.page - 1) * pag.size)
             .limit(pag.size)
         )
