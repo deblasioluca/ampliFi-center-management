@@ -1018,7 +1018,7 @@ import Layout from '../../components/layout/Layout.astro';
   // --- GL Accounts ---
   var dodGL = new DataObjectDisplay({
     containerId: 'dod-gl',
-    objectType: 'gl-accounts',
+    objectType: 'gl-accounts-ska1',
     title: 'GL Accounts',
     subtitle: '(SKA1 chart-of-accounts)',
     dataEndpoint: '/api/legacy/gl-accounts',
@@ -1030,6 +1030,7 @@ import Layout from '../../components/layout/Layout.astro';
     showCSV: true,
     pageSize: 500,
     hierPageSize: 5000,
+    excludeColumns: ['id', 'scope', 'data_category', 'mandt'],
     extraQueryParams: dodScopeParams(),
     authHeaders: authHdr
   });
