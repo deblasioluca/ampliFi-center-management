@@ -2464,18 +2464,23 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     _flush_progress(batch.id, loaded)
 
     elif batch.kind == "gl_accounts_ska1":
+        _seen_ska1: dict[tuple[str, str], object] = {}
         for row in normalized:
             saknr = (row.get("saknr") or "").strip()
             ktopl = (row.get("ktopl") or "").strip()
             if not saknr or not ktopl:
                 continue
-            existing = db.execute(
-                select(GLAccountSKA1).where(
-                    GLAccountSKA1.scope == batch_scope,
-                    GLAccountSKA1.ktopl == ktopl,
-                    GLAccountSKA1.saknr == saknr,
-                )
-            ).scalar_one_or_none()
+            _key = (ktopl, saknr)
+            existing = (
+                _seen_ska1.get(_key)
+                or db.execute(
+                    select(GLAccountSKA1).where(
+                        GLAccountSKA1.scope == batch_scope,
+                        GLAccountSKA1.ktopl == ktopl,
+                        GLAccountSKA1.saknr == saknr,
+                    )
+                ).scalar_one_or_none()
+            )
             kwargs: dict = {}
             for field_name in _SKA1_MODEL_FIELDS:
                 val = row.get(field_name)
@@ -2488,28 +2493,39 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 for k, v in kwargs.items():
                     if v is not None:
                         setattr(existing, k, v)
+                _seen_ska1[_key] = existing
             else:
                 kwargs["refresh_batch"] = batch.id
                 kwargs["scope"] = batch_scope
                 kwargs["data_category"] = batch_category
-                db.add(GLAccountSKA1(**kwargs))
+                new_gl = GLAccountSKA1(**kwargs)
+                db.add(new_gl)
+                _seen_ska1[_key] = new_gl
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % 1000 == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % 1000:
+            db.flush()
 
     elif batch.kind == "gl_accounts_skb1":
+        _seen_skb1: dict[tuple[str, str], object] = {}
         for row in normalized:
             saknr = (row.get("saknr") or "").strip()
             bukrs = (row.get("bukrs") or "").strip()
             if not saknr or not bukrs:
                 continue
-            existing = db.execute(
-                select(GLAccountSKB1).where(
-                    GLAccountSKB1.scope == batch_scope,
-                    GLAccountSKB1.bukrs == bukrs,
-                    GLAccountSKB1.saknr == saknr,
-                )
-            ).scalar_one_or_none()
+            _key_b = (bukrs, saknr)
+            existing = (
+                _seen_skb1.get(_key_b)
+                or db.execute(
+                    select(GLAccountSKB1).where(
+                        GLAccountSKB1.scope == batch_scope,
+                        GLAccountSKB1.bukrs == bukrs,
+                        GLAccountSKB1.saknr == saknr,
+                    )
+                ).scalar_one_or_none()
+            )
             kwargs_b: dict = {}
             for field_name in _SKB1_MODEL_FIELDS:
                 val = row.get(field_name)
@@ -2522,14 +2538,20 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 for k, v in kwargs_b.items():
                     if v is not None:
                         setattr(existing, k, v)
+                _seen_skb1[_key_b] = existing
             else:
                 kwargs_b["refresh_batch"] = batch.id
                 kwargs_b["scope"] = batch_scope
                 kwargs_b["data_category"] = batch_category
-                db.add(GLAccountSKB1(**kwargs_b))
+                new_gl_b = GLAccountSKB1(**kwargs_b)
+                db.add(new_gl_b)
+                _seen_skb1[_key_b] = new_gl_b
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % 1000 == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % 1000:
+            db.flush()
 
     elif batch.kind == "target_cost_centers":
         for row in normalized:
