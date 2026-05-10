@@ -1606,7 +1606,11 @@ def list_employees(
         count_q = count_q.where(Employee.local_cc_cd == cc_cd)
     total = db.execute(count_q).scalar() or 0
     emps = (
-        db.execute(query.order_by(Employee.gpn).offset((pag.page - 1) * pag.size).limit(pag.size))
+        db.execute(
+            query.order_by(func.lpad(Employee.gpn, 20, "0"))
+            .offset((pag.page - 1) * pag.size)
+            .limit(pag.size)
+        )
         .scalars()
         .all()
     )
