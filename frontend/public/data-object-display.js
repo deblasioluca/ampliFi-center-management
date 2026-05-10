@@ -1979,6 +1979,14 @@
       container.querySelectorAll('[data-dod-toggle]').forEach(function (el) {
         el.innerHTML = '&#9654;';
       });
+      // Collapse GL hierarchy groups
+      container.querySelectorAll('[data-dod-gl-toggle]').forEach(function (el) {
+        var targetId = el.dataset.dodGlToggle;
+        var target = document.getElementById(targetId);
+        if (target) target.classList.add('hidden');
+        var arrow = el.querySelector('.dod-arrow');
+        if (arrow) arrow.innerHTML = '&#9654;';
+      });
     });
 
     // CSV download
