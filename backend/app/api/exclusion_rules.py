@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_role
@@ -150,13 +150,14 @@ def evaluate_exclusion(
 
     This is used by the frontend to badge excluded centers in the tables.
     """
-    from app.models.core import LegacyCostCenter, LegacyProfitCenter, CATEGORY_LEGACY
+    from app.models.core import CATEGORY_LEGACY, LegacyCostCenter, LegacyProfitCenter
 
     # Get enabled rules for this scope and object type
     q = select(CenterExclusionRule).where(
         CenterExclusionRule.is_enabled == True,  # noqa: E712
         (CenterExclusionRule.scope == None) | (CenterExclusionRule.scope == scope),  # noqa: E711
-        (CenterExclusionRule.object_type == "both") | (CenterExclusionRule.object_type == object_type),
+        (CenterExclusionRule.object_type == "both")
+        | (CenterExclusionRule.object_type == object_type),
     )
     rules = db.scalars(q).all()
     if not rules:
@@ -164,17 +165,17 @@ def evaluate_exclusion(
 
     # Determine model
     if object_type == "cost_center":
-        Model = LegacyCostCenter
+        model_cls = LegacyCostCenter
     elif object_type == "profit_center":
-        Model = LegacyProfitCenter
+        model_cls = LegacyProfitCenter
     else:
         return {"excluded_ids": [], "rules_applied": 0}
 
     # Get all legacy centers for this scope
     centers = db.scalars(
-        select(Model).where(
-            Model.scope == scope,
-            Model.data_category == CATEGORY_LEGACY,
+        select(model_cls).where(
+            model_cls.scope == scope,
+            model_cls.data_category == CATEGORY_LEGACY,
         )
     ).all()
 
@@ -224,12 +225,6 @@ def _matches_condition(obj, condition: dict) -> bool:
             b = float(str(value)) if "." in str(value) else int(str(value))
         except (ValueError, TypeError):
             a, b = actual_str, str(value)
-        if operator == "<":
-            return a < b
-        elif operator == ">":
-            return a > b
-        elif operator == "<=":
-            return a <= b
-        elif operator == ">=":
-            return a >= b
+        ops = {"<": a < b, ">": a > b, "<=": a <= b, ">=": a >= b}
+        return ops.get(operator, False)
     return False
