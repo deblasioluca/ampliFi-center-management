@@ -34,7 +34,10 @@ log = logging.getLogger(__name__)
 
 
 def _get_excluded_ids_for_page(
-    db: Session, centers, scope: str | None, object_type: str,
+    db: Session,
+    centers,
+    scope: str | None,
+    object_type: str,
 ) -> set[int]:
     """Evaluate exclusion rules against a page of centers."""
     q = select(CenterExclusionRule).where(
@@ -984,11 +987,16 @@ def center_mapping_overview(
         }
         if search:
             pattern = search.lower()
-            searchable = " ".join([
-                row["legacy_cc"], row["legacy_cc_name"],
-                row["legacy_pc"], row["target_cc"],
-                row["target_cc_name"], row["target_pc"],
-            ]).lower()
+            searchable = " ".join(
+                [
+                    row["legacy_cc"],
+                    row["legacy_cc_name"],
+                    row["legacy_pc"],
+                    row["target_cc"],
+                    row["target_cc_name"],
+                    row["target_pc"],
+                ]
+            ).lower()
             if pattern not in searchable:
                 continue
         rows.append(row)
