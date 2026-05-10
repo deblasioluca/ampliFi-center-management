@@ -389,7 +389,11 @@ import Layout from '../../components/layout/Layout.astro';
   var objLabels = {
     cost_center: 'Cost Centers', cc_with_hierarchy: 'Cost Centers with Hierarchy (Excel)',
     profit_center: 'Profit Centers',
-    gl_account_ska1: 'GL Accounts (SKA1)', gl_account_skb1: 'GL Accounts (SKB1)',
+    gl_account_ska1: 'GL Accounts — General Ledger (SKA1)',
+    gl_account_skb1: 'GL Accounts — General Ledger (SKB1)',
+    gl_account_group: 'GL Accounts — Group Reporting (coming soon)',
+    gl_account_fpsl: 'GL Accounts — Subledger FPSL (coming soon)',
+    gl_account_mapping: 'GL Account Mapping (legacy → target) (coming soon)',
     entity: 'Entities',
     hierarchy: 'Hierarchies (SET format)', hierarchy_flat: 'Hierarchies (SAP flat export)', entity_hierarchy: 'Entity Hierarchy (GCRS)',
     balance: 'Balances', balance_gcr: 'Balances (GCR aggregated)',
@@ -459,12 +463,18 @@ import Layout from '../../components/layout/Layout.astro';
     var kindMap = {
       cost_center: 'cost_centers', profit_center: 'profit_centers',
       gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      gl_account_group: 'gl_accounts_group', gl_account_fpsl: 'gl_accounts_fpsl',
       entity: 'entities',
       hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
       entity_hierarchy: 'entity_hierarchy',
       balance: 'balances', balance_gcr: 'balances_gcr',
       employee: 'employees'
     };
+    var _comingSoon = ['gl_account_group', 'gl_account_fpsl', 'gl_account_mapping'];
+    if (_comingSoon.indexOf(type) >= 0) {
+      alert('This upload type is not yet available — table structure to be defined.');
+      return;
+    }
     var uploadKind = kindMap[type] || type;
     if (uCat === 'target' && type === 'cost_center') uploadKind = 'target_cost_centers';
     if (uCat === 'target' && type === 'profit_center') uploadKind = 'target_profit_centers';
@@ -578,17 +588,19 @@ import Layout from '../../components/layout/Layout.astro';
           actions = '<button onclick="rollbackUpload(' + u.id +
             ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
         } else if (u.status === 'validating' || u.status === 'loading') {
+          var isReading = (u.rows_total || 0) < 0;
           var pct = (u.rows_total > 0 && u.rows_processed != null)
             ? Math.min(100, Math.round((u.rows_processed / u.rows_total) * 100)) : 0;
-          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
+          var progressLabel = isReading ? 'Reading file…' : (u.status === 'validating' ? 'Validating' : 'Loading');
           actions = '<div class="inline-flex items-center gap-2">' +
             '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" ' +
-            'title="' + fmt(u.rows_processed || 0) + ' / ' +
-            fmt(u.rows_total) + ' rows">' +
+            'title="' + (isReading ? 'Reading file' : fmt(u.rows_processed || 0) + ' / ' +
+            fmt(u.rows_total) + ' rows') + '">' +
             '<div class="bg-yellow-500 h-3 rounded-full transition-all ' +
-            'duration-300" style="width:' + pct + '%"></div></div>' +
+            'duration-300' + (isReading ? ' animate-pulse' : '') + '" style="width:' + (isReading ? '100%' : pct + '%') + '"' +
+            '></div></div>' +
             '<span class="text-yellow-700 text-[10px] font-medium ' +
-            'whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
+            'whitespace-nowrap">' + progressLabel + (isReading ? '' : ' ' + pct + '%') + '</span>' +
             '</div> ' +
             '<button onclick="resetUpload(' + u.id +
             ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
@@ -776,8 +788,30 @@ import Layout from '../../components/layout/Layout.astro';
 
   // ── Download upload template ────────────────────────────────────────
   document.getElementById('download-template-btn').addEventListener('click', async function() {
-    var kind = document.getElementById('upload-type').value;
-    if (!kind) { alert('Please select a data type first.'); return; }
+    var rawKind = document.getElementById('upload-type').value;
+    if (!rawKind) { alert('Please select a data type first.'); return; }
+    var _noTemplate = ['cc_with_hierarchy', 'gl_account_group', 'gl_account_fpsl', 'gl_account_mapping'];
+    if (_noTemplate.indexOf(rawKind) >= 0) {
+      if (rawKind === 'cc_with_hierarchy') {
+        alert('No CSV template for this type — use your existing Excel file with the sheet/header options above.');
+      } else {
+        alert('Template not yet available — table structure to be defined.');
+      }
+      return;
+    }
+    var templateKindMap = {
+      cost_center: 'cost_centers', profit_center: 'profit_centers',
+      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      entity: 'entities',
+      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
+      entity_hierarchy: 'entity_hierarchy',
+      balance: 'balances', balance_gcr: 'balances_gcr',
+      employee: 'employees'
+    };
+    var cat = getCategory();
+    var kind = templateKindMap[rawKind] || rawKind;
+    if (cat === 'target' && rawKind === 'cost_center') kind = 'target_cost_centers';
+    if (cat === 'target' && rawKind === 'profit_center') kind = 'target_profit_centers';
     try {
       var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
       if (!res.ok) { alert('Failed to fetch template'); return; }

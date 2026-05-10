@@ -35,8 +35,11 @@ import '../styles/global.css';
       <button class="explore-tab explore-tab-active" data-explore-tab="cost-centers" data-panel="legacy">Cost Centers</button>
       <button class="explore-tab" data-explore-tab="profit-centers" data-panel="legacy">Profit Centers</button>
       <button class="explore-tab" data-explore-tab="entities" data-panel="legacy">Entities</button>
-      <button class="explore-tab" data-explore-tab="gl-accounts-ska1" data-panel="legacy">GL Accts (CoA)</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-ska1" data-panel="legacy">GL Accts (General Ledger)</button>
       <button class="explore-tab" data-explore-tab="gl-accounts-skb1" data-panel="legacy">GL Accts (CoCd)</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-group" data-panel="legacy" title="Coming soon — table structure TBD">GL Accts (Group Reporting) ⏳</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-fpsl" data-panel="legacy" title="Coming soon — table structure TBD">GL Accts (FPSL) ⏳</button>
+      <button class="explore-tab" data-explore-tab="gl-account-mapping" data-panel="legacy" title="Coming soon — legacy to target GL account mapping">GL Mapping ⏳</button>
       <button class="explore-tab" data-explore-tab="hierarchies" data-panel="legacy">Hierarchies</button>
     </div>
 
@@ -53,8 +56,11 @@ import '../styles/global.css';
       <button class="explore-tab explore-tab-active" data-explore-tab="target-cost-centers" data-panel="target">Cost Centers</button>
       <button class="explore-tab" data-explore-tab="target-profit-centers" data-panel="target">Profit Centers</button>
       <button class="explore-tab" data-explore-tab="target-entities" data-panel="target">Entities</button>
-      <button class="explore-tab" data-explore-tab="target-gl-accounts-ska1" data-panel="target">GL Accts (CoA)</button>
+      <button class="explore-tab" data-explore-tab="target-gl-accounts-ska1" data-panel="target">GL Accts (General Ledger)</button>
       <button class="explore-tab" data-explore-tab="target-gl-accounts-skb1" data-panel="target">GL Accts (CoCd)</button>
+      <button class="explore-tab" data-explore-tab="target-gl-accounts-group" data-panel="target" title="Coming soon — table structure TBD">GL Accts (Group Reporting) ⏳</button>
+      <button class="explore-tab" data-explore-tab="target-gl-accounts-fpsl" data-panel="target" title="Coming soon — table structure TBD">GL Accts (FPSL) ⏳</button>
+      <button class="explore-tab" data-explore-tab="target-gl-account-mapping" data-panel="target" title="Coming soon — legacy to target GL account mapping">GL Mapping ⏳</button>
       <button class="explore-tab" data-explore-tab="target-hierarchies" data-panel="target">Hierarchies</button>
     </div>
 
@@ -80,22 +86,28 @@ import '../styles/global.css';
   // ── Tab configs ────────────────────────────────────────────────────────
   // Legacy tabs — same objects as before, minus employees
   var LEGACY_TABS = {
-    'cost-centers':     { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
-    'profit-centers':   { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
-    'entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy' },
-    'gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
-    'gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
-    'hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy' }
+    'cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
+    'profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
+    'entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy' },
+    'gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
+    'gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
+    'gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
+    'gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
+    'gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
+    'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy' }
   };
 
   // Target tabs — mirror legacy structure using target tables / data_category=target
   var TARGET_TABS = {
-    'target-cost-centers':     { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
-    'target-profit-centers':   { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
-    'target-entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target' },
-    'target-gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
-    'target-gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
-    'target-hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target' }
+    'target-cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
+    'target-profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
+    'target-entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target' },
+    'target-gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
+    'target-gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
+    'target-gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
+    'target-gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
+    'target-gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
+    'target-hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target' }
   };
 
   var currentPanel = 'legacy';
@@ -151,6 +163,15 @@ import '../styles/global.css';
     if (!cfg) return;
 
     var containerId = panel === 'legacy' ? 'explore-dod' : 'target-dod';
+
+    // Placeholder tabs — show coming soon message
+    if (cfg.placeholder) {
+      document.getElementById(containerId).innerHTML =
+        '<div class="flex items-center justify-center h-full text-gray-400">' +
+        '<div class="text-center"><p class="text-lg font-medium mb-2">' + cfg.label + '</p>' +
+        '<p class="text-sm">Coming soon — table structure to be defined</p></div></div>';
+      return;
+    }
     var extraParams = {};
     if (cfg.category) {
       extraParams.data_category = cfg.category;
