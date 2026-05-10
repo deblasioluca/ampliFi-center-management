@@ -1676,9 +1676,12 @@ def data_counts(
         "entities": _cnt(Entity, scope, data_category),
         "cost_centers": _cnt(LegacyCostCenter, scope, data_category),
         "profit_centers": _cnt(LegacyProfitCenter, scope, data_category),
+        "gl_accounts": _cnt(GLAccountSKA1, scope, data_category),
         "balances": _cnt(Balance, scope, data_category),
         "hierarchies": _cnt(Hierarchy, scope, data_category),
         "employees": _cnt(Employee, scope, data_category),
+        "target_cost_centers": _cnt(TargetCostCenter, scope, data_category),
+        "target_profit_centers": _cnt(TargetProfitCenter, scope, data_category),
         "upload_batches": _cnt(UploadBatch, scope, data_category),
     }
 
