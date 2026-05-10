@@ -12,6 +12,7 @@ from app.api.deps import PaginationParams, pagination
 from app.infra.db.session import get_db
 from app.models.core import (
     Balance,
+    CenterExclusionRule,
     CenterMapping,
     Employee,
     Entity,
@@ -30,6 +31,35 @@ from app.models.core import (
 router = APIRouter()
 
 log = logging.getLogger(__name__)
+
+
+def _get_excluded_ids_for_page(
+    db: Session,
+    centers,
+    scope: str | None,
+    object_type: str,
+) -> set[int]:
+    """Evaluate exclusion rules against a page of centers."""
+    q = select(CenterExclusionRule).where(
+        CenterExclusionRule.is_enabled == True,  # noqa: E712
+        (CenterExclusionRule.scope == None)  # noqa: E711
+        | (CenterExclusionRule.scope == scope),
+        (CenterExclusionRule.object_type == "both")
+        | (CenterExclusionRule.object_type == object_type),
+    )
+    rules = db.scalars(q).all()
+    if not rules:
+        return set()
+
+    from app.api.exclusion_rules import _matches_condition
+
+    excluded = set()
+    for center in centers:
+        for rule in rules:
+            if _matches_condition(center, rule.condition):
+                excluded.add(center.id)
+                break
+    return excluded
 
 
 # ── Cluster duplicate-check job registry ─────────────────────────────
@@ -481,6 +511,9 @@ def list_legacy_ccs(
     if hierarchy_id is not None and ccs:
         paths, max_depth = _resolve_paths_for_ccs(db, hierarchy_id, ccs)
 
+    # Evaluate exclusion rules for this page
+    excluded_ids = _get_excluded_ids_for_page(db, ccs, scope, "cost_center")
+
     return {
         "total": total,
         "page": pag.page,
@@ -508,6 +541,7 @@ def list_legacy_ccs(
                 "land1": c.land1,
                 "nkost": c.nkost,
                 "is_active": c.is_active,
+                "is_excluded": c.id in excluded_ids,
                 "levels": paths.get(c.cctr, []),
             }
             for c in ccs
@@ -569,6 +603,9 @@ def list_legacy_pcs(
     if hierarchy_id is not None and pcs:
         paths, max_depth = _resolve_paths_for_pcs(db, hierarchy_id, pcs)
 
+    # Evaluate exclusion rules for this page
+    excluded_ids = _get_excluded_ids_for_page(db, pcs, scope, "profit_center")
+
     return {
         "total": total,
         "page": pag.page,
@@ -593,6 +630,7 @@ def list_legacy_pcs(
                 "name1": p.name1,
                 "name2": p.name2,
                 "is_active": p.is_active,
+                "is_excluded": p.id in excluded_ids,
                 "levels": paths.get(p.pctr, []),
             }
             for p in pcs
@@ -873,6 +911,100 @@ def list_center_mappings(
             for m in rows
         ],
     }
+
+
+@router.get("/center-mappings/overview")
+def center_mapping_overview(
+    db: Session = Depends(get_db),
+    scope: str | None = None,
+    search: str | None = None,
+) -> dict:
+    """Return the 4-column center mapping view:
+    Legacy CC, Legacy PC, Target CC, Target PC.
+
+    Groups Target CCs that share a Target PC for rowspan display.
+    """
+    # Get CC mappings
+    cc_q = select(CenterMapping).where(CenterMapping.object_type == "cost_center")
+    pc_q = select(CenterMapping).where(CenterMapping.object_type == "profit_center")
+    if scope:
+        cc_q = cc_q.where(CenterMapping.scope == scope)
+        pc_q = pc_q.where(CenterMapping.scope == scope)
+
+    cc_mappings = db.execute(cc_q.order_by(CenterMapping.target_center)).scalars().all()
+    pc_mappings = db.execute(pc_q.order_by(CenterMapping.target_center)).scalars().all()
+
+    # Build PC lookup: legacy_center → target_center
+    pc_map = {}  # legacy_pc → {target_pc, target_pc_name}
+    for pm in pc_mappings:
+        pc_map[pm.legacy_center] = {
+            "target_center": pm.target_center,
+            "target_name": pm.target_name,
+        }
+
+    # We need to connect CCs to their PCs.
+    # Look up the legacy CC's profit center assignment from the cost center table
+    from app.models.core import CATEGORY_LEGACY, CATEGORY_TARGET, LegacyCostCenter, TargetCostCenter
+
+    # Build legacy CC → legacy PC lookup (from CC's profit center field)
+    legacy_cc_pc = {}  # cctr → profit_center
+    legacy_ccs_q = select(LegacyCostCenter.cctr, LegacyCostCenter.pctr).where(
+        LegacyCostCenter.data_category == CATEGORY_LEGACY
+    )
+    if scope:
+        legacy_ccs_q = legacy_ccs_q.where(LegacyCostCenter.scope == scope)
+    for row in db.execute(legacy_ccs_q):
+        if row.pctr:
+            legacy_cc_pc[row.cctr] = row.pctr
+
+    # Build target CC → target PC lookup
+    target_cc_pc = {}
+    target_ccs_q = select(TargetCostCenter.cctr, TargetCostCenter.pctr).where(
+        TargetCostCenter.data_category == CATEGORY_TARGET
+    )
+    if scope:
+        target_ccs_q = target_ccs_q.where(TargetCostCenter.scope == scope)
+    for row in db.execute(target_ccs_q):
+        if row.pctr:
+            target_cc_pc[row.cctr] = row.pctr
+
+    # Build the overview rows
+    rows = []
+    for cm in cc_mappings:
+        legacy_pc = legacy_cc_pc.get(cm.legacy_center, "")
+        target_pc = target_cc_pc.get(cm.target_center, "")
+        # If no direct target PC from CC, try the PC mapping
+        if not target_pc and legacy_pc and legacy_pc in pc_map:
+            target_pc = pc_map[legacy_pc].get("target_center", "")
+
+        row = {
+            "legacy_cc": cm.legacy_center,
+            "legacy_cc_name": cm.legacy_name or "",
+            "legacy_pc": legacy_pc,
+            "target_cc": cm.target_center,
+            "target_cc_name": cm.target_name or "",
+            "target_pc": target_pc,
+        }
+        if search:
+            pattern = search.lower()
+            searchable = " ".join(
+                [
+                    row["legacy_cc"],
+                    row["legacy_cc_name"],
+                    row["legacy_pc"],
+                    row["target_cc"],
+                    row["target_cc_name"],
+                    row["target_pc"],
+                ]
+            ).lower()
+            if pattern not in searchable:
+                continue
+        rows.append(row)
+
+    # Sort by target_pc then target_cc for grouping
+    rows.sort(key=lambda r: (r["target_pc"] or "zzz", r["target_cc"]))
+
+    return {"items": rows, "total": len(rows)}
 
 
 @router.get("/legacy/balances")

@@ -1,0 +1,245 @@
+---
+import Layout from '../../components/layout/Layout.astro';
+---
+
+<Layout title="Exclusion Rules" requireAuth={true} adminOnly={true}>
+  <a href="/admin" class="text-sm text-amplifi-600 hover:underline">&larr; Back to Admin</a>
+  <div class="mb-4">
+    <h2 class="text-xl font-bold">Center Exclusion Rules</h2>
+    <p class="text-sm text-gray-500 mt-1">Configure which centers to exclude from migration consideration. Excluded centers remain visible but are flagged.</p>
+  </div>
+
+  <!-- Scope filter -->
+  <div class="flex items-center gap-3 mb-4">
+    <label class="text-xs text-gray-500 font-medium">Scope filter:</label>
+    <select id="scope-filter" class="input text-sm w-48">
+      <option value="">All (global + scope-specific)</option>
+      <option value="cleanup">Cleanup</option>
+      <option value="housekeeping">Housekeeping</option>
+      <option value="explorer">Data Explorer</option>
+    </select>
+  </div>
+
+  <!-- Rules list -->
+  <div id="rules-list" class="space-y-3 mb-6">
+    <p class="text-sm text-gray-400">Loading...</p>
+  </div>
+
+  <!-- Add custom rule -->
+  <div class="card p-4">
+    <h3 class="text-sm font-semibold mb-3">Add Custom Exclusion Rule</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Rule Name</label>
+        <input id="new-name" type="text" class="input text-sm w-full" placeholder="e.g. Blocked for actual postings" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Applies To</label>
+        <select id="new-object-type" class="input text-sm w-full">
+          <option value="both">Both (Cost Centers + Profit Centers)</option>
+          <option value="cost_center">Cost Centers only</option>
+          <option value="profit_center">Profit Centers only</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Field</label>
+        <input id="new-field" type="text" class="input text-sm w-full" placeholder="e.g. bkzkp, datbi, lock_ind" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Operator</label>
+        <select id="new-operator" class="input text-sm w-full">
+          <option value="==">equals (==)</option>
+          <option value="!=">not equals (!=)</option>
+          <option value="is_null">is empty/null</option>
+          <option value="is_not_null">is not empty/null</option>
+          <option value="in">in list</option>
+          <option value="not_in">not in list</option>
+          <option value="<">less than</option>
+          <option value=">">greater than</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Value</label>
+        <input id="new-value" type="text" class="input text-sm w-full" placeholder="e.g. X, 99991231, [val1,val2]" />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Scope</label>
+        <select id="new-scope" class="input text-sm w-full">
+          <option value="">Global (all scopes)</option>
+          <option value="cleanup">Cleanup only</option>
+          <option value="housekeeping">Housekeeping only</option>
+          <option value="explorer">Data Explorer only</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-3">
+      <label class="block text-xs text-gray-500 mb-1">Description (optional)</label>
+      <input id="new-description" type="text" class="input text-sm w-full" placeholder="Explain why this rule excludes centers" />
+    </div>
+    <button id="add-rule-btn" class="btn-amplifi text-sm mt-3">Add Rule</button>
+    <span id="add-result" class="text-xs ml-3 hidden"></span>
+  </div>
+
+  <!-- Stats -->
+  <div class="mt-6 card p-4">
+    <h3 class="text-sm font-semibold mb-2">Exclusion Preview</h3>
+    <p class="text-xs text-gray-500 mb-3">See how many centers would be excluded by the current enabled rules.</p>
+    <div class="flex gap-3">
+      <button id="preview-cc-btn" class="btn-secondary text-xs">Preview Cost Centers</button>
+      <button id="preview-pc-btn" class="btn-secondary text-xs">Preview Profit Centers</button>
+    </div>
+    <div id="preview-result" class="mt-3 text-sm hidden"></div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function() {
+  var authHdr = {};
+  var token = localStorage.getItem('amplifi_token');
+  if (token) authHdr = { 'Authorization': 'Bearer ' + token };
+
+  function loadRules() {
+    var scope = document.getElementById('scope-filter').value;
+    var url = '/api/exclusion-rules' + (scope ? '?scope=' + scope : '');
+    fetch(url, { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(rules) { renderRules(rules); });
+  }
+
+  function renderRules(rules) {
+    var container = document.getElementById('rules-list');
+    if (!rules.length) {
+      container.innerHTML = '<p class="text-sm text-gray-400 italic">No exclusion rules configured yet.</p>';
+      return;
+    }
+    var html = '';
+    rules.forEach(function(rule) {
+      var scopeLabel = rule.scope ? '<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">' + rule.scope + '</span>' : '<span class="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">global</span>';
+      var typeLabel = rule.object_type === 'both' ? 'CC+PC' : rule.object_type === 'cost_center' ? 'CC' : 'PC';
+      var enabledClass = rule.is_enabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-60';
+      var condition = rule.condition;
+      var condStr = (condition.field || '?') + ' ' + (condition.operator || '?') + ' ' + (condition.value != null ? JSON.stringify(condition.value) : '');
+
+      html += '<div class="border rounded-lg p-3 ' + enabledClass + '">';
+      html += '<div class="flex items-center justify-between">';
+      html += '<div class="flex items-center gap-2">';
+      html += '<label class="relative inline-flex items-center cursor-pointer">';
+      html += '<input type="checkbox" class="sr-only peer" data-rule-toggle="' + rule.id + '" ' + (rule.is_enabled ? 'checked' : '') + '>';
+      html += '<div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500 after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>';
+      html += '</label>';
+      html += '<span class="font-medium text-sm">' + rule.name + '</span>';
+      html += scopeLabel;
+      html += '<span class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">' + typeLabel + '</span>';
+      if (rule.is_system) html += '<span class="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">system</span>';
+      html += '</div>';
+      if (!rule.is_system) {
+        html += '<button class="text-xs text-red-500 hover:text-red-700" data-rule-delete="' + rule.id + '">Delete</button>';
+      }
+      html += '</div>';
+      html += '<div class="mt-1 text-xs text-gray-500">' + (rule.description || '') + '</div>';
+      html += '<div class="mt-1 text-xs font-mono text-gray-600 bg-white px-2 py-1 rounded border">' + condStr + '</div>';
+      html += '</div>';
+    });
+    container.innerHTML = html;
+
+    // Bind toggle handlers
+    container.querySelectorAll('[data-rule-toggle]').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var ruleId = this.dataset.ruleToggle;
+        fetch('/api/exclusion-rules/' + ruleId + '/toggle', {
+          method: 'POST', headers: authHdr
+        }).then(function() { loadRules(); });
+      });
+    });
+
+    // Bind delete handlers
+    container.querySelectorAll('[data-rule-delete]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (!confirm('Delete this rule?')) return;
+        var ruleId = this.dataset.ruleDelete;
+        fetch('/api/exclusion-rules/' + ruleId, {
+          method: 'DELETE', headers: authHdr
+        }).then(function() { loadRules(); });
+      });
+    });
+  }
+
+  // Add rule
+  document.getElementById('add-rule-btn').addEventListener('click', function() {
+    var name = document.getElementById('new-name').value.trim();
+    var field = document.getElementById('new-field').value.trim();
+    var operator = document.getElementById('new-operator').value;
+    var valueRaw = document.getElementById('new-value').value.trim();
+    var objectType = document.getElementById('new-object-type').value;
+    var scope = document.getElementById('new-scope').value || null;
+    var description = document.getElementById('new-description').value.trim() || null;
+
+    if (!name || !field) {
+      showResult('Name and Field are required', 'red');
+      return;
+    }
+
+    // Parse value
+    var value = valueRaw;
+    if (operator === 'in' || operator === 'not_in') {
+      value = valueRaw.replace(/[\[\]]/g, '').split(',').map(function(v) { return v.trim(); });
+    }
+    if (operator === 'is_null' || operator === 'is_not_null') {
+      value = null;
+    }
+
+    var body = {
+      name: name,
+      object_type: objectType,
+      scope: scope,
+      description: description,
+      condition: { field: field, operator: operator, value: value },
+      is_enabled: true,
+    };
+
+    fetch('/api/exclusion-rules', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHdr),
+      body: JSON.stringify(body),
+    }).then(function(r) {
+      if (r.ok) {
+        showResult('Rule added!', 'green');
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-field').value = '';
+        document.getElementById('new-value').value = '';
+        document.getElementById('new-description').value = '';
+        loadRules();
+      } else {
+        r.json().then(function(d) { showResult('Error: ' + (d.detail || r.status), 'red'); });
+      }
+    });
+  });
+
+  function showResult(msg, color) {
+    var el = document.getElementById('add-result');
+    el.textContent = msg;
+    el.className = 'text-xs ml-3 text-' + color + '-600';
+    setTimeout(function() { el.className = 'text-xs ml-3 hidden'; }, 3000);
+  }
+
+  // Preview
+  document.getElementById('preview-cc-btn').addEventListener('click', function() { preview('cost_center'); });
+  document.getElementById('preview-pc-btn').addEventListener('click', function() { preview('profit_center'); });
+
+  function preview(objectType) {
+    var scope = document.getElementById('scope-filter').value || 'cleanup';
+    fetch('/api/exclusion-rules/evaluate?scope=' + scope + '&object_type=' + objectType, { headers: authHdr })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var el = document.getElementById('preview-result');
+        el.className = 'mt-3 text-sm';
+        var label = objectType === 'cost_center' ? 'cost centers' : 'profit centers';
+        el.innerHTML = '<strong>' + data.excluded_ids.length + '</strong> ' + label + ' would be excluded (' + data.rules_applied + ' rule(s) applied in scope <em>' + scope + '</em>)';
+      });
+  }
+
+  // Init
+  document.getElementById('scope-filter').addEventListener('change', loadRules);
+  loadRules();
+})();
+</script>

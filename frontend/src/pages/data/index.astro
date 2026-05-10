@@ -73,6 +73,7 @@ import Layout from '../../components/layout/Layout.astro';
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="profit-centers">Profit Centers</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="gl-accounts">GL Accounts</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="mapping">Mapping</button>
+      <button class="tab px-4 py-3 whitespace-nowrap" data-tab="mapping-overview">Mapping Overview</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="balances">Balances</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="hierarchies">Hierarchies</button>
       <button class="tab px-4 py-3 whitespace-nowrap" data-tab="employees">Employees</button>
@@ -117,6 +118,11 @@ import Layout from '../../components/layout/Layout.astro';
     <!-- Mapping — rendered by DataObjectDisplay -->
     <div id="tab-mapping" class="hidden">
       <div id="dod-mapping" class="text-xs"></div>
+    </div>
+
+    <!-- Center Mapping Overview (4-column with rowspan) -->
+    <div id="tab-mapping-overview" class="hidden">
+      <div id="dod-mapping-overview" class="text-xs"></div>
     </div>
 
     <!-- Balances — rendered by DataObjectDisplay -->
@@ -277,6 +283,7 @@ import Layout from '../../components/layout/Layout.astro';
 </style>
 
 <script is:inline src="/data-object-display.js"></script>
+<script is:inline src="/center-mapping-view.js"></script>
 <script is:inline>
 (function() {
   var token = localStorage.getItem('amplifi_token');
@@ -311,7 +318,7 @@ import Layout from '../../components/layout/Layout.astro';
 
 
 
-  var allTabs = ['data-browser','entities','cost-centers','profit-centers','gl-accounts','mapping','balances','hierarchies','employees','upload','sample-data'];
+  var allTabs = ['data-browser','entities','cost-centers','profit-centers','gl-accounts','mapping','mapping-overview','balances','hierarchies','employees','upload','sample-data'];
 
   // Tab switching
   document.querySelectorAll('#data-tabs button').forEach(function(btn) {
@@ -1077,6 +1084,14 @@ import Layout from '../../components/layout/Layout.astro';
     }
   });
   dodMapping.load();
+
+  // --- Mapping Overview (4-column) ---
+  var mappingOverview = new CenterMappingView({
+    containerId: 'dod-mapping-overview',
+    scope: dodScopeParams().scope || '',
+    authHeaders: authHdr,
+  });
+  mappingOverview.load();
 
   // --- Balances ---
   var dodBalances = new DataObjectDisplay({
