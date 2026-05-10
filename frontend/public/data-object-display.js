@@ -318,11 +318,16 @@
   DataObjectDisplay.prototype.buildToolbarHtml = function () {
     var self = this;
     var html = '';
-    // Title row (heading + last loaded indicator)
-    if (this.title) {
-      html += '<div class="flex items-center justify-between mb-2"><h3 class="text-base font-semibold">' + esc(this.title);
-      if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle).replace(/ampliFi/g, '<span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span>') + '</span>';
-      html += '</h3>';
+    // Title row (heading) + last loaded indicator
+    if (this.title || this.lastLoadedAt) {
+      html += '<div class="flex items-center justify-between mb-2">';
+      if (this.title) {
+        html += '<h3 class="text-base font-semibold">' + esc(this.title);
+        if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle).replace(/ampliFi/g, '<span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span>') + '</span>';
+        html += '</h3>';
+      } else {
+        html += '<span></span>';
+      }
       if (this.lastLoadedAt) {
         var d = new Date(this.lastLoadedAt);
         var ts = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
