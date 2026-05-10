@@ -229,6 +229,8 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
 
 # Target object types share the same display config as their legacy counterparts
 for _prefix, _source in [
+    ("target-cost-centers", "cost-centers"),
+    ("target-profit-centers", "profit-centers"),
     ("target-entities", "entities"),
     ("target-gl-accounts-ska1", "gl-accounts-ska1"),
     ("target-gl-accounts-skb1", "gl-accounts-skb1"),
@@ -239,6 +241,8 @@ for _prefix, _source in [
 _SEARCH_FIELDS: dict[str, list[str]] = {
     "cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
     "profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
+    "target-cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
+    "target-profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
     "entities": ["ccode", "name", "country"],
     "target-entities": ["ccode", "name", "country"],
     "employees": ["gpn", "bs_name", "email_address", "ou_cd"],
@@ -254,6 +258,8 @@ _SEARCH_FIELDS: dict[str, list[str]] = {
 _DEFAULT_SORT: dict[str, str] = {
     "cost-centers": "cctr",
     "profit-centers": "pctr",
+    "target-cost-centers": "cctr",
+    "target-profit-centers": "pctr",
     "entities": "ccode",
     "target-entities": "ccode",
     "employees": "gpn",

@@ -721,15 +721,18 @@ def list_object_bindings(
     conn_id: int,
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "data_manager")),
+    scope: str | None = Query(default=None),
+    data_category: str | None = Query(default=None),
 ) -> list[dict]:
     """List object bindings for a SAP connection."""
     from app.models.core import SAPObjectBinding
 
-    bindings = (
-        db.execute(select(SAPObjectBinding).where(SAPObjectBinding.connection_id == conn_id))
-        .scalars()
-        .all()
-    )
+    stmt = select(SAPObjectBinding).where(SAPObjectBinding.connection_id == conn_id)
+    if scope:
+        stmt = stmt.where(SAPObjectBinding.scope == scope)
+    if data_category:
+        stmt = stmt.where(SAPObjectBinding.data_category == data_category)
+    bindings = db.execute(stmt).scalars().all()
     return [
         {
             "id": b.id,
@@ -1263,14 +1266,19 @@ def list_uploads(
     db: Session = Depends(get_db),
     _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
     pag: PaginationParams = Depends(pagination),
+    scope: str | None = Query(default=None),
+    data_category: str | None = Query(default=None),
 ) -> dict:
-    total = db.execute(select(func.count(UploadBatch.id))).scalar() or 0
-    stmt = (
-        select(UploadBatch)
-        .order_by(UploadBatch.created_at.desc())
-        .offset((pag.page - 1) * pag.size)
-        .limit(pag.size)
-    )
+    count_q = select(func.count(UploadBatch.id))
+    stmt = select(UploadBatch).order_by(UploadBatch.created_at.desc())
+    if scope:
+        count_q = count_q.where(UploadBatch.scope == scope)
+        stmt = stmt.where(UploadBatch.scope == scope)
+    if data_category:
+        count_q = count_q.where(UploadBatch.data_category == data_category)
+        stmt = stmt.where(UploadBatch.data_category == data_category)
+    total = db.execute(count_q).scalar() or 0
+    stmt = stmt.offset((pag.page - 1) * pag.size).limit(pag.size)
     batches = db.execute(stmt).scalars().all()
     batch_ids = [b.id for b in batches]
     error_counts: dict[int, int] = {}
