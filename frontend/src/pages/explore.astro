@@ -7,8 +7,8 @@ import '../styles/global.css';
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="ampliFi Data Explorer — public data visualization" />
-  <title>Data Explorer | ampliFi</title>
+  <meta name="description" content="ampliFi Reference Data Explorer — public data visualization" />
+  <title>Reference Data Explorer | ampliFi</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body class="bg-gray-50 h-screen flex flex-col overflow-hidden font-[Inter,system-ui,sans-serif]">
@@ -17,7 +17,7 @@ import '../styles/global.css';
   <header class="bg-[#1a1a2e] text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-2">
       <img src="/ubs-logo.svg" alt="UBS" class="h-5" />
-      <span class="font-semibold text-sm"><span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span> Data Explorer</span>
+      <span class="font-semibold text-sm"><span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span> Reference Data Explorer</span>
     </div>
     <span id="explore-status" class="text-xs text-gray-400">Ready</span>
   </header>
@@ -25,7 +25,7 @@ import '../styles/global.css';
   <!-- Main tabs: Legacy | Target (ampliFi) -->
   <div class="flex gap-1 border-b bg-white px-4 flex-shrink-0">
     <button id="main-tab-legacy" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" data-main-tab="legacy">Legacy</button>
-    <button id="main-tab-target" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-main-tab="target">Target (ampliFi)</button>
+    <button id="main-tab-target" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-main-tab="target">Target (<span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span>)</button>
   </div>
 
   <!-- ===== LEGACY PANEL ===== -->
@@ -88,26 +88,36 @@ import '../styles/global.css';
 (function() {
   // ── Tab configs ────────────────────────────────────────────────────────
   // Legacy tabs — same objects as before, minus employees
+  // Cache for last-loaded timestamps (fetched once)
+  var _lastLoadedCache = null;
+  function fetchLastLoaded(cb) {
+    if (_lastLoadedCache) { cb(_lastLoadedCache); return; }
+    fetch('/api/data/last-loaded?scope=explorer').then(function(r) { return r.json(); }).then(function(d) {
+      _lastLoadedCache = d;
+      cb(d);
+    }).catch(function() { cb({}); });
+  }
+
   var LEGACY_TABS = {
-    'cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
-    'profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
-    'entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy' },
-    'gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
-    'gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
+    'cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'cost_centers' },
+    'profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'profit_centers' },
+    'entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy', uploadKind: 'entities' },
+    'gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_ska1' },
+    'gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_skb1' },
     'gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
     'gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
     'center-mapping-overview': { label: 'Center Mapping', useMappingView: true },
-    'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy' }
+    'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy', uploadKind: 'hierarchies' }
   };
 
   // Target tabs — mirror legacy structure using target tables / data_category=target
   var TARGET_TABS = {
-    'target-cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
-    'target-profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
-    'target-entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target' },
-    'target-gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
-    'target-gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
+    'target-cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'target_cost_centers' },
+    'target-profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'target_profit_centers' },
+    'target-entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target', uploadKind: 'entities' },
+    'target-gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_ska1' },
+    'target-gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_skb1' },
     'target-gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
     'target-gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'target-gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
@@ -194,14 +204,15 @@ import '../styles/global.css';
       extraParams.data_category = cfg.category;
     }
 
+    var hasHier = cfg.hierTypes.length > 0 || cfg.glMode;
     var dod = new window.DataObjectDisplay({
       containerId: containerId,
       objectType: tab,
       dataEndpoint: cfg.endpoint,
       hierarchyEndpoint: '/api/legacy/hierarchies',
       identityField: cfg.identity,
-      showViewToggle: cfg.hierTypes.length > 0,
-      showHierarchyPicker: cfg.hierTypes.length > 0,
+      showViewToggle: hasHier,
+      showHierarchyPicker: hasHier,
       hierarchyTypes: cfg.hierTypes,
       glHierarchyMode: cfg.glMode || false,
       showSearch: true,
@@ -213,6 +224,15 @@ import '../styles/global.css';
       extraQueryParams: extraParams,
       excludeColumns: ['id', 'scope', 'data_category', 'mandt']
     });
+
+    // Apply last-loaded timestamp
+    if (cfg.uploadKind) {
+      fetchLastLoaded(function(timestamps) {
+        if (timestamps[cfg.uploadKind]) {
+          dod.lastLoadedAt = timestamps[cfg.uploadKind];
+        }
+      });
+    }
 
     dod.loadDisplayConfig(function() {
       dod.loadHierarchyOptions(function() {

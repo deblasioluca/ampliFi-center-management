@@ -1696,6 +1696,30 @@ def data_counts(
     }
 
 
+@router.get("/data/last-loaded")
+def data_last_loaded(
+    db: Session = Depends(get_db),
+    scope: str | None = None,
+) -> dict:
+    """Return the most recent successful load timestamp per upload kind."""
+    from sqlalchemy import func as sa_func
+
+    q = select(
+        UploadBatch.kind,
+        sa_func.max(UploadBatch.loaded_at).label("last_loaded"),
+    ).where(UploadBatch.status == "loaded")
+    if scope:
+        q = q.where(UploadBatch.scope == scope)
+    q = q.group_by(UploadBatch.kind)
+    rows = db.execute(q).all()
+
+    result: dict[str, str | None] = {}
+    for row in rows:
+        ts = row.last_loaded
+        result[row.kind] = ts.isoformat() if ts else None
+    return result
+
+
 @router.post("/data/duplicate-check")
 def check_duplicates(
     coarea: str | None = None,
