@@ -209,11 +209,14 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 		pip install $(PIP_TRUST) -e ".[dev]" 2>&1 | tee -a "$$LOG" | tail -3; \
 	unset HTTP_PROXY HTTPS_PROXY NO_PROXY 2>/dev/null || true; \
 	echo "[ok] Backend dependencies updated" | tee -a "$$LOG"; \
+	echo "==> Stopping backend before migrations..." | tee -a "$$LOG"
+	@$(MAKE) -s stop 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log || true
+	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
 	echo "==> Applying database migrations..." | tee -a "$$LOG"; \
 	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 		python -m alembic upgrade head 2>&1 | tee -a "$$LOG" | tail -5; \
 	echo "[ok] Database migrations applied" | tee -a "$$LOG"
-	@$(MAKE) -s restart 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log
+	@$(MAKE) -s start 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log
 	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
 	echo "" | tee -a "$$LOG"; \
 	echo "==> Verifying deployment..." | tee -a "$$LOG"; \

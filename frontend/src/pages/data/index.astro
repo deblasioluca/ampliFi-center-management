@@ -578,17 +578,19 @@ import Layout from '../../components/layout/Layout.astro';
           actions = '<button onclick="rollbackUpload(' + u.id +
             ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
         } else if (u.status === 'validating' || u.status === 'loading') {
+          var isReading = (u.rows_total || 0) < 0;
           var pct = (u.rows_total > 0 && u.rows_processed != null)
             ? Math.min(100, Math.round((u.rows_processed / u.rows_total) * 100)) : 0;
-          var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
+          var progressLabel = isReading ? 'Reading file…' : (u.status === 'validating' ? 'Validating' : 'Loading');
           actions = '<div class="inline-flex items-center gap-2">' +
             '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" ' +
-            'title="' + fmt(u.rows_processed || 0) + ' / ' +
-            fmt(u.rows_total) + ' rows">' +
+            'title="' + (isReading ? 'Reading file' : fmt(u.rows_processed || 0) + ' / ' +
+            fmt(u.rows_total) + ' rows') + '">' +
             '<div class="bg-yellow-500 h-3 rounded-full transition-all ' +
-            'duration-300" style="width:' + pct + '%"></div></div>' +
+            'duration-300" style="width:' + (isReading ? '100%' : pct + '%') + '"' +
+            (isReading ? ' class="animate-pulse"' : '') + '></div></div>' +
             '<span class="text-yellow-700 text-[10px] font-medium ' +
-            'whitespace-nowrap">' + progressLabel + ' ' + pct + '%</span>' +
+            'whitespace-nowrap">' + progressLabel + (isReading ? '' : ' ' + pct + '%') + '</span>' +
             '</div> ' +
             '<button onclick="resetUpload(' + u.id +
             ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
