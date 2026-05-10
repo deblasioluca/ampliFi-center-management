@@ -22,23 +22,22 @@ import '../styles/global.css';
     <span id="explore-status" class="text-xs text-gray-400">Ready</span>
   </header>
 
-  <!-- Main tabs: Legacy | ampliFi -->
+  <!-- Main tabs: Legacy | Target (ampliFi) -->
   <div class="flex gap-1 border-b bg-white px-4 flex-shrink-0">
     <button id="main-tab-legacy" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-blue-600 text-blue-700" data-main-tab="legacy">Legacy</button>
-    <button id="main-tab-amplifi" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-main-tab="amplifi">ampliFi</button>
+    <button id="main-tab-target" class="px-5 py-1.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-main-tab="target">Target (ampliFi)</button>
   </div>
 
   <!-- ===== LEGACY PANEL ===== -->
   <div id="panel-legacy" class="flex-1 flex flex-col min-h-0 px-4 pt-2">
     <!-- Object sub-tabs -->
     <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="legacy-tabs">
-      <button class="explore-tab explore-tab-active" data-explore-tab="cost-centers">Cost Centers</button>
-      <button class="explore-tab" data-explore-tab="profit-centers">Profit Centers</button>
-      <button class="explore-tab" data-explore-tab="entities">Entities</button>
-      <button class="explore-tab" data-explore-tab="gl-accounts-ska1">GL Accts (CoA)</button>
-      <button class="explore-tab" data-explore-tab="gl-accounts-skb1">GL Accts (CoCd)</button>
-      <button class="explore-tab" data-explore-tab="hierarchies">Hierarchies</button>
-      <button class="explore-tab" data-explore-tab="employees">Employees</button>
+      <button class="explore-tab explore-tab-active" data-explore-tab="cost-centers" data-panel="legacy">Cost Centers</button>
+      <button class="explore-tab" data-explore-tab="profit-centers" data-panel="legacy">Profit Centers</button>
+      <button class="explore-tab" data-explore-tab="entities" data-panel="legacy">Entities</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-ska1" data-panel="legacy">GL Accts (CoA)</button>
+      <button class="explore-tab" data-explore-tab="gl-accounts-skb1" data-panel="legacy">GL Accts (CoCd)</button>
+      <button class="explore-tab" data-explore-tab="hierarchies" data-panel="legacy">Hierarchies</button>
     </div>
 
     <!-- DOD container -->
@@ -47,16 +46,21 @@ import '../styles/global.css';
     </div>
   </div>
 
-  <!-- ===== AMPLIFI PANEL ===== -->
-  <div id="panel-amplifi" class="hidden flex-1 flex flex-col min-h-0 px-4 pt-2">
-    <!-- Run selector -->
-    <div class="bg-white border rounded-t-lg px-3 py-1.5 flex items-center gap-2 flex-shrink-0">
-      <label class="text-xs text-gray-500">Analysis Run:</label>
-      <select id="amplifi-run-select" class="border rounded px-2 py-1 text-xs"></select>
+  <!-- ===== TARGET (ampliFi) PANEL ===== -->
+  <div id="panel-target" class="hidden flex-1 flex flex-col min-h-0 px-4 pt-2">
+    <!-- Object sub-tabs (mirrors legacy minus employees) -->
+    <div class="bg-white border rounded-t-lg px-2 py-0.5 flex items-center gap-0 overflow-x-auto flex-shrink-0" id="target-tabs">
+      <button class="explore-tab explore-tab-active" data-explore-tab="target-cost-centers" data-panel="target">Cost Centers</button>
+      <button class="explore-tab" data-explore-tab="target-profit-centers" data-panel="target">Profit Centers</button>
+      <button class="explore-tab" data-explore-tab="target-entities" data-panel="target">Entities</button>
+      <button class="explore-tab" data-explore-tab="target-gl-accounts-ska1" data-panel="target">GL Accts (CoA)</button>
+      <button class="explore-tab" data-explore-tab="target-gl-accounts-skb1" data-panel="target">GL Accts (CoCd)</button>
+      <button class="explore-tab" data-explore-tab="target-hierarchies" data-panel="target">Hierarchies</button>
     </div>
-    <!-- DOD container for mapping -->
-    <div id="amplifi-dod-container" class="flex-1 min-h-0 bg-white border-x border-b rounded-b-lg overflow-hidden">
-      <div id="amplifi-dod" class="text-xs h-full"></div>
+
+    <!-- DOD container for target -->
+    <div id="target-dod-container" class="flex-1 min-h-0 bg-white border-x border-b rounded-b-lg overflow-hidden">
+      <div id="target-dod" class="text-xs h-full"></div>
     </div>
   </div>
 
@@ -73,26 +77,40 @@ import '../styles/global.css';
 <script is:inline src="/data-object-display.js"></script>
 <script is:inline>
 (function() {
-  // ── Config ────────────────────────────────────────────────────────────
-  var TABS = {
+  // ── Tab configs ────────────────────────────────────────────────────────
+  // Legacy tabs — same objects as before, minus employees
+  var LEGACY_TABS = {
     'cost-centers':     { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
     'profit-centers':   { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
-    'entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'] },
-    'gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true },
-    'gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true },
-    'hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [] },
-    'employees':        { label: 'Employees',       endpoint: '/api/explore/legacy/employees',        identity: 'pernr', hierTypes: [] }
+    'entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy' },
+    'gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
+    'gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy' },
+    'hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy' }
   };
 
-  var currentTab = 'cost-centers';
-  var dodInstance = null;
+  // Target tabs — mirror legacy structure using target tables / data_category=target
+  var TARGET_TABS = {
+    'target-cost-centers':     { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'] },
+    'target-profit-centers':   { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'] },
+    'target-entities':         { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target' },
+    'target-gl-accounts-ska1': { label: 'GL Accts (CoA)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
+    'target-gl-accounts-skb1': { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target' },
+    'target-hierarchies':      { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target' }
+  };
+
+  var currentPanel = 'legacy';
+  var currentLegacyTab = 'cost-centers';
+  var currentTargetTab = 'target-cost-centers';
+  var dodLegacy = null;
+  var dodTarget = null;
 
   // ── Main tab switching ────────────────────────────────────────────────
   document.querySelectorAll('[data-main-tab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var tab = this.dataset.mainTab;
+      currentPanel = tab;
       document.getElementById('panel-legacy').classList.toggle('hidden', tab !== 'legacy');
-      document.getElementById('panel-amplifi').classList.toggle('hidden', tab !== 'amplifi');
+      document.getElementById('panel-target').classList.toggle('hidden', tab !== 'target');
       document.querySelectorAll('[data-main-tab]').forEach(function(b) {
         var active = b.dataset.mainTab === tab;
         b.classList.toggle('border-blue-600', active);
@@ -100,34 +118,46 @@ import '../styles/global.css';
         b.classList.toggle('border-transparent', !active);
         b.classList.toggle('text-gray-500', !active);
       });
-      if (tab === 'amplifi') loadAmplifiRuns();
+      if (tab === 'target') {
+        initDOD('target', currentTargetTab);
+      }
     });
   });
 
-  // ── Legacy sub-tab switching ──────────────────────────────────────────
+  // ── Sub-tab switching ─────────────────────────────────────────────────
   document.querySelectorAll('[data-explore-tab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var tab = this.dataset.exploreTab;
-      selectLegacyTab(tab);
+      var panel = this.dataset.panel;
+      var tabContainer = document.getElementById(panel + '-tabs');
+      tabContainer.querySelectorAll('[data-explore-tab]').forEach(function(b) {
+        b.classList.toggle('explore-tab-active', b.dataset.exploreTab === tab);
+      });
+      if (panel === 'legacy') {
+        currentLegacyTab = tab;
+      } else {
+        currentTargetTab = tab;
+      }
+      var tabCfg = panel === 'legacy' ? LEGACY_TABS[tab] : TARGET_TABS[tab];
+      document.getElementById('explore-status').textContent = tabCfg ? tabCfg.label : '';
+      initDOD(panel, tab);
     });
   });
 
-  function selectLegacyTab(tab) {
-    currentTab = tab;
-    document.querySelectorAll('[data-explore-tab]').forEach(function(b) {
-      b.classList.toggle('explore-tab-active', b.dataset.exploreTab === tab);
-    });
-    document.getElementById('explore-status').textContent = TABS[tab].label;
-    initDOD(tab);
-  }
-
   // ── Initialize DOD instance for a tab ─────────────────────────────────
-  function initDOD(tab) {
-    var cfg = TABS[tab];
+  function initDOD(panel, tab) {
+    var tabs = panel === 'legacy' ? LEGACY_TABS : TARGET_TABS;
+    var cfg = tabs[tab];
     if (!cfg) return;
 
-    dodInstance = new window.DataObjectDisplay({
-      containerId: 'explore-dod',
+    var containerId = panel === 'legacy' ? 'explore-dod' : 'target-dod';
+    var extraParams = {};
+    if (cfg.category) {
+      extraParams.data_category = cfg.category;
+    }
+
+    var dod = new window.DataObjectDisplay({
+      containerId: containerId,
       objectType: tab,
       dataEndpoint: cfg.endpoint,
       hierarchyEndpoint: '/api/legacy/hierarchies',
@@ -142,70 +172,28 @@ import '../styles/global.css';
       pageSize: 200,
       hierPageSize: 2000,
       authHeaders: {},
+      extraQueryParams: extraParams,
       excludeColumns: ['id', 'scope', 'data_category', 'mandt']
     });
 
-    dodInstance.loadDisplayConfig(function() {
-      dodInstance.loadHierarchyOptions(function() {
-        dodInstance.loadData(function() {
-          dodInstance.render();
+    dod.loadDisplayConfig(function() {
+      dod.loadHierarchyOptions(function() {
+        dod.loadData(function() {
+          dod.render();
         });
       });
     });
-  }
 
-  // ── ampliFi panel ─────────────────────────────────────────────────────
-  var amplifiDod = null;
-
-  async function loadAmplifiRuns() {
-    try {
-      var resp = await fetch('/api/explore/amplifi/runs');
-      var data = await resp.json();
-      var sel = document.getElementById('amplifi-run-select');
-      sel.innerHTML = '<option value="">Select run...</option>';
-      (data.runs || []).forEach(function(r) {
-        var opt = document.createElement('option');
-        opt.value = r.id;
-        opt.textContent = (r.label || 'Run ' + r.id) + ' (' + (r.finished_at || 'N/A') + ')';
-        sel.appendChild(opt);
-      });
-    } catch(e) {}
-  }
-
-  document.getElementById('amplifi-run-select').addEventListener('change', function() {
-    var runId = this.value;
-    if (!runId) {
-      document.getElementById('amplifi-dod').innerHTML = '<span class="p-4 text-sm text-gray-400 block">Select an analysis run above.</span>';
-      return;
+    if (panel === 'legacy') {
+      dodLegacy = dod;
+    } else {
+      dodTarget = dod;
     }
-    amplifiDod = new window.DataObjectDisplay({
-      containerId: 'amplifi-dod',
-      objectType: 'amplifi-mapping',
-      dataEndpoint: '/api/explore/amplifi/mapping',
-      identityField: 'legacy_cctr',
-      showViewToggle: false,
-      showHierarchyPicker: false,
-      showSearch: true,
-      showCSV: true,
-      showPagination: true,
-      pageSize: 200,
-      extraQueryParams: { run_id: runId },
-      authHeaders: {},
-      columns: [
-        { key: 'legacy_cctr', label: 'Legacy CC' },
-        { key: 'legacy_txtsh', label: 'Description' },
-        { key: 'legacy_ccode', label: 'Company' },
-        { key: 'outcome', label: 'Outcome' },
-        { key: 'target_object', label: 'Target' },
-        { key: 'merge_into_cctr', label: 'Merge Into' },
-        { key: 'confidence', label: 'Confidence' }
-      ]
-    });
-    amplifiDod.loadData(function() { amplifiDod.render(); });
-  });
+  }
 
   // ── Boot ──────────────────────────────────────────────────────────────
-  selectLegacyTab('cost-centers');
+  document.getElementById('explore-status').textContent = LEGACY_TABS['cost-centers'].label;
+  initDOD('legacy', 'cost-centers');
 })();
 </script>
 

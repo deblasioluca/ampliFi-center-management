@@ -137,7 +137,38 @@ Implementation: a `DataStore` interface in `backend/app/infra/db/` with two
 implementations. The session factory selects based on the active config row, cached for
 the request lifetime.
 
-## 2.5 Configuration & secrets
+## 2.5 Scope segregation
+
+The application maintains **three distinct scopes** of data, each representing a separate
+logical workspace. All scope-aware tables (cost centers, profit centers, entities,
+hierarchies, balances, GL accounts, employees, uploads) carry a `scope` column:
+
+| Scope | Purpose | Application |
+|---|---|---|
+| `cleanup` | Primary workspace — center rationalisation, analysis, wave management | Cockpit (all wave/analysis/review pages) |
+| `housekeeping` | Staging area — periodic health checks, inactive center flagging | Housekeeping cycles |
+| `explorer` | Public data visualisation — read-only curated view | Data Explorer standalone (`/explore`) |
+
+**Key rules:**
+- Each scope is a **completely independent data universe**. Data loaded into `cleanup` never
+  bleeds into `explorer` or vice-versa.
+- Within each scope, data is further classified by **data category**: `legacy` (source SAP)
+  or `target` (ampliFi-processed / MDG-ready).
+- The **Data Management** page (`/data`) allows the user to select scope + category at the
+  top; all operations (upload, SAP extraction, KPIs, data display) are scoped accordingly.
+- The **Cockpit** pages always operate in `cleanup` scope.
+- The **Data Explorer** standalone page always operates in `explorer` scope (hardcoded in backend).
+- Upload batches, SAP bindings, and all data records are tagged with both `scope` and
+  `data_category` for consistent filtering.
+
+### Target vs Legacy tables
+
+| Category | Tables | Description |
+|---|---|---|
+| Legacy | `legacy_cost_center`, `legacy_profit_center`, `entity`, `balance`, `hierarchy`, `gl_account_ska1`, `gl_account_skb1`, `employee` | Source SAP data as-is |
+| Target | `target_cost_center`, `target_profit_center` (dedicated tables) + `entity`, `hierarchy`, `gl_account_ska1`, `gl_account_skb1` (filtered by `data_category='target'`) | ampliFi-processed data ready for MDG export |
+
+## 2.6 Configuration & secrets
 
 - Settings layered (lowest → highest): defaults in code → `.env` → environment variables
   → admin-UI overrides persisted in the `app_config` table → request-scoped overrides
@@ -147,7 +178,7 @@ the request lifetime.
   env var (or BTP credential store in BTP-deployed mode).
 - Never log secrets. Pydantic `SecretStr` everywhere they appear in DTOs.
 
-## 2.6 Background jobs catalogue
+## 2.7 Background jobs catalogue
 
 | Task | Trigger | SLA |
 |---|---|---|
@@ -165,7 +196,7 @@ the request lifetime.
 Each task is idempotent: tasks accept a `run_id` (UUID), persist progress in
 `task_run`, and reading the same `run_id` returns the same result. Retries are safe.
 
-## 2.7 Frontend ↔ backend contract
+## 2.8 Frontend ↔ backend contract
 
 - Backend exposes OpenAPI 3.1 at `/api/openapi.json`.
 - A typed TS client is generated into `frontend/src/lib/api.ts` (e.g. `openapi-typescript`
@@ -173,7 +204,7 @@ Each task is idempotent: tasks accept a `run_id` (UUID), persist progress in
 - Astro pages are built to static HTML and served by the FastAPI backend. Client-side
   `<script>` blocks call `/api/...` directly with the JWT from `localStorage`.
 
-## 2.8 Local development
+## 2.9 Local development
 
 ```
 docker compose up
@@ -189,7 +220,7 @@ docker compose exec backend python -m app.cli seed --sample
 This loads a small synthetic dataset (~1,000 centers, 5 LEs, 6 months of balances) so the
 implementer can demo the full flow without SAP access.
 
-## 2.9 Environments
+## 2.10 Environments
 
 | Env | Purpose | DB | LLM |
 |---|---|---|---|
@@ -198,7 +229,7 @@ implementer can demo the full flow without SAP access.
 | `uat` | UAT | Postgres on shared host | Azure prod tenant (rate-limited) |
 | `prod` | Live | Postgres → migrate to Datasphere | Azure prod / BTP |
 
-## 2.10 Diagrams to generate (implementer task)
+## 2.11 Diagrams to generate (implementer task)
 
 Implementer MUST produce, in `spec/diagrams/`:
 - C4 Level 1 (system context)

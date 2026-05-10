@@ -20,9 +20,8 @@ import Layout from '../../components/layout/Layout.astro';
     </select>
     <label class="text-sm font-medium text-gray-700 ml-4">Category:</label>
     <select id="category-selector" class="input w-auto text-sm">
-      <option value="">All</option>
-      <option value="legacy">Legacy</option>
-      <option value="target">Target</option>
+      <option value="legacy" selected>Legacy</option>
+      <option value="target">Target (ampliFi)</option>
     </select>
     <button id="transfer-to-explorer-btn" class="ml-auto btn-secondary text-xs border-blue-300 text-blue-700 hover:bg-blue-50" title="Copy cleanup data to the standalone Data Explorer">
       &#8594; Publish to Explorer
@@ -143,28 +142,18 @@ import Layout from '../../components/layout/Layout.astro';
           <h3 class="text-base font-semibold mb-1">Option A: Upload from File</h3>
           <p class="text-xs text-gray-500 mb-4">Upload CSV or Excel files. After upload, validate and then load into the database.</p>
           <form id="upload-form" class="space-y-4">
-            <!-- Step 1: Scope -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">1. Scope</label>
-              <select id="upload-scope" class="input">
-                <option value="">— Select scope —</option>
-                <option value="cleanup">Center Management — Cleanup</option>
-                <option value="housekeeping">Center Management — Housekeeping</option>
-                <option value="explorer">Data Explorer</option>
-              </select>
+            <!-- Scope & Category (auto-filled from top selector) -->
+            <div class="p-3 bg-gray-50 border border-gray-200 rounded text-sm">
+              <span class="text-gray-500">Uploading to:</span>
+              <span id="upload-scope-label" class="font-semibold text-gray-800 ml-1"></span>
+              <span class="text-gray-400 mx-1">·</span>
+              <span id="upload-category-label" class="font-semibold text-gray-800"></span>
             </div>
-            <!-- Step 2: Category -->
+            <!-- Data Type -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">2. Data Category</label>
-              <select id="upload-category" class="input" disabled>
-                <option value="">— Select scope first —</option>
-              </select>
-            </div>
-            <!-- Step 3: Object Type -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">3. Data Type</label>
-              <select id="upload-type" class="input" disabled>
-                <option value="">— Select category first —</option>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+              <select id="upload-type" class="input">
+                <option value="">— Select data type —</option>
               </select>
             </div>
             <!-- CC with Hierarchy options (shown only for cc_with_hierarchy) -->
@@ -374,11 +363,12 @@ import Layout from '../../components/layout/Layout.astro';
   // Load data counts with scope filtering
   function loadCounts() {
     var params = '?scope=' + encodeURIComponent(getScope());
-    if (getCategory()) params += '&data_category=' + encodeURIComponent(getCategory());
+    params += '&data_category=' + encodeURIComponent(getCategory());
     fetch('/api/data/counts' + params, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       document.getElementById('cnt-entities').textContent = fmt(d.entities);
-      document.getElementById('cnt-cc').textContent = fmt(d.cost_centers);
-      document.getElementById('cnt-pc').textContent = fmt(d.profit_centers);
+      var cat = getCategory();
+      document.getElementById('cnt-cc').textContent = fmt(cat === 'target' ? d.target_cost_centers : d.cost_centers);
+      document.getElementById('cnt-pc').textContent = fmt(cat === 'target' ? d.target_profit_centers : d.profit_centers);
       document.getElementById('cnt-gl').textContent = fmt(d.gl_accounts || 0);
       document.getElementById('cnt-balances').textContent = fmt(d.balances);
       document.getElementById('cnt-hierarchies').textContent = fmt(d.hierarchies);
@@ -392,6 +382,7 @@ import Layout from '../../components/layout/Layout.astro';
   var uploadRules = {};
   fetch('/api/admin/upload-rules', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
     uploadRules = d.rules || {};
+    updateUploadContext();
   }).catch(function() {});
 
   // Object display names
@@ -405,42 +396,31 @@ import Layout from '../../components/layout/Layout.astro';
     employee: 'Employees'
   };
 
-  // 3-step upload cascading
-  var uploadScopeSel = document.getElementById('upload-scope');
-  var uploadCatSel = document.getElementById('upload-category');
+  // Upload type dropdown — populated from top-level scope+category
   var uploadTypeSel = document.getElementById('upload-type');
+  var scopeLabels = {
+    cleanup: 'Center Management — Cleanup',
+    housekeeping: 'Center Management — Housekeeping',
+    explorer: 'Data Explorer'
+  };
+  var catLabels = { legacy: 'Legacy', target: 'Target (ampliFi)' };
 
-  uploadScopeSel.addEventListener('change', function() {
-    var scope = this.value;
-    uploadCatSel.innerHTML = '<option value="">— Select category —</option>';
-    uploadTypeSel.innerHTML = '<option value="">— Select category first —</option>';
-    uploadCatSel.disabled = true;
-    uploadTypeSel.disabled = true;
-    if (!scope || !uploadRules[scope]) return;
-    var cats = Object.keys(uploadRules[scope]);
-    cats.forEach(function(cat) {
-      var opt = document.createElement('option');
-      opt.value = cat;
-      opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
-      uploadCatSel.appendChild(opt);
-    });
-    uploadCatSel.disabled = false;
-  });
-
-  uploadCatSel.addEventListener('change', function() {
-    var scope = uploadScopeSel.value;
-    var cat = this.value;
+  function updateUploadContext() {
+    var scope = getScope();
+    var cat = getCategory();
+    document.getElementById('upload-scope-label').textContent = scopeLabels[scope] || scope;
+    document.getElementById('upload-category-label').textContent = catLabels[cat] || cat;
+    // Repopulate data type dropdown
     uploadTypeSel.innerHTML = '<option value="">— Select data type —</option>';
-    uploadTypeSel.disabled = true;
-    if (!scope || !cat || !uploadRules[scope] || !uploadRules[scope][cat]) return;
-    uploadRules[scope][cat].forEach(function(obj) {
-      var opt = document.createElement('option');
-      opt.value = obj;
-      opt.textContent = objLabels[obj] || obj;
-      uploadTypeSel.appendChild(opt);
-    });
-    uploadTypeSel.disabled = false;
-  });
+    if (uploadRules[scope] && uploadRules[scope][cat]) {
+      uploadRules[scope][cat].forEach(function(obj) {
+        var opt = document.createElement('option');
+        opt.value = obj;
+        opt.textContent = objLabels[obj] || obj;
+        uploadTypeSel.appendChild(opt);
+      });
+    }
+  }
 
   var _hierTypes = ['hierarchy', 'hierarchy_flat', 'entity_hierarchy', 'cc_with_hierarchy'];
   uploadTypeSel.addEventListener('change', function() {
@@ -463,8 +443,8 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('upload-form').addEventListener('submit', function(e) {
     e.preventDefault();
     var fileInput = document.getElementById('upload-file');
-    var uScope = document.getElementById('upload-scope').value;
-    var uCat = document.getElementById('upload-category').value;
+    var uScope = getScope();
+    var uCat = getCategory();
     var type = document.getElementById('upload-type').value;
     var resultEl = document.getElementById('upload-result');
     var progressEl = document.getElementById('upload-progress');
@@ -561,7 +541,9 @@ import Layout from '../../components/layout/Layout.astro';
 
   // ── Upload history ──────────────────────────────────────────────────
   function loadUploadHistory() {
-    fetch('/api/admin/uploads?size=20', { headers: authHdr })
+    var uhParams = '?size=20&scope=' + encodeURIComponent(getScope()) +
+      '&data_category=' + encodeURIComponent(getCategory());
+    fetch('/api/admin/uploads' + uhParams, { headers: authHdr })
       .then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('upload-history');
       var items = d.items || [];
@@ -1172,9 +1154,12 @@ import Layout from '../../components/layout/Layout.astro';
                   dodPCLegacy, dodPCTarget, dodGL, dodMapping,
                   dodBalances, dodHierarchies, dodEmployees];
 
-  // Override refreshAllData to reload all DOD instances
+  // Override refreshAllData to reload all DOD instances + upload context
   refreshAllData = function() {
     loadCounts();
+    updateUploadContext();
+    loadUploadHistory();
+    loadSAPBindings();
     var sp = dodScopeParams();
     _allDODs.forEach(function(d) {
       d.extraQueryParams = Object.assign({}, d.extraQueryParams, sp);
@@ -1226,27 +1211,32 @@ import Layout from '../../components/layout/Layout.astro';
   });
 
   // --- SAP Extraction (binding-based) ---
-  (function initSAPExtract() {
+  var _sapConnections = null;
+  function loadSAPBindings() {
     var area = document.getElementById('sap-extract-area');
     var noConn = document.getElementById('sap-no-connections');
     var listEl = document.getElementById('sap-connections-list');
     var resEl = document.getElementById('sap-extract-result');
+    var curScope = getScope();
+    var curCat = getCategory();
 
-    fetch('/api/data/sap-extract/available', { headers: authHdr })
-      .then(function(r) { return r.ok ? r.json() : []; })
-      .then(function(connections) {
-        if (!connections || !connections.length) {
-          area.classList.add('hidden');
-          noConn.classList.remove('hidden');
-          return;
-        }
-        // Load bindings for each connection
-        var html = '';
-        var pending = connections.length;
-        connections.forEach(function(c) {
-          fetch('/api/admin/sap/' + c.connection_id + '/bindings', { headers: authHdr })
-            .then(function(r) { return r.ok ? r.json() : []; })
-            .then(function(bindings) {
+    function renderBindings(connections) {
+      if (!connections || !connections.length) {
+        area.classList.add('hidden');
+        noConn.classList.remove('hidden');
+        return;
+      }
+      area.classList.remove('hidden');
+      noConn.classList.add('hidden');
+      var html = '';
+      var pending = connections.length;
+      connections.forEach(function(c) {
+        var bUrl = '/api/admin/sap/' + c.connection_id + '/bindings' +
+          '?scope=' + encodeURIComponent(curScope) +
+          '&data_category=' + encodeURIComponent(curCat);
+        fetch(bUrl, { headers: authHdr })
+          .then(function(r) { return r.ok ? r.json() : []; })
+          .then(function(bindings) {
               html += '<div class="border rounded-lg p-3 bg-white">';
               html += '<div class="flex items-center gap-2 mb-2"><span class="font-semibold text-sm">' + esc(c.name) + '</span>';
               html += '<span class="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">' + esc(c.protocol || 'OData') + '</span></div>';
@@ -1298,10 +1288,22 @@ import Layout from '../../components/layout/Layout.astro';
               }
             });
         });
-      })
-      .catch(function() {
-        listEl.textContent = 'Failed to load SAP connections.';
-      });
+    }
+
+    // Fetch connections once, cache, then render
+    if (_sapConnections) {
+      renderBindings(_sapConnections);
+    } else {
+      fetch('/api/data/sap-extract/available', { headers: authHdr })
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(connections) {
+          _sapConnections = connections;
+          renderBindings(connections);
+        })
+        .catch(function() {
+          listEl.textContent = 'Failed to load SAP connections.';
+        });
+    }
 
     // Dynamic SAP lookups
     var coAreaCache = {};
@@ -1425,7 +1427,8 @@ import Layout from '../../components/layout/Layout.astro';
         btn.textContent = 'Extract';
       }
     };
-  })();
+  }
+  loadSAPBindings();
 
 })();
 </script>

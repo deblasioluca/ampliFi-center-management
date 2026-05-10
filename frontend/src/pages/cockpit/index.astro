@@ -454,7 +454,7 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('new-wave-modal').classList.add('hidden');
     });
     // Load hierarchies for wave scope selector
-    fetch('/api/legacy/hierarchies?size=200', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/legacy/hierarchies?size=200&scope=cleanup', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
       var sel = document.getElementById('wave-hier-id');
       (d.items || []).forEach(function(h) {
         var opt = document.createElement('option');

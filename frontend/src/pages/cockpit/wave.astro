@@ -672,7 +672,7 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('btn-add-entities').addEventListener('click', function() {
     document.getElementById('entities-overlay').classList.remove('hidden');
     document.getElementById('entity-search').value = '';
-    fetch('/api/entities?size=1000', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/entities?size=1000&scope=cleanup', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       allEntities = d.items || [];
       var html = '';
       allEntities.forEach(function(e) {
@@ -726,7 +726,7 @@ import Layout from '../../components/layout/Layout.astro';
     document.getElementById('hier-overlay').classList.remove('hidden');
     var hierSel = document.getElementById('hier-select');
     hierSel.innerHTML = '<option value="">Loading...</option>';
-    fetch('/api/legacy/hierarchies?size=100', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/legacy/hierarchies?size=100&scope=cleanup', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
       var opts = '<option value="">-- Select hierarchy --</option>';
       (d.items || []).forEach(function(h) {
         opts += '<option value="' + h.id + '">' + esc(h.setname) + ' (' + esc(h.description || '') + ')</option>';
@@ -1231,7 +1231,7 @@ import Layout from '../../components/layout/Layout.astro';
   });
 
   // Cascade: when hierarchy changes, load nodes for it.
-  fetch('/api/legacy/hierarchies?size=200', { headers: authHdr })
+  fetch('/api/legacy/hierarchies?size=200&scope=cleanup', { headers: authHdr })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var sel = document.getElementById('sf-hier-id');

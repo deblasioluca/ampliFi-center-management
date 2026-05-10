@@ -280,7 +280,47 @@ access to steps that aren't relevant yet.
 
 On 401 (JWT expired), the dashboard redirects to login instead of showing stale/empty data.
 
-## 6.13 Full-scope strategic run
+## 6.13 Data Management Page (`/data`)
+
+The Data Management page is the central hub for loading, browsing, and managing all
+reference data across scopes. Two top-level selectors control the entire page:
+
+### Scope selector
+- **Center Management — Cleanup** (default): The primary analysis workspace
+- **Center Management — Housekeeping**: Staging data for periodic health checks
+- **Data Explorer**: Public data visualisation (curated view)
+
+### Category selector
+- **Legacy** (default): Source SAP data as extracted
+- **Target (ampliFi)**: Processed data ready for MDG export
+
+### Auto-scoped behaviour
+
+Once scope and category are selected:
+
+1. **Upload form**: Automatically shows "Uploading to: [Scope] · [Category]" — the
+   user only needs to pick the data type (CC, PC, Entity, etc.). No separate scope/category
+   dropdown in the upload form.
+2. **SAP Bindings**: Only SAP extraction bindings configured for the selected scope+category
+   are shown. Other bindings are hidden.
+3. **Upload History**: Filtered to show only uploads matching the selected scope+category.
+4. **KPIs**: Reflect the correct table counts for the selected scope. When category=target,
+   CC and PC counts come from target tables; when category=legacy, they come from legacy tables.
+5. **Data tabs**: All DataObjectDisplay instances pass `scope` and `data_category` as query
+   parameters, so only matching records are displayed.
+
+### Data Explorer standalone (`/explore`)
+
+The Data Explorer is a **separate, standalone page** accessible without login. It has its
+own scope (`explorer`) hardcoded in the backend — it never shows cleanup or housekeeping data.
+
+The explorer displays two main panels:
+- **Legacy tab**: Cost Centers, Profit Centers, Entities, GL Accounts (CoA + CoCd), Hierarchies
+- **Target (ampliFi) tab**: Same objects from target tables
+
+No "employees" tab is shown in the Data Explorer (employees are sensitive data).
+
+## 6.14 Full-scope strategic run
 
 A wave with `is_full_scope=true` skips the review/sign-off phase. It produces the same
 analysis run + cockpit views, intended for strategic analysis (e.g. "if we ran clean-up

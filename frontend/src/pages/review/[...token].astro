@@ -797,7 +797,7 @@ export function getStaticPaths() {
       });
     }
     try {
-      var res = await fetch('/api/legacy/hierarchies?size=200');
+      var res = await fetch('/api/legacy/hierarchies?size=200&scope=cleanup');
       if (!res.ok) return;
       var data = await res.json();
       var hiers = data.items || data || [];
