@@ -664,7 +664,7 @@ import Layout from '../../components/layout/Layout.astro';
     return new Promise(function(resolve) {
       loadUploadHistory();
       var attempts = 0;
-      var maxAttempts = 180;
+      var maxAttempts = 600;
       var interval = setInterval(function() {
         attempts++;
         fetch('/api/admin/uploads/' + id, { headers: authHdr })
