@@ -778,8 +778,21 @@ import Layout from '../../components/layout/Layout.astro';
 
   // ── Download upload template ────────────────────────────────────────
   document.getElementById('download-template-btn').addEventListener('click', async function() {
-    var kind = document.getElementById('upload-type').value;
-    if (!kind) { alert('Please select a data type first.'); return; }
+    var rawKind = document.getElementById('upload-type').value;
+    if (!rawKind) { alert('Please select a data type first.'); return; }
+    var templateKindMap = {
+      cost_center: 'cost_centers', profit_center: 'profit_centers',
+      gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      entity: 'entities',
+      hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
+      entity_hierarchy: 'entity_hierarchy',
+      balance: 'balances', balance_gcr: 'balances_gcr',
+      employee: 'employees'
+    };
+    var cat = getCategory();
+    var kind = templateKindMap[rawKind] || rawKind;
+    if (cat === 'target' && rawKind === 'cost_center') kind = 'target_cost_centers';
+    if (cat === 'target' && rawKind === 'profit_center') kind = 'target_profit_centers';
     try {
       var res = await fetch('/api/data/upload-templates/' + encodeURIComponent(kind));
       if (!res.ok) { alert('Failed to fetch template'); return; }
