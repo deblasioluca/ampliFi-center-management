@@ -33,12 +33,16 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 
-def _get_excluded_ids_for_page(db: Session, centers, scope: str | None, object_type: str) -> set[int]:
-    """Evaluate exclusion rules against a page of centers. Returns set of IDs to mark as excluded."""
+def _get_excluded_ids_for_page(
+    db: Session, centers, scope: str | None, object_type: str,
+) -> set[int]:
+    """Evaluate exclusion rules against a page of centers."""
     q = select(CenterExclusionRule).where(
         CenterExclusionRule.is_enabled == True,  # noqa: E712
-        (CenterExclusionRule.scope == None) | (CenterExclusionRule.scope == scope),  # noqa: E711
-        (CenterExclusionRule.object_type == "both") | (CenterExclusionRule.object_type == object_type),
+        (CenterExclusionRule.scope == None)  # noqa: E711
+        | (CenterExclusionRule.scope == scope),
+        (CenterExclusionRule.object_type == "both")
+        | (CenterExclusionRule.object_type == object_type),
     )
     rules = db.scalars(q).all()
     if not rules:
@@ -937,7 +941,7 @@ def center_mapping_overview(
 
     # We need to connect CCs to their PCs.
     # Look up the legacy CC's profit center assignment from the cost center table
-    from app.models.core import LegacyCostCenter, TargetCostCenter, CATEGORY_LEGACY, CATEGORY_TARGET
+    from app.models.core import CATEGORY_LEGACY, CATEGORY_TARGET, LegacyCostCenter, TargetCostCenter
 
     # Build legacy CC → legacy PC lookup (from CC's profit center field)
     legacy_cc_pc = {}  # cctr → profit_center
