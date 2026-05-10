@@ -780,6 +780,10 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('download-template-btn').addEventListener('click', async function() {
     var rawKind = document.getElementById('upload-type').value;
     if (!rawKind) { alert('Please select a data type first.'); return; }
+    if (rawKind === 'cc_with_hierarchy') {
+      alert('No CSV template for this type — use your existing Excel file with the sheet/header options above.');
+      return;
+    }
     var templateKindMap = {
       cost_center: 'cost_centers', profit_center: 'profit_centers',
       gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
