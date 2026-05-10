@@ -314,7 +314,7 @@
     // Title row (heading + last loaded indicator)
     if (this.title) {
       html += '<div class="flex items-center justify-between mb-2"><h3 class="text-base font-semibold">' + esc(this.title);
-      if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
+      if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle).replace(/ampliFi/g, '<span style="color:#E60000">a</span>mpliF<span style="color:#E60000">i</span>') + '</span>';
       html += '</h3>';
       if (this.lastLoadedAt) {
         var d = new Date(this.lastLoadedAt);
