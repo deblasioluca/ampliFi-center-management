@@ -5,6 +5,100 @@ This section defines (a) the **source data structures** the app must ingest and 
 
 ---
 
+## 3.0 High-Level Database Table Overview
+
+All tables reside in the default PostgreSQL schema. Tables with scope segregation carry
+a `scope` column (`cleanup` | `housekeeping` | `explorer`) and a `data_category` column
+(`legacy` | `target`). See §02.5 for the scope segregation architecture.
+
+### Master / Reference Data
+
+| Table | Contents | Scope-aware | Key fields |
+|---|---|---|---|
+| `entity` | Legal entities (company codes) — T001 | Yes | `ccode`, `name`, `country`, `region` |
+| `employee` | Employee master (GPN-based) | Yes | `gpn`, `bs_name`, `email`, `job_desc` |
+| `legacy_cost_center` | Cost centers from SAP CSKS | Yes | `coarea`, `cctr`, `ccode`, `txtsh`, `responsible` |
+| `legacy_profit_center` | Profit centers from SAP CEPC | Yes | `coarea`, `pctr`, `ccode`, `txtsh`, `responsible` |
+| `target_cost_center` | Target/processed cost centers (MDG-ready) | Yes | Same as legacy + `approved_in_wave` |
+| `target_profit_center` | Target/processed profit centers (MDG-ready) | Yes | Same as legacy + `approved_in_wave` |
+| `balance` | Posting balances (period-level, multi-currency) | Yes | `ccode`, `cctr`, `coarea`, `fiscal_year`, `period` |
+| `gl_account_ska1` | GL Accounts at chart-of-accounts level | Yes | `ktopl`, `saknr`, `txt20`, `txt50` |
+| `gl_account_skb1` | GL Accounts at company-code level | Yes | `bukrs`, `saknr`, `stext` |
+| `hierarchy` | Hierarchy header (set framework) | Yes | `setclass`, `setname`, `label`, `coarea` |
+| `hierarchy_node` | Hierarchy internal nodes (parent-child) | No (via hierarchy FK) | `hierarchy_id`, `setname`, `parent_setname` |
+| `hierarchy_leaf` | Hierarchy leaves (center assignments) | No (via hierarchy FK) | `hierarchy_id`, `setname`, `value` |
+
+### Analysis & Wave Management
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `wave` | A named batch of centers for analysis/review | `code`, `name`, `state` |
+| `wave_entity` | Entities (company codes) assigned to a wave | `wave_id`, `entity_id` |
+| `wave_hierarchy_scope` | Hierarchy nodes defining wave scope | `wave_id`, `hierarchy_id`, `setname` |
+| `analysis_config` | Saved decision-tree configurations | `code`, `config` (JSONB) |
+| `routine` | Pluggable analysis routines (rules, ML, LLM) | `code`, `kind`, `schema` |
+| `analysis_run` | A single execution of an analysis config | `wave_id`, `analysis_config_id`, `status` |
+| `routine_output` | Per-center output from each routine in a run | `run_id`, `center_id`, `routine_id` |
+| `center_proposal` | Proposed action for a center (merge, rename, keep, etc.) | `run_id`, `cctr`, `decision` |
+| `center_mapping` | Legacy→Target center mapping (1:N) | `legacy_cctr`, `target_cctr`, `mapping_type` |
+
+### Review Workflow
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `review_scope` | A subset of proposals assigned to a reviewer | `wave_id`, `reviewer_id`, `entity_ccodes` |
+| `review_item` | Individual item within a review scope | `scope_id`, `proposal_id`, `status` |
+| `llm_review_pass` | LLM-generated review comments | `run_id`, `proposal_id`, `verdict` |
+
+### Data Quality
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `data_quality_issue` | DQ issues flagged during upload (VERAK, orphan nodes, etc.) | `batch_id`, `object_type`, `field`, `issue_type`, `status` |
+
+### Upload & Integration
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `upload_batch` | A single file/API upload event | `scope`, `data_category`, `object_type`, `status` |
+| `upload_error` | Errors captured during upload validation/load | `batch_id`, `row_num`, `error_code`, `message` |
+| `sap_connection` | SAP system connection config (RFC/OData) | `system_id`, `host`, `client` |
+| `sap_object_binding` | Which SAP objects to extract for which scope | `connection_id`, `scope`, `data_category`, `object_type` |
+| `sap_connection_probe` | Connection health check results | `connection_id`, `status`, `latency_ms` |
+| `datasphere_config` | SAP Datasphere connection settings | `space_id`, `schema`, `enabled` |
+| `explorer_display_config` | Column display config for Data Explorer per object type | `object_type`, `table_columns`, `column_labels` |
+| `explorer_source_config` | Which run/table to source explorer data from | `object_type`, `source_type` |
+
+### Housekeeping
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `housekeeping_cycle` | Monthly/quarterly health-check run | `period`, `status`, `started_at` |
+| `housekeeping_item` | Individual finding in a cycle (inactive, orphan, etc.) | `cycle_id`, `cctr`, `issue_type` |
+
+### System / Admin
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `app_user` | Application users (local + Entra ID) | `username`, `email`, `role` |
+| `app_config` | Application configuration key-value store | `key`, `value` |
+| `app_config_secret` | Encrypted secrets (AES-GCM) | `key`, `encrypted_value` |
+| `audit_log` | Audit trail for admin actions | `user_id`, `action`, `resource` |
+| `task_run` | Background task execution tracking | `task_type`, `status`, `progress` |
+| `activity_feed_entry` | User-facing activity feed entries | `actor_id`, `action`, `resource` |
+| `wave_template` | Reusable wave configuration templates | `code`, `config` |
+
+### Naming & GL
+
+| Table | Contents | Key fields |
+|---|---|---|
+| `naming_sequence` | Naming convention sequences (for center ID generation) | `prefix`, `next_value` |
+| `naming_pool` | Pool of pre-allocated center IDs | `prefix`, `pool_size` |
+| `naming_allocation` | Individual ID allocations from the pool | `pool_id`, `allocated_id` |
+| `gl_account_class_range` | GL account classification rules (balance/P&L/etc.) | `from_account`, `to_account`, `class` |
+
+---
+
 ## 3.1 Source structures (read-only inputs)
 
 ### 3.1.1 Balances feed

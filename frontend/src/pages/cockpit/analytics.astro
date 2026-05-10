@@ -265,7 +265,7 @@ import Layout from '../../components/layout/Layout.astro';
 
   // Entity name lookup
   var _entityNames = {};
-  fetch('/api/entities?size=500', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+  fetch('/api/entities?size=500&scope=cleanup', { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
     (d.items || []).forEach(function(e) { _entityNames[e.ccode] = e.name; });
   }).catch(function() {});
 
@@ -1593,7 +1593,7 @@ import Layout from '../../components/layout/Layout.astro';
         // available CC/PC/Entity hierarchies — cheap query, returns
         // metadata only.
         if (!browserHierarchyOptions.length) {
-          fetch('/api/legacy/hierarchies?size=100', { headers: authHdr })
+          fetch('/api/legacy/hierarchies?size=100&scope=cleanup', { headers: authHdr })
             .then(function(r) { return r.json(); })
             .then(function(hd) {
               browserHierarchyOptions = (hd.items || []).map(function(h) {

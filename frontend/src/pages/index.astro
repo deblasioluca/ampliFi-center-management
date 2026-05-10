@@ -345,7 +345,7 @@ import Layout from '../components/layout/Layout.astro';
     }).catch(function() {});
 
     // Data quality summary
-    fetch('/api/data/counts', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/data/counts?scope=cleanup', { headers: headers }).then(function(r) { return r.json(); }).then(function(d) {
       var el = document.getElementById('data-quality');
       var html = '<div class="space-y-2">';
       html += '<div class="flex justify-between"><span class="text-gray-600">Entities</span><span class="font-medium">' + fmt(d.entities) + '</span></div>';

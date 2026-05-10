@@ -227,10 +227,9 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     ],
 }
 
-# Target object types share the same display config as their legacy counterparts
+# Target object types that share the same display config as their legacy counterparts
+# (target-cost-centers and target-profit-centers have their own explicit definitions above)
 for _prefix, _source in [
-    ("target-cost-centers", "cost-centers"),
-    ("target-profit-centers", "profit-centers"),
     ("target-entities", "entities"),
     ("target-gl-accounts-ska1", "gl-accounts-ska1"),
     ("target-gl-accounts-skb1", "gl-accounts-skb1"),

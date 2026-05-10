@@ -85,7 +85,7 @@ import Layout from '../../components/layout/Layout.astro';
   async function loadQuality() {
     try {
       // Fetch all cost centers
-      var ccResp = await fetch('/api/legacy/cost-centers?size=500', { headers: headers });
+      var ccResp = await fetch('/api/legacy/cost-centers?size=500&scope=cleanup', { headers: headers });
       var ccData = await ccResp.json();
       var ccs = ccData.items || [];
       var total = ccs.length;
