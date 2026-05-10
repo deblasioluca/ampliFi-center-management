@@ -95,7 +95,7 @@ import Layout from '../../components/layout/Layout.astro';
 <script is:inline>
 (function() {
   var authHdr = {};
-  var token = localStorage.getItem('acm_token');
+  var token = localStorage.getItem('amplifi_token');
   if (token) authHdr = { 'Authorization': 'Bearer ' + token };
 
   function loadRules() {
