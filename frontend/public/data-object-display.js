@@ -238,7 +238,9 @@
 
     if (this.glHierarchyMode) {
       html += '<option value="__gl_type_a">GL Type A — 1st character</option>';
-      html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
+      if (this.glHierarchyMode !== 'type_a_only') {
+        html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
+      }
       html += '</select>';
       return html;
     }
@@ -334,7 +336,7 @@
     if (this.showCSV) {
       html += '<button data-dod-role="csv" class="btn-secondary text-xs py-1 flex-shrink-0" title="Download as CSV">CSV</button>';
     }
-    if (this._view === 'hierarchy') {
+    if (this._view === 'hierarchy' && !(this._hierPickerId === '__gl_type_a' || this._hierPickerId === '__gl_type_b')) {
       html += '<button data-dod-role="expand-all" class="btn-secondary text-xs py-1 flex-shrink-0">Expand All</button>';
       html += '<button data-dod-role="collapse-all" class="btn-secondary text-xs py-1 flex-shrink-0">Collapse All</button>';
     }
@@ -1591,7 +1593,7 @@
     }
   };
 
-  // ── GL artificial hierarchical view ─────────────────────────────────
+  // ── GL artificial hierarchical view (split-panel) ───────────────────
 
   DataObjectDisplay.prototype._renderGLHierarchical = function (items) {
     var self = this;
@@ -1612,40 +1614,54 @@
     });
     groupOrder.sort();
 
-    var cols = this.getTableColumns();
+    // Auto-select first group if none selected
+    if (!this._selectedHierNode || this._selectedHierNode.indexOf('__gl__') !== 0) {
+      if (groupOrder.length) this._selectedHierNode = '__gl__' + groupOrder[0];
+    }
 
-    var html = '<div class="overflow-y-auto" style="max-height:calc(100vh - 480px)">';
+    // Split panel: tree left, detail right
+    var html = '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
 
+    // Left panel — group tree
+    html += '<div class="w-72 flex-shrink-0 border rounded bg-white overflow-auto p-2">';
     groupOrder.forEach(function (key) {
-      var groupItems = groups[key];
-      var nodeId = self.containerId + '-gl-' + escAttr(key);
-      var isExpanded = self._allExpanded || self._expandedNodes[key] !== false;
-
-      html += '<div class="border-b">';
-      html += '<div class="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer" data-dod-toggle="' + escAttr(nodeId) + '">';
-      html += '<span class="text-[10px] text-gray-400">' + (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
-      html += '<span class="text-sm font-medium text-gray-800">' + esc(key) + '</span>';
-      html += '<span class="text-xs text-gray-400">(' + groupItems.length + ' accounts)</span>';
+      var isSelected = self._selectedHierNode === ('__gl__' + key);
+      html += '<div data-dod-hier-node="__gl__' + escAttr(key) + '" class="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-xs' +
+        (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800 hover:bg-gray-100') + '">';
+      html += '<span class="font-medium">' + esc(key) + '</span>';
+      html += '<span class="text-[10px] text-gray-400">(' + groups[key].length + ')</span>';
       html += '</div>';
-
-      html += '<div id="' + escAttr(nodeId) + '"' + (isExpanded ? '' : ' class="hidden"') + '>';
-      html += '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50/50">';
-      cols.forEach(function (col) {
-        html += '<th class="py-1 px-2 text-left font-medium text-gray-600">' + esc(self.colLabel(col)) + '</th>';
-      });
-      html += '</tr></thead><tbody>';
-      groupItems.forEach(function (row) {
-        html += '<tr class="border-b hover:bg-gray-50">';
-        cols.forEach(function (col) {
-          var val = row[col];
-          html += '<td class="py-1 px-2">' + esc(String(val || '')) + '</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div></div>';
     });
-
     html += '</div>';
+
+    // Right panel — detail table
+    html += '<div class="flex-1 border rounded bg-white overflow-auto">';
+    if (this._selectedHierNode && this._selectedHierNode.indexOf('__gl__') === 0) {
+      var selectedKey = this._selectedHierNode.substring(6);
+      var detailItems = groups[selectedKey] || [];
+      if (detailItems.length) {
+        var cols = this.getTableColumns();
+        html += '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50 sticky top-0">';
+        cols.forEach(function (col) {
+          html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+        detailItems.forEach(function (row) {
+          html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-click="1">';
+          cols.forEach(function (col) {
+            var val = row[col];
+            html += '<td class="py-1 px-2">' + esc(String(val || '')) + '</td>';
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No accounts in this group.</div>';
+      }
+    } else {
+      html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a group in the tree to view accounts.</div>';
+    }
+    html += '</div></div>';
     return html;
   };
 

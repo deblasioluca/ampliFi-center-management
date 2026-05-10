@@ -1403,6 +1403,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "employees",
         "gl_accounts_ska1",
         "gl_accounts_skb1",
+        "gl_accounts_group",
         "target_cost_centers",
         "target_profit_centers",
         "center_mapping",
@@ -1482,6 +1483,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "entity_hierarchy": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
+        "gl_accounts_group": SKA1_COLUMNS,
         "target_cost_centers": TARGET_CC_COLUMNS,
         "target_profit_centers": TARGET_PC_COLUMNS,
         "center_mapping": CENTER_MAPPING_COLUMNS,
@@ -1501,6 +1503,7 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "employees",
         "gl_accounts_ska1",
         "gl_accounts_skb1",
+        "gl_accounts_group",
     }
     normalized = (
         _normalize_headers(rows, mapping, skip_label_row=batch.kind in _sap_kinds)
@@ -1831,6 +1834,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "entity_hierarchy": HIERARCHY_FLAT_COLUMNS,
         "gl_accounts_ska1": SKA1_COLUMNS,
         "gl_accounts_skb1": SKB1_COLUMNS,
+        "gl_accounts_group": SKA1_COLUMNS,
         "target_cost_centers": TARGET_CC_COLUMNS,
         "target_profit_centers": TARGET_PC_COLUMNS,
         "center_mapping": CENTER_MAPPING_COLUMNS,
@@ -1850,6 +1854,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         "employees",
         "gl_accounts_ska1",
         "gl_accounts_skb1",
+        "gl_accounts_group",
     }
     normalized = (
         _normalize_headers(rows, mapping, skip_label_row=batch.kind in _sap_kinds)
@@ -2463,7 +2468,9 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 if loaded % 100 == 0:
                     _flush_progress(batch.id, loaded)
 
-    elif batch.kind == "gl_accounts_ska1":
+    elif batch.kind in ("gl_accounts_ska1", "gl_accounts_group"):
+        _gr_category = "legacy_gr" if batch_category == "legacy" else "target_gr"
+        _ska1_category = _gr_category if batch.kind == "gl_accounts_group" else batch_category
         _seen_ska1: dict[tuple[str, str], object] = {}
         for row in normalized:
             saknr = (row.get("saknr") or "").strip()
@@ -2497,7 +2504,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             else:
                 kwargs["refresh_batch"] = batch.id
                 kwargs["scope"] = batch_scope
-                kwargs["data_category"] = batch_category
+                kwargs["data_category"] = _ska1_category
                 new_gl = GLAccountSKA1(**kwargs)
                 db.add(new_gl)
                 _seen_ska1[_key] = new_gl
@@ -3065,7 +3072,7 @@ def rollback_upload(batch_id: int, db: Session) -> dict:
             db.execute(sa_delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
         r = db.execute(sa_delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
         deleted = r.rowcount
-    elif batch.kind == "gl_accounts_ska1":
+    elif batch.kind in ("gl_accounts_ska1", "gl_accounts_group"):
         r = db.execute(sa_delete(GLAccountSKA1).where(GLAccountSKA1.refresh_batch == batch.id))
         deleted = r.rowcount
     elif batch.kind == "gl_accounts_skb1":
