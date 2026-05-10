@@ -1203,12 +1203,43 @@ import Layout from '../../components/layout/Layout.astro';
                   dodPCLegacy, dodPCTarget, dodGL, dodMapping,
                   dodBalances, dodHierarchies, dodEmployees];
 
+  // Fetch and apply "last loaded" timestamps to all DODs
+  function loadLastLoadedTimestamps() {
+    var sp = dodScopeParams();
+    var url = '/api/data/last-loaded' + (sp.scope ? '?scope=' + sp.scope : '');
+    fetch(url, { headers: authHdr }).then(function(r) { return r.json(); }).then(function(d) {
+      var kindMap = {
+        'cost_centers': dodCCLegacy, 'cost_center': dodCCLegacy,
+        'cc_with_hierarchy': dodCCLegacy,
+        'target_cost_centers': dodCCTarget,
+        'profit_centers': dodPCLegacy, 'profit_center': dodPCLegacy,
+        'target_profit_centers': dodPCTarget,
+        'gl_accounts_ska1': dodGL,
+        'center_mapping': dodMapping,
+        'balances': dodBalances, 'balance': dodBalances,
+        'balances_gcr': dodBalances,
+        'hierarchies': dodHierarchies, 'hierarchy': dodHierarchies,
+        'hierarchies_flat': dodHierarchies,
+        'entities': dodEntities, 'entity': dodEntities,
+        'employees': dodEmployees, 'employee': dodEmployees
+      };
+      Object.keys(d).forEach(function(kind) {
+        var dod = kindMap[kind];
+        if (dod && d[kind]) {
+          dod.lastLoadedAt = d[kind];
+        }
+      });
+    }).catch(function() {});
+  }
+  loadLastLoadedTimestamps();
+
   // Override refreshAllData to reload all DOD instances + upload context
   refreshAllData = function() {
     loadCounts();
     updateUploadContext();
     loadUploadHistory();
     loadSAPBindings();
+    loadLastLoadedTimestamps();
     var sp = dodScopeParams();
     _allDODs.forEach(function(d) {
       d.extraQueryParams = Object.assign({}, d.extraQueryParams, sp);

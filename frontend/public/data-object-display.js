@@ -119,6 +119,8 @@
     this.rowActions = opts.rowActions || [];
     // Built-in detail panel on row click (shows all fields in slide-out)
     this.showDetailOnClick = opts.showDetailOnClick !== false;
+    // Last loaded timestamp (ISO string) for the data in this table
+    this.lastLoadedAt = opts.lastLoadedAt || null;
 
     // State
     this._view = opts.defaultView || 'tabular';
@@ -309,11 +311,17 @@
   DataObjectDisplay.prototype.buildToolbarHtml = function () {
     var self = this;
     var html = '';
-    // Title row (heading only)
+    // Title row (heading + last loaded indicator)
     if (this.title) {
-      html += '<h3 class="text-base font-semibold mb-2">' + esc(this.title);
+      html += '<div class="flex items-center justify-between mb-2"><h3 class="text-base font-semibold">' + esc(this.title);
       if (this.subtitle) html += ' <span class="text-xs font-normal text-gray-500">' + esc(this.subtitle) + '</span>';
       html += '</h3>';
+      if (this.lastLoadedAt) {
+        var d = new Date(this.lastLoadedAt);
+        var ts = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        html += '<span class="text-[10px] text-gray-400" title="Last data load timestamp">Last loaded: ' + esc(ts) + '</span>';
+      }
+      html += '</div>';
     }
     // Single condensed controls row
     html += '<div class="flex items-center gap-2 mb-2 flex-wrap">';
@@ -2168,6 +2176,13 @@
     this._page = 1;
     var self = this;
     this.loadData(function () { self.render(); });
+  };
+
+  // ── Set last loaded timestamp (can be called after init) ────────────
+
+  DataObjectDisplay.prototype.setLastLoaded = function (isoTimestamp) {
+    this.lastLoadedAt = isoTimestamp || null;
+    this.render();
   };
 
   // ── Export to global scope ──────────────────────────────────────────
