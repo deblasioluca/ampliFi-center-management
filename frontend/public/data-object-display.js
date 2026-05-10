@@ -1622,8 +1622,8 @@
       var isExpanded = self._allExpanded || self._expandedNodes[key] !== false;
 
       html += '<div class="border-b">';
-      html += '<div class="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer" data-dod-toggle="' + escAttr(nodeId) + '">';
-      html += '<span class="text-[10px] text-gray-400">' + (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
+      html += '<div class="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer" data-dod-gl-toggle="' + escAttr(nodeId) + '">';
+      html += '<span class="text-[10px] text-gray-400 dod-arrow">' + (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
       html += '<span class="text-sm font-medium text-gray-800">' + esc(key) + '</span>';
       html += '<span class="text-xs text-gray-400">(' + groupItems.length + ' accounts)</span>';
       html += '</div>';
@@ -1943,6 +1943,20 @@
         if (target) {
           target.classList.toggle('hidden');
           this.innerHTML = target.classList.contains('hidden') ? '&#9654;' : '&#9660;';
+        }
+      });
+    });
+
+    // GL hierarchy toggle (expand/collapse — updates only arrow, preserves node text)
+    container.querySelectorAll('[data-dod-gl-toggle]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var targetId = this.dataset.dodGlToggle;
+        var target = document.getElementById(targetId);
+        if (target) {
+          target.classList.toggle('hidden');
+          var arrow = this.querySelector('.dod-arrow');
+          if (arrow) arrow.innerHTML = target.classList.contains('hidden') ? '&#9654;' : '&#9660;';
         }
       });
     });
