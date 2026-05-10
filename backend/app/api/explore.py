@@ -106,8 +106,10 @@ _OBJECT_MODELS: dict[str, Any] = {
     "employees": Employee,
     "gl-accounts-ska1": GLAccountSKA1,
     "gl-accounts-skb1": GLAccountSKB1,
+    "gl-accounts-group": GLAccountSKA1,
     "target-gl-accounts-ska1": GLAccountSKA1,
     "target-gl-accounts-skb1": GLAccountSKB1,
+    "target-gl-accounts-group": GLAccountSKA1,
     "balances": Balance,
     "hierarchies": Hierarchy,
     "target-hierarchies": Hierarchy,
@@ -196,6 +198,18 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
         "func_area",
         "glaccount_type",
     ],
+    "gl-accounts-group": [
+        "ktopl",
+        "saknr",
+        "txt20",
+        "txt50",
+        "xbilk",
+        "gvtyp",
+        "ktoks",
+        "bilkt",
+        "func_area",
+        "glaccount_type",
+    ],
     "gl-accounts-skb1": [
         "bukrs",
         "saknr",
@@ -233,6 +247,7 @@ for _prefix, _source in [
     ("target-entities", "entities"),
     ("target-gl-accounts-ska1", "gl-accounts-ska1"),
     ("target-gl-accounts-skb1", "gl-accounts-skb1"),
+    ("target-gl-accounts-group", "gl-accounts-group"),
 ]:
     _DEFAULT_TABLE_COLUMNS[_prefix] = _DEFAULT_TABLE_COLUMNS[_source]
 
@@ -247,8 +262,10 @@ _SEARCH_FIELDS: dict[str, list[str]] = {
     "employees": ["gpn", "bs_name", "email_address", "ou_cd"],
     "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
+    "gl-accounts-group": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "target-gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "target-gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
+    "target-gl-accounts-group": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "balances": ["cctr", "ccode", "coarea"],
     "gl-accounts": ["class_code", "class_label"],
 }
@@ -264,8 +281,10 @@ _DEFAULT_SORT: dict[str, str] = {
     "employees": "gpn",
     "gl-accounts-ska1": "saknr",
     "gl-accounts-skb1": "saknr",
+    "gl-accounts-group": "saknr",
     "target-gl-accounts-ska1": "saknr",
     "target-gl-accounts-skb1": "saknr",
+    "target-gl-accounts-group": "saknr",
     "balances": "cctr",
     "gl-accounts": "class_code",
 }
@@ -689,9 +708,17 @@ def explore_object(
     if hasattr(model, "scope"):
         query = query.where(model.scope == SCOPE_EXPLORER)
         count_q = count_q.where(model.scope == SCOPE_EXPLORER)
-    if data_category and hasattr(model, "data_category"):
-        query = query.where(model.data_category == data_category)
-        count_q = count_q.where(model.data_category == data_category)
+    # GR accounts use a suffixed data_category to distinguish from General Ledger
+    _category_overrides = {
+        "gl-accounts-group": {"legacy": "legacy_gr", "target": "target_gr"},
+        "target-gl-accounts-group": {"legacy": "legacy_gr", "target": "target_gr"},
+    }
+    effective_category = data_category
+    if object_type in _category_overrides and data_category:
+        effective_category = _category_overrides[object_type].get(data_category, data_category)
+    if effective_category and hasattr(model, "data_category"):
+        query = query.where(model.data_category == effective_category)
+        count_q = count_q.where(model.data_category == effective_category)
 
     # Search
     if search:

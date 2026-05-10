@@ -238,7 +238,9 @@
 
     if (this.glHierarchyMode) {
       html += '<option value="__gl_type_a">GL Type A — 1st character</option>';
-      html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
+      if (this.glHierarchyMode !== 'type_a_only') {
+        html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
+      }
       html += '</select>';
       return html;
     }

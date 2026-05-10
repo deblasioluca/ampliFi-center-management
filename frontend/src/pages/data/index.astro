@@ -398,7 +398,7 @@ import Layout from '../../components/layout/Layout.astro';
     profit_center: 'Profit Centers',
     gl_account_ska1: 'GL Accounts — General Ledger (SKA1)',
     gl_account_skb1: 'GL Accounts — General Ledger (SKB1)',
-    gl_account_group: 'GL Accounts — Group Reporting (coming soon)',
+    gl_account_group: 'GL Accounts — Group Reporting',
     gl_account_fpsl: 'GL Accounts — Subledger FPSL (coming soon)',
     gl_account_mapping: 'GL Account Mapping (legacy → target) (coming soon)',
     entity: 'Entities',
@@ -797,7 +797,7 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('download-template-btn').addEventListener('click', async function() {
     var rawKind = document.getElementById('upload-type').value;
     if (!rawKind) { alert('Please select a data type first.'); return; }
-    var _noTemplate = ['cc_with_hierarchy', 'gl_account_group', 'gl_account_fpsl', 'gl_account_mapping'];
+    var _noTemplate = ['cc_with_hierarchy', 'gl_account_fpsl', 'gl_account_mapping'];
     if (_noTemplate.indexOf(rawKind) >= 0) {
       if (rawKind === 'cc_with_hierarchy') {
         alert('No CSV template for this type — use your existing Excel file with the sheet/header options above.');
@@ -809,6 +809,7 @@ import Layout from '../../components/layout/Layout.astro';
     var templateKindMap = {
       cost_center: 'cost_centers', profit_center: 'profit_centers',
       gl_account_ska1: 'gl_accounts_ska1', gl_account_skb1: 'gl_accounts_skb1',
+      gl_account_group: 'gl_accounts_group',
       entity: 'entities',
       hierarchy: 'hierarchies', hierarchy_flat: 'hierarchies_flat',
       entity_hierarchy: 'entity_hierarchy',
