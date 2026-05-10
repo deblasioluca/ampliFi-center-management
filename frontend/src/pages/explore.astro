@@ -194,14 +194,15 @@ import '../styles/global.css';
       extraParams.data_category = cfg.category;
     }
 
+    var hasHier = cfg.hierTypes.length > 0 || cfg.glMode;
     var dod = new window.DataObjectDisplay({
       containerId: containerId,
       objectType: tab,
       dataEndpoint: cfg.endpoint,
       hierarchyEndpoint: '/api/legacy/hierarchies',
       identityField: cfg.identity,
-      showViewToggle: cfg.hierTypes.length > 0,
-      showHierarchyPicker: cfg.hierTypes.length > 0,
+      showViewToggle: hasHier,
+      showHierarchyPicker: hasHier,
       hierarchyTypes: cfg.hierTypes,
       glHierarchyMode: cfg.glMode || false,
       showSearch: true,
