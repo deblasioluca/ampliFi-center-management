@@ -80,6 +80,10 @@ import '../styles/global.css';
   }
   .explore-tab:hover { color: #374151; }
   .explore-tab-active { color: #1d4ed8; border-bottom-color: #2563eb; font-weight: 600; }
+  .explore-tab .data-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #22c55e; margin-left: 4px; vertical-align: middle;
+  }
 </style>
 
 <script is:inline src="/data-object-display.js"></script>
@@ -99,30 +103,30 @@ import '../styles/global.css';
   }
 
   var LEGACY_TABS = {
-    'cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'cost_centers' },
-    'profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'profit_centers' },
-    'entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy', uploadKind: 'entities' },
-    'gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_ska1' },
-    'gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_skb1' },
-    'gl-accounts-group':  { label: 'GL Accts (Group Reporting)', endpoint: '/api/explore/legacy/gl-accounts-group', identity: 'saknr', hierTypes: [], glMode: 'type_a_only', category: 'legacy', uploadKind: 'gl_accounts_group' },
+    'cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'cost_centers', countKey: 'cost_centers' },
+    'profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'profit_centers', countKey: 'profit_centers' },
+    'entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',         identity: 'ccode', hierTypes: ['0106'], category: 'legacy', uploadKind: 'entities', countKey: 'entities' },
+    'gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_ska1', countKey: 'gl_accounts_ska1' },
+    'gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1', identity: 'saknr', hierTypes: [], glMode: true, category: 'legacy', uploadKind: 'gl_accounts_skb1', countKey: 'gl_accounts_skb1' },
+    'gl-accounts-group':  { label: 'GL Accts (Group Reporting)', endpoint: '/api/explore/legacy/gl-accounts-group', identity: 'saknr', hierTypes: [], glMode: 'type_a_only', category: 'legacy', uploadKind: 'gl_accounts_group', countKey: 'gl_accounts_group' },
     'gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
-    'center-mapping-overview': { label: 'Center Mapping', useMappingView: true },
-    'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy', uploadKind: 'hierarchies' }
+    'center-mapping-overview': { label: 'Center Mapping', useMappingView: true, countKey: 'center_mappings' },
+    'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy', uploadKind: 'hierarchies', countKey: 'hierarchies' }
   };
 
   // Target tabs — mirror legacy structure using target tables / data_category=target
   var TARGET_TABS = {
-    'target-cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'target_cost_centers' },
-    'target-profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'target_profit_centers' },
-    'target-entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target', uploadKind: 'entities' },
-    'target-gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_ska1' },
-    'target-gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_skb1' },
-    'target-gl-accounts-group':  { label: 'GL Accts (Group Reporting)', endpoint: '/api/explore/legacy/gl-accounts-group', identity: 'saknr', hierTypes: [], glMode: 'type_a_only', category: 'target', uploadKind: 'gl_accounts_group' },
+    'target-cost-centers':       { label: 'Cost Centers',    endpoint: '/api/explore/legacy/target-cost-centers',     identity: 'cctr',  hierTypes: ['0101'], uploadKind: 'target_cost_centers', countKey: 'target_cost_centers' },
+    'target-profit-centers':     { label: 'Profit Centers',  endpoint: '/api/explore/legacy/target-profit-centers',   identity: 'pctr',  hierTypes: ['0104'], uploadKind: 'target_profit_centers', countKey: 'target_profit_centers' },
+    'target-entities':           { label: 'Entities',        endpoint: '/api/explore/legacy/entities',                identity: 'ccode', hierTypes: ['0106'], category: 'target', uploadKind: 'entities', countKey: 'target_entities' },
+    'target-gl-accounts-ska1':   { label: 'GL Accts (General Ledger)',  endpoint: '/api/explore/legacy/gl-accounts-ska1',        identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_ska1', countKey: 'target_gl_accounts_ska1' },
+    'target-gl-accounts-skb1':   { label: 'GL Accts (CoCd)', endpoint: '/api/explore/legacy/gl-accounts-skb1',       identity: 'saknr', hierTypes: [], glMode: true, category: 'target', uploadKind: 'gl_accounts_skb1', countKey: 'target_gl_accounts_skb1' },
+    'target-gl-accounts-group':  { label: 'GL Accts (Group Reporting)', endpoint: '/api/explore/legacy/gl-accounts-group', identity: 'saknr', hierTypes: [], glMode: 'type_a_only', category: 'target', uploadKind: 'gl_accounts_group', countKey: 'target_gl_accounts_group' },
     'target-gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'target-gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
-    'target-center-mapping-overview': { label: 'Center Mapping', useMappingView: true },
-    'target-hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target' }
+    'target-center-mapping-overview': { label: 'Center Mapping', useMappingView: true, countKey: 'center_mappings' },
+    'target-hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target', countKey: 'target_hierarchies' }
   };
 
   var currentPanel = 'legacy';
@@ -248,6 +252,36 @@ import '../styles/global.css';
       dodTarget = dod;
     }
   }
+
+  // ── Green dot indicators for tabs with loaded data ──────────────────
+  function updateTabDots(counts) {
+    var allTabs = { legacy: LEGACY_TABS, target: TARGET_TABS };
+    Object.keys(allTabs).forEach(function(panel) {
+      var tabs = allTabs[panel];
+      Object.keys(tabs).forEach(function(tabKey) {
+        var cfg = tabs[tabKey];
+        if (!cfg.countKey) return;
+        var count = counts[cfg.countKey] || 0;
+        var btn = document.querySelector(
+          '[data-explore-tab="' + tabKey + '"][data-panel="' + panel + '"]'
+        );
+        if (!btn) return;
+        // Remove existing dot if any
+        var existing = btn.querySelector('.data-dot');
+        if (existing) existing.remove();
+        if (count > 0) {
+          var dot = document.createElement('span');
+          dot.className = 'data-dot';
+          dot.title = count.toLocaleString() + ' records';
+          btn.appendChild(dot);
+        }
+      });
+    });
+  }
+
+  // Fetch counts and render dots
+  fetch('/api/explore/counts').then(function(r) { return r.json(); })
+    .then(updateTabDots).catch(function() {});
 
   // ── Boot ──────────────────────────────────────────────────────────────
   document.getElementById('explore-status').textContent = LEGACY_TABS['cost-centers'].label;

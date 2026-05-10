@@ -6,6 +6,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.api.deps import PaginationParams, pagination
@@ -1565,6 +1566,26 @@ def hierarchy_tree(
     }
 
 
+_EMPLOYEE_EXCLUDE = frozenset(
+    {"scope", "data_category", "refresh_batch", "created_at", "updated_at"}
+)
+
+
+def _employee_to_dict(e: Employee) -> dict:
+    """Serialize ALL Employee model columns (not a hardcoded subset)."""
+    result: dict = {"id": e.id, "display_name": e.display_name, "verak_display": e.verak_display}
+    for attr in sa_inspect(Employee).column_attrs:
+        key = attr.key
+        if key in _EMPLOYEE_EXCLUDE:
+            continue
+        val = getattr(e, key, None)
+        if val is not None:
+            result[key] = val
+        elif key not in result:
+            result[key] = None
+    return result
+
+
 @router.get("/employees")
 def list_employees(
     db: Session = Depends(get_db),
@@ -1589,9 +1610,11 @@ def list_employees(
             Employee.gpn.ilike(like)
             | Employee.name.ilike(like)
             | Employee.vorname.ilike(like)
+            | Employee.email_adresse.ilike(like)
+            | Employee.oe_code.ilike(like)
+            | Employee.oe_text.ilike(like)
+            | Employee.sap_bukrs_text.ilike(like)
             | Employee.bs_name.ilike(like)
-            | Employee.bs_first_name.ilike(like)
-            | Employee.bs_last_name.ilike(like)
             | Employee.bs_firstname.ilike(like)
             | Employee.bs_lastname.ilike(like)
             | Employee.email_address.ilike(like)
@@ -1618,35 +1641,7 @@ def list_employees(
         "total": total,
         "page": pag.page,
         "size": pag.size,
-        "items": [
-            {
-                "id": e.id,
-                "gpn": e.gpn,
-                "display_name": e.display_name,
-                "verak_display": e.verak_display,
-                "is_active": e.is_active,
-                "bs_name": e.bs_name,
-                "bs_firstname": e.bs_firstname,
-                "bs_lastname": e.bs_lastname,
-                "name": e.name,
-                "vorname": e.vorname,
-                "email_address": e.email_address,
-                "emp_status": e.emp_status,
-                "ou_cd": e.ou_cd,
-                "ou_desc": e.ou_desc,
-                "local_cc_cd": e.local_cc_cd,
-                "local_cc_desc": e.local_cc_desc,
-                "gcrs_comp_cd": e.gcrs_comp_cd,
-                "rank_desc": e.rank_desc,
-                "job_desc": e.job_desc,
-                "reg_region": e.reg_region,
-                "locn_city_name_1": e.locn_city_name_1,
-                "lm_gpn": e.lm_gpn,
-                "lm_bs_firstname": e.lm_bs_firstname,
-                "lm_bs_lastname": e.lm_bs_lastname,
-            }
-            for e in emps
-        ],
+        "items": [_employee_to_dict(e) for e in emps],
     }
 
 
@@ -1656,21 +1651,9 @@ def get_employee(gpn: str, db: Session = Depends(get_db)) -> dict:
     emp = db.execute(select(Employee).where(Employee.gpn == gpn)).scalars().first()
     if not emp:
         return {"found": False, "gpn": gpn}
-    return {
-        "found": True,
-        "gpn": emp.gpn,
-        "display_name": emp.display_name,
-        "bs_name": emp.bs_name,
-        "bs_firstname": emp.bs_firstname,
-        "bs_lastname": emp.bs_lastname,
-        "email_address": emp.email_address,
-        "emp_status": emp.emp_status,
-        "ou_cd": emp.ou_cd,
-        "ou_desc": emp.ou_desc,
-        "local_cc_cd": emp.local_cc_cd,
-        "job_desc": emp.job_desc,
-        "rank_desc": emp.rank_desc,
-    }
+    result = _employee_to_dict(emp)
+    result["found"] = True
+    return result
 
 
 @router.get("/data/counts")

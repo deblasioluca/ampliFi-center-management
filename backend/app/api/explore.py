@@ -177,14 +177,15 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     ],
     "employees": [
         "gpn",
-        "bs_name",
-        "bs_firstname",
-        "bs_lastname",
+        "name",
+        "vorname",
         "ou_cd",
         "ou_desc",
         "local_cc_cd",
+        "local_cc_desc",
         "job_desc",
-        "email_address",
+        "email_adresse",
+        "rang_text",
     ],
     "gl-accounts-ska1": [
         "ktopl",
@@ -259,7 +260,7 @@ _SEARCH_FIELDS: dict[str, list[str]] = {
     "target-profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
     "entities": ["ccode", "name", "country"],
     "target-entities": ["ccode", "name", "country"],
-    "employees": ["gpn", "bs_name", "email_address", "ou_cd"],
+    "employees": ["gpn", "name", "vorname", "email_adresse", "ou_cd"],
     "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
     "gl-accounts-group": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
@@ -442,14 +443,64 @@ _DEFAULT_COLUMN_LABELS: dict[str, str] = {
     "xfmca": "Funds Mgmt Update Active",
     # ── Employees (ZUHL_GRD_GPF) ─────────────────────────────────────────
     "gpn": "GPN",
-    "bs_name": "Full Name",
-    "bs_firstname": "First Name",
-    "bs_lastname": "Last Name",
+    # NOTE: "name" label is "Company Name" (Entity/T001). For employees it
+    # is overridden to "Last Name" via _OBJECT_LABEL_OVERRIDES below.
+    "vorname": "First Name",
+    "sprachenschluess": "Language Key",
+    "anredecode": "Title Code",
+    "userid": "User ID",
+    "eintrittsdatum": "Entry Date",
+    "oe_leiter": "Org Unit Head",
+    "int_tel_nr_1ap": "Int. Phone 1",
+    "ext_tel_nr_1ap": "Ext. Phone 1",
+    "kstst": "Cost Center (SAP)",
+    "kstst_text": "Cost Center Text",
+    "oe_objekt_id": "Org Object ID",
+    "oe_code": "Org Code",
+    "oe_text": "Org Text",
+    "sap_bukrs": "Company Code",
+    "sap_bukrs_text": "Company Name",
+    "rang_code": "Rank Code",
+    "rang_text": "Rank",
+    "rang_krz": "Rank Short",
+    "ubs_funk": "Function Code",
+    "ubs_funk_text": "Function",
+    "gpn_vg_ma": "Manager GPN",
+    "name_vg_ma": "Manager Name",
+    "email_adresse": "Email",
+    "division": "Division",
+    "business_name": "Business Name",
+    "ma_gruppe": "Employee Group",
+    "ma_gruppe_text": "Employee Group Text",
+    "ma_kreis": "Employee Subgroup",
+    "ma_kreis_text": "Employee Subgroup Text",
+    "personalbereich": "Personnel Area",
+    "personalber_text": "Personnel Area Text",
+    "job_categ_code": "Job Category Code",
+    "job_categ_descr": "Job Category",
+    "costcenter_code": "Cost Center Code",
+    "costcenter_descr": "Cost Center Description",
+    "bs_name": "Full Name (BS)",
+    "bs_first_name": "First Name (BS)",
+    "bs_last_name": "Last Name (BS)",
+    "bs_firstname": "First Name (Legacy)",
+    "bs_lastname": "Last Name (Legacy)",
     "ou_cd": "Org Unit Code",
     "ou_desc": "Org Unit",
     "local_cc_cd": "Local Cost Center",
+    "local_cc_desc": "Local CC Description",
     "job_desc": "Job Title",
-    "email_address": "Email",
+    "email_address": "Email (Legacy)",
+    "emp_status": "Employee Status",
+    "gcrs_comp_cd": "GCRS Company Code",
+    "gcrs_comp_desc": "GCRS Company",
+    "lm_gpn": "Line Manager GPN",
+    "lm_bs_firstname": "Line Manager First Name",
+    "lm_bs_lastname": "Line Manager Last Name",
+    "rank_cd": "Rank Code (Legacy)",
+    "rank_desc": "Rank (Legacy)",
+    "reg_region": "Region",
+    "locn_city_name_1": "City",
     "display_name": "Display Name",
     # ── GL Accounts (SKA1) ───────────────────────────────────────────────
     "ktopl": "Chart of Accounts",
@@ -517,6 +568,13 @@ _DEFAULT_COLUMN_LABELS: dict[str, str] = {
     "refresh_batch": "Refresh Batch",
 }
 
+# Per-object-type label overrides (when the same column name has different
+# semantics in different tables, e.g. "name" = Company Name for entities
+# but Last Name for employees).
+_OBJECT_LABEL_OVERRIDES: dict[str, dict[str, str]] = {
+    "employees": {"name": "Last Name"},
+}
+
 
 def _get_model_columns(model: Any) -> list[str]:
     """Get all column names from a SQLAlchemy model."""
@@ -576,26 +634,36 @@ def _row_to_full_dict(row: Any) -> dict:
 
 @router.get("/counts")
 def explore_counts(db: Session = Depends(get_db)) -> dict:
-    """Object counts for the explore dashboard — only explorer-scoped data."""
+    """Object counts for the explore dashboard — only explorer-scoped data.
 
-    def _cnt(model: type) -> int:
-        return (
-            db.execute(select(func.count(model.id)).where(model.scope == SCOPE_EXPLORER)).scalar()
-            or 0
-        )
+    Returns counts per object type, including data_category-aware splits
+    for GL accounts (legacy vs target vs group reporting variants).
+    """
+
+    def _cnt(model: type, data_category: str | None = None) -> int:
+        q = select(func.count(model.id)).where(model.scope == SCOPE_EXPLORER)
+        if data_category and hasattr(model, "data_category"):
+            q = q.where(model.data_category == data_category)
+        return db.execute(q).scalar() or 0
 
     return {
-        "entities": _cnt(Entity),
+        "entities": _cnt(Entity, "legacy"),
         "cost_centers": _cnt(LegacyCostCenter),
         "profit_centers": _cnt(LegacyProfitCenter),
         "balances": _cnt(Balance),
-        "hierarchies": _cnt(Hierarchy),
+        "hierarchies": _cnt(Hierarchy, "legacy"),
         "employees": _cnt(Employee),
-        "gl_accounts_ska1": _cnt(GLAccountSKA1),
-        "gl_accounts_skb1": _cnt(GLAccountSKB1),
+        "gl_accounts_ska1": _cnt(GLAccountSKA1, "legacy"),
+        "gl_accounts_skb1": _cnt(GLAccountSKB1, "legacy"),
+        "gl_accounts_group": _cnt(GLAccountSKA1, "gr_legacy"),
         "gl_ranges": db.execute(select(func.count(GLAccountClassRange.id))).scalar() or 0,
         "target_cost_centers": _cnt(TargetCostCenter),
         "target_profit_centers": _cnt(TargetProfitCenter),
+        "target_entities": _cnt(Entity, "target"),
+        "target_gl_accounts_ska1": _cnt(GLAccountSKA1, "target"),
+        "target_gl_accounts_skb1": _cnt(GLAccountSKB1, "target"),
+        "target_gl_accounts_group": _cnt(GLAccountSKA1, "gr_target"),
+        "target_hierarchies": _cnt(Hierarchy, "target"),
         "center_mappings": db.execute(
             select(func.count(CenterMapping.id)).where(CenterMapping.scope == SCOPE_EXPLORER)
         ).scalar()
@@ -614,8 +682,9 @@ def get_display_config(object_type: str, db: Session = Depends(get_db)) -> dict:
     all_columns = _get_model_columns(model) if model else []
     config = _get_display_config(db, object_type)
 
-    # Build full label mapping: defaults + custom overrides (for all available columns)
+    # Build full label mapping: defaults + per-type overrides + custom DB overrides
     all_labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in all_columns}
+    all_labels.update(_OBJECT_LABEL_OVERRIDES.get(object_type, {}))
     all_labels.update(config.get("column_labels", {}))
 
     return {

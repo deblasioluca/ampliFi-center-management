@@ -242,6 +242,10 @@
         html += '<option value="__gl_type_b">GL Type B — first 5 chars</option>';
       }
       html += '</select>';
+      // Auto-select GL Type A when switching to hierarchical view
+      if (this._view === 'hierarchy' && !this._hierPickerId) {
+        this._hierPickerId = '__gl_type_a';
+      }
       return html;
     }
 
@@ -276,16 +280,17 @@
 
     html += '</select>';
 
-    // Auto-select only on first load (not every render)
-    if (!this._hierAutoSelected) {
+    // Auto-select first available hierarchy when in hierarchical view
+    // (so the user sees content immediately instead of an empty "no hierarchy" view)
+    if (!this._hierAutoSelected || (this._view === 'hierarchy' && !this._hierPickerId)) {
       this._hierAutoSelected = true;
       if (!filterTypes) {
-        if (items.length === 1) {
+        if (items.length > 0) {
           this._hierPickerId = items[0].id;
         }
       } else {
         var filtered = items.filter(function (h) { return filterTypes.indexOf(normaliseSetclass(h.setclass)) >= 0; });
-        if (filtered.length === 1) {
+        if (filtered.length > 0) {
           this._hierPickerId = filtered[0].id;
         }
       }
@@ -1682,6 +1687,8 @@
     if (hierBtn) hierBtn.addEventListener('click', function () {
       self._view = 'hierarchy';
       self._page = 1;
+      // Trigger auto-selection of first hierarchy if none selected
+      self.buildHierarchyPickerHtml();
       self.loadData(function () {
         // Always load tree data for hierarchical view when a hierarchy is selected
         if (self._hierPickerId && typeof self._hierPickerId === 'number') {

@@ -555,10 +555,28 @@ def delete_uploads(
 ) -> DeleteResult:
     if not body or not body.ids:
         raise HTTPException(status_code=400, detail="Provide ids in body")
+    # Also reset stuck batches that are in validating/loading state
+    for bid in body.ids:
+        batch = db.get(UploadBatch, bid)
+        if batch and batch.status in ("validating", "loading"):
+            batch.status = "failed"
+    db.flush()
+    # Delete errors, DQ issues, then the batch itself
     db.execute(delete(UploadError).where(UploadError.batch_id.in_(body.ids)))
-    stmt = delete(UploadBatch).where(UploadBatch.id.in_(body.ids))
-    result = db.execute(stmt)
-    db.commit()
+    from app.models.core import DataQualityIssue
+
+    db.execute(delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(body.ids)))
+    try:
+        stmt = delete(UploadBatch).where(UploadBatch.id.in_(body.ids))
+        result = db.execute(stmt)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete upload batch(es) — they may have loaded data referencing them. "
+            f"Use Rollback first to remove loaded data, then delete. Error: {exc}",
+        ) from None
     return DeleteResult(table="upload_batch", deleted=result.rowcount)
 
 

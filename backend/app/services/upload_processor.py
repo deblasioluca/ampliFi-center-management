@@ -1505,11 +1505,51 @@ def validate_upload(batch_id: int, db: Session) -> dict:
         "gl_accounts_skb1",
         "gl_accounts_group",
     }
+    # Log raw column headers from the file for diagnostics
+    if rows:
+        raw_keys = list(rows[0].keys())
+        logger.info(
+            "upload.validate.raw_headers",
+            batch_id=batch_id,
+            kind=batch.kind,
+            num_columns=len(raw_keys),
+            headers=raw_keys[:30],
+        )
+        if len(raw_keys) > 30:
+            logger.info(
+                "upload.validate.raw_headers_cont",
+                batch_id=batch_id,
+                headers_30_plus=raw_keys[30:],
+            )
+        # Log first row values for diagnostics
+        first_row_sample = {k: v for k, v in list(rows[0].items())[:15] if v}
+        logger.info(
+            "upload.validate.first_row_sample",
+            batch_id=batch_id,
+            sample=first_row_sample,
+        )
+
     normalized = (
         _normalize_headers(rows, mapping, skip_label_row=batch.kind in _sap_kinds)
         if mapping
         else rows
     )
+
+    # Log normalized column names for diagnostics
+    if normalized:
+        norm_keys = list(normalized[0].keys())
+        norm_sample = {k: v for k, v in list(normalized[0].items())[:15] if v}
+        logger.info(
+            "upload.validate.normalized_headers",
+            batch_id=batch_id,
+            num_columns=len(norm_keys),
+            headers=norm_keys[:30],
+        )
+        logger.info(
+            "upload.validate.normalized_first_row",
+            batch_id=batch_id,
+            sample=norm_sample,
+        )
 
     # Publish total + reset progress so frontend can show a progress bar
     _flush_progress(batch.id, 0, len(normalized))
@@ -2176,6 +2216,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
         }
         uploaded_gpns: set[str] = set()
         batch_size = 500
+        _emp_log_done = False
         for row in normalized:
             gpn = row.get("gpn", "").strip()
             if not gpn:
@@ -2208,6 +2249,21 @@ def load_upload(batch_id: int, db: Session) -> dict:
             model_kwargs["refresh_batch"] = batch.id
             model_kwargs["is_active"] = True  # present in upload → active
             _truncate_to_model(Employee, model_kwargs)
+            if not _emp_log_done:
+                _emp_log_done = True
+                _non_null = {k: v for k, v in model_kwargs.items() if v is not None}
+                logger.info(
+                    "upload.load.employee_first_record",
+                    batch_id=batch.id,
+                    gpn=gpn,
+                    model_fields=list(_non_null.keys()),
+                    name=model_kwargs.get("name"),
+                    vorname=model_kwargs.get("vorname"),
+                    email_adresse=model_kwargs.get("email_adresse"),
+                    sap_bukrs_text=model_kwargs.get("sap_bukrs_text"),
+                    non_null_count=len(_non_null),
+                    total_kwargs=len(model_kwargs),
+                )
             if existing:
                 for k, v in model_kwargs.items():
                     if k != "refresh_batch" and v is not None:
@@ -2309,8 +2365,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % 500 == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % 500:
+            db.flush()
 
         # Pass 3: create leaves
         for row in normalized:
@@ -2344,8 +2403,11 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
-            if loaded % 100 == 0:
+            if loaded % 500 == 0:
+                db.flush()
                 _flush_progress(batch.id, loaded)
+        if loaded % 500:
+            db.flush()
 
     elif batch.kind in ("hierarchies_flat", "entity_hierarchy"):
         # Build hierarchy from flat SAP node export (NODEID/PARENTID/CHILDID).
