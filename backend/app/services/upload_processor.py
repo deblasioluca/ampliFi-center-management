@@ -2751,22 +2751,25 @@ def _load_cc_with_hierarchy(
     rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
     _flush_progress(batch.id, 0, len(rows))
     loaded = 0
+    cc_progress = 0  # separate counter for progress bar (CC rows only)
 
     # --- 1) Load cost center data ---
     if load_cc:
         cc_rows = _normalize_headers(rows, CC_HIER_EXCEL_COLUMNS)
+        # Bulk pre-fetch existing CCs to avoid per-row SELECT (N+1 → 1 query)
+        existing_ccs = {
+            (cc.coarea, cc.cctr): cc
+            for cc in db.execute(
+                select(LegacyCostCenter).where(LegacyCostCenter.scope == batch_scope)
+            ).scalars()
+        }
+        batch_size = 500
         for row in cc_rows:
             cctr = (row.get("cctr") or "").strip()
             coarea = (row.get("coarea") or "").strip()
             if not cctr:
                 continue
-            existing = db.execute(
-                select(LegacyCostCenter).where(
-                    LegacyCostCenter.scope == batch_scope,
-                    LegacyCostCenter.coarea == coarea,
-                    LegacyCostCenter.cctr == cctr,
-                )
-            ).scalar_one_or_none()
+            existing = existing_ccs.get((coarea, cctr))
             cc_kwargs: dict = {}
             for field_name in _CC_MODEL_FIELDS:
                 if field_name == "is_active":
@@ -2805,8 +2808,12 @@ def _load_cc_with_hierarchy(
                 cc_kwargs["data_category"] = batch_category
                 db.add(LegacyCostCenter(**cc_kwargs))
             loaded += 1
-            if loaded % 100 == 0:
-                _flush_progress(batch.id, loaded)
+            cc_progress += 1
+            if cc_progress % batch_size == 0:
+                db.flush()
+                _flush_progress(batch.id, cc_progress)
+        if cc_progress % batch_size:
+            db.flush()
 
     # --- 2) Load External Hierarchy ---
     if load_ext_hier:
@@ -3003,6 +3010,7 @@ def _build_hierarchy_from_levels(
                             seq=seq,
                         )
                     )
+                    loaded += 1
 
         # Create HierarchyLeaf records for leaf values
         for parent_id in sorted(leaf_parents.keys()):
@@ -3018,6 +3026,7 @@ def _build_hierarchy_from_levels(
                         seq=seq,
                     )
                 )
+                loaded += 1
 
     return loaded
 
