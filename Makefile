@@ -211,7 +211,7 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	echo "[ok] Backend dependencies updated" | tee -a "$$LOG"; \
 	echo "==> Stopping backend before migrations..." | tee -a "$$LOG"
 	@$(MAKE) -s stop 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log || true
-	@LOG=$(ROOT_DIR)/.amplifi-update.log; \
+	@set -eo pipefail; LOG=$(ROOT_DIR)/.amplifi-update.log; \
 	echo "==> Applying database migrations..." | tee -a "$$LOG"; \
 	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 		python -m alembic upgrade head 2>&1 | tee -a "$$LOG" | tail -5; \
