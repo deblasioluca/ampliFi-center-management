@@ -2812,13 +2812,22 @@ def _load_cc_with_hierarchy(
     load_ext_hier = opts.get("load_ext_hier", True)
     load_cema_hier = opts.get("load_cema_hier", True)
 
+    logger.info(
+        "upload.load.cc_with_hierarchy.reading_excel",
+        batch_id=batch.id,
+        sheet=sheet_name,
+        header_row=header_row,
+    )
     rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
-    _flush_progress(batch.id, 0, len(rows))
+    # Total = CC rows + estimated hierarchy rows (2x for ext + cema)
+    _est_total = len(rows) * 3 if (load_ext_hier or load_cema_hier) else len(rows)
+    _flush_progress(batch.id, 0, _est_total)
     loaded = 0
     cc_progress = 0  # separate counter for progress bar (CC rows only)
 
     # --- 1) Load cost center data ---
     if load_cc:
+        logger.info("upload.load.cc_with_hierarchy.phase1_cc_start", rows=len(rows))
         cc_rows = _normalize_headers(rows, CC_HIER_EXCEL_COLUMNS)
         # Bulk pre-fetch existing CCs to avoid per-row SELECT (N+1 → 1 query)
         existing_ccs = {
@@ -2878,9 +2887,14 @@ def _load_cc_with_hierarchy(
                 _flush_progress(batch.id, cc_progress)
         if cc_progress % batch_size:
             db.flush()
+        logger.info(
+            "upload.load.cc_with_hierarchy.phase1_cc_done",
+            cc_loaded=cc_progress,
+        )
 
     # --- 2) Load External Hierarchy ---
     if load_ext_hier:
+        logger.info("upload.load.cc_with_hierarchy.phase2_ext_hier_start")
         loaded += _build_hierarchy_from_levels(
             rows=rows,
             db=db,
@@ -2897,8 +2911,11 @@ def _load_cc_with_hierarchy(
             hierarchy_label=hierarchy_label,
         )
 
+        logger.info("upload.load.cc_with_hierarchy.phase2_ext_hier_done", loaded=loaded)
+
     # --- 3) Load CEMA Hierarchy ---
     if load_cema_hier:
+        logger.info("upload.load.cc_with_hierarchy.phase3_cema_hier_start")
         loaded += _build_hierarchy_from_levels(
             rows=rows,
             db=db,
@@ -2915,6 +2932,12 @@ def _load_cc_with_hierarchy(
             hierarchy_label=hierarchy_label,
         )
 
+    logger.info(
+        "upload.load.cc_with_hierarchy.complete",
+        total_loaded=loaded,
+    )
+    # Update final total to match actual loaded count
+    _flush_progress(batch.id, loaded, loaded)
     return loaded
 
 
@@ -3057,6 +3080,7 @@ def _build_hierarchy_from_levels(
 
         # Create HierarchyNode records for internal edges
         seq = 0
+        _node_batch = 0
         created_edges: set[tuple[str, str]] = set()
         for parent_id in sorted(edges.keys()):
             for child_id in sorted(edges[parent_id]):
@@ -3075,8 +3099,15 @@ def _build_hierarchy_from_levels(
                         )
                     )
                     loaded += 1
+                    _node_batch += 1
+                    if _node_batch % 500 == 0:
+                        db.flush()
+                        _flush_progress(batch.id, loaded_so_far + loaded)
+        if _node_batch % 500:
+            db.flush()
 
         # Create HierarchyLeaf records for leaf values
+        _leaf_batch = 0
         for parent_id in sorted(leaf_parents.keys()):
             for leaf_val in sorted(leaf_parents[parent_id]):
                 if leaf_val in internal_nodes:
@@ -3091,6 +3122,20 @@ def _build_hierarchy_from_levels(
                     )
                 )
                 loaded += 1
+                _leaf_batch += 1
+                if _leaf_batch % 500 == 0:
+                    db.flush()
+                    _flush_progress(batch.id, loaded_so_far + loaded)
+        if _leaf_batch % 500:
+            db.flush()
+
+        logger.info(
+            "upload.load.hierarchy_built",
+            hierarchy=hier_setname[:60],
+            nodes=_node_batch,
+            leaves=_leaf_batch,
+            total_loaded=loaded,
+        )
 
     return loaded
 
