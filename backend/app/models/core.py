@@ -444,15 +444,15 @@ class LegacyCostCenter(TimestampMixin, Base):
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
     # --- CSKS standard fields ---
-    datbi: Mapped[str | None] = mapped_column(String(10))
-    datab: Mapped[str | None] = mapped_column(String(10))
+    datbi: Mapped[str | None] = mapped_column(String(20))
+    datab: Mapped[str | None] = mapped_column(String(20))
     bkzkp: Mapped[str | None] = mapped_column(String(1))
     pkzkp: Mapped[str | None] = mapped_column(String(4))
     ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
     gsber: Mapped[str | None] = mapped_column(String(20))
     cctrcgy: Mapped[str | None] = mapped_column(String(20))  # KOSAR
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(12))
+    verak_user: Mapped[str | None] = mapped_column(String(20))
     # FK to the actual employee record. Populated by the sample-data
     # generator and (eventually) by the SAP loader once the HR feed is
     # wired up. Nullable because legacy CCs from earlier uploads predate
@@ -495,7 +495,7 @@ class LegacyCostCenter(TimestampMixin, Base):
     pfach: Mapped[str | None] = mapped_column(String(10))
     pstlz: Mapped[str | None] = mapped_column(String(10))
     pstl2: Mapped[str | None] = mapped_column(String(10))
-    regio: Mapped[str | None] = mapped_column(String(3))
+    regio: Mapped[str | None] = mapped_column(String(10))
     spras: Mapped[str | None] = mapped_column(String(1))
     telbx: Mapped[str | None] = mapped_column(String(15))
     telf1: Mapped[str | None] = mapped_column(String(16))
@@ -510,7 +510,7 @@ class LegacyCostCenter(TimestampMixin, Base):
     kompl: Mapped[str | None] = mapped_column(String(1))
     stakz: Mapped[str | None] = mapped_column(String(12))
     objnr: Mapped[str | None] = mapped_column(String(22))
-    funkt: Mapped[str | None] = mapped_column(String(3))
+    funkt: Mapped[str | None] = mapped_column(String(10))
     afunk: Mapped[str | None] = mapped_column(String(3))
     cpi_templ: Mapped[str | None] = mapped_column(String(10))
     cpd_templ: Mapped[str | None] = mapped_column(String(10))
@@ -528,8 +528,8 @@ class LegacyCostCenter(TimestampMixin, Base):
     zzstrpctyp: Mapped[str | None] = mapped_column(String(4))
     zzstrkklas: Mapped[str | None] = mapped_column(String(20))
     zzstraagcd: Mapped[str | None] = mapped_column(String(4))
-    zzstrgfd: Mapped[str | None] = mapped_column(String(3))
-    zzstrfst: Mapped[str | None] = mapped_column(String(2))
+    zzstrgfd: Mapped[str | None] = mapped_column(String(10))
+    zzstrfst: Mapped[str | None] = mapped_column(String(10))
     zzstrmacve: Mapped[str | None] = mapped_column(String(6))
     zzstrabukr: Mapped[str | None] = mapped_column(String(20))
     zzstrugcd: Mapped[str | None] = mapped_column(String(20))
@@ -556,7 +556,7 @@ class LegacyCostCenter(TimestampMixin, Base):
     zztax: Mapped[str | None] = mapped_column(String(2))
     zzstrentsa: Mapped[str | None] = mapped_column(String(11))
     zzstrentzu: Mapped[str | None] = mapped_column(String(11))
-    xblnr: Mapped[str | None] = mapped_column(String(16))
+    xblnr: Mapped[str | None] = mapped_column(String(40))
     # --- JV fields ---
     vname: Mapped[str | None] = mapped_column(String(6))
     recid: Mapped[str | None] = mapped_column(String(2))
@@ -594,18 +594,18 @@ class LegacyProfitCenter(TimestampMixin, Base):
     mandt: Mapped[str | None] = mapped_column(String(4))
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
     pctr: Mapped[str] = mapped_column(String(20), nullable=False)  # PRCTR
-    datbi: Mapped[str | None] = mapped_column(String(10))
+    datbi: Mapped[str | None] = mapped_column(String(20))
     # --- descriptive (CEPCT) ---
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
     # --- CEPC standard fields ---
-    datab: Mapped[str | None] = mapped_column(String(10))
+    datab: Mapped[str | None] = mapped_column(String(20))
     ersda: Mapped[str | None] = mapped_column(String(14))
     usnam: Mapped[str | None] = mapped_column(String(12))
     merkmal: Mapped[str | None] = mapped_column(String(30))
     department: Mapped[str | None] = mapped_column(String(20))  # ABTEI
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(12))
+    verak_user: Mapped[str | None] = mapped_column(String(20))
     # FK to the actual employee record. Same semantics as on
     # legacy_cost_center: ``ON DELETE SET NULL`` so a terminated employee
     # does not break the PC row.
@@ -642,7 +642,7 @@ class LegacyProfitCenter(TimestampMixin, Base):
     recid: Mapped[str | None] = mapped_column(String(2))
     etype: Mapped[str | None] = mapped_column(String(3))
     txjcd: Mapped[str | None] = mapped_column(String(15))
-    regio: Mapped[str | None] = mapped_column(String(3))
+    regio: Mapped[str | None] = mapped_column(String(10))
     kvewe: Mapped[str | None] = mapped_column(String(1))
     kappl: Mapped[str | None] = mapped_column(String(2))
     kalsm: Mapped[str | None] = mapped_column(String(6))
@@ -1150,15 +1150,15 @@ class TargetCostCenter(TimestampMixin, Base):
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
     # --- CSKS standard fields ---
-    datbi: Mapped[str | None] = mapped_column(String(10))
-    datab: Mapped[str | None] = mapped_column(String(10))
+    datbi: Mapped[str | None] = mapped_column(String(20))
+    datab: Mapped[str | None] = mapped_column(String(20))
     bkzkp: Mapped[str | None] = mapped_column(String(1))
     pkzkp: Mapped[str | None] = mapped_column(String(4))
     ccode: Mapped[str | None] = mapped_column(String(10))  # BUKRS
     gsber: Mapped[str | None] = mapped_column(String(20))
     cctrcgy: Mapped[str | None] = mapped_column(String(20))  # KOSAR
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(12))
+    verak_user: Mapped[str | None] = mapped_column(String(20))
     currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
     kalsm: Mapped[str | None] = mapped_column(String(6))
     txjcd: Mapped[str | None] = mapped_column(String(15))
@@ -1192,7 +1192,7 @@ class TargetCostCenter(TimestampMixin, Base):
     pfach: Mapped[str | None] = mapped_column(String(10))
     pstlz: Mapped[str | None] = mapped_column(String(10))
     pstl2: Mapped[str | None] = mapped_column(String(10))
-    regio: Mapped[str | None] = mapped_column(String(3))
+    regio: Mapped[str | None] = mapped_column(String(10))
     spras: Mapped[str | None] = mapped_column(String(1))
     telbx: Mapped[str | None] = mapped_column(String(15))
     telf1: Mapped[str | None] = mapped_column(String(16))
@@ -1207,7 +1207,7 @@ class TargetCostCenter(TimestampMixin, Base):
     kompl: Mapped[str | None] = mapped_column(String(1))
     stakz: Mapped[str | None] = mapped_column(String(12))
     objnr: Mapped[str | None] = mapped_column(String(22))
-    funkt: Mapped[str | None] = mapped_column(String(3))
+    funkt: Mapped[str | None] = mapped_column(String(10))
     afunk: Mapped[str | None] = mapped_column(String(3))
     cpi_templ: Mapped[str | None] = mapped_column(String(10))
     cpd_templ: Mapped[str | None] = mapped_column(String(10))
@@ -1225,8 +1225,8 @@ class TargetCostCenter(TimestampMixin, Base):
     zzstrpctyp: Mapped[str | None] = mapped_column(String(4))
     zzstrkklas: Mapped[str | None] = mapped_column(String(20))
     zzstraagcd: Mapped[str | None] = mapped_column(String(4))
-    zzstrgfd: Mapped[str | None] = mapped_column(String(3))
-    zzstrfst: Mapped[str | None] = mapped_column(String(2))
+    zzstrgfd: Mapped[str | None] = mapped_column(String(10))
+    zzstrfst: Mapped[str | None] = mapped_column(String(10))
     zzstrmacve: Mapped[str | None] = mapped_column(String(6))
     zzstrabukr: Mapped[str | None] = mapped_column(String(20))
     zzstrugcd: Mapped[str | None] = mapped_column(String(20))
@@ -1253,7 +1253,7 @@ class TargetCostCenter(TimestampMixin, Base):
     zztax: Mapped[str | None] = mapped_column(String(2))
     zzstrentsa: Mapped[str | None] = mapped_column(String(11))
     zzstrentzu: Mapped[str | None] = mapped_column(String(11))
-    xblnr: Mapped[str | None] = mapped_column(String(16))
+    xblnr: Mapped[str | None] = mapped_column(String(40))
     # --- JV fields ---
     vname: Mapped[str | None] = mapped_column(String(6))
     recid: Mapped[str | None] = mapped_column(String(2))
@@ -1300,18 +1300,18 @@ class TargetProfitCenter(TimestampMixin, Base):
     mandt: Mapped[str | None] = mapped_column(String(4))
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
     pctr: Mapped[str] = mapped_column(String(20), nullable=False)  # PRCTR
-    datbi: Mapped[str | None] = mapped_column(String(10))
+    datbi: Mapped[str | None] = mapped_column(String(20))
     # --- descriptive (CEPCT) ---
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
     # --- CEPC standard fields ---
-    datab: Mapped[str | None] = mapped_column(String(10))
+    datab: Mapped[str | None] = mapped_column(String(20))
     ersda: Mapped[str | None] = mapped_column(String(14))
     usnam: Mapped[str | None] = mapped_column(String(12))
     merkmal: Mapped[str | None] = mapped_column(String(30))
     department: Mapped[str | None] = mapped_column(String(20))  # ABTEI
     responsible: Mapped[str | None] = mapped_column(String(100))  # VERAK
-    verak_user: Mapped[str | None] = mapped_column(String(12))
+    verak_user: Mapped[str | None] = mapped_column(String(20))
     currency: Mapped[str | None] = mapped_column(String(5))  # WAERS
     nprctr: Mapped[str | None] = mapped_column(String(10))
     land1: Mapped[str | None] = mapped_column(String(4))
@@ -1341,7 +1341,7 @@ class TargetProfitCenter(TimestampMixin, Base):
     recid: Mapped[str | None] = mapped_column(String(2))
     etype: Mapped[str | None] = mapped_column(String(3))
     txjcd: Mapped[str | None] = mapped_column(String(15))
-    regio: Mapped[str | None] = mapped_column(String(3))
+    regio: Mapped[str | None] = mapped_column(String(10))
     kvewe: Mapped[str | None] = mapped_column(String(1))
     kappl: Mapped[str | None] = mapped_column(String(2))
     kalsm: Mapped[str | None] = mapped_column(String(6))

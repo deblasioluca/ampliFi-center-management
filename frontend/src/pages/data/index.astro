@@ -597,7 +597,7 @@ import Layout from '../../components/layout/Layout.astro';
             ')" class="text-red-600 hover:underline mr-2">Rollback</button>';
         } else if (u.status === 'validating' || u.status === 'loading') {
           var pct = (u.rows_total > 0 && u.rows_processed != null)
-            ? Math.round((u.rows_processed / u.rows_total) * 100) : 0;
+            ? Math.min(100, Math.round((u.rows_processed / u.rows_total) * 100)) : 0;
           var progressLabel = u.status === 'validating' ? 'Validating' : 'Loading';
           actions = '<div class="inline-flex items-center gap-2">' +
             '<div class="w-28 bg-gray-200 rounded-full h-3 overflow-hidden" ' +
