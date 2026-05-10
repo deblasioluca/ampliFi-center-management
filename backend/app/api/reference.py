@@ -1672,11 +1672,21 @@ def data_counts(
             q = q.where(model.data_category == data_category)  # type: ignore[attr-defined]
         return db.execute(q).scalar() or 0
 
+    # GR GL accounts use data_category "legacy_gr" / "target_gr"
+    gr_category: str | None = None
+    if data_category == "legacy":
+        gr_category = "legacy_gr"
+    elif data_category == "target":
+        gr_category = "target_gr"
+
     return {
         "entities": _cnt(Entity, scope, data_category),
         "cost_centers": _cnt(LegacyCostCenter, scope, data_category),
         "profit_centers": _cnt(LegacyProfitCenter, scope, data_category),
         "gl_accounts": _cnt(GLAccountSKA1, scope, data_category),
+        "gl_accounts_gr": _cnt(GLAccountSKA1, scope, gr_category),
+        "gl_accounts_skb1": _cnt(GLAccountSKB1, scope, data_category),
+        "center_mappings": _cnt(CenterMapping, scope, data_category),
         "balances": _cnt(Balance, scope, data_category),
         "hierarchies": _cnt(Hierarchy, scope, data_category),
         "employees": _cnt(Employee, scope, data_category),

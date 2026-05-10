@@ -29,36 +29,44 @@ import Layout from '../../components/layout/Layout.astro';
   </div>
 
   <!-- Data Counts -->
-  <div class="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-3">
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+  <div class="grid grid-cols-5 lg:grid-cols-10 gap-2 mb-3">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Entities</span>
       <p id="cnt-entities" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Cost Centers</span>
       <p id="cnt-cc" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Profit Centers</span>
       <p id="cnt-pc" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">GL Accounts</span>
       <p id="cnt-gl" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">GL Accts (GR)</span>
+      <p id="cnt-gl-gr" class="text-lg font-bold text-gray-900">--</p>
+    </div>
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
+      <span class="text-[10px] text-gray-500 uppercase">Mappings</span>
+      <p id="cnt-mappings" class="text-lg font-bold text-gray-900">--</p>
+    </div>
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Balances</span>
       <p id="cnt-balances" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Hierarchies</span>
       <p id="cnt-hierarchies" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Employees</span>
       <p id="cnt-employees" class="text-lg font-bold text-gray-900">--</p>
     </div>
-    <div class="bg-white border rounded-lg px-3 py-1.5 text-center">
+    <div class="bg-white border rounded-lg px-2 py-1.5 text-center">
       <span class="text-[10px] text-gray-500 uppercase">Uploads</span>
       <p id="cnt-uploads" class="text-lg font-bold text-gray-900">--</p>
     </div>
@@ -377,6 +385,8 @@ import Layout from '../../components/layout/Layout.astro';
       document.getElementById('cnt-cc').textContent = fmt(cat === 'target' ? d.target_cost_centers : d.cost_centers);
       document.getElementById('cnt-pc').textContent = fmt(cat === 'target' ? d.target_profit_centers : d.profit_centers);
       document.getElementById('cnt-gl').textContent = fmt(d.gl_accounts || 0);
+      document.getElementById('cnt-gl-gr').textContent = fmt(d.gl_accounts_gr || 0);
+      document.getElementById('cnt-mappings').textContent = fmt(d.center_mappings || 0);
       document.getElementById('cnt-balances').textContent = fmt(d.balances);
       document.getElementById('cnt-hierarchies').textContent = fmt(d.hierarchies);
       document.getElementById('cnt-employees').textContent = fmt(d.employees || 0);
