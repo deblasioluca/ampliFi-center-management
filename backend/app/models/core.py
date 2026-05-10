@@ -2121,3 +2121,44 @@ class DatasphereConfig(TimestampMixin, Base):
     updated_by: Mapped[int | None] = mapped_column(
         ForeignKey("cleanup.app_user.id", ondelete="SET NULL")
     )
+
+
+# ---------- center exclusion rules ----------
+
+
+class CenterExclusionRule(TimestampMixin, Base):
+    """Configurable rule that excludes centers from migration consideration.
+
+    Rules are evaluated per-center. If any enabled rule matches, the center
+    is marked as excluded (still visible, but flagged with an indicator).
+
+    Supports:
+    - Global defaults (scope=NULL applies to all)
+    - Per-scope overrides (scope='cleanup' overrides global for that scope)
+    - Flexible condition: field + operator + value (JSON-based)
+    """
+
+    __tablename__ = "center_exclusion_rule"
+    __table_args__ = (
+        Index("ix_excl_rule_scope", "scope"),
+        Index("ix_excl_rule_enabled", "is_enabled"),
+        {"schema": "cleanup"},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # NULL = global default; set to a scope value for per-scope override
+    scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Which object type: 'cost_center', 'profit_center', or 'both'
+    object_type: Mapped[str] = mapped_column(String(20), nullable=False, default="both")
+    # Human-readable name
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    # Rule condition (JSON): { "field": "datbi", "operator": "!=", "value": "99991231" }
+    # Operators: ==, !=, in, not_in, is_null, is_not_null, <, >, <=, >=
+    condition: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # Whether this rule is currently active
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Whether this is a system-provided default (vs user-created)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Display order
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)

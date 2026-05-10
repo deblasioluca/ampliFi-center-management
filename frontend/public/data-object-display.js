@@ -38,6 +38,14 @@
 (function (root) {
   'use strict';
 
+  // ── Inject DOD keyframe CSS (once) ─────────────────────────────────
+  if (!document.getElementById('dod-keyframes')) {
+    var style = document.createElement('style');
+    style.id = 'dod-keyframes';
+    style.textContent = '@keyframes dodSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}';
+    document.head.appendChild(style);
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────
 
   function esc(t) {
@@ -109,6 +117,8 @@
     this.title = opts.title || '';
     // Row action buttons: [{label, className, title, onclick(row, self)}]
     this.rowActions = opts.rowActions || [];
+    // Built-in detail panel on row click (shows all fields in slide-out)
+    this.showDetailOnClick = opts.showDetailOnClick !== false;
 
     // State
     this._view = opts.defaultView || 'tabular';
@@ -870,7 +880,9 @@
 
     // Rows
     sorted.forEach(function (row, rowIdx) {
-      html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-id="' + (row.id || '') + '" data-dod-row-idx="' + rowIdx + '">';
+      var rowClass = 'border-b hover:bg-gray-50 cursor-pointer';
+      if (row.is_excluded) rowClass += ' opacity-60 bg-orange-50';
+      html += '<tr class="' + rowClass + '" data-dod-row-id="' + (row.id || '') + '" data-dod-row-idx="' + rowIdx + '">';
 
       // Hierarchy level cells
       var key = row[self.identityField] || row.id;
@@ -880,12 +892,20 @@
       });
 
       // Data cells
+      var firstDataCell = true;
       cols.forEach(function (col) {
         var val = row[col];
         var display = '';
-        if (val === true) display = '<span class="text-green-600">Yes</span>';
+        if (col === 'is_excluded') {
+          display = val ? '<span class="inline-block px-1.5 py-0.5 bg-orange-200 text-orange-800 text-[10px] font-semibold rounded">EXCLUDED</span>' : '';
+        } else if (val === true) display = '<span class="text-green-600">Yes</span>';
         else if (val === false) display = '<span class="text-red-500">No</span>';
         else if (val != null) display = esc(String(val));
+        // Add exclusion badge to first cell
+        if (firstDataCell && row.is_excluded && col !== 'is_excluded') {
+          display = '<span class="inline-block mr-1 px-1 py-0 bg-orange-200 text-orange-800 text-[9px] font-bold rounded" title="Excluded from migration">&#x26D4;</span>' + display;
+        }
+        firstDataCell = false;
         html += '<td class="py-1.5 px-2 whitespace-nowrap" title="' + escAttr(String(val || '')) + '">' + display + '</td>';
       });
 
@@ -1945,17 +1965,74 @@
       self._downloadCSV();
     });
 
-    // Row click
-    if (self.onRowClick) {
+    // Row click — detail panel or custom handler
+    if (self.showDetailOnClick || self.onRowClick) {
       container.querySelectorAll('[data-dod-row-id]').forEach(function (tr) {
-        tr.addEventListener('click', function () {
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', function (e) {
+          if (e.target.closest('button')) return; // ignore button clicks
           var rowId = this.dataset.dodRowId;
           var items = (self._data && self._data.items) || [];
           var row = items.find(function (it) { return String(it.id) === rowId; });
-          if (row) self.onRowClick(row);
+          if (!row) return;
+          if (self.onRowClick) self.onRowClick(row);
+          if (self.showDetailOnClick) self._showDetailPanel(row);
         });
       });
     }
+  };
+
+  // ── Detail panel (slide-out) ─────────────────────────────────────────
+
+  DataObjectDisplay.prototype._showDetailPanel = function (row) {
+    var self = this;
+    // Remove existing panel
+    var existing = document.getElementById('dod-detail-overlay');
+    if (existing) existing.remove();
+
+    // Collect all fields from the row
+    var fields = Object.keys(row).filter(function (k) {
+      return k !== 'id' && self.excludeColumns.indexOf(k) === -1;
+    });
+
+    var html = '<div id="dod-detail-overlay" class="fixed inset-0 z-50 flex justify-end" style="background:rgba(0,0,0,0.3)">';
+    html += '<div class="bg-white w-full max-w-lg h-full overflow-y-auto shadow-xl" style="animation:dodSlideIn .2s ease-out">';
+    html += '<div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">';
+    html += '<h3 class="font-semibold text-sm">Record Detail</h3>';
+    html += '<button id="dod-detail-close" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>';
+    html += '</div>';
+    html += '<div class="px-4 py-3">';
+    html += '<table class="w-full text-xs">';
+    fields.forEach(function (key) {
+      var val = row[key];
+      var label = self.colLabel(key);
+      var displayVal = val == null ? '<span class="text-gray-300 italic">null</span>' : esc(String(val));
+      html += '<tr class="border-b border-gray-100">';
+      html += '<td class="py-1.5 pr-3 text-gray-500 font-medium whitespace-nowrap align-top">' + esc(label) + '</td>';
+      html += '<td class="py-1.5 text-gray-900 break-all">' + displayVal + '</td>';
+      html += '</tr>';
+    });
+    html += '</table>';
+    html += '</div></div></div>';
+
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    // Close handlers
+    document.getElementById('dod-detail-close').addEventListener('click', function () {
+      document.getElementById('dod-detail-overlay').remove();
+    });
+    document.getElementById('dod-detail-overlay').addEventListener('click', function (e) {
+      if (e.target === this) this.remove();
+    });
+    // ESC key
+    var escHandler = function (e) {
+      if (e.key === 'Escape') {
+        var overlay = document.getElementById('dod-detail-overlay');
+        if (overlay) overlay.remove();
+        document.removeEventListener('keydown', escHandler);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
   };
 
   // ── CSV download ────────────────────────────────────────────────────
@@ -1963,8 +2040,58 @@
   DataObjectDisplay.prototype._downloadCSV = function () {
     var items = (this._data && this._data.items) || [];
     if (!items.length) return;
-    var cols = this.getTableColumns();
     var self = this;
+
+    // Show option dialog: general (visible columns) vs detailed (all fields)
+    var existingDialog = document.getElementById('dod-csv-dialog');
+    if (existingDialog) existingDialog.remove();
+
+    var html = '<div id="dod-csv-dialog" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.3)">';
+    html += '<div class="bg-white rounded-lg shadow-xl p-5 max-w-sm w-full mx-4">';
+    html += '<h3 class="font-semibold text-sm mb-3">Download CSV</h3>';
+    html += '<p class="text-xs text-gray-500 mb-4">Choose which columns to include:</p>';
+    html += '<div class="space-y-2">';
+    html += '<button data-csv-mode="general" class="w-full text-left px-3 py-2 border rounded hover:bg-gray-50 text-sm">';
+    html += '<span class="font-medium">General View</span><br><span class="text-xs text-gray-500">Only visible table columns</span></button>';
+    html += '<button data-csv-mode="detailed" class="w-full text-left px-3 py-2 border rounded hover:bg-gray-50 text-sm">';
+    html += '<span class="font-medium">Detailed View</span><br><span class="text-xs text-gray-500">All fields (full export)</span></button>';
+    html += '</div>';
+    html += '<button id="dod-csv-cancel" class="mt-3 text-xs text-gray-400 hover:text-gray-600">Cancel</button>';
+    html += '</div></div>';
+
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    var dialog = document.getElementById('dod-csv-dialog');
+    dialog.querySelector('#dod-csv-cancel').addEventListener('click', function () { dialog.remove(); });
+    dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.remove(); });
+
+    dialog.querySelectorAll('[data-csv-mode]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mode = this.dataset.csvMode;
+        dialog.remove();
+        self._doCSVDownload(mode);
+      });
+    });
+  };
+
+  DataObjectDisplay.prototype._doCSVDownload = function (mode) {
+    var items = (this._data && this._data.items) || [];
+    if (!items.length) return;
+    var self = this;
+    var cols;
+
+    if (mode === 'detailed') {
+      // All fields from data, excluding internal ones
+      var allKeys = {};
+      items.forEach(function (row) {
+        Object.keys(row).forEach(function (k) {
+          if (k !== 'id' && self.excludeColumns.indexOf(k) === -1) allKeys[k] = true;
+        });
+      });
+      cols = Object.keys(allKeys);
+    } else {
+      cols = this.getTableColumns();
+    }
 
     var csvLines = [];
     csvLines.push(cols.map(function (c) { return '"' + self.colLabel(c).replace(/"/g, '""') + '"'; }).join(','));
@@ -1980,7 +2107,7 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = this.objectType + '.csv';
+    a.download = this.objectType + (mode === 'detailed' ? '-detailed' : '') + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

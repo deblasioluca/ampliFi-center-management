@@ -40,6 +40,7 @@ import '../styles/global.css';
       <button class="explore-tab" data-explore-tab="gl-accounts-group" data-panel="legacy" title="Coming soon — table structure TBD">GL Accts (Group Reporting) ⏳</button>
       <button class="explore-tab" data-explore-tab="gl-accounts-fpsl" data-panel="legacy" title="Coming soon — table structure TBD">GL Accts (FPSL) ⏳</button>
       <button class="explore-tab" data-explore-tab="gl-account-mapping" data-panel="legacy" title="Coming soon — legacy to target GL account mapping">GL Mapping ⏳</button>
+      <button class="explore-tab" data-explore-tab="center-mapping-overview" data-panel="legacy">Center Mapping</button>
       <button class="explore-tab" data-explore-tab="hierarchies" data-panel="legacy">Hierarchies</button>
     </div>
 
@@ -61,6 +62,7 @@ import '../styles/global.css';
       <button class="explore-tab" data-explore-tab="target-gl-accounts-group" data-panel="target" title="Coming soon — table structure TBD">GL Accts (Group Reporting) ⏳</button>
       <button class="explore-tab" data-explore-tab="target-gl-accounts-fpsl" data-panel="target" title="Coming soon — table structure TBD">GL Accts (FPSL) ⏳</button>
       <button class="explore-tab" data-explore-tab="target-gl-account-mapping" data-panel="target" title="Coming soon — legacy to target GL account mapping">GL Mapping ⏳</button>
+      <button class="explore-tab" data-explore-tab="target-center-mapping-overview" data-panel="target">Center Mapping</button>
       <button class="explore-tab" data-explore-tab="target-hierarchies" data-panel="target">Hierarchies</button>
     </div>
 
@@ -81,6 +83,7 @@ import '../styles/global.css';
 </style>
 
 <script is:inline src="/data-object-display.js"></script>
+<script is:inline src="/center-mapping-view.js"></script>
 <script is:inline>
 (function() {
   // ── Tab configs ────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ import '../styles/global.css';
     'gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
     'gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
+    'center-mapping-overview': { label: 'Center Mapping', useMappingView: true },
     'hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',      identity: 'setname', hierTypes: [], category: 'legacy' }
   };
 
@@ -107,6 +111,7 @@ import '../styles/global.css';
     'target-gl-accounts-group':  { label: 'GL Accts (Group Reporting)', placeholder: true },
     'target-gl-accounts-fpsl':   { label: 'GL Accts (Subledger FPSL)', placeholder: true },
     'target-gl-account-mapping': { label: 'GL Account Mapping', placeholder: true },
+    'target-center-mapping-overview': { label: 'Center Mapping', useMappingView: true },
     'target-hierarchies':        { label: 'Hierarchies',     endpoint: '/api/explore/legacy/hierarchies',             identity: 'setname', hierTypes: [], category: 'target' }
   };
 
@@ -172,6 +177,18 @@ import '../styles/global.css';
         '<p class="text-sm">Coming soon — table structure to be defined</p></div></div>';
       return;
     }
+
+    // Center Mapping Overview — uses dedicated component with rowspan grouping
+    if (cfg.useMappingView) {
+      var mv = new window.CenterMappingView({
+        containerId: containerId,
+        scope: '',
+        authHeaders: {},
+      });
+      mv.load();
+      return;
+    }
+
     var extraParams = {};
     if (cfg.category) {
       extraParams.data_category = cfg.category;
