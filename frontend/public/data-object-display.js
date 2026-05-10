@@ -91,7 +91,8 @@
     this.hierarchyTypes = opts.hierarchyTypes || null;
     this.glHierarchyMode = opts.glHierarchyMode || null;
     this.columns = opts.columns || null;
-    this.excludeColumns = opts.excludeColumns || [];
+    var _alwaysExclude = ['scope', 'data_category'];
+    this.excludeColumns = _alwaysExclude.concat(opts.excludeColumns || []);
     this.inlineHierarchies = opts.inlineHierarchies || false;
     this.includeBalances = opts.includeBalances || false;
     this.onDataLoad = opts.onDataLoad || null;
