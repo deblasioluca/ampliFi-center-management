@@ -39,6 +39,16 @@ export function getStaticPaths() {
       </div>
     </div>
     <div id="review-content"></div>
+
+    <!-- Center Mapping Reference (collapsible) -->
+    <div id="review-mapping-section" class="hidden mt-6 border rounded-lg">
+      <button onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('span').textContent = this.nextElementSibling.classList.contains('hidden') ? '▸' : '▾'" class="w-full text-left px-4 py-2 bg-gray-50 rounded-t-lg text-sm font-medium text-gray-700 hover:bg-gray-100">
+        <span>▸</span> Center Mapping Overview
+      </button>
+      <div class="hidden">
+        <div id="review-mapping-view" class="text-xs"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Request New / Clone Center Modal -->
@@ -136,6 +146,7 @@ export function getStaticPaths() {
   </div>
 </Layout>
 
+<script is:inline src="/center-mapping-view.js"></script>
 <script is:inline>
 (function() {
   var pathParts = window.location.pathname.split('/');
@@ -161,6 +172,16 @@ export function getStaticPaths() {
       '<div class="flex-1 h-2 bg-gray-200 rounded-full"><div class="h-full bg-amplifi-500 rounded-full transition-all" style="width:' + pct + '%"></div></div>' +
       '</div>';
     document.getElementById('review-toolbar').classList.remove('hidden');
+    // Show center mapping reference section
+    document.getElementById('review-mapping-section').classList.remove('hidden');
+    if (window.CenterMappingView) {
+      var mv = new window.CenterMappingView({
+        containerId: 'review-mapping-view',
+        scope: scope.scope_name || '',
+        authHeaders: {},
+      });
+      mv.load();
+    }
     loadItems(1);
   }).catch(function(e) {
     document.getElementById('review-header').innerHTML = '<div class="text-red-600 text-lg">' + esc(e.message) + '</div>';

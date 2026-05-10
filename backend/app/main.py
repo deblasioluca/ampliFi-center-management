@@ -146,8 +146,10 @@ app.include_router(docs_help_router.router, prefix="/api", tags=["help"])
 app.include_router(explore_router.router, prefix="/api/explore", tags=["explore"])
 
 from app.api import dq as dq_router  # noqa: E402
+from app.api import exclusion_rules as exclusion_rules_router  # noqa: E402
 
 app.include_router(dq_router.router, prefix="/api/dq", tags=["data-quality"])
+app.include_router(exclusion_rules_router.router, prefix="/api", tags=["exclusion-rules"])
 
 
 # --- Prometheus metrics ---
