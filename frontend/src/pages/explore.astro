@@ -229,19 +229,18 @@ import '../styles/global.css';
       excludeColumns: ['id', 'scope', 'data_category', 'mandt']
     });
 
-    // Apply last-loaded timestamp
-    if (cfg.uploadKind) {
-      fetchLastLoaded(function(timestamps) {
-        if (timestamps[cfg.uploadKind]) {
-          dod.lastLoadedAt = timestamps[cfg.uploadKind];
-        }
-      });
-    }
-
     dod.loadDisplayConfig(function() {
       dod.loadHierarchyOptions(function() {
         dod.loadData(function() {
           dod.render();
+          // Apply last-loaded timestamp after initial render
+          if (cfg.uploadKind) {
+            fetchLastLoaded(function(timestamps) {
+              if (timestamps[cfg.uploadKind]) {
+                dod.setLastLoaded(timestamps[cfg.uploadKind]);
+              }
+            });
+          }
         });
       });
     });
