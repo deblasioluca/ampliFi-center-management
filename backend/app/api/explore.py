@@ -102,11 +102,15 @@ _OBJECT_MODELS: dict[str, Any] = {
     "target-cost-centers": TargetCostCenter,
     "target-profit-centers": TargetProfitCenter,
     "entities": Entity,
+    "target-entities": Entity,
     "employees": Employee,
     "gl-accounts-ska1": GLAccountSKA1,
     "gl-accounts-skb1": GLAccountSKB1,
+    "target-gl-accounts-ska1": GLAccountSKA1,
+    "target-gl-accounts-skb1": GLAccountSKB1,
     "balances": Balance,
     "hierarchies": Hierarchy,
+    "target-hierarchies": Hierarchy,
     "gl-accounts": GLAccountClassRange,
 }
 
@@ -223,14 +227,25 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     ],
 }
 
+# Target object types share the same display config as their legacy counterparts
+for _prefix, _source in [
+    ("target-entities", "entities"),
+    ("target-gl-accounts-ska1", "gl-accounts-ska1"),
+    ("target-gl-accounts-skb1", "gl-accounts-skb1"),
+]:
+    _DEFAULT_TABLE_COLUMNS[_prefix] = _DEFAULT_TABLE_COLUMNS[_source]
+
 # Search fields per object
 _SEARCH_FIELDS: dict[str, list[str]] = {
     "cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
     "profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
     "entities": ["ccode", "name", "country"],
+    "target-entities": ["ccode", "name", "country"],
     "employees": ["gpn", "bs_name", "email_address", "ou_cd"],
     "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
     "gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
+    "target-gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
+    "target-gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
     "balances": ["cctr", "ccode", "coarea"],
     "gl-accounts": ["class_code", "class_label"],
 }
@@ -240,9 +255,12 @@ _DEFAULT_SORT: dict[str, str] = {
     "cost-centers": "cctr",
     "profit-centers": "pctr",
     "entities": "ccode",
+    "target-entities": "ccode",
     "employees": "gpn",
     "gl-accounts-ska1": "saknr",
     "gl-accounts-skb1": "saknr",
+    "target-gl-accounts-ska1": "saknr",
+    "target-gl-accounts-skb1": "saknr",
     "balances": "cctr",
     "gl-accounts": "class_code",
 }
@@ -643,13 +661,15 @@ def explore_object(
     size: int = Query(500, ge=1, le=10000),
     sort: str | None = None,
     sort_dir: str | None = None,
+    data_category: str | None = None,
     current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> dict:
     """Generic endpoint: fetch data for any object type with dynamic columns."""
     _check_sensitive_access(object_type, current_user)
     # Special case: hierarchies have their own endpoint
-    if object_type == "hierarchies":
-        return _explore_hierarchies(db, search)
+    if object_type in ("hierarchies", "target-hierarchies"):
+        cat = data_category or ("target" if object_type == "target-hierarchies" else None)
+        return _explore_hierarchies(db, search, data_category=cat)
 
     model = _OBJECT_MODELS.get(object_type)
     if not model:
@@ -664,6 +684,9 @@ def explore_object(
     if hasattr(model, "scope"):
         query = query.where(model.scope == SCOPE_EXPLORER)
         count_q = count_q.where(model.scope == SCOPE_EXPLORER)
+    if data_category and hasattr(model, "data_category"):
+        query = query.where(model.data_category == data_category)
+        count_q = count_q.where(model.data_category == data_category)
 
     # Search
     if search:
@@ -752,12 +775,18 @@ def explore_object_detail(
 # ── Hierarchies (special) ───────────────────────────────────────────────
 
 
-def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
+def _explore_hierarchies(
+    db: Session,
+    search: str | None = None,
+    data_category: str | None = None,
+) -> dict:
     """Hierarchies endpoint with node/leaf data."""
     cls_labels = {"0101": "Cost Center", "0104": "Profit Center", "0106": "Entity"}
     query = select(Hierarchy).where(
         Hierarchy.scope == SCOPE_EXPLORER, Hierarchy.is_active.is_(True)
     )
+    if data_category:
+        query = query.where(Hierarchy.data_category == data_category)
     if search:
         pat = f"%{search}%"
         from sqlalchemy import or_
@@ -805,7 +834,13 @@ def _explore_hierarchies(db: Session, search: str | None = None) -> dict:
         )
     cols = ["setname", "setclass", "type_label", "label", "coarea"]
     labels = {c: _DEFAULT_COLUMN_LABELS.get(c, c) for c in cols}
-    return {"total": len(result), "hierarchies": result, "columns": cols, "column_labels": labels}
+    return {
+        "total": len(result),
+        "items": result,
+        "hierarchies": result,
+        "columns": cols,
+        "column_labels": labels,
+    }
 
 
 # ── Export (CSV/Excel) ───────────────────────────────────────────────────
