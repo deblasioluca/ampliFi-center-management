@@ -3003,7 +3003,6 @@ def _build_hierarchy_from_levels(
                             seq=seq,
                         )
                     )
-                    loaded += 1
 
         # Create HierarchyLeaf records for leaf values
         for parent_id in sorted(leaf_parents.keys()):
@@ -3019,10 +3018,6 @@ def _build_hierarchy_from_levels(
                         seq=seq,
                     )
                 )
-                loaded += 1
-
-        if loaded % 100 == 0:
-            _flush_progress(batch.id, loaded_so_far + loaded)
 
     return loaded
 
