@@ -568,6 +568,36 @@ def delete_uploads(
     return _delete_upload_ids(body.ids, db)
 
 
+def _terminate_blocking_sessions(db: Session, table: str = "upload_batch") -> int:
+    """Kill zombie PostgreSQL sessions holding locks on the given table.
+
+    After a backend crash or forced stop, PostgreSQL sessions may remain
+    in 'idle in transaction' state holding row locks indefinitely. This
+    function finds and terminates them so delete can proceed.
+    """
+    import logging
+
+    from sqlalchemy import text as sa_text
+
+    _log = logging.getLogger(__name__)
+    result = db.execute(
+        sa_text("""
+            SELECT pg_terminate_backend(blocked.pid)
+            FROM pg_locks blocked
+            JOIN pg_stat_activity act ON act.pid = blocked.pid
+            JOIN pg_class rel ON rel.oid = blocked.relation
+            WHERE rel.relname = :table_name
+              AND blocked.pid <> pg_backend_pid()
+              AND act.state IN ('idle in transaction', 'idle in transaction (aborted)')
+        """),
+        {"table_name": table},
+    )
+    terminated = result.rowcount or 0
+    if terminated:
+        _log.info("_terminate_blocking_sessions: killed %d zombie session(s)", terminated)
+    return terminated
+
+
 def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     import logging
@@ -600,20 +630,63 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
     except OperationalError as exc:
         db.rollback()
         if "LockNotAvailable" in str(exc) or "lock timeout" in str(exc).lower():
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "A background process is still loading data for one of these batches. "
-                    "Please restart the backend (make stop && make start) to release "
-                    "the lock, then retry the delete."
-                ),
-            ) from None
+            # Auto-terminate zombie sessions and retry once
+            _log.info("delete_uploads: lock conflict, terminating blocking sessions…")
+            _terminate_blocking_sessions(db, "upload_batch")
+            db.commit()  # commit the terminate so locks are released
+            # Retry the delete from scratch
+            return _delete_upload_ids_inner(ids, db)
         raise HTTPException(status_code=409, detail=f"Cannot delete: {exc}") from None
 
-    # Delete errors, DQ issues, then the batch itself
-    db.execute(delete(UploadError).where(UploadError.batch_id.in_(ids)))
+    return _finish_delete(ids, db)
+
+
+def _delete_upload_ids_inner(ids: list[int], db: Session) -> DeleteResult:
+    """Retry path after terminating blocking sessions."""
+    import logging
+
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.exc import OperationalError
+
+    _log = logging.getLogger(__name__)
+
+    db.execute(sa_text("SET LOCAL lock_timeout = '10s'"))
+
+    for bid in ids:
+        batch = db.get(UploadBatch, bid)
+        if not batch:
+            continue
+        if batch.status in ("validating", "loading"):
+            batch.status = "failed"
+        if batch.status in ("loaded", "failed", "rolled_back"):
+            try:
+                with db.begin_nested():
+                    _cascade_delete_batch_data(batch, db)
+            except Exception as exc:
+                _log.warning("delete_uploads retry: cascade failed %s: %s", bid, exc)
+
+    try:
+        db.flush()
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Could not delete — a database lock is still held. "
+                "Try restarting PostgreSQL: sudo systemctl restart postgresql"
+            ),
+        ) from None
+
+    return _finish_delete(ids, db)
+
+
+def _finish_delete(ids: list[int], db: Session) -> DeleteResult:
+    """Common tail: delete errors, DQ issues, and the batch rows."""
+    from sqlalchemy.exc import OperationalError
+
     from app.models.core import DataQualityIssue
 
+    db.execute(delete(UploadError).where(UploadError.batch_id.in_(ids)))
     db.execute(delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(ids)))
     try:
         stmt = delete(UploadBatch).where(UploadBatch.id.in_(ids))
@@ -622,15 +695,21 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
     except OperationalError as exc:
         db.rollback()
         if "LockNotAvailable" in str(exc) or "lock timeout" in str(exc).lower():
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "A background process is still loading data for one of these batches. "
-                    "Please restart the backend (make stop && make start) to release "
-                    "the lock, then retry the delete."
-                ),
-            ) from None
-        raise HTTPException(status_code=409, detail=f"Cannot delete: {exc}") from None
+            # One more attempt: terminate any remaining blockers
+            _terminate_blocking_sessions(db, "upload_batch")
+            db.commit()
+            try:
+                stmt = delete(UploadBatch).where(UploadBatch.id.in_(ids))
+                result = db.execute(stmt)
+                db.commit()
+            except Exception as inner_exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Delete still blocked after terminating sessions: {inner_exc}",
+                ) from None
+        else:
+            raise HTTPException(status_code=409, detail=f"Cannot delete: {exc}") from None
     except Exception as exc:
         db.rollback()
         raise HTTPException(
