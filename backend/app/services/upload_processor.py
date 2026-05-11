@@ -522,6 +522,10 @@ CC_COLUMNS = {
     "PCTRCCTR": "pctr",
     "PCTR": "pctr",
     "IS_ACTIVE": "is_active",
+    # Human-readable CSKT text headers (SAP GUI / SE16 export)
+    "NAME": "txtmi",
+    "DESCRIPTION": "description",
+    "COST CTR SHORT TEXT": "txtsh",
 }
 _CC_MODEL_FIELDS = set(CC_COLUMNS.values())
 PC_COLUMNS = {
@@ -591,6 +595,11 @@ PC_COLUMNS = {
     "CURRPCTR": "currency",
     "CURRENCY": "currency",
     "IS_ACTIVE": "is_active",
+    # Human-readable CEPCT text headers (SAP GUI / SE16 export)
+    "NAME": "txtmi",
+    "LONG TEXT": "description",
+    "PROFIT CENTER SHORT TEXT FOR MATCHCODE": "txtsh",
+    "DESCRIPTION": "description",
 }
 _PC_MODEL_FIELDS = set(PC_COLUMNS.values())
 BALANCE_COLUMNS = {
