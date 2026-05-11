@@ -2818,7 +2818,14 @@ def _load_cc_with_hierarchy(
         sheet=sheet_name,
         header_row=header_row,
     )
+    # Signal "reading file" to frontend (rows_total=-1 triggers pulsing bar)
+    _flush_progress(batch.id, 0, -1)
     rows = _read_excel_with_options(batch.storage_uri, sheet_name, header_row)
+    logger.info(
+        "upload.load.cc_with_hierarchy.excel_read_complete",
+        batch_id=batch.id,
+        rows=len(rows),
+    )
     # Total = CC rows + estimated hierarchy rows (2x for ext + cema)
     _est_total = len(rows) * 3 if (load_ext_hier or load_cema_hier) else len(rows)
     _flush_progress(batch.id, 0, _est_total)

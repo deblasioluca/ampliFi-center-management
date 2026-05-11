@@ -745,6 +745,43 @@ def explore_balances_agg(
 # ── Generic object data endpoint ─────────────────────────────────────────
 
 
+@router.get("/legacy/gl-groups/{object_type}")
+def explore_gl_groups(
+    object_type: str,
+    db: Session = Depends(get_db),
+    group_type: str = Query("a", alias="type", description="a = first char, b = first 5 chars"),
+    data_category: str | None = None,
+    current_user: AppUser | None = Depends(get_current_user_optional),
+) -> dict:
+    """Return GL account prefix groups with counts for Explorer."""
+    _check_sensitive_access(object_type, current_user)
+    model = _OBJECT_MODELS.get(object_type)
+    if not model or not hasattr(model, "saknr"):
+        return {"type": group_type, "groups": []}
+
+    prefix_len = 1 if group_type == "a" else 5
+    prefix_expr = func.left(model.saknr, prefix_len)
+    query = (
+        select(prefix_expr.label("prefix"), func.count().label("cnt"))
+        .group_by(prefix_expr)
+        .order_by(prefix_expr)
+    )
+    if hasattr(model, "scope"):
+        query = query.where(model.scope == SCOPE_EXPLORER)
+    _category_overrides = {
+        "gl-accounts-group": {"legacy": "legacy_gr", "target": "target_gr"},
+        "target-gl-accounts-group": {"legacy": "legacy_gr", "target": "target_gr"},
+    }
+    effective_category = data_category
+    if object_type in _category_overrides and data_category:
+        effective_category = _category_overrides[object_type].get(data_category, data_category)
+    if effective_category and hasattr(model, "data_category"):
+        query = query.where(model.data_category == effective_category)
+
+    rows = db.execute(query).all()
+    return {"type": group_type, "groups": [{"key": r.prefix, "count": r.cnt} for r in rows]}
+
+
 @router.get("/legacy/{object_type}")
 def explore_object(
     object_type: str,
@@ -755,6 +792,7 @@ def explore_object(
     sort: str | None = None,
     sort_dir: str | None = None,
     data_category: str | None = None,
+    gl_prefix: str | None = None,
     current_user: AppUser | None = Depends(get_current_user_optional),
 ) -> dict:
     """Generic endpoint: fetch data for any object type with dynamic columns."""
@@ -788,6 +826,11 @@ def explore_object(
     if effective_category and hasattr(model, "data_category"):
         query = query.where(model.data_category == effective_category)
         count_q = count_q.where(model.data_category == effective_category)
+
+    # GL prefix filter (for hierarchical view server-side grouping)
+    if gl_prefix and hasattr(model, "saknr"):
+        query = query.where(model.saknr.like(f"{gl_prefix}%"))
+        count_q = count_q.where(model.saknr.like(f"{gl_prefix}%"))
 
     # Search
     if search:
