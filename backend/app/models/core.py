@@ -218,6 +218,7 @@ class Employee(TimestampMixin, Base):
         Index("ix_emp_user_id", "user_id_pid"),
         Index("ix_emp_ou_cd", "ou_cd"),
         Index("ix_emp_cost_pc", "local_cc_cd"),
+        Index("ix_emp_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -440,6 +441,7 @@ class LegacyCostCenter(TimestampMixin, Base):
         Index("ix_lcc_scope", "scope"),
         Index("ix_lcc_ccode", "ccode"),
         Index("ix_lcc_coarea_cctr", "coarea", "cctr"),
+        Index("ix_lcc_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -594,6 +596,7 @@ class LegacyProfitCenter(TimestampMixin, Base):
         UniqueConstraint("scope", "coarea", "pctr", "refresh_batch"),
         Index("ix_lpc_scope", "scope"),
         Index("ix_lpc_ccode", "ccode"),
+        Index("ix_lpc_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -677,6 +680,7 @@ class Balance(TimestampMixin, Base):
         Index("ix_bal_scope", "scope"),
         Index("ix_bal_coarea_cctr", "coarea", "cctr"),
         Index("ix_bal_period", "fiscal_year", "period"),
+        Index("ix_bal_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -708,6 +712,7 @@ class Hierarchy(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("scope", "setclass", "setname", "refresh_batch"),
         Index("ix_hier_scope", "scope"),
+        Index("ix_hier_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -1096,6 +1101,7 @@ class DataQualityIssue(TimestampMixin, Base):
         Index("ix_dqi_scope", "scope"),
         Index("ix_dqi_status", "status"),
         Index("ix_dqi_object", "object_type", "object_id"),
+        Index("ix_dqi_batch_id", "batch_id"),
         {"schema": "cleanup"},
     )
 
@@ -1146,6 +1152,7 @@ class TargetCostCenter(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("scope", "coarea", "cctr"),
         Index("ix_tcc_scope", "scope"),
+        Index("ix_tcc_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -1300,6 +1307,7 @@ class TargetProfitCenter(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("scope", "coarea", "pctr"),
         Index("ix_tpc_scope", "scope"),
+        Index("ix_tpc_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -1395,6 +1403,7 @@ class CenterMapping(TimestampMixin, Base):
             "target_center",
         ),
         Index("ix_cm_scope", "scope"),
+        Index("ix_cmap_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -1511,7 +1520,10 @@ class UploadBatch(TimestampMixin, Base):
 
 class UploadError(Base):
     __tablename__ = "upload_error"
-    __table_args__ = {"schema": "cleanup"}
+    __table_args__ = (
+        Index("ix_uerr_batch_id", "batch_id"),
+        {"schema": "cleanup"},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     batch_id: Mapped[int] = mapped_column(
@@ -1880,6 +1892,7 @@ class GLAccountSKA1(TimestampMixin, Base):
         UniqueConstraint("scope", "ktopl", "saknr"),
         Index("ix_ska1_scope", "scope"),
         Index("ix_ska1_saknr", "saknr"),
+        Index("ix_glska1_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
@@ -1925,6 +1938,7 @@ class GLAccountSKB1(TimestampMixin, Base):
         Index("ix_skb1_scope", "scope"),
         Index("ix_skb1_saknr", "saknr"),
         Index("ix_skb1_bukrs", "bukrs"),
+        Index("ix_glskb1_refresh_batch", "refresh_batch"),
         {"schema": "cleanup"},
     )
 
