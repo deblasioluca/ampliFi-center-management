@@ -1725,9 +1725,7 @@ def _node_items_pc(
     data_category: str | None,
 ) -> dict:
     query = select(LegacyProfitCenter).where(LegacyProfitCenter.pctr.in_(values))
-    count_q = select(func.count(LegacyProfitCenter.id)).where(
-        LegacyProfitCenter.pctr.in_(values)
-    )
+    count_q = select(func.count(LegacyProfitCenter.id)).where(LegacyProfitCenter.pctr.in_(values))
     if scope:
         query = query.where(LegacyProfitCenter.scope == scope)
         count_q = count_q.where(LegacyProfitCenter.scope == scope)
@@ -1736,9 +1734,7 @@ def _node_items_pc(
         count_q = count_q.where(LegacyProfitCenter.data_category == data_category)
     total = db.execute(count_q).scalar() or 0
     rows = (
-        db.execute(
-            query.order_by(LegacyProfitCenter.pctr).offset((page - 1) * size).limit(size)
-        )
+        db.execute(query.order_by(LegacyProfitCenter.pctr).offset((page - 1) * size).limit(size))
         .scalars()
         .all()
     )
