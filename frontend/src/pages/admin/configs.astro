@@ -60,6 +60,17 @@ import Layout from '../../components/layout/Layout.astro';
           </div>
         </div>
 
+        <!-- Visual flow diagram -->
+        <div id="flow-diagram-section">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-sm font-semibold text-gray-700">Decision flow</h4>
+            <button id="toggle-flow" class="text-xs text-amplifi-600 hover:underline">Hide</button>
+          </div>
+          <div id="flow-diagram-wrap" class="overflow-x-auto border rounded-lg bg-gray-50 p-3">
+            <svg id="flow-diagram-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </div>
+
         <!-- Pipeline editor — driven by rule-catalog -->
         <div id="pipeline-editor" class="space-y-3">
           <div class="text-gray-400 text-sm">Loading rule catalog…</div>
@@ -445,6 +456,7 @@ import Layout from '../../components/layout/Layout.astro';
       presetBadge.classList.add('hidden');
     }
     renderPipelineEditor(cfg.config);
+    renderFlowDiagram(cfg.config);
     document.getElementById('btn-apply').disabled =
       !document.getElementById('apply-wave').value;
   }
@@ -567,6 +579,7 @@ import Layout from '../../components/layout/Layout.astro';
       el.addEventListener('change', e => {
         const idx = parseInt(e.target.getAttribute('data-step-idx'), 10);
         state.currentConfig.config.pipeline[idx].enabled = e.target.checked;
+        renderFlowDiagram(state.currentConfig.config);
       });
     });
     document.querySelectorAll('.param-input').forEach(el => {
@@ -1006,6 +1019,150 @@ import Layout from '../../components/layout/Layout.astro';
   document.getElementById('ai-go-btn').addEventListener('click', aiHandleGo);
   document.getElementById('ai-refine-btn').addEventListener('click', aiHandleRefine);
   document.getElementById('ai-save-btn').addEventListener('click', aiHandleSave);
+
+  // ── Flow diagram (visual decision tree) ──────────────────────────────
+  const VERDICT_COLORS = {
+    KEEP: '#16a34a', RETIRE: '#dc2626', MERGE_MAP: '#ea580c',
+    REDESIGN: '#2563eb', CC: '#4f46e5', PC_ONLY: '#9333ea',
+    CC_AND_PC: '#ec4899', WBS_REAL: '#0d9488', WBS_STAT: '#06b6d4',
+    MIGRATE: '#059669', MIGRATE_YES: '#059669', MIGRATE_NO: '#6b7280',
+    PASS: '#9ca3af', '1:1': '#6b7280', '1:n': '#9333ea',
+  };
+
+  let flowVisible = true;
+  document.getElementById('toggle-flow').addEventListener('click', () => {
+    flowVisible = !flowVisible;
+    document.getElementById('flow-diagram-wrap').style.display = flowVisible ? '' : 'none';
+    document.getElementById('toggle-flow').textContent = flowVisible ? 'Hide' : 'Show';
+  });
+
+  function renderFlowDiagram(configData) {
+    const svg = document.getElementById('flow-diagram-svg');
+    if (!configData || !configData.pipeline || !configData.pipeline.length) {
+      svg.innerHTML = '<text x="20" y="30" font-size="12" fill="#9ca3af">No pipeline steps configured</text>';
+      svg.setAttribute('width', '300');
+      svg.setAttribute('height', '50');
+      return;
+    }
+
+    const pipeline = configData.pipeline;
+    const catalog = state.catalog || [];
+
+    // Layout constants
+    const nodeW = 160;
+    const nodeH = 72;
+    const gapX = 60;
+    const startX = 20;
+    const startY = 20;
+    const badgeH = 16;
+
+    // Calculate total width/height
+    const totalW = startX + (pipeline.length + 1) * (nodeW + gapX) + 60;
+    // Height accommodates verdict badges below nodes
+    const maxDecides = Math.max(...pipeline.map(s => {
+      const m = catalog.find(c => c.code === s.routine);
+      return (m && m.decides ? m.decides.length : 0);
+    }), 1);
+    const totalH = startY * 2 + nodeH + maxDecides * (badgeH + 4) + 30;
+    svg.setAttribute('width', String(totalW));
+    svg.setAttribute('height', String(totalH));
+    svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+
+    let html = '';
+    // Defs for arrowhead
+    html += `<defs>
+      <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#6b7280"/>
+      </marker>
+      <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#16a34a"/>
+      </marker>
+      <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#dc2626"/>
+      </marker>
+    </defs>`;
+
+    // START node
+    const startNodeX = startX;
+    const startNodeY = startY + nodeH / 2;
+    html += `<circle cx="${startNodeX + 16}" cy="${startNodeY}" r="14" fill="#059669" stroke="#047857" stroke-width="1.5"/>`;
+    html += `<text x="${startNodeX + 16}" y="${startNodeY + 4}" text-anchor="middle" font-size="9" font-weight="bold" fill="white">IN</text>`;
+
+    let prevX = startNodeX + 32;
+    let prevY = startNodeY;
+
+    pipeline.forEach((step, idx) => {
+      const meta = catalog.find(c => c.code === step.routine);
+      const label = meta ? meta.business_label : step.routine;
+      const decides = (meta && meta.decides) || [];
+      const enabled = step.enabled !== false;
+      const x = startX + 50 + idx * (nodeW + gapX);
+      const y = startY;
+      const cx = x + nodeW / 2;
+      const cy = y + nodeH / 2;
+
+      // Arrow from previous node
+      const arrowStartX = prevX;
+      const arrowEndX = x;
+      html += `<line x1="${arrowStartX}" y1="${prevY}" x2="${arrowEndX}" y2="${cy}"
+        stroke="${enabled ? '#6b7280' : '#d1d5db'}" stroke-width="1.5"
+        marker-end="url(#arrowhead)" stroke-dasharray="${enabled ? '' : '4 3'}"/>`;
+
+      // Node rectangle
+      const fillColor = enabled ? '#ffffff' : '#f9fafb';
+      const strokeColor = enabled ? '#6366f1' : '#d1d5db';
+      html += `<rect x="${x}" y="${y}" width="${nodeW}" height="${nodeH}" rx="8" ry="8"
+        fill="${fillColor}" stroke="${strokeColor}" stroke-width="${enabled ? 1.5 : 1}"/>`;
+
+      // Step number badge
+      html += `<circle cx="${x + 14}" cy="${y + 14}" r="9" fill="${enabled ? '#6366f1' : '#9ca3af'}"/>`;
+      html += `<text x="${x + 14}" y="${y + 18}" text-anchor="middle" font-size="9" font-weight="bold" fill="white">${idx + 1}</text>`;
+
+      // Label (truncate if too long)
+      const displayLabel = label.length > 20 ? label.slice(0, 18) + '…' : label;
+      html += `<text x="${cx}" y="${y + 34}" text-anchor="middle" font-size="11"
+        font-weight="600" fill="${enabled ? '#1f2937' : '#9ca3af'}">${escSvg(displayLabel)}</text>`;
+
+      // Routine code below label
+      const codeDisplay = step.routine.length > 24 ? step.routine.slice(0, 22) + '…' : step.routine;
+      html += `<text x="${cx}" y="${y + 48}" text-anchor="middle" font-size="8.5"
+        fill="${enabled ? '#6b7280' : '#d1d5db'}" font-family="monospace">${escSvg(codeDisplay)}</text>`;
+
+      // Disabled overlay label
+      if (!enabled) {
+        html += `<text x="${cx}" y="${y + 62}" text-anchor="middle" font-size="8" fill="#9ca3af" font-style="italic">disabled</text>`;
+      }
+
+      // Verdict badges below the node
+      decides.forEach((d, di) => {
+        const bw = Math.min(nodeW / decides.length - 2, 60);
+        const badgeX = x + (di * (bw + 3));
+        const badgeY = y + nodeH + 6;
+        const color = VERDICT_COLORS[d] || '#6b7280';
+        if (badgeX + bw <= x + nodeW + 10) {
+          html += `<rect x="${badgeX}" y="${badgeY}" width="${bw}" height="${badgeH}" rx="3" fill="${color}" fill-opacity="0.12" stroke="${color}" stroke-width="0.5"/>`;
+          const dLabel = d.length > 8 ? d.slice(0, 7) + '…' : d;
+          html += `<text x="${badgeX + bw / 2}" y="${badgeY + 11}" text-anchor="middle" font-size="7.5" font-weight="500" fill="${color}">${escSvg(dLabel)}</text>`;
+        }
+      });
+
+      prevX = x + nodeW;
+      prevY = cy;
+    });
+
+    // END node
+    const endX = prevX + gapX / 2;
+    html += `<line x1="${prevX}" y1="${prevY}" x2="${endX - 14}" y2="${prevY}"
+      stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowhead)"/>`;
+    html += `<circle cx="${endX}" cy="${prevY}" r="14" fill="#dc2626" stroke="#b91c1c" stroke-width="1.5"/>`;
+    html += `<text x="${endX}" y="${prevY + 4}" text-anchor="middle" font-size="9" font-weight="bold" fill="white">END</text>`;
+
+    svg.innerHTML = html;
+  }
+
+  function escSvg(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
 
   // Boot
   boot().catch(err => {
