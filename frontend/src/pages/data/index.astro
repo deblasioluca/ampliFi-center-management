@@ -782,7 +782,7 @@ import Layout from '../../components/layout/Layout.astro';
     loadUploadHistory(); refreshAllData();
   };
   window.deleteUpload = async function(id) {
-    if (!confirm('Delete this upload batch and any data loaded from it?\n\nLarge batches (200k+ rows) may take up to 2 minutes to delete.')) return;
+    if (!confirm('Delete this upload batch and any data loaded from it?')) return;
     var btn = document.querySelector('button[onclick="deleteUpload(' + id + ')"]');
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting… please wait'; }
     try {

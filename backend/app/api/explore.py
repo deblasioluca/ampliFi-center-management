@@ -125,6 +125,8 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     "cost-centers": [
         "cctr",
         "txtsh",
+        "txtmi",
+        "description",
         "ccode",
         "coarea",
         "pctr",
@@ -136,6 +138,8 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     "profit-centers": [
         "pctr",
         "txtsh",
+        "txtmi",
+        "description",
         "ccode",
         "coarea",
         "responsible",
@@ -146,6 +150,8 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     "target-cost-centers": [
         "cctr",
         "txtsh",
+        "txtmi",
+        "description",
         "ccode",
         "coarea",
         "pctr",
@@ -158,6 +164,8 @@ _DEFAULT_TABLE_COLUMNS: dict[str, list[str]] = {
     "target-profit-centers": [
         "pctr",
         "txtsh",
+        "txtmi",
+        "description",
         "ccode",
         "coarea",
         "responsible",
@@ -417,7 +425,8 @@ _DEFAULT_COLUMN_LABELS: dict[str, str] = {
     "segment": "Segment",
     # ── Cost Center / Profit Center display ──────────────────────────────
     "txtsh": "Short Text",
-    "txtmi": "Medium Text",
+    "txtmi": "Name",
+    "description": "Description",
     "txtmd": "Medium Text",
     "txtlg": "Long Text",
     "cctrcgy": "CC Category",

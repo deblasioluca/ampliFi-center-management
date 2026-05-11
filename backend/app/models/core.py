@@ -453,8 +453,9 @@ class LegacyCostCenter(TimestampMixin, Base):
     coarea: Mapped[str] = mapped_column(String(10), nullable=False)  # KOKRS
     cctr: Mapped[str] = mapped_column(String(20), nullable=False)  # KOSTL
     # --- descriptive (CSKT) ---
-    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
-    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT / "Cost ctr short text"
+    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT / "Name"
+    description: Mapped[str | None] = mapped_column(String(250))  # "Description"
     # --- CSKS standard fields ---
     datbi: Mapped[str | None] = mapped_column(String(20))
     datab: Mapped[str | None] = mapped_column(String(20))
@@ -609,8 +610,9 @@ class LegacyProfitCenter(TimestampMixin, Base):
     pctr: Mapped[str] = mapped_column(String(20), nullable=False)  # PRCTR
     datbi: Mapped[str | None] = mapped_column(String(20))
     # --- descriptive (CEPCT) ---
-    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
-    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT / "Profit center short text"
+    txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT / "Name"
+    description: Mapped[str | None] = mapped_column(String(250))  # "Long Text"
     # --- CEPC standard fields ---
     datab: Mapped[str | None] = mapped_column(String(20))
     ersda: Mapped[str | None] = mapped_column(String(14))
