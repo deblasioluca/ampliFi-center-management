@@ -607,9 +607,7 @@ def _terminate_blocking_sessions(db: Session, table: str = "upload_batch") -> in
     )
     terminated = result.rowcount or 0
     if terminated:
-        _log.info(
-            "_terminate_blocking_sessions: killed %d session(s)", terminated
-        )
+        _log.info("_terminate_blocking_sessions: killed %d session(s)", terminated)
     return terminated
 
 
