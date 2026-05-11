@@ -23,9 +23,30 @@ import Layout from '../../components/layout/Layout.astro';
       <option value="legacy" selected>Legacy</option>
       <option value="target">Target (ampliFi)</option>
     </select>
-    <button id="transfer-to-explorer-btn" class="ml-auto btn-secondary text-xs border-blue-300 text-blue-700 hover:bg-blue-50" title="Copy cleanup data to the standalone Data Explorer">
-      &#8594; Publish to Explorer
-    </button>
+    <div class="ml-auto relative" id="publish-wrapper">
+      <button id="transfer-to-explorer-btn" class="btn-secondary text-xs border-blue-300 text-blue-700 hover:bg-blue-50" title="Copy cleanup data to the standalone Data Explorer">
+        &#8594; Publish to Explorer &#9662;
+      </button>
+      <div id="publish-dropdown" class="hidden absolute right-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 w-64 p-3">
+        <div class="text-xs font-semibold text-gray-500 mb-2">Select objects to publish:</div>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="cost-centers" checked> Cost Centers</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="profit-centers" checked> Profit Centers</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="entities" checked> Entities</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="employees" checked> Employees</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="balances" checked> Balances</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="gl-accounts" checked> GL Accounts (SKA1)</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="gl-accounts-skb1" checked> GL Accounts (SKB1)</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="hierarchies" checked> Hierarchies</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="target-cost-centers" checked> Target Cost Centers</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="target-profit-centers" checked> Target Profit Centers</label>
+        <label class="flex items-center gap-2 text-xs py-0.5 hover:bg-gray-50 rounded px-1 cursor-pointer"><input type="checkbox" class="pub-cb" value="center-mappings" checked> Center Mappings</label>
+        <div class="flex gap-2 mt-2 pt-2 border-t">
+          <button id="pub-select-all" class="text-[10px] text-blue-600 hover:underline">Select All</button>
+          <button id="pub-select-none" class="text-[10px] text-blue-600 hover:underline">Select None</button>
+        </div>
+        <button id="pub-confirm-btn" class="mt-2 w-full btn-primary text-xs">Publish Selected</button>
+      </div>
+    </div>
   </div>
 
   <!-- Data Counts -->
@@ -356,22 +377,45 @@ import Layout from '../../components/layout/Layout.astro';
   scopeSel.addEventListener('change', function() { refreshAllData(); });
   catSel.addEventListener('change', function() { refreshAllData(); });
 
-  // Transfer to Explorer
-  document.getElementById('transfer-to-explorer-btn').addEventListener('click', async function() {
-    if (!confirm('This will replace all Explorer data with the current Cleanup data.\n\nObject types: Cost Centers, Profit Centers, Entities, Employees, Balances.\n\nContinue?')) return;
-    this.disabled = true;
-    this.textContent = 'Transferring...';
+  // Transfer to Explorer — per-object dropdown
+  var pubBtn = document.getElementById('transfer-to-explorer-btn');
+  var pubDrop = document.getElementById('publish-dropdown');
+  pubBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    pubDrop.classList.toggle('hidden');
+  });
+  document.addEventListener('click', function(e) {
+    if (!document.getElementById('publish-wrapper').contains(e.target)) {
+      pubDrop.classList.add('hidden');
+    }
+  });
+  document.getElementById('pub-select-all').addEventListener('click', function() {
+    document.querySelectorAll('.pub-cb').forEach(function(cb) { cb.checked = true; });
+  });
+  document.getElementById('pub-select-none').addEventListener('click', function() {
+    document.querySelectorAll('.pub-cb').forEach(function(cb) { cb.checked = false; });
+  });
+  document.getElementById('pub-confirm-btn').addEventListener('click', async function() {
+    var selected = [];
+    document.querySelectorAll('.pub-cb:checked').forEach(function(cb) { selected.push(cb.value); });
+    if (selected.length === 0) { alert('Please select at least one object type.'); return; }
+    var names = selected.join(', ');
+    if (!confirm('Publish to Explorer:\n\n' + names + '\n\nExisting Explorer data for these types will be replaced. Continue?')) return;
+    pubDrop.classList.add('hidden');
+    pubBtn.disabled = true;
+    pubBtn.textContent = 'Publishing...';
     try {
-      var res = await fetch('/api/explore/transfer-to-explorer', { method: 'POST', headers: jsonHdr });
+      var qs = selected.map(function(t) { return 'object_types=' + encodeURIComponent(t); }).join('&');
+      var res = await fetch('/api/explore/transfer-to-explorer?' + qs, { method: 'POST', headers: authHdr });
       if (!res.ok) { var err = await res.json().catch(function(){return {};}); throw new Error(err.detail || 'Transfer failed'); }
       var data = await res.json();
-      var summary = Object.entries(data.results || {}).map(function(e) { return e[0] + ': ' + e[1].inserted + ' rows'; }).join(', ');
-      alert('Transfer complete!\n\n' + summary);
+      var summary = Object.entries(data.results || {}).map(function(e) { return e[0] + ': ' + e[1].inserted + ' rows'; }).join('\n');
+      alert('Publish complete!\n\n' + summary);
     } catch(e) {
       alert('Error: ' + e.message);
     } finally {
-      this.disabled = false;
-      this.textContent = '\u2192 Publish to Explorer';
+      pubBtn.disabled = false;
+      pubBtn.innerHTML = '\u2192 Publish to Explorer \u25BE';
     }
   });
 
