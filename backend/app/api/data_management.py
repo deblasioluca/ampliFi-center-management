@@ -572,11 +572,12 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     import logging
 
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.exc import OperationalError
+
     _log = logging.getLogger(__name__)
 
     # Set a statement-level lock timeout so we don't hang on locked rows
-    from sqlalchemy import text as sa_text
-
     db.execute(sa_text("SET LOCAL lock_timeout = '5s'"))
 
     for bid in ids:
@@ -593,7 +594,21 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
                     _cascade_delete_batch_data(batch, db)
             except Exception as exc:
                 _log.warning("delete_uploads: cascade cleanup failed for batch %s: %s", bid, exc)
-    db.flush()
+
+    try:
+        db.flush()
+    except OperationalError as exc:
+        db.rollback()
+        if "LockNotAvailable" in str(exc) or "lock timeout" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A background process is still loading data for one of these batches. "
+                    "Please restart the backend (make stop && make start) to release "
+                    "the lock, then retry the delete."
+                ),
+            ) from None
+        raise HTTPException(status_code=409, detail=f"Cannot delete: {exc}") from None
 
     # Delete errors, DQ issues, then the batch itself
     db.execute(delete(UploadError).where(UploadError.batch_id.in_(ids)))
@@ -604,6 +619,18 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
         stmt = delete(UploadBatch).where(UploadBatch.id.in_(ids))
         result = db.execute(stmt)
         db.commit()
+    except OperationalError as exc:
+        db.rollback()
+        if "LockNotAvailable" in str(exc) or "lock timeout" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A background process is still loading data for one of these batches. "
+                    "Please restart the backend (make stop && make start) to release "
+                    "the lock, then retry the delete."
+                ),
+            ) from None
+        raise HTTPException(status_code=409, detail=f"Cannot delete: {exc}") from None
     except Exception as exc:
         db.rollback()
         raise HTTPException(
