@@ -575,9 +575,8 @@ def delete_uploads(
         # Auto-rollback loaded data before deleting (cascade cleanup)
         if batch.status in ("loaded", "failed", "rolled_back"):
             try:
-                nested = db.begin_nested()
-                _cascade_delete_batch_data(batch, db)
-                nested.commit()
+                with db.begin_nested():
+                    _cascade_delete_batch_data(batch, db)
             except Exception as exc:
                 _log.warning("delete_uploads: cascade cleanup failed for batch %s: %s", bid, exc)
     db.flush()
