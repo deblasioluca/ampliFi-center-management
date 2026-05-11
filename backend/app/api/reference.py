@@ -17,6 +17,7 @@ from app.models.core import (
     CenterMapping,
     Employee,
     Entity,
+    ExplorerDisplayConfig,
     GLAccountSKA1,
     GLAccountSKB1,
     Hierarchy,
@@ -32,6 +33,48 @@ from app.models.core import (
 router = APIRouter()
 
 log = logging.getLogger(__name__)
+
+
+# Default search fields per object type (used when no display config override exists)
+_DEFAULT_SEARCH_FIELDS: dict[str, list[str]] = {
+    "cost-centers": ["cctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "profit-centers": ["pctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "target-cost-centers": ["cctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "target-profit-centers": ["pctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "entities": ["ccode", "name", "country", "city", "region"],
+    "employees": ["gpn", "name", "vorname", "email_adresse", "ou_cd"],
+    "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
+    "gl-accounts-skb1": ["saknr", "stext", "bukrs", "waers"],
+    "balances": ["cctr", "ccode", "coarea"],
+    "center-mappings": ["legacy_center", "target_center", "legacy_name", "target_name"],
+}
+
+
+def _get_search_fields(db: Session, object_type: str) -> list[str]:
+    """Return search fields for an object type — config override or defaults."""
+    cfg = db.execute(
+        select(ExplorerDisplayConfig).where(ExplorerDisplayConfig.object_type == object_type)
+    ).scalar_one_or_none()
+    if cfg and cfg.search_fields:
+        return cfg.search_fields
+    return _DEFAULT_SEARCH_FIELDS.get(object_type, [])
+
+
+def _apply_search_filter(query, count_q, model, search: str, fields: list[str]):
+    """Apply ilike search across the given fields."""
+    from sqlalchemy import or_
+
+    pat = f"%{search}%"
+    conditions = []
+    for field_name in fields:
+        col = getattr(model, field_name, None)
+        if col is not None:
+            conditions.append(col.ilike(pat))
+    if conditions:
+        flt = or_(*conditions)
+        query = query.where(flt)
+        count_q = count_q.where(flt)
+    return query, count_q
 
 
 def _get_excluded_ids_for_page(
@@ -406,9 +449,8 @@ def list_entities(
         query = query.where(Entity.country == country)
         count_q = count_q.where(Entity.country == country)
     if search:
-        pattern = f"%{search}%"
-        query = query.where(Entity.ccode.ilike(pattern) | Entity.name.ilike(pattern))
-        count_q = count_q.where(Entity.ccode.ilike(pattern) | Entity.name.ilike(pattern))
+        sf = _get_search_fields(db, "entities")
+        query, count_q = _apply_search_filter(query, count_q, Entity, search, sf)
     if search_values:
         vals = [v.strip() for v in search_values.split(",") if v.strip()]
         if vals:
@@ -482,17 +524,8 @@ def list_legacy_ccs(
         query = query.where(LegacyCostCenter.cctr.ilike(f"{cctr}%"))
         count_q = count_q.where(LegacyCostCenter.cctr.ilike(f"{cctr}%"))
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            LegacyCostCenter.cctr.ilike(pattern)
-            | LegacyCostCenter.txtsh.ilike(pattern)
-            | LegacyCostCenter.txtmi.ilike(pattern)
-        )
-        count_q = count_q.where(
-            LegacyCostCenter.cctr.ilike(pattern)
-            | LegacyCostCenter.txtsh.ilike(pattern)
-            | LegacyCostCenter.txtmi.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "cost-centers")
+        query, count_q = _apply_search_filter(query, count_q, LegacyCostCenter, search, sf)
     if search_values:
         vals = [v.strip() for v in search_values.split(",") if v.strip()]
         if vals:
@@ -577,17 +610,8 @@ def list_legacy_pcs(
         query = query.where(LegacyProfitCenter.coarea == coarea)
         count_q = count_q.where(LegacyProfitCenter.coarea == coarea)
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            LegacyProfitCenter.pctr.ilike(pattern)
-            | LegacyProfitCenter.txtsh.ilike(pattern)
-            | LegacyProfitCenter.txtmi.ilike(pattern)
-        )
-        count_q = count_q.where(
-            LegacyProfitCenter.pctr.ilike(pattern)
-            | LegacyProfitCenter.txtsh.ilike(pattern)
-            | LegacyProfitCenter.txtmi.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "profit-centers")
+        query, count_q = _apply_search_filter(query, count_q, LegacyProfitCenter, search, sf)
     if search_values:
         vals = [v.strip() for v in search_values.split(",") if v.strip()]
         if vals:
@@ -707,17 +731,8 @@ def list_legacy_gl_accounts(
         query = query.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))
         count_q = count_q.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            GLAccountSKA1.saknr.ilike(pattern)
-            | GLAccountSKA1.txt20.ilike(pattern)
-            | GLAccountSKA1.txt50.ilike(pattern)
-        )
-        count_q = count_q.where(
-            GLAccountSKA1.saknr.ilike(pattern)
-            | GLAccountSKA1.txt20.ilike(pattern)
-            | GLAccountSKA1.txt50.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "gl-accounts-ska1")
+        query, count_q = _apply_search_filter(query, count_q, GLAccountSKA1, search, sf)
 
     total = db.execute(count_q).scalar() or 0
     accounts = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
@@ -793,17 +808,8 @@ def list_target_ccs(
         query = query.where(TargetCostCenter.coarea == coarea)
         count_q = count_q.where(TargetCostCenter.coarea == coarea)
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            TargetCostCenter.cctr.ilike(pattern)
-            | TargetCostCenter.txtsh.ilike(pattern)
-            | TargetCostCenter.txtmi.ilike(pattern)
-        )
-        count_q = count_q.where(
-            TargetCostCenter.cctr.ilike(pattern)
-            | TargetCostCenter.txtsh.ilike(pattern)
-            | TargetCostCenter.txtmi.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "target-cost-centers")
+        query, count_q = _apply_search_filter(query, count_q, TargetCostCenter, search, sf)
     total = db.execute(count_q).scalar() or 0
     ccs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
@@ -856,17 +862,8 @@ def list_target_pcs(
         query = query.where(TargetProfitCenter.coarea == coarea)
         count_q = count_q.where(TargetProfitCenter.coarea == coarea)
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            TargetProfitCenter.pctr.ilike(pattern)
-            | TargetProfitCenter.txtsh.ilike(pattern)
-            | TargetProfitCenter.txtmi.ilike(pattern)
-        )
-        count_q = count_q.where(
-            TargetProfitCenter.pctr.ilike(pattern)
-            | TargetProfitCenter.txtsh.ilike(pattern)
-            | TargetProfitCenter.txtmi.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "target-profit-centers")
+        query, count_q = _apply_search_filter(query, count_q, TargetProfitCenter, search, sf)
     total = db.execute(count_q).scalar() or 0
     pcs = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
@@ -912,19 +909,8 @@ def list_center_mappings(
         query = query.where(CenterMapping.object_type == object_type)
         count_q = count_q.where(CenterMapping.object_type == object_type)
     if search:
-        pattern = f"%{search}%"
-        query = query.where(
-            CenterMapping.legacy_center.ilike(pattern)
-            | CenterMapping.target_center.ilike(pattern)
-            | CenterMapping.legacy_name.ilike(pattern)
-            | CenterMapping.target_name.ilike(pattern)
-        )
-        count_q = count_q.where(
-            CenterMapping.legacy_center.ilike(pattern)
-            | CenterMapping.target_center.ilike(pattern)
-            | CenterMapping.legacy_name.ilike(pattern)
-            | CenterMapping.target_name.ilike(pattern)
-        )
+        sf = _get_search_fields(db, "center-mappings")
+        query, count_q = _apply_search_filter(query, count_q, CenterMapping, search, sf)
     total = db.execute(count_q).scalar() or 0
     rows = db.execute(query.offset((pag.page - 1) * pag.size).limit(pag.size)).scalars().all()
     return {
