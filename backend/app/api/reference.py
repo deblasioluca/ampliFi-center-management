@@ -1493,9 +1493,12 @@ def hierarchy_tree(
     # Build children map: parent_setname → list of child_setnames
     children_map: dict[str, list[str]] = {}
     all_children: set[str] = set()
+    node_text_map: dict[str, str] = {}  # child_setname → text
     for n in nodes:
         children_map.setdefault(n.parent_setname, []).append(n.child_setname)
         all_children.add(n.child_setname)
+        if n.text:
+            node_text_map[n.child_setname] = n.text
 
     # Build leaves map: setname → list of values
     leaves_map: dict[str, list[str]] = {}
@@ -1573,6 +1576,7 @@ def hierarchy_tree(
             items.append({"value": val, **detail})
         return {
             "setname": setname,
+            "text": node_text_map.get(setname),
             "type": "leaf" if (not node_children and node_leaves) else "node",
             "children": [build_node(c, depth + 1) for c in sorted(node_children)],
             "items": items,
@@ -1584,7 +1588,12 @@ def hierarchy_tree(
 
     # Flat arrays for DOD's hierarchical renderer
     flat_nodes = [
-        {"parent_setname": n.parent_setname, "child_setname": n.child_setname, "seq": n.seq}
+        {
+            "parent_setname": n.parent_setname,
+            "child_setname": n.child_setname,
+            "seq": n.seq,
+            "text": n.text,
+        }
         for n in nodes
     ]
     flat_leaves = [{"setname": lf.setname, "value": lf.value, "seq": lf.seq} for lf in leaves]
@@ -1598,6 +1607,200 @@ def hierarchy_tree(
         "nodes": flat_nodes,
         "leaves": flat_leaves,
         "total_leaves": len(leaves),
+    }
+
+
+@router.get("/legacy/hierarchies/{hier_id}/node-items")
+def hierarchy_node_items(
+    hier_id: int,
+    db: Session = Depends(get_db),
+    setname: str = Query(..., description="Node setname to fetch leaf items for"),
+    page: int = Query(1, ge=1),
+    size: int = Query(500, ge=1, le=10000),
+    scope: str | None = None,
+    data_category: str | None = None,
+) -> dict:
+    """Return paginated detail items under a hierarchy node.
+
+    Recursively collects all leaf values under ``setname``, then queries
+    the corresponding model (CC / PC / Entity) with those values.
+    """
+    hier = db.get(Hierarchy, hier_id)
+    if not hier:
+        raise HTTPException(status_code=404, detail="Hierarchy not found")
+
+    nodes = (
+        db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == hier_id))
+        .scalars()
+        .all()
+    )
+    leaves = (
+        db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hier_id))
+        .scalars()
+        .all()
+    )
+
+    # Build children map and leaves map
+    children_map: dict[str, list[str]] = {}
+    for n in nodes:
+        children_map.setdefault(n.parent_setname, []).append(n.child_setname)
+    leaves_map: dict[str, list[str]] = {}
+    for lf in leaves:
+        leaves_map.setdefault(lf.setname, []).append(lf.value)
+
+    # Recursively collect leaf values under the requested node
+    def collect_leaves(node_name: str) -> list[str]:
+        result = list(leaves_map.get(node_name, []))
+        for child in children_map.get(node_name, []):
+            result.extend(collect_leaves(child))
+        return result
+
+    leaf_values = collect_leaves(setname)
+    if not leaf_values:
+        return {"total": 0, "page": page, "size": size, "items": []}
+
+    unique_values = list(dict.fromkeys(leaf_values))  # preserve order, dedup
+
+    norm_sc = normalise_setclass(hier.setclass)
+
+    if norm_sc == SETCLASS_PROFIT_CENTER:
+        return _node_items_pc(db, unique_values, page, size, scope, data_category)
+    if norm_sc == SETCLASS_ENTITY or norm_sc == "GCRS":
+        return _node_items_entity(db, unique_values, page, size, scope, data_category)
+    return _node_items_cc(db, unique_values, page, size, scope, data_category)
+
+
+def _node_items_cc(
+    db: Session,
+    values: list[str],
+    page: int,
+    size: int,
+    scope: str | None,
+    data_category: str | None,
+) -> dict:
+    query = select(LegacyCostCenter).where(LegacyCostCenter.cctr.in_(values))
+    count_q = select(func.count(LegacyCostCenter.id)).where(LegacyCostCenter.cctr.in_(values))
+    if scope:
+        query = query.where(LegacyCostCenter.scope == scope)
+        count_q = count_q.where(LegacyCostCenter.scope == scope)
+    if data_category:
+        query = query.where(LegacyCostCenter.data_category == data_category)
+        count_q = count_q.where(LegacyCostCenter.data_category == data_category)
+    total = db.execute(count_q).scalar() or 0
+    rows = (
+        db.execute(query.order_by(LegacyCostCenter.cctr).offset((page - 1) * size).limit(size))
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "page": page,
+        "size": size,
+        "items": [
+            {
+                "id": c.id,
+                "coarea": c.coarea,
+                "cctr": c.cctr,
+                "txtsh": c.txtsh,
+                "txtmi": c.txtmi,
+                "description": c.description,
+                "responsible": c.responsible,
+                "cctrcgy": c.cctrcgy,
+                "ccode": c.ccode,
+                "currency": c.currency,
+                "pctr": c.pctr,
+                "is_active": c.is_active,
+            }
+            for c in rows
+        ],
+    }
+
+
+def _node_items_pc(
+    db: Session,
+    values: list[str],
+    page: int,
+    size: int,
+    scope: str | None,
+    data_category: str | None,
+) -> dict:
+    query = select(LegacyProfitCenter).where(LegacyProfitCenter.pctr.in_(values))
+    count_q = select(func.count(LegacyProfitCenter.id)).where(LegacyProfitCenter.pctr.in_(values))
+    if scope:
+        query = query.where(LegacyProfitCenter.scope == scope)
+        count_q = count_q.where(LegacyProfitCenter.scope == scope)
+    if data_category:
+        query = query.where(LegacyProfitCenter.data_category == data_category)
+        count_q = count_q.where(LegacyProfitCenter.data_category == data_category)
+    total = db.execute(count_q).scalar() or 0
+    rows = (
+        db.execute(query.order_by(LegacyProfitCenter.pctr).offset((page - 1) * size).limit(size))
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "page": page,
+        "size": size,
+        "items": [
+            {
+                "id": p.id,
+                "coarea": p.coarea,
+                "pctr": p.pctr,
+                "txtsh": p.txtsh,
+                "txtmi": p.txtmi,
+                "description": p.description,
+                "responsible": p.responsible,
+                "department": p.department,
+                "ccode": p.ccode,
+                "currency": p.currency,
+                "is_active": p.is_active,
+            }
+            for p in rows
+        ],
+    }
+
+
+def _node_items_entity(
+    db: Session,
+    values: list[str],
+    page: int,
+    size: int,
+    scope: str | None,
+    data_category: str | None,
+) -> dict:
+    query = select(Entity).where(Entity.ccode.in_(values))
+    count_q = select(func.count(Entity.id)).where(Entity.ccode.in_(values))
+    if scope:
+        query = query.where(Entity.scope == scope)
+        count_q = count_q.where(Entity.scope == scope)
+    if data_category:
+        query = query.where(Entity.data_category == data_category)
+        count_q = count_q.where(Entity.data_category == data_category)
+    total = db.execute(count_q).scalar() or 0
+    rows = (
+        db.execute(query.order_by(Entity.ccode).offset((page - 1) * size).limit(size))
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "page": page,
+        "size": size,
+        "items": [
+            {
+                "id": e.id,
+                "ccode": e.ccode,
+                "name": e.name,
+                "country": e.country,
+                "region": e.region,
+                "currency": e.currency,
+                "city": e.city,
+                "language": e.language,
+                "is_active": e.is_active,
+            }
+            for e in rows
+        ],
     }
 
 

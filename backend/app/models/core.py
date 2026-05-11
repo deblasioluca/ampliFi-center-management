@@ -747,6 +747,7 @@ class HierarchyNode(Base):
     parent_setname: Mapped[str] = mapped_column(String(40), nullable=False)
     child_setname: Mapped[str] = mapped_column(String(40), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str | None] = mapped_column(String(200))
 
     hierarchy: Mapped[Hierarchy] = relationship(back_populates="nodes")
 
