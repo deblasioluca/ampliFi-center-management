@@ -555,12 +555,31 @@ def delete_uploads(
 ) -> DeleteResult:
     if not body or not body.ids:
         raise HTTPException(status_code=400, detail="Provide ids in body")
-    # Also reset stuck batches that are in validating/loading state
+
+    import logging
+
+    _log = logging.getLogger(__name__)
+
+    # Set a statement-level lock timeout so we don't hang on locked rows
+    from sqlalchemy import text as sa_text
+
+    db.execute(sa_text("SET LOCAL lock_timeout = '5s'"))
+
     for bid in body.ids:
         batch = db.get(UploadBatch, bid)
-        if batch and batch.status in ("validating", "loading"):
+        if not batch:
+            continue
+        # Reset stuck batches
+        if batch.status in ("validating", "loading"):
             batch.status = "failed"
+        # Auto-rollback loaded data before deleting (cascade cleanup)
+        if batch.status in ("loaded", "failed", "rolled_back"):
+            try:
+                _cascade_delete_batch_data(batch, db)
+            except Exception as exc:
+                _log.warning("delete_uploads: cascade cleanup failed for batch %s: %s", bid, exc)
     db.flush()
+
     # Delete errors, DQ issues, then the batch itself
     db.execute(delete(UploadError).where(UploadError.batch_id.in_(body.ids)))
     from app.models.core import DataQualityIssue
@@ -574,10 +593,101 @@ def delete_uploads(
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot delete upload batch(es) — they may have loaded data referencing them. "
-            f"Use Rollback first to remove loaded data, then delete. Error: {exc}",
+            detail=f"Cannot delete upload batch(es): {exc}",
         ) from None
     return DeleteResult(table="upload_batch", deleted=result.rowcount)
+
+
+def _cascade_delete_batch_data(batch: UploadBatch, db: Session) -> int:
+    """Delete all data records created by this upload batch."""
+    from app.models.core import (
+        Balance,
+        CenterMapping,
+        Employee,
+        GLAccountSKA1,
+        GLAccountSKB1,
+        Hierarchy,
+        HierarchyLeaf,
+        HierarchyNode,
+        LegacyCostCenter,
+        LegacyProfitCenter,
+        TargetCostCenter,
+        TargetProfitCenter,
+    )
+
+    deleted = 0
+    kind = batch.kind or ""
+
+    # Cost centers
+    if kind in ("cost_center", "cost_centers", "cc_with_hierarchy"):
+        r = db.execute(delete(LegacyCostCenter).where(LegacyCostCenter.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    # Profit centers
+    if kind in ("profit_center", "profit_centers"):
+        r = db.execute(
+            delete(LegacyProfitCenter).where(LegacyProfitCenter.refresh_batch == batch.id)
+        )
+        deleted += r.rowcount
+
+    # Balances
+    if kind in ("balance", "balances", "balances_gcr"):
+        r = db.execute(delete(Balance).where(Balance.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    # Employees
+    if kind in ("employee", "employees"):
+        r = db.execute(delete(Employee).where(Employee.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    # Hierarchies (standalone or from cc_with_hierarchy)
+    if kind in (
+        "hierarchy",
+        "hierarchies",
+        "hierarchies_flat",
+        "entity_hierarchy",
+        "cc_with_hierarchy",
+    ):
+        from sqlalchemy import select as sa_select
+
+        hier_ids = [
+            h.id
+            for h in db.execute(sa_select(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+            .scalars()
+            .all()
+        ]
+        for hid in hier_ids:
+            db.execute(delete(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == hid))
+            db.execute(delete(HierarchyNode).where(HierarchyNode.hierarchy_id == hid))
+        r = db.execute(delete(Hierarchy).where(Hierarchy.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    # GL Accounts
+    if kind in ("gl_accounts_ska1", "gl_accounts_group"):
+        r = db.execute(delete(GLAccountSKA1).where(GLAccountSKA1.refresh_batch == batch.id))
+        deleted += r.rowcount
+    if kind == "gl_accounts_skb1":
+        r = db.execute(delete(GLAccountSKB1).where(GLAccountSKB1.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    # Target objects
+    if kind == "target_cost_centers":
+        r = db.execute(
+            delete(TargetCostCenter).where(TargetCostCenter.refresh_batch == batch.id)
+        )
+        deleted += r.rowcount
+    if kind == "target_profit_centers":
+        r = db.execute(
+            delete(TargetProfitCenter).where(TargetProfitCenter.refresh_batch == batch.id)
+        )
+        deleted += r.rowcount
+
+    # Center mappings
+    if kind == "center_mapping":
+        r = db.execute(delete(CenterMapping).where(CenterMapping.refresh_batch == batch.id))
+        deleted += r.rowcount
+
+    return deleted
 
 
 @router.delete("/uploads/all")
