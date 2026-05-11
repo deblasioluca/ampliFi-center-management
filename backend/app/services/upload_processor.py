@@ -2365,12 +2365,14 @@ def load_upload(batch_id: int, db: Session) -> dict:
             if not hier:
                 continue
             seq = int(row.get("seq") or "0")
+            node_text = (row.get("text") or row.get("description") or "").strip()[:200] or None
             db.add(
                 HierarchyNode(
                     hierarchy_id=hier.id,
                     parent_setname=row.get("parent_setname", ""),
                     child_setname=row.get("child_setname", ""),
                     seq=seq,
+                    text=node_text,
                 )
             )
             loaded += 1
@@ -2515,6 +2517,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     hid = hier.id
                     seq_counter.setdefault(hid, 0)
                     seq_counter[hid] += 1
+                    child_text = (child_row.get("nodetext") or "").strip()[:200] or None
                     has_children = child_nid in children_of
                     if has_children:
                         db.add(
@@ -2523,6 +2526,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                                 parent_setname=parent_name[:40],
                                 child_setname=child_name[:40],
                                 seq=seq_counter[hid],
+                                text=child_text,
                             )
                         )
                         queue.append((child_nid, hier))

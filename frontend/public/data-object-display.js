@@ -144,6 +144,12 @@
     this._hierDetailItems = [];
     this._glGroups = null;           // server-side GL prefix groups [{key, count}]
     this._glSelectedPrefix = null;   // currently selected GL group prefix
+    this._nodeDetailCache = null;
+    this._nodeDetailPage = 1;
+    this._nodeDetailTotal = 0;
+    this._lastNodeFetchKey = null;
+    // Hierarchy level display format: 'id' (default), 'text', 'id_text'
+    this.hierLevelFormat = opts.hierLevelFormat || 'id';
   }
 
   // ── Display config loading ──────────────────────────────────────────
@@ -353,6 +359,15 @@
     if (this._view === 'hierarchy' && !(this._hierPickerId === '__gl_type_a' || this._hierPickerId === '__gl_type_b')) {
       html += '<button data-dod-role="expand-all" class="btn-secondary text-xs py-1 flex-shrink-0">Expand All</button>';
       html += '<button data-dod-role="collapse-all" class="btn-secondary text-xs py-1 flex-shrink-0">Collapse All</button>';
+    }
+    // Hierarchy level display format selector (tabular mode with L-columns)
+    if (this._hierPickerId && this._view === 'tabular') {
+      var fmt = this.hierLevelFormat || 'id';
+      html += '<select data-dod-role="hier-level-format" class="input text-xs py-1 w-auto" title="Hierarchy level display format">' +
+        '<option value="id"' + (fmt === 'id' ? ' selected' : '') + '>Level: ID</option>' +
+        '<option value="text"' + (fmt === 'text' ? ' selected' : '') + '>Level: Text</option>' +
+        '<option value="id_text"' + (fmt === 'id_text' ? ' selected' : '') + '>Level: ID &mdash; Text</option>' +
+        '</select>';
     }
     // Hierarchy picker inline
     if (this.showHierarchyPicker && (this._hierOptions.length || this.glHierarchyMode)) {
@@ -597,11 +612,13 @@
   DataObjectDisplay.prototype._buildClientSideHierLevelMap = function (hier) {
     var self = this;
     var childMap = {};
+    var ntMap = {};  // node text map: setname → text
     (hier.nodes || []).forEach(function (n) {
       var parent = n.parent_setname || n.parent;
       var child = n.child_setname || n.child;
       if (!childMap[parent]) childMap[parent] = [];
       childMap[parent].push({ type: 'node', name: child, seq: n.seq || 0 });
+      if (n.text) ntMap[child] = n.text;
     });
     (hier.leaves || []).forEach(function (lf) {
       var parent = lf.setname || lf.parent;
@@ -623,6 +640,14 @@
       roots.push(hier.nodes[0].parent_setname || hier.nodes[0].parent);
     }
 
+    // Format a node name according to hierLevelFormat
+    var fmt = self.hierLevelFormat || 'id';
+    function fmtNode(name) {
+      if (fmt === 'text' && ntMap[name]) return ntMap[name];
+      if (fmt === 'id_text' && ntMap[name]) return name + ' \u2014 ' + ntMap[name];
+      return name;
+    }
+
     // DFS to build paths: leaf value -> [L0, L1, ..., Ln]
     var leafPaths = {};
     var maxDepth = 0;
@@ -633,11 +658,11 @@
           leafPaths[c.value] = path.slice();
           if (path.length > maxDepth) maxDepth = path.length;
         } else {
-          dfs(c.name, path.concat([c.name]));
+          dfs(c.name, path.concat([fmtNode(c.name)]));
         }
       });
     }
-    roots.forEach(function (r) { dfs(r, [r]); });
+    roots.forEach(function (r) { dfs(r, [fmtNode(r)]); });
 
     var levelCols = [];
     for (var i = 0; i < maxDepth; i++) {
@@ -1097,6 +1122,7 @@
 
     // Build child map from flat nodes/leaves
     var childMap = {};
+    var nodeTextMap = {};
     var nodes = hierData.nodes || [];
     var leaves = hierData.leaves || [];
 
@@ -1105,6 +1131,7 @@
       var child = n.child_setname || n.child;
       if (!childMap[parent]) childMap[parent] = [];
       childMap[parent].push({ type: 'node', name: child, seq: n.seq || 0 });
+      if (n.text) nodeTextMap[child] = n.text;
     });
     leaves.forEach(function (lf) {
       var parent = lf.setname || lf.parent;
@@ -1151,7 +1178,9 @@
         (isExpanded ? '&#9660;' : '&#9654;') + '</span>';
       out += '<span data-dod-hier-node="' + escAttr(nodeName) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' +
         (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '">';
-      out += esc(nodeName) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span>';
+      out += esc(nodeName);
+      if (nodeTextMap[nodeName]) out += ' <span class="text-gray-500">&mdash; ' + esc(nodeTextMap[nodeName]) + '</span>';
+      out += ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span>';
       if (self.rowActions.length) {
         out += '<button data-dod-role="node-add" data-dod-node-name="' + escAttr(nodeName) + '" class="text-[10px] px-1 py-0 rounded border border-gray-300 text-gray-500 hover:bg-blue-50 hover:text-blue-600 ml-1" title="Add new under this node">+</button>';
       }
@@ -1327,7 +1356,9 @@
       }
       out += '<span data-dod-hier-node="' + escAttr(node.setname) + '" class="text-xs cursor-pointer hover:text-blue-600 px-1 rounded' +
         (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800') + '">';
-      out += esc(node.setname) + ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
+      out += esc(node.setname);
+      if (node.text) out += ' <span class="text-gray-500">&mdash; ' + esc(node.text) + '</span>';
+      out += ' <span class="text-[10px] text-gray-400">(' + lc + ')</span></span></div>';
 
       out += '<div id="' + escAttr(nodeId) + '" class="tree-children' + (isExpanded ? '' : ' hidden') + '">';
 
@@ -1420,38 +1451,45 @@
       }
     }
 
-    // Cross-reference loaded data items with leaf values for richer detail.
-    var idField = this.identityField || 'cctr';
-    var entityField = this.entityField;
-    var matchedItems = [];
-    if (leafValues.length && items && items.length) {
-      var leafSet = {};
-      leafValues.forEach(function (v) { leafSet[v] = true; });
-      matchedItems = items.filter(function (row) {
-        if (leafSet[row[idField]]) return true;
-        if (entityField && leafSet[row[entityField]]) return true;
-        return false;
-      });
-    }
-
-    // Always fetch full items from the data endpoint when a node is selected.
-    // Tree leaf items only have basic fields — the endpoint returns full detail.
-    if (leafValues.length && this.dataEndpoint) {
-      // If we already have full matches for all leaves, use them directly
-      if (matchedItems.length >= leafValues.length) {
-        // All items matched — skip fetch, use matched items below
+    // Use server-side node-items endpoint for full detail data.
+    // This avoids partial data when the loaded page doesn't contain all items.
+    var hierId = hierData.hierarchy_id;
+    var nodeKey = selected && selected.indexOf('__leaf__') === 0 ? selected : selected;
+    if (hierId && selected && selected.indexOf('__leaf__') !== 0) {
+      // For node selections, always use server-side endpoint
+      var cacheKey = hierId + ':' + selected + ':' + (this._nodeDetailPage || 1);
+      if (this._nodeDetailCache && this._lastNodeFetchKey === cacheKey) {
+        // Already cached — use cached items
+        var detailItems = this._nodeDetailCache;
       } else {
-        // Need to fetch full data
-        var loadingHtml = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+        // Fetch from server
+        this._fetchNodeItemsFromServer(hierId, selected, treeLeafItems);
+        return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
           '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
-          'Loading ' + leafValues.length + ' items...</div>';
-        this._fetchNodeItems(leafValues, treeLeafItems);
-        return loadingHtml;
+          'Loading items...</div>';
       }
+    } else {
+      // For leaf selections or no hierarchy ID, use tree leaf items or cross-ref
+      var idField = this.identityField || 'cctr';
+      var entityField = this.entityField;
+      var matchedItems = [];
+      if (leafValues.length && items && items.length) {
+        var leafSet = {};
+        leafValues.forEach(function (v) { leafSet[v] = true; });
+        matchedItems = items.filter(function (row) {
+          if (leafSet[row[idField]]) return true;
+          if (entityField && leafSet[row[entityField]]) return true;
+          return false;
+        });
+      }
+      if (!matchedItems.length && leafValues.length && this.dataEndpoint) {
+        this._fetchNodeItems(leafValues, treeLeafItems);
+        return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+          '<svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
+          'Loading items...</div>';
+      }
+      var detailItems = matchedItems.length ? matchedItems : treeLeafItems;
     }
-
-    // Prefer loaded data items if they exist (they have more detail), else use tree items
-    var detailItems = matchedItems.length ? matchedItems : treeLeafItems;
 
     if (!detailItems.length) {
       return '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No items under this node.</div>';
@@ -1568,6 +1606,39 @@
           self._nodeDetailCache = fallbackItems;
         }
         // Re-render the detail panel only
+        self._updateDetailPanel();
+      })
+      .catch(function () {
+        self._nodeDetailCache = fallbackItems;
+        self._updateDetailPanel();
+      });
+  };
+
+  DataObjectDisplay.prototype._fetchNodeItemsFromServer = function (hierId, setname, fallbackItems) {
+    var self = this;
+    var pg = this._nodeDetailPage || 1;
+    var cacheKey = hierId + ':' + setname + ':' + pg;
+    if (this._lastNodeFetchKey === cacheKey) return;
+    this._lastNodeFetchKey = cacheKey;
+
+    var params = [];
+    params.push('setname=' + encodeURIComponent(setname));
+    params.push('page=' + pg);
+    params.push('size=500');
+    var eq = this.extraQueryParams;
+    Object.keys(eq).forEach(function (k) {
+      if (eq[k] != null && eq[k] !== '') params.push(k + '=' + encodeURIComponent(eq[k]));
+    });
+
+    var fetchFn = window.apiFetch || fetch;
+    fetchFn(this.apiBase + '/api/legacy/hierarchies/' + hierId + '/node-items?' + params.join('&'), {
+      headers: this.authHeaders,
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = d.items || [];
+        self._nodeDetailCache = items.length ? items : fallbackItems;
+        self._nodeDetailTotal = d.total || items.length;
         self._updateDetailPanel();
       })
       .catch(function () {
@@ -1829,6 +1900,15 @@
       });
     }
 
+    // Hierarchy level format selector
+    var fmtSel = container.querySelector('[data-dod-role="hier-level-format"]');
+    if (fmtSel) {
+      fmtSel.addEventListener('change', function () {
+        self.hierLevelFormat = this.value;
+        self.render();
+      });
+    }
+
     // Sorting
     container.querySelectorAll('[data-dod-sort]').forEach(function (th) {
       th.addEventListener('click', function (e) {
@@ -2033,7 +2113,14 @@
     // Tree node click
     container.querySelectorAll('[data-dod-hier-node]').forEach(function (el) {
       el.addEventListener('click', function () {
-        self._selectedHierNode = this.dataset.dodHierNode;
+        var newNode = this.dataset.dodHierNode;
+        if (newNode !== self._selectedHierNode) {
+          self._nodeDetailCache = null;
+          self._lastNodeFetchKey = null;
+          self._nodeDetailPage = 1;
+          self._nodeDetailTotal = 0;
+        }
+        self._selectedHierNode = newNode;
         self.render();
       });
     });
