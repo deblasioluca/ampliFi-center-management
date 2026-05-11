@@ -602,9 +602,7 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     # Delete upload errors and DQ issues (safe for any status)
     db.execute(delete(UploadError).where(UploadError.batch_id.in_(ids)))
-    db.execute(
-        delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(ids))
-    )
+    db.execute(delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(ids)))
 
     # Delete the batch records themselves
     try:
