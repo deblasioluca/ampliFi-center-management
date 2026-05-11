@@ -1168,6 +1168,7 @@ class TargetCostCenter(TimestampMixin, Base):
     # --- descriptive (CSKT) ---
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    description: Mapped[str | None] = mapped_column(String(250))
     # --- CSKS standard fields ---
     datbi: Mapped[str | None] = mapped_column(String(20))
     datab: Mapped[str | None] = mapped_column(String(20))
@@ -1324,6 +1325,7 @@ class TargetProfitCenter(TimestampMixin, Base):
     # --- descriptive (CEPCT) ---
     txtsh: Mapped[str | None] = mapped_column(String(40))  # KTEXT
     txtmi: Mapped[str | None] = mapped_column(String(200))  # LTEXT
+    description: Mapped[str | None] = mapped_column(String(250))
     # --- CEPC standard fields ---
     datab: Mapped[str | None] = mapped_column(String(20))
     ersda: Mapped[str | None] = mapped_column(String(14))
