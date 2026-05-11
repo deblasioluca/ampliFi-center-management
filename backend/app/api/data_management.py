@@ -672,9 +672,7 @@ def _cascade_delete_batch_data(batch: UploadBatch, db: Session) -> int:
 
     # Target objects
     if kind == "target_cost_centers":
-        r = db.execute(
-            delete(TargetCostCenter).where(TargetCostCenter.refresh_batch == batch.id)
-        )
+        r = db.execute(delete(TargetCostCenter).where(TargetCostCenter.refresh_batch == batch.id))
         deleted += r.rowcount
     if kind == "target_profit_centers":
         r = db.execute(
