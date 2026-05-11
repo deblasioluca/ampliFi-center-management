@@ -572,8 +572,10 @@ def _terminate_blocking_sessions(db: Session, table: str = "upload_batch") -> in
     """Kill zombie PostgreSQL sessions holding locks on the given table.
 
     After a backend crash or forced stop, PostgreSQL sessions may remain
-    in 'idle in transaction' state holding row locks indefinitely. This
-    function finds and terminates them so delete can proceed.
+    holding row locks. This function terminates:
+    1. Sessions in 'idle in transaction' state (zombie connections)
+    2. Active sessions that have been running > 30s on the same table
+       (stuck background tasks)
     """
     import logging
 
@@ -582,19 +584,30 @@ def _terminate_blocking_sessions(db: Session, table: str = "upload_batch") -> in
     _log = logging.getLogger(__name__)
     result = db.execute(
         sa_text("""
-            SELECT pg_terminate_backend(blocked.pid)
-            FROM pg_locks blocked
-            JOIN pg_stat_activity act ON act.pid = blocked.pid
-            JOIN pg_class rel ON rel.oid = blocked.relation
-            WHERE rel.relname = :table_name
-              AND blocked.pid <> pg_backend_pid()
-              AND act.state IN ('idle in transaction', 'idle in transaction (aborted)')
+            SELECT pg_terminate_backend(pid) FROM (
+              SELECT DISTINCT blocked.pid
+              FROM pg_locks blocked
+              JOIN pg_stat_activity act ON act.pid = blocked.pid
+              JOIN pg_class rel ON rel.oid = blocked.relation
+              WHERE rel.relname = :table_name
+                AND blocked.pid <> pg_backend_pid()
+                AND (
+                  act.state IN (
+                    'idle in transaction',
+                    'idle in transaction (aborted)'
+                  )
+                  OR (
+                    act.state = 'active'
+                    AND NOW() - act.state_change > interval '30 seconds'
+                  )
+                )
+            ) AS pids
         """),
         {"table_name": table},
     )
     terminated = result.rowcount or 0
     if terminated:
-        _log.info("_terminate_blocking_sessions: killed %d zombie session(s)", terminated)
+        _log.info("_terminate_blocking_sessions: killed %d session(s)", terminated)
     return terminated
 
 
@@ -607,8 +620,10 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     _log = logging.getLogger(__name__)
 
-    # Set a statement-level lock timeout so we don't hang on locked rows
-    db.execute(sa_text("SET LOCAL lock_timeout = '5s'"))
+    # Lock timeout: how long to wait for a row lock (not statement execution)
+    # Statement timeout: allow up to 90s for cascade-deleting large batches
+    db.execute(sa_text("SET LOCAL lock_timeout = '15s'"))
+    db.execute(sa_text("SET LOCAL statement_timeout = '90s'"))
 
     for bid in ids:
         batch = db.get(UploadBatch, bid)
