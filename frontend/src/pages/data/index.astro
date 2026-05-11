@@ -782,12 +782,12 @@ import Layout from '../../components/layout/Layout.astro';
     loadUploadHistory(); refreshAllData();
   };
   window.deleteUpload = async function(id) {
-    if (!confirm('Delete this upload batch and any data loaded from it?')) return;
+    if (!confirm('Delete this upload batch and any data loaded from it?\n\nLarge batches (200k+ rows) may take up to 2 minutes to delete.')) return;
     var btn = document.querySelector('button[onclick="deleteUpload(' + id + ')"]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting… please wait'; }
     try {
       var controller = new AbortController();
-      var timer = setTimeout(function() { controller.abort(); }, 15000);
+      var timer = setTimeout(function() { controller.abort(); }, 120000);
       var res = await fetch('/api/data/uploads/' + id, {
         method: 'DELETE', headers: authHdr,
         signal: controller.signal
@@ -799,7 +799,7 @@ import Layout from '../../components/layout/Layout.astro';
     } catch(e) {
       if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
       if (e.name === 'AbortError') {
-        alert('Delete timed out (15s). The server may be busy with a load operation — try restarting the backend first.');
+        alert('Delete timed out (2 min). The batch may have too much data — check the backend log for progress.');
       } else {
         alert('Error: ' + e.message);
       }
