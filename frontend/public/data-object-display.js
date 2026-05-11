@@ -860,7 +860,10 @@
     }
 
     var items = data.items || [];
-    if (!items.length) {
+    var isGLHier = this._view === 'hierarchy' &&
+      (this._hierPickerId === '__gl_type_a' || this._hierPickerId === '__gl_type_b') &&
+      this._glGroups && this._glGroups.length;
+    if (!items.length && !isGLHier) {
       var html = this.buildToolbarHtml();
       html += '<span class="text-gray-400 text-sm">No data found for the current scope/filters.</span>';
       container.innerHTML = html;
