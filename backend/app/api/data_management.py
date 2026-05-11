@@ -547,14 +547,28 @@ def delete_all_employees(
 # ── Upload batches ──────────────────────────────────────────────────────
 
 
+@router.delete("/uploads/{batch_id}")
+def delete_upload_by_id(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
+) -> DeleteResult:
+    """Delete a single upload batch by path param (avoids DELETE-with-body issues)."""
+    return _delete_upload_ids([batch_id], db)
+
+
 @router.delete("/uploads")
 def delete_uploads(
     body: DeleteByIds | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_role("admin")),
+    user: AppUser = Depends(require_role("admin", "data_manager")),
 ) -> DeleteResult:
     if not body or not body.ids:
         raise HTTPException(status_code=400, detail="Provide ids in body")
+    return _delete_upload_ids(body.ids, db)
+
+
+def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     import logging
 
@@ -565,7 +579,7 @@ def delete_uploads(
 
     db.execute(sa_text("SET LOCAL lock_timeout = '5s'"))
 
-    for bid in body.ids:
+    for bid in ids:
         batch = db.get(UploadBatch, bid)
         if not batch:
             continue
@@ -582,12 +596,12 @@ def delete_uploads(
     db.flush()
 
     # Delete errors, DQ issues, then the batch itself
-    db.execute(delete(UploadError).where(UploadError.batch_id.in_(body.ids)))
+    db.execute(delete(UploadError).where(UploadError.batch_id.in_(ids)))
     from app.models.core import DataQualityIssue
 
-    db.execute(delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(body.ids)))
+    db.execute(delete(DataQualityIssue).where(DataQualityIssue.batch_id.in_(ids)))
     try:
-        stmt = delete(UploadBatch).where(UploadBatch.id.in_(body.ids))
+        stmt = delete(UploadBatch).where(UploadBatch.id.in_(ids))
         result = db.execute(stmt)
         db.commit()
     except Exception as exc:

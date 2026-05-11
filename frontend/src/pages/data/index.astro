@@ -738,16 +738,28 @@ import Layout from '../../components/layout/Layout.astro';
     loadUploadHistory(); refreshAllData();
   };
   window.deleteUpload = async function(id) {
-    if (!confirm('Delete this upload batch? If data was loaded, it will remain — use Rollback first.')) return;
+    if (!confirm('Delete this upload batch and any data loaded from it?')) return;
+    var btn = document.querySelector('button[onclick="deleteUpload(' + id + ')"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
     try {
-      var res = await fetch('/api/data/uploads', {
-        method: 'DELETE', headers: jsonHdr,
-        body: JSON.stringify({ ids: [id] })
+      var controller = new AbortController();
+      var timer = setTimeout(function() { controller.abort(); }, 15000);
+      var res = await fetch('/api/data/uploads/' + id, {
+        method: 'DELETE', headers: authHdr,
+        signal: controller.signal
       });
+      clearTimeout(timer);
       var d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Delete failed');
       loadUploadHistory(); refreshAllData();
-    } catch(e) { alert('Error: ' + e.message); }
+    } catch(e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+      if (e.name === 'AbortError') {
+        alert('Delete timed out (15s). The server may be busy with a load operation — try restarting the backend first.');
+      } else {
+        alert('Error: ' + e.message);
+      }
+    }
   };
   window.resetUpload = async function(id) {
     if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
