@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
@@ -639,6 +639,37 @@ def list_legacy_pcs(
     }
 
 
+@router.get("/legacy/gl-accounts/groups")
+def gl_account_groups(
+    db: Session = Depends(get_db),
+    group_type: str = Query("a", alias="type", description="a = first char, b = first 5 chars"),
+    scope: str | None = None,
+    data_category: str | None = None,
+) -> dict:
+    """Return GL account prefix groups with counts (server-side aggregation).
+
+    Type A groups by the first character of ``saknr`` (e.g. 1, 2, … 9).
+    Type B groups by the first five characters.
+    """
+    prefix_len = 1 if group_type == "a" else 5
+    prefix_expr = func.left(GLAccountSKA1.saknr, prefix_len)
+    query = (
+        select(prefix_expr.label("prefix"), func.count().label("cnt"))
+        .group_by(prefix_expr)
+        .order_by(prefix_expr)
+    )
+    if scope:
+        query = query.where(GLAccountSKA1.scope == scope)
+    if data_category:
+        query = query.where(GLAccountSKA1.data_category == data_category)
+
+    rows = db.execute(query).all()
+    return {
+        "type": group_type,
+        "groups": [{"key": r.prefix, "count": r.cnt} for r in rows],
+    }
+
+
 @router.get("/legacy/gl-accounts")
 def list_legacy_gl_accounts(
     db: Session = Depends(get_db),
@@ -646,6 +677,7 @@ def list_legacy_gl_accounts(
     ktopl: str | None = None,
     bukrs: str | None = None,
     saknr: str | None = None,
+    gl_prefix: str | None = None,
     search: str | None = None,
     scope: str | None = None,
     data_category: str | None = None,
@@ -668,6 +700,9 @@ def list_legacy_gl_accounts(
     if ktopl:
         query = query.where(GLAccountSKA1.ktopl == ktopl)
         count_q = count_q.where(GLAccountSKA1.ktopl == ktopl)
+    if gl_prefix:
+        query = query.where(GLAccountSKA1.saknr.like(f"{gl_prefix}%"))
+        count_q = count_q.where(GLAccountSKA1.saknr.like(f"{gl_prefix}%"))
     if saknr:
         query = query.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))
         count_q = count_q.where(GLAccountSKA1.saknr.ilike(f"{saknr}%"))

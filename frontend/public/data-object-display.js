@@ -142,6 +142,8 @@
     this._idSeq = 0;
     this._hierInlined = false;
     this._hierDetailItems = [];
+    this._glGroups = null;           // server-side GL prefix groups [{key, count}]
+    this._glSelectedPrefix = null;   // currently selected GL group prefix
   }
 
   // ── Display config loading ──────────────────────────────────────────
@@ -439,6 +441,11 @@
       params.push('include_balances=true');
     }
 
+    // GL prefix filter for server-side hierarchical grouping
+    if (this._glSelectedPrefix && (this._hierPickerId === '__gl_type_a' || this._hierPickerId === '__gl_type_b')) {
+      params.push('gl_prefix=' + encodeURIComponent(this._glSelectedPrefix));
+    }
+
     // Add extra query params
     var eq = this.extraQueryParams;
     Object.keys(eq).forEach(function (k) {
@@ -473,6 +480,49 @@
       .catch(function (err) {
         self._data = { items: [], total: 0 };
         if (cb) cb(self._data, err);
+      });
+  };
+
+  // ── Load GL prefix groups (server-side aggregation) ─────────────────
+
+  DataObjectDisplay.prototype.loadGLGroups = function (cb) {
+    var self = this;
+    var isTypeA = this._hierPickerId === '__gl_type_a';
+    var typeParam = isTypeA ? 'a' : 'b';
+
+    // Determine the groups endpoint: Data Management uses /api/legacy/gl-accounts/groups,
+    // Explorer uses /api/explore/legacy/gl-groups/{objectType}
+    var groupsUrl;
+    if (this.dataEndpoint.indexOf('/api/explore/') === 0) {
+      // Explorer endpoint: extract the object type from the data endpoint
+      var parts = this.dataEndpoint.split('/');
+      var objType = parts[parts.length - 1];
+      groupsUrl = this.apiBase + '/api/explore/legacy/gl-groups/' + encodeURIComponent(objType) + '?type=' + typeParam;
+      // Forward data_category if set
+      var eq = this.extraQueryParams;
+      if (eq.data_category) groupsUrl += '&data_category=' + encodeURIComponent(eq.data_category);
+    } else {
+      groupsUrl = this.apiBase + '/api/legacy/gl-accounts/groups?type=' + typeParam;
+      // Forward scope and data_category from extraQueryParams
+      var eq2 = this.extraQueryParams;
+      if (eq2.scope) groupsUrl += '&scope=' + encodeURIComponent(eq2.scope);
+      if (eq2.data_category) groupsUrl += '&data_category=' + encodeURIComponent(eq2.data_category);
+    }
+
+    var fetchFn = window.apiFetch || fetch;
+    fetchFn(groupsUrl, { headers: this.authHeaders })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        self._glGroups = d.groups || [];
+        // Auto-select first group if none selected
+        if (self._glGroups.length && !self._glSelectedPrefix) {
+          self._glSelectedPrefix = self._glGroups[0].key;
+        }
+        if (cb) cb(self._glGroups);
+      })
+      .catch(function () {
+        self._glGroups = [];
+        if (cb) cb([]);
       });
   };
 
@@ -966,7 +1016,8 @@
 
   DataObjectDisplay.prototype._renderPager = function () {
     var total = this._data.total || 0;
-    var pages = Math.ceil(total / this.pageSize);
+    var effectiveSize = (this._view === 'hierarchy') ? this.hierPageSize : this.pageSize;
+    var pages = Math.ceil(total / effectiveSize);
     if (pages <= 1) return '';
 
     var html = '<div class="flex items-center justify-between mt-3 text-sm">';
@@ -1609,71 +1660,65 @@
 
   DataObjectDisplay.prototype._renderGLHierarchical = function (items) {
     var self = this;
-    var isTypeA = this._hierPickerId === '__gl_type_a';
-    var field = 'saknr';
+    var groups = this._glGroups || [];
 
-    // Group items by prefix
-    var groups = {};
-    var groupOrder = [];
-    items.forEach(function (it) {
-      var acct = String(it[field] || '');
-      var key = isTypeA ? (acct.charAt(0) || '?') : (acct.substring(0, 5) || '?????');
-      if (!groups[key]) {
-        groups[key] = [];
-        groupOrder.push(key);
-      }
-      groups[key].push(it);
-    });
-    groupOrder.sort();
+    // If groups not loaded yet, show loading indicator
+    if (!this._glGroups) {
+      return '<span class="text-gray-400 text-sm"><svg class="animate-spin inline h-4 w-4 mr-1 text-blue-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>Loading GL account groups...</span>';
+    }
 
-    // Auto-select first group if none selected
-    if (!this._selectedHierNode || this._selectedHierNode.indexOf('__gl__') !== 0) {
-      if (groupOrder.length) this._selectedHierNode = '__gl__' + groupOrder[0];
+    if (!groups.length) {
+      return '<span class="text-gray-400 text-sm">No GL account groups found.</span>';
     }
 
     // Split panel: tree left, detail right
     var html = '<div class="flex gap-3" style="height:calc(100vh - 480px);min-height:200px">';
 
-    // Left panel — group tree
+    // Left panel — group tree (from server-side aggregation)
     html += '<div class="w-72 flex-shrink-0 border rounded bg-white overflow-auto p-2">';
-    groupOrder.forEach(function (key) {
-      var isSelected = self._selectedHierNode === ('__gl__' + key);
-      html += '<div data-dod-hier-node="__gl__' + escAttr(key) + '" class="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-xs' +
+    var totalAccounts = 0;
+    groups.forEach(function (g) { totalAccounts += g.count; });
+    html += '<div class="text-[10px] text-gray-400 px-3 py-1 mb-1">' + fmt(totalAccounts) + ' total accounts</div>';
+    groups.forEach(function (g) {
+      var isSelected = self._glSelectedPrefix === g.key;
+      html += '<div data-dod-gl-group="' + escAttr(g.key) + '" class="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-xs' +
         (isSelected ? ' font-bold text-blue-700 bg-blue-50' : ' text-gray-800 hover:bg-gray-100') + '">';
-      html += '<span class="font-medium">' + esc(key) + '</span>';
-      html += '<span class="text-[10px] text-gray-400">(' + groups[key].length + ')</span>';
+      html += '<span class="font-medium">' + esc(g.key) + '</span>';
+      html += '<span class="text-[10px] text-gray-400">(' + fmt(g.count) + ')</span>';
       html += '</div>';
     });
     html += '</div>';
 
-    // Right panel — detail table
+    // Right panel — detail table (items are already filtered by gl_prefix)
     html += '<div class="flex-1 border rounded bg-white overflow-auto">';
-    if (this._selectedHierNode && this._selectedHierNode.indexOf('__gl__') === 0) {
-      var selectedKey = this._selectedHierNode.substring(6);
-      var detailItems = groups[selectedKey] || [];
-      if (detailItems.length) {
-        var cols = this.getTableColumns();
-        html += '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50 sticky top-0">';
+    if (this._glSelectedPrefix && items.length) {
+      var cols = this.getTableColumns();
+      html += '<table class="w-full text-xs"><thead><tr class="border-b bg-gray-50 sticky top-0">';
+      cols.forEach(function (col) {
+        html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      items.forEach(function (row) {
+        html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-click="1">';
         cols.forEach(function (col) {
-          html += '<th class="py-1.5 px-2 text-left font-medium whitespace-nowrap">' + esc(self.colLabel(col)) + '</th>';
+          var val = row[col];
+          html += '<td class="py-1 px-2">' + esc(String(val || '')) + '</td>';
         });
-        html += '</tr></thead><tbody>';
-        detailItems.forEach(function (row) {
-          html += '<tr class="border-b hover:bg-gray-50 cursor-pointer" data-dod-row-click="1">';
-          cols.forEach(function (col) {
-            var val = row[col];
-            html += '<td class="py-1 px-2">' + esc(String(val || '')) + '</td>';
-          });
-          html += '</tr>';
-        });
-        html += '</tbody></table>';
-      } else {
-        html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No accounts in this group.</div>';
-      }
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    } else if (this._glSelectedPrefix) {
+      html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">No accounts in this group.</div>';
     } else {
       html += '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Select a group in the tree to view accounts.</div>';
     }
     html += '</div></div>';
+
+    // Pagination for the detail panel
+    if (this._glSelectedPrefix && this._data) {
+      html += this._renderPager();
+    }
+
     return html;
   };
 
@@ -1688,7 +1733,8 @@
     if (tabBtn) tabBtn.addEventListener('click', function () {
       self._view = 'tabular';
       self._page = 1;
-      // Re-fetch with normal page size
+      self._glSelectedPrefix = null;
+      // Re-fetch with normal page size (no gl_prefix filter)
       self.loadData(function () { self.render(); });
     });
     if (hierBtn) hierBtn.addEventListener('click', function () {
@@ -1696,6 +1742,15 @@
       self._page = 1;
       // Trigger auto-selection of first hierarchy if none selected
       self.buildHierarchyPickerHtml();
+
+      // For GL hierarchical mode, load groups first then data
+      if (self._hierPickerId && (self._hierPickerId === '__gl_type_a' || self._hierPickerId === '__gl_type_b')) {
+        self.loadGLGroups(function () {
+          self.loadData(function () { self.render(); });
+        });
+        return;
+      }
+
       self.loadData(function () {
         // Always load tree data for hierarchical view when a hierarchy is selected
         if (self._hierPickerId && typeof self._hierPickerId === 'number') {
@@ -1732,16 +1787,32 @@
         if (val === '' || val === null) {
           self._hierPickerId = null;
           self._hierData = null;
+          self._glGroups = null;
+          self._glSelectedPrefix = null;
         } else if (val.indexOf('__gl_') === 0) {
           self._hierPickerId = val;
           self._hierData = null;
+          self._glGroups = null;
+          self._glSelectedPrefix = null;
         } else {
           self._hierPickerId = parseInt(val, 10);
           self._hierData = null;
+          self._glGroups = null;
+          self._glSelectedPrefix = null;
         }
 
         // Let caller react to hierarchy changes (e.g. Hierarchies tab switches endpoint)
         if (self.onHierarchyChange) self.onHierarchyChange(self._hierPickerId);
+
+        self._page = 1;
+
+        // For GL hierarchical mode, load groups first then data
+        if (self._hierPickerId && (self._hierPickerId === '__gl_type_a' || self._hierPickerId === '__gl_type_b')) {
+          self.loadGLGroups(function () {
+            self.loadData(function () { self.render(); });
+          });
+          return;
+        }
 
         // Always re-fetch data (for hierarchy_id param or inline hierarchies)
         self.loadData(function () {
@@ -1961,6 +2032,17 @@
       el.addEventListener('click', function () {
         self._selectedHierNode = this.dataset.dodHierNode;
         self.render();
+      });
+    });
+
+    // GL group click (server-side hierarchical mode)
+    container.querySelectorAll('[data-dod-gl-group]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var key = this.dataset.dodGlGroup;
+        if (key === self._glSelectedPrefix) return;
+        self._glSelectedPrefix = key;
+        self._page = 1;
+        self.loadData(function () { self.render(); });
       });
     });
 
