@@ -13,6 +13,7 @@ Create Date: 2026-05-25
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "phase38_txtsh_search"
 down_revision = "phase37_hier_text"
@@ -39,7 +40,7 @@ def upgrade() -> None:
 
     op.add_column(
         "explorer_display_config",
-        sa.Column("search_fields", sa.JSON(), nullable=True),
+        sa.Column("search_fields", JSONB(), nullable=True),
         schema="cleanup",
     )
 
