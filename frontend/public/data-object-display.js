@@ -250,11 +250,13 @@
     }
 
     // Group by normalised setclass
-    var groups = { '0101': [], '0106': [], '0104': [], other: [] };
+    var groups = { '0101': [], '0106': [], '0104': [], 'GCRS': [], 'FLAT': [], other: [] };
     var groupLabels = {
       '0101': 'CC hierarchies',
       '0106': 'Entity hierarchies',
       '0104': 'PC hierarchies',
+      'GCRS': 'Entity hierarchies (GCRS)',
+      'FLAT': 'Flat hierarchies',
       other: 'Other',
     };
 
@@ -266,7 +268,7 @@
       groups[key].push(h);
     });
 
-    ['0101', '0106', '0104', 'other'].forEach(function (key) {
+    ['0101', '0106', '0104', 'GCRS', 'FLAT', 'other'].forEach(function (key) {
       var list = groups[key];
       if (!list.length) return;
       html += '<optgroup label="' + escAttr(groupLabels[key]) + '">';
@@ -605,7 +607,7 @@
       return obj;
     }
 
-    if (normSetclass === '0106') {
+    if (normSetclass === '0106' || normSetclass === 'GCRS') {
       // Entity hierarchy — leaf key is ccode
       allItems.forEach(function (it) {
         var key = it[self.identityField] || it.id;
@@ -1017,7 +1019,7 @@
     // ── Fallback: inline hierarchy mode (Data Browser) ──
     // Build leaf-items map from loaded items
     var leafItemsMap = {};
-    if (normSetclass === '0106') {
+    if (normSetclass === '0106' || normSetclass === 'GCRS') {
       items.forEach(function (it) {
         var key = it[self.entityField];
         if (!key) return;
@@ -1137,7 +1139,7 @@
     var assigned = {};
     leaves.forEach(function (lf) { assigned[lf.value] = 1; });
     var unassignedItems;
-    if (normSetclass === '0106') {
+    if (normSetclass === '0106' || normSetclass === 'GCRS') {
       unassignedItems = items.filter(function (it) { return it[self.entityField] && !assigned[it[self.entityField]]; });
     } else if (normSetclass === '0104') {
       unassignedItems = items.filter(function (it) { return it[self.profitCenterField] && !assigned[it[self.profitCenterField]]; });
@@ -1180,7 +1182,7 @@
       var assigned = {};
       leaves.forEach(function (lf) { assigned[lf.value] = 1; });
       var setclass = normaliseSetclass((this._hierData && this._hierData.setclass) || '');
-      if (setclass === '0106') {
+      if (setclass === '0106' || setclass === 'GCRS') {
         detailItems = items.filter(function (it) { return it[self.entityField] && !assigned[it[self.entityField]]; });
       } else if (setclass === '0104') {
         detailItems = items.filter(function (it) { return it[self.profitCenterField] && !assigned[it[self.profitCenterField]]; });
