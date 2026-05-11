@@ -1423,11 +1423,23 @@ def transfer_to_explorer(
     if not user_roles & {"admin", "data_manager"}:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    supported = ["cost-centers", "profit-centers", "entities", "employees", "balances"]
+    supported = [
+        "cost-centers",
+        "profit-centers",
+        "entities",
+        "employees",
+        "balances",
+        "gl-accounts",
+        "gl-accounts-skb1",
+        "hierarchies",
+        "target-cost-centers",
+        "target-profit-centers",
+        "center-mappings",
+    ]
     types_to_transfer = object_types or supported
     types_to_transfer = [t for t in types_to_transfer if t in supported]
 
-    from app.models.core import SCOPE_CLEANUP, SCOPE_EXPLORER, Balance
+    from app.models.core import SCOPE_CLEANUP, SCOPE_EXPLORER  # noqa: F811
 
     model_map: dict[str, Any] = {
         "cost-centers": LegacyCostCenter,
@@ -1435,10 +1447,19 @@ def transfer_to_explorer(
         "entities": Entity,
         "employees": Employee,
         "balances": Balance,
+        "gl-accounts": GLAccountSKA1,
+        "gl-accounts-skb1": GLAccountSKB1,
+        "target-cost-centers": TargetCostCenter,
+        "target-profit-centers": TargetProfitCenter,
+        "center-mappings": CenterMapping,
     }
 
     results: dict[str, dict] = {}
     for obj_type in types_to_transfer:
+        if obj_type == "hierarchies":
+            results[obj_type] = _transfer_hierarchies(db, SCOPE_CLEANUP, SCOPE_EXPLORER)
+            continue
+
         model = model_map.get(obj_type)
         if not model or not hasattr(model, "scope"):
             results[obj_type] = {"status": "skipped", "reason": "no scope field"}
@@ -1452,7 +1473,6 @@ def transfer_to_explorer(
 
         inserted = 0
         for row in cleanup_rows:
-            # Clone row data
             row_data = {
                 c.key: getattr(row, c.key) for c in inspect(model).column_attrs if c.key != "id"
             }
@@ -1460,8 +1480,71 @@ def transfer_to_explorer(
             new_obj = model(**row_data)
             db.add(new_obj)
             inserted += 1
+            if inserted % 1000 == 0:
+                db.flush()
 
         results[obj_type] = {"deleted": deleted, "inserted": inserted}
 
     db.commit()
     return {"status": "ok", "results": results}
+
+
+def _transfer_hierarchies(db: Session, src_scope: str, dst_scope: str) -> dict:
+    """Transfer hierarchies including nodes and leaves."""
+    # Delete existing explorer hierarchies (leaves, nodes, then hierarchy records)
+    explorer_hiers = (
+        db.execute(select(Hierarchy).where(Hierarchy.scope == dst_scope)).scalars().all()
+    )
+    for h in explorer_hiers:
+        db.execute(HierarchyLeaf.__table__.delete().where(HierarchyLeaf.hierarchy_id == h.id))
+        db.execute(HierarchyNode.__table__.delete().where(HierarchyNode.hierarchy_id == h.id))
+    deleted = db.execute(Hierarchy.__table__.delete().where(Hierarchy.scope == dst_scope)).rowcount
+
+    # Copy cleanup hierarchies
+    src_hiers = db.execute(select(Hierarchy).where(Hierarchy.scope == src_scope)).scalars().all()
+    inserted = 0
+    for h in src_hiers:
+        old_id = h.id
+        h_data = {
+            c.key: getattr(h, c.key) for c in inspect(Hierarchy).column_attrs if c.key != "id"
+        }
+        h_data["scope"] = dst_scope
+        new_h = Hierarchy(**h_data)
+        db.add(new_h)
+        db.flush()
+
+        # Copy nodes
+        nodes = (
+            db.execute(select(HierarchyNode).where(HierarchyNode.hierarchy_id == old_id))
+            .scalars()
+            .all()
+        )
+        for n in nodes:
+            n_data = {
+                c.key: getattr(n, c.key)
+                for c in inspect(HierarchyNode).column_attrs
+                if c.key != "id"
+            }
+            n_data["hierarchy_id"] = new_h.id
+            db.add(HierarchyNode(**n_data))
+
+        # Copy leaves
+        leaves = (
+            db.execute(select(HierarchyLeaf).where(HierarchyLeaf.hierarchy_id == old_id))
+            .scalars()
+            .all()
+        )
+        for lf in leaves:
+            lf_data = {
+                c.key: getattr(lf, c.key)
+                for c in inspect(HierarchyLeaf).column_attrs
+                if c.key != "id"
+            }
+            lf_data["hierarchy_id"] = new_h.id
+            db.add(HierarchyLeaf(**lf_data))
+
+        inserted += 1
+        if inserted % 10 == 0:
+            db.flush()
+
+    return {"deleted": deleted, "inserted": inserted}
