@@ -1946,7 +1946,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 select(LegacyCostCenter).where(LegacyCostCenter.scope == batch_scope)
             ).scalars()
         }
-        batch_size = 500
+        batch_size = 100
         for row in normalized:
             if not row.get("cctr") or not row.get("coarea"):
                 continue
@@ -2031,7 +2031,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 select(LegacyProfitCenter).where(LegacyProfitCenter.scope == batch_scope)
             ).scalars()
         }
-        batch_size = 500
+        batch_size = 100
         for row in normalized:
             if not row.get("pctr"):
                 continue
@@ -2100,7 +2100,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
                     dq_issues.append(dq)
 
     elif batch.kind in ("balance", "balances", "balances_gcr"):
-        batch_size = 500
+        batch_size = 100
         for row in normalized:
             if not row.get("cctr"):
                 continue
@@ -2167,7 +2167,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             e.ccode: e
             for e in db.execute(select(Entity).where(Entity.scope == batch_scope)).scalars()
         }
-        batch_size = 500
+        batch_size = 100
         for row in normalized:
             if not row.get("ccode"):
                 continue
@@ -2215,7 +2215,7 @@ def load_upload(batch_id: int, db: Session) -> dict:
             for emp in db.execute(select(Employee).where(Employee.scope == batch_scope)).scalars()
         }
         uploaded_gpns: set[str] = set()
-        batch_size = 500
+        batch_size = 100
         _emp_log_done = False
         for row in normalized:
             gpn = row.get("gpn", "").strip()
@@ -2365,10 +2365,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
-            if loaded % 500 == 0:
+            if loaded % 100 == 0:
                 db.flush()
                 _flush_progress(batch.id, loaded)
-        if loaded % 500:
+        if loaded % 100:
             db.flush()
 
         # Pass 3: create leaves
@@ -2403,10 +2403,10 @@ def load_upload(batch_id: int, db: Session) -> dict:
                 )
             )
             loaded += 1
-            if loaded % 500 == 0:
+            if loaded % 100 == 0:
                 db.flush()
                 _flush_progress(batch.id, loaded)
-        if loaded % 500:
+        if loaded % 100:
             db.flush()
 
     elif batch.kind in ("hierarchies_flat", "entity_hierarchy"):
@@ -2843,7 +2843,7 @@ def _load_cc_with_hierarchy(
                 select(LegacyCostCenter).where(LegacyCostCenter.scope == batch_scope)
             ).scalars()
         }
-        batch_size = 500
+        batch_size = 100
         for row in cc_rows:
             cctr = (row.get("cctr") or "").strip()
             coarea = (row.get("coarea") or "").strip()
@@ -3107,10 +3107,10 @@ def _build_hierarchy_from_levels(
                     )
                     loaded += 1
                     _node_batch += 1
-                    if _node_batch % 500 == 0:
+                    if _node_batch % 100 == 0:
                         db.flush()
                         _flush_progress(batch.id, loaded_so_far + loaded)
-        if _node_batch % 500:
+        if _node_batch % 100:
             db.flush()
 
         # Create HierarchyLeaf records for leaf values
@@ -3130,10 +3130,10 @@ def _build_hierarchy_from_levels(
                 )
                 loaded += 1
                 _leaf_batch += 1
-                if _leaf_batch % 500 == 0:
+                if _leaf_batch % 100 == 0:
                     db.flush()
                     _flush_progress(batch.id, loaded_so_far + loaded)
-        if _leaf_batch % 500:
+        if _leaf_batch % 100:
             db.flush()
 
         logger.info(
