@@ -3016,6 +3016,8 @@ def _build_hierarchy_from_levels(
 
     Returns the count of records created.
     """
+    import hashlib as _hashlib
+
     # Collect unique hierarchy names from the name column
     hier_names: set[str] = set()
     for row in rows:
@@ -3023,34 +3025,47 @@ def _build_hierarchy_from_levels(
         if hname:
             hier_names.add(hname)
 
+    # If there are many unique values (>50), the column contains full
+    # hierarchy paths (e.g. "GMRH-GEBO-C239-..."), not hierarchy names.
+    # Treat all rows as ONE hierarchy to avoid creating 300k+ separate
+    # Hierarchy records with 1 leaf each.
+    _max_distinct = 50
+    path_mode = len(hier_names) > _max_distinct
+    if path_mode:
+        logger.info(
+            "upload.load.hierarchy_path_mode",
+            distinct_names=len(hier_names),
+            threshold=_max_distinct,
+        )
+        single_name = hierarchy_label or hier_name_col
+        hier_names = {single_name}
+
     if not hier_names:
         hier_names = {hier_name_col}
 
     loaded = 0
     for hier_setname in sorted(hier_names):
         # Filter rows belonging to this hierarchy
-        hier_rows = [
-            r
-            for r in rows
-            if (r.get(hier_name_col) or "").strip() == hier_setname
-            or (not r.get(hier_name_col, "").strip() and len(hier_names) == 1)
-        ]
+        if path_mode:
+            hier_rows = rows
+        else:
+            hier_rows = [
+                r
+                for r in rows
+                if (r.get(hier_name_col) or "").strip() == hier_setname
+                or (not r.get(hier_name_col, "").strip() and len(hier_names) == 1)
+            ]
         if not hier_rows:
             continue
 
-        # Build a unique setname (max 40 chars).  When the raw name is
-        # longer than 40 characters, append a short hash suffix so that
-        # two distinct long names that share the same prefix don't collide
-        # on the unique constraint.
-        import hashlib as _hashlib
-
+        # Build a unique setname (max 40 chars)
         if len(hier_setname) > 40:
             suffix = _hashlib.md5(hier_setname.encode(), usedforsecurity=False).hexdigest()[:6]
             sname = hier_setname[: 40 - 7] + "_" + suffix
         else:
             sname = hier_setname[:40]
 
-        # Upsert: reuse existing hierarchy for same batch if already created
+        # Upsert: reuse existing hierarchy for same batch
         existing = db.execute(
             select(Hierarchy).where(
                 Hierarchy.scope == batch_scope,
@@ -3076,19 +3091,16 @@ def _build_hierarchy_from_levels(
             db.flush()
         loaded += 1
 
-        # Build unique nodes and parent→child edges from level columns
-        # node_key = (level_value, level_index)
-        # We collect edges: parent_node → child_node
-        edges: dict[str, set[str]] = {}  # parent → set of children
-        leaf_parents: dict[str, set[str]] = {}  # leaf_parent → set of leaf values
+        # --- Scan all rows to build edge/leaf maps in memory ---
+        edges: dict[str, set[str]] = {}
+        leaf_parents: dict[str, set[str]] = {}
 
-        for row in hier_rows:
+        for row_idx, row in enumerate(hier_rows):
             levels: list[str] = []
             for i in range(num_levels):
                 lval = (row.get(f"{level_prefix}{i}") or "").strip()
                 levels.append(lval)
 
-            # Find rightmost non-empty level (this is the leaf/cost center)
             last_idx = -1
             for i in range(num_levels - 1, -1, -1):
                 if levels[i]:
@@ -3097,26 +3109,25 @@ def _build_hierarchy_from_levels(
             if last_idx < 0:
                 continue
 
-            # Build edges from level 0 down to leaf
             for i in range(last_idx + 1):
                 node_id = levels[i]
                 if not node_id:
                     continue
-
                 if i < last_idx:
-                    # Find next non-empty level as child
                     for j in range(i + 1, last_idx + 1):
                         if levels[j]:
                             edges.setdefault(node_id, set()).add(levels[j])
                             break
                 elif i == last_idx:
-                    # This is a leaf — find its parent
                     for j in range(i - 1, -1, -1):
                         if levels[j]:
                             leaf_parents.setdefault(levels[j], set()).add(node_id)
                             break
 
-        # Determine which nodes are internal (have children that are also nodes)
+            if (row_idx + 1) % 10000 == 0:
+                _flush_progress(batch.id, loaded_so_far + loaded, None)
+
+        # Determine internal vs leaf nodes
         all_children: set[str] = set()
         for children in edges.values():
             all_children.update(children)
@@ -3124,13 +3135,21 @@ def _build_hierarchy_from_levels(
         all_leaf_values: set[str] = set()
         for lvals in leaf_parents.values():
             all_leaf_values.update(lvals)
-
-        # Internal nodes: appear as parents OR appear as children but also have children
         internal_nodes = all_parents | (all_children - all_leaf_values)
 
-        # Create HierarchyNode records for internal edges
+        logger.info(
+            "upload.load.hierarchy_scan_complete",
+            hierarchy=hier_setname[:60],
+            rows_scanned=len(hier_rows),
+            internal_nodes=len(internal_nodes),
+            leaf_values=len(all_leaf_values),
+        )
+
+        # --- Bulk insert HierarchyNode records ---
         seq = 0
-        _node_batch = 0
+        _node_count = 0
+        _buf: list = []
+        _batch_sz = 500
         created_edges: set[tuple[str, str]] = set()
         for parent_id in sorted(edges.keys()):
             for child_id in sorted(edges[parent_id]):
@@ -3140,7 +3159,7 @@ def _build_hierarchy_from_levels(
                 created_edges.add(edge_key)
                 if child_id in internal_nodes:
                     seq += 1
-                    db.add(
+                    _buf.append(
                         HierarchyNode(
                             hierarchy_id=hier.id,
                             parent_setname=parent_id[:40],
@@ -3149,21 +3168,25 @@ def _build_hierarchy_from_levels(
                         )
                     )
                     loaded += 1
-                    _node_batch += 1
-                    if _node_batch % 100 == 0:
+                    _node_count += 1
+                    if len(_buf) >= _batch_sz:
+                        db.add_all(_buf)
                         db.flush()
+                        _buf.clear()
                         _flush_progress(batch.id, loaded_so_far + loaded)
-        if _node_batch % 100:
+        if _buf:
+            db.add_all(_buf)
             db.flush()
+            _buf.clear()
 
-        # Create HierarchyLeaf records for leaf values
-        _leaf_batch = 0
+        # --- Bulk insert HierarchyLeaf records ---
+        _leaf_count = 0
         for parent_id in sorted(leaf_parents.keys()):
             for leaf_val in sorted(leaf_parents[parent_id]):
                 if leaf_val in internal_nodes:
                     continue
                 seq += 1
-                db.add(
+                _buf.append(
                     HierarchyLeaf(
                         hierarchy_id=hier.id,
                         setname=parent_id[:40],
@@ -3172,18 +3195,22 @@ def _build_hierarchy_from_levels(
                     )
                 )
                 loaded += 1
-                _leaf_batch += 1
-                if _leaf_batch % 100 == 0:
+                _leaf_count += 1
+                if len(_buf) >= _batch_sz:
+                    db.add_all(_buf)
                     db.flush()
+                    _buf.clear()
                     _flush_progress(batch.id, loaded_so_far + loaded)
-        if _leaf_batch % 100:
+        if _buf:
+            db.add_all(_buf)
             db.flush()
+            _buf.clear()
 
         logger.info(
             "upload.load.hierarchy_built",
             hierarchy=hier_setname[:60],
-            nodes=_node_batch,
-            leaves=_leaf_batch,
+            nodes=_node_count,
+            leaves=_leaf_count,
             total_loaded=loaded,
         )
 
