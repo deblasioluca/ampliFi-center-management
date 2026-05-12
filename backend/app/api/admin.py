@@ -1440,6 +1440,18 @@ def _run_load_in_background(batch_id: int) -> None:
             return
         result = load_upload(batch_id, db)
         _log.info("Load batch %s completed: %s", batch_id, result)
+        # Clean up the uploaded file now that data is in the DB
+        batch = db.get(UploadBatch, batch_id)
+        if batch and batch.storage_uri:
+            from pathlib import Path
+
+            fpath = Path(batch.storage_uri)
+            if fpath.is_file():
+                try:
+                    fpath.unlink()
+                    _log.info("Deleted upload file %s for batch %s", fpath, batch_id)
+                except OSError as e:
+                    _log.warning("Could not delete upload file %s: %s", fpath, e)
     except UploadCancelledError:
         _log.info("Load batch %s cancelled by user", batch_id)
         try:
