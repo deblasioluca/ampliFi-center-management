@@ -212,6 +212,11 @@ update: ## Pull latest code, rebuild frontend, reinstall backend, restart  [CLEA
 	echo "==> Stopping backend before migrations..." | tee -a "$$LOG"
 	@$(MAKE) -s stop 2>&1 | tee -a $(ROOT_DIR)/.amplifi-update.log || true
 	@set -eo pipefail; LOG=$(ROOT_DIR)/.amplifi-update.log; \
+	echo "==> Terminating stale DB sessions before migration..." | tee -a "$$LOG"; \
+	( sudo -u postgres psql -d acm -c \
+	  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND state IN ('idle in transaction','active') AND NOW() - state_change > interval '30 seconds';" \
+	  2>&1 || echo "(skip — could not terminate sessions)" ) | tee -a "$$LOG" | tail -3; \
+	sleep 1; \
 	echo "==> Applying database migrations..." | tee -a "$$LOG"; \
 	cd $(BACKEND_DIR) && source $(VENV)/bin/activate && \
 		python -m alembic upgrade head 2>&1 | tee -a "$$LOG" | tail -5; \

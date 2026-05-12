@@ -577,12 +577,37 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
     data, so we skip cascade and just delete the batch record.
     """
     import logging
+    import time as _time
 
     from sqlalchemy.exc import OperationalError
 
     from app.models.core import DataQualityIssue
+    from app.services.upload_processor import request_cancel
 
     _log = logging.getLogger(__name__)
+
+    # Cancel any in-progress uploads before attempting delete
+    for bid in ids:
+        batch = db.get(UploadBatch, bid)
+        if batch and batch.status in ("validating", "loading"):
+            _log.info("Cancelling in-progress batch %s before delete", bid)
+            request_cancel(bid)
+
+    # Wait briefly for background tasks to notice the cancel signal
+    any_active = any(
+        db.get(UploadBatch, bid) and db.get(UploadBatch, bid).status in ("validating", "loading")
+        for bid in ids
+    )
+    if any_active:
+        for _ in range(20):
+            _time.sleep(0.5)
+            db.expire_all()
+            still_active = any(
+                (b := db.get(UploadBatch, bid)) and b.status in ("validating", "loading")
+                for bid in ids
+            )
+            if not still_active:
+                break
 
     # Cascade-delete loaded data only for batches that actually loaded
     for bid in ids:
