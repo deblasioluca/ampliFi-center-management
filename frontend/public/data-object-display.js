@@ -1636,12 +1636,14 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (self._lastNodeFetchKey !== cacheKey) return;
         var items = d.items || [];
         self._nodeDetailCache = items.length ? items : fallbackItems;
         self._nodeDetailTotal = d.total || items.length;
         self._updateDetailPanel();
       })
       .catch(function () {
+        if (self._lastNodeFetchKey !== cacheKey) return;
         self._nodeDetailCache = fallbackItems;
         self._updateDetailPanel();
       });
