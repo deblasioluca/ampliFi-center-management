@@ -67,7 +67,7 @@ start: ## Start backend + frontend
 		fi; \
 		export LOG_FILE="$(ROOT_DIR)/amplifi-backend.log"; \
 		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) $$TLS_ARGS \
-			> /dev/null 2>&1 & \
+			>> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
 		echo $$! > $(BACKEND_PID) && \
 		echo "[ok] Backend started on port $(BACKEND_PORT) (PID $$!)"; \
 	fi
