@@ -7,6 +7,7 @@ import contextlib
 import csv
 import io
 import re
+import threading
 import time as _time
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -37,6 +38,32 @@ from app.models.core import (
 )
 
 logger = structlog.get_logger()
+
+# ── Cancellation infrastructure ──────────────────────────────────────────
+_cancel_flags: set[int] = set()
+_cancel_lock = threading.Lock()
+
+
+class UploadCancelledError(Exception):
+    """Raised when a background upload is cancelled."""
+
+
+def request_cancel(batch_id: int) -> None:
+    """Signal a running upload task to abort."""
+    with _cancel_lock:
+        _cancel_flags.add(batch_id)
+
+
+def clear_cancel(batch_id: int) -> None:
+    """Clear the cancellation flag (called after task ends)."""
+    with _cancel_lock:
+        _cancel_flags.discard(batch_id)
+
+
+def is_cancelled(batch_id: int) -> bool:
+    """Check if a batch has been requested to cancel."""
+    with _cancel_lock:
+        return batch_id in _cancel_flags
 
 
 def _flush_progress(batch_id: int, count: int, total: int | None = None) -> None:
@@ -69,6 +96,9 @@ def _flush_progress(batch_id: int, count: int, total: int | None = None) -> None
         logger.warning("Failed to flush progress for batch %s", batch_id, exc_info=True)
     finally:
         s.close()
+
+    if is_cancelled(batch_id):
+        raise UploadCancelledError(f"Batch {batch_id} cancelled by user")
 
 
 _DATE_FORMATS = (

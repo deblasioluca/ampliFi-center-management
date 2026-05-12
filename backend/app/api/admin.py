@@ -1354,7 +1354,11 @@ def _run_validate_in_background(batch_id: int) -> None:
     import logging as _logging
 
     from app.infra.db.session import SessionLocal
-    from app.services.upload_processor import validate_upload
+    from app.services.upload_processor import (
+        UploadCancelledError,
+        clear_cancel,
+        validate_upload,
+    )
 
     _log = _logging.getLogger(__name__)
     _log.info("Background validate task started for batch %s", batch_id)
@@ -1370,6 +1374,24 @@ def _run_validate_in_background(batch_id: int) -> None:
             return
         result = validate_upload(batch_id, db)
         _log.info("Validate batch %s completed: %s", batch_id, result)
+    except UploadCancelledError:
+        _log.info("Validate batch %s cancelled by user", batch_id)
+        try:
+            db.rollback()
+            batch = db.get(UploadBatch, batch_id)
+            if batch:
+                batch.status = "failed"
+                db.add(
+                    UploadError(
+                        batch_id=batch_id,
+                        row_number=0,
+                        error_code="CANCELLED",
+                        message="Cancelled by user",
+                    )
+                )
+                db.commit()
+        except Exception:
+            db.rollback()
     except Exception as exc:
         _log.exception("Validate batch %s failed in background", batch_id)
         try:
@@ -1389,6 +1411,7 @@ def _run_validate_in_background(batch_id: int) -> None:
         except Exception:
             db.rollback()
     finally:
+        clear_cancel(batch_id)
         db.close()
 
 
@@ -1397,7 +1420,11 @@ def _run_load_in_background(batch_id: int) -> None:
     import logging as _logging
 
     from app.infra.db.session import SessionLocal
-    from app.services.upload_processor import load_upload
+    from app.services.upload_processor import (
+        UploadCancelledError,
+        clear_cancel,
+        load_upload,
+    )
 
     _log = _logging.getLogger(__name__)
     _log.info("Background load task started for batch %s", batch_id)
@@ -1413,6 +1440,24 @@ def _run_load_in_background(batch_id: int) -> None:
             return
         result = load_upload(batch_id, db)
         _log.info("Load batch %s completed: %s", batch_id, result)
+    except UploadCancelledError:
+        _log.info("Load batch %s cancelled by user", batch_id)
+        try:
+            db.rollback()
+            batch = db.get(UploadBatch, batch_id)
+            if batch:
+                batch.status = "failed"
+                db.add(
+                    UploadError(
+                        batch_id=batch_id,
+                        row_number=0,
+                        error_code="CANCELLED",
+                        message="Cancelled by user",
+                    )
+                )
+                db.commit()
+        except Exception:
+            db.rollback()
     except Exception as exc:
         _log.exception("Load batch %s failed in background", batch_id)
         try:
@@ -1432,6 +1477,7 @@ def _run_load_in_background(batch_id: int) -> None:
         except Exception:
             db.rollback()
     finally:
+        clear_cancel(batch_id)
         db.close()
 
 
@@ -1515,6 +1561,34 @@ def reset_upload_batch(
         status_code=400,
         detail=f"Batch is not stuck (status: {batch.status})",
     )
+
+
+@router.post("/uploads/{batch_id}/cancel")
+def cancel_upload_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_role("admin", "data_manager", "data_manager")),
+) -> dict:
+    """Cancel an in-progress upload (validating or loading)."""
+    import time as _time
+
+    from app.services.upload_processor import request_cancel
+
+    batch = db.get(UploadBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    if batch.status not in ("validating", "loading"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch is not in progress (status: {batch.status})",
+        )
+    request_cancel(batch_id)
+    for _ in range(20):
+        _time.sleep(0.5)
+        db.refresh(batch)
+        if batch.status not in ("validating", "loading"):
+            return {"status": batch.status, "message": "Cancelled successfully."}
+    return {"status": batch.status, "message": "Cancel signal sent — task will stop shortly."}
 
 
 @router.get("/uploads/{batch_id}/errors")

@@ -663,6 +663,9 @@ import Layout from '../../components/layout/Layout.astro';
             '<span class="text-yellow-700 text-[10px] font-medium ' +
             'whitespace-nowrap">' + progressLabel + (isReading ? '' : ' ' + pct + '%') + '</span>' +
             '</div> ' +
+            '<button onclick="cancelUpload(' + u.id +
+            ')" class="text-red-600 hover:underline text-xs mr-2" ' +
+            'title="Cancel in-progress upload">Cancel</button>' +
             '<button onclick="resetUpload(' + u.id +
             ')" class="text-orange-600 hover:underline text-xs mr-2" ' +
             'title="Reset stuck batch">Reset</button>';
@@ -805,6 +808,19 @@ import Layout from '../../components/layout/Layout.astro';
       }
     }
   };
+  window.cancelUpload = async function(id) {
+    if (!confirm('Cancel this in-progress upload?')) return;
+    if (!token) { alert('Please log in first.'); return; }
+    try {
+      var res = await fetch('/api/admin/uploads/' + id + '/cancel',
+        { method: 'POST', headers: authHdr });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Cancel failed');
+      alert(d.message || 'Upload cancelled.');
+      loadUploadHistory(); refreshAllData();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
   window.resetUpload = async function(id) {
     if (!confirm('Reset this stuck batch? This will allow you to re-try validation or loading.')) return;
     if (!token) { alert('Please log in first.'); return; }
