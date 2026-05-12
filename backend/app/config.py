@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     # External URL override for Entra ID redirect URIs (e.g. https://amplifi.company.com)
     tls_external_url: str = ""
 
+    # --- logging ---
+    log_file: str = ""  # file path; empty = stdout only (systemd/journald)
+    log_retention_days: int = 7  # daily rotation; 0 = keep forever
+
     # --- feature flags ---
     feature_mdg_api: bool = False
     feature_datasphere: bool = False
