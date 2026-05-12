@@ -595,8 +595,7 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
 
     # Wait briefly for background tasks to notice the cancel signal
     any_active = any(
-        db.get(UploadBatch, bid)
-        and db.get(UploadBatch, bid).status in ("validating", "loading")
+        db.get(UploadBatch, bid) and db.get(UploadBatch, bid).status in ("validating", "loading")
         for bid in ids
     )
     if any_active:
@@ -604,8 +603,7 @@ def _delete_upload_ids(ids: list[int], db: Session) -> DeleteResult:
             _time.sleep(0.5)
             db.expire_all()
             still_active = any(
-                (b := db.get(UploadBatch, bid))
-                and b.status in ("validating", "loading")
+                (b := db.get(UploadBatch, bid)) and b.status in ("validating", "loading")
                 for bid in ids
             )
             if not still_active:
