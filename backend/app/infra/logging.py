@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import sys
 import threading
 from collections import deque
 from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 
@@ -188,16 +190,31 @@ def setup_logging() -> None:
         ],
     )
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
 
     ring_handler = RingBufferHandler()
     ring_handler.setFormatter(formatter)
 
     root = logging.getLogger()
     root.handlers.clear()
-    root.addHandler(handler)
+    root.addHandler(console_handler)
     root.addHandler(ring_handler)
+
+    # File logging with daily rotation and configurable retention
+    if settings.log_file:
+        log_path = Path(settings.log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            filename=str(log_path),
+            when="midnight",
+            interval=1,
+            backupCount=settings.log_retention_days,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
     for name in ("uvicorn", "uvicorn.access", "sqlalchemy.engine"):

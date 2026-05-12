@@ -65,8 +65,9 @@ start: ## Start backend + frontend
 			TLS_ARGS="--ssl-certfile $$_CERT --ssl-keyfile $$_KEY"; \
 			echo "[tls] Direct mode: uvicorn will serve HTTPS"; \
 		fi; \
+		export LOG_FILE="$(ROOT_DIR)/amplifi-backend.log"; \
 		nohup uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) $$TLS_ARGS \
-			> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
+			>> $(ROOT_DIR)/amplifi-backend.log 2>&1 & \
 		echo $$! > $(BACKEND_PID) && \
 		echo "[ok] Backend started on port $(BACKEND_PORT) (PID $$!)"; \
 	fi
