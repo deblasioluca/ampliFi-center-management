@@ -262,11 +262,11 @@ for _prefix, _source in [
 
 # Search fields per object
 _SEARCH_FIELDS: dict[str, list[str]] = {
-    "cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
-    "profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
-    "target-cost-centers": ["cctr", "txtsh", "ccode", "responsible"],
-    "target-profit-centers": ["pctr", "txtsh", "ccode", "responsible"],
-    "entities": ["ccode", "name", "country"],
+    "cost-centers": ["cctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "profit-centers": ["pctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "target-cost-centers": ["cctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "target-profit-centers": ["pctr", "txtsh", "txtmi", "description", "responsible", "ccode"],
+    "entities": ["ccode", "name", "country", "city", "region"],
     "target-entities": ["ccode", "name", "country"],
     "employees": ["gpn", "name", "vorname", "email_adresse", "ou_cd"],
     "gl-accounts-ska1": ["saknr", "txt20", "txt50", "ktopl", "ktoks"],
@@ -603,6 +603,7 @@ def _get_display_config(db: Session, object_type: str) -> dict:
             "column_labels": cfg.column_labels or {},
             "default_sort_column": cfg.default_sort_column,
             "default_sort_dir": cfg.default_sort_dir or "asc",
+            "search_fields": cfg.search_fields or _SEARCH_FIELDS.get(object_type, []),
         }
     return {
         "table_columns": _DEFAULT_TABLE_COLUMNS.get(object_type, []),
@@ -610,6 +611,7 @@ def _get_display_config(db: Session, object_type: str) -> dict:
         "column_labels": {},
         "default_sort_column": _DEFAULT_SORT.get(object_type),
         "default_sort_dir": "asc",
+        "search_fields": _SEARCH_FIELDS.get(object_type, []),
     }
 
 
@@ -841,13 +843,13 @@ def explore_object(
         query = query.where(model.saknr.like(f"{gl_prefix}%"))
         count_q = count_q.where(model.saknr.like(f"{gl_prefix}%"))
 
-    # Search
+    # Search — use config search_fields if available, fall back to hardcoded defaults
     if search:
         pat = f"%{search}%"
-        search_fields = _SEARCH_FIELDS.get(object_type, [])
-        if search_fields:
+        cfg_search = config.get("search_fields") or _SEARCH_FIELDS.get(object_type, [])
+        if cfg_search:
             conditions = []
-            for field_name in search_fields:
+            for field_name in cfg_search:
                 col = getattr(model, field_name, None)
                 if col is not None:
                     conditions.append(col.ilike(pat))
@@ -1032,10 +1034,10 @@ def export_object(
         query = query.where(model.scope == SCOPE_EXPLORER)
     if search:
         pat = f"%{search}%"
-        search_fields = _SEARCH_FIELDS.get(object_type, [])
-        if search_fields:
+        cfg_search = config.get("search_fields") or _SEARCH_FIELDS.get(object_type, [])
+        if cfg_search:
             conditions = []
-            for field_name in search_fields:
+            for field_name in cfg_search:
                 col = getattr(model, field_name, None)
                 if col is not None:
                     conditions.append(col.ilike(pat))

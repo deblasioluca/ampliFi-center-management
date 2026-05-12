@@ -2992,6 +2992,7 @@ class DisplayConfigIn(BaseModel):
     column_labels: dict[str, str] = {}
     default_sort_column: str | None = None
     default_sort_dir: str | None = "asc"
+    search_fields: list[str] | None = None
 
 
 class DisplayConfigOut(BaseModel):
@@ -3002,6 +3003,7 @@ class DisplayConfigOut(BaseModel):
     column_labels: dict[str, str] = {}
     default_sort_column: str | None = None
     default_sort_dir: str | None = "asc"
+    search_fields: list[str] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -3063,6 +3065,7 @@ def upsert_display_config(
         row.column_labels = body.column_labels
         row.default_sort_column = body.default_sort_column
         row.default_sort_dir = body.default_sort_dir
+        row.search_fields = body.search_fields
         row.updated_by = user.id
     else:
         row = ExplorerDisplayConfig(
@@ -3072,6 +3075,7 @@ def upsert_display_config(
             column_labels=body.column_labels,
             default_sort_column=body.default_sort_column,
             default_sort_dir=body.default_sort_dir,
+            search_fields=body.search_fields,
             updated_by=user.id,
         )
         db.add(row)

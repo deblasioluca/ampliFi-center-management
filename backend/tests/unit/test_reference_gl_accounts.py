@@ -46,25 +46,42 @@ def _make_skb1(saknr: str, bukrs: str = "1000", **overrides: object) -> SimpleNa
     return SimpleNamespace(**base)
 
 
-def _mock_db(ska1_rows: list, skb1_rows: list, total: int | None = None) -> MagicMock:
+def _mock_db(
+    ska1_rows: list,
+    skb1_rows: list,
+    total: int | None = None,
+    with_search: bool = False,
+) -> MagicMock:
     """Create a minimal mock Session that returns the rows we feed in.
 
-    The endpoint runs three statements in order:
+    The endpoint runs these statements in order:
+      0. (only when search is provided) select(ExplorerDisplayConfig) -> scalar_one_or_none
       1. count(SKA1) -> scalar
       2. select(SKA1) -> scalars().all()
       3. select(SKB1) -> scalars().all()
     """
     db = MagicMock()
+
+    results: list = []
+
+    if with_search:
+        config_result = MagicMock()
+        config_result.scalar_one_or_none.return_value = None
+        results.append(config_result)
+
     count_result = MagicMock()
     count_result.scalar.return_value = total if total is not None else len(ska1_rows)
+    results.append(count_result)
 
     ska_result = MagicMock()
     ska_result.scalars.return_value.all.return_value = ska1_rows
+    results.append(ska_result)
 
     skb_result = MagicMock()
     skb_result.scalars.return_value.all.return_value = skb1_rows
+    results.append(skb_result)
 
-    db.execute.side_effect = [count_result, ska_result, skb_result]
+    db.execute.side_effect = results
     return db
 
 
@@ -135,7 +152,7 @@ def test_gl_endpoint_empty_result() -> None:
 
 def test_gl_endpoint_accepts_filter_params_without_error() -> None:
     """Smoke test: all optional filters can be passed in any combination."""
-    db = _mock_db([_make_ska1("1000000001")], [])
+    db = _mock_db([_make_ska1("1000000001")], [], with_search=True)
     out = list_legacy_gl_accounts(
         db=db,
         pag=_pag(),

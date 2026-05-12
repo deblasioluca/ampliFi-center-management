@@ -351,7 +351,14 @@
       html += this.buildViewToggleHtml();
     }
     if (this.showSearch) {
-      html += '<input type="text" data-dod-role="search" placeholder="Search..." class="input text-xs py-1 flex-1" style="min-width:120px;max-width:220px" value="' + escAttr(this._search) + '" />';
+      var searchHint = 'Search...';
+      var sf = this._displayConfig && this._displayConfig.search_fields;
+      if (sf && sf.length) {
+        var labels = (this._displayConfig && this._displayConfig.column_labels) || {};
+        var names = sf.slice(0, 4).map(function (f) { return labels[f] || f; });
+        searchHint = 'Search ' + names.join(', ') + (sf.length > 4 ? '...' : '');
+      }
+      html += '<input type="text" data-dod-role="search" placeholder="' + escAttr(searchHint) + '" class="input text-xs py-1 flex-1" style="min-width:120px;max-width:280px" value="' + escAttr(this._search) + '" />';
     }
     if (this.showCSV) {
       html += '<button data-dod-role="csv" class="btn-secondary text-xs py-1 flex-shrink-0" title="Download as CSV">CSV</button>';
