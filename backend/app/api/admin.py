@@ -1572,7 +1572,7 @@ def cancel_upload_batch(
     """Cancel an in-progress upload (validating or loading)."""
     import time as _time
 
-    from app.services.upload_processor import request_cancel
+    from app.services.upload_processor import clear_cancel, request_cancel
 
     batch = db.get(UploadBatch, batch_id)
     if not batch:
@@ -1587,6 +1587,7 @@ def cancel_upload_batch(
         _time.sleep(0.5)
         db.refresh(batch)
         if batch.status not in ("validating", "loading"):
+            clear_cancel(batch_id)
             return {"status": batch.status, "message": "Cancelled successfully."}
     return {"status": batch.status, "message": "Cancel signal sent — task will stop shortly."}
 
