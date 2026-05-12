@@ -1478,6 +1478,18 @@ def _run_load_in_background(batch_id: int) -> None:
             db.rollback()
     finally:
         clear_cancel(batch_id)
+        # Clean up the uploaded file if load succeeded (status=loaded)
+        try:
+            batch = db.get(UploadBatch, batch_id)
+            if batch and batch.status == "loaded" and batch.storage_uri:
+                from pathlib import Path
+
+                fpath = Path(batch.storage_uri)
+                if fpath.is_file():
+                    fpath.unlink()
+                    _log.info("Deleted upload file %s for batch %s", fpath, batch_id)
+        except Exception as cleanup_err:
+            _log.warning("Could not delete upload file for batch %s: %s", batch_id, cleanup_err)
         db.close()
 
 
